@@ -145,13 +145,68 @@ def burn_subtitles(video: Path, ass: Path, dst: Path) -> Path:
     return dst
 
 
-def make_thumbnail(src: Path, dst: Path, size: tuple[int, int] = (1280, 720)) -> Path:
+FONT_BOLD_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+)
+
+
+def bold_font() -> str | None:
+    for path in FONT_BOLD_CANDIDATES:
+        if Path(path).exists():
+            return path
+    return None
+
+
+def _escape_drawtext(text: str) -> str:
+    """Экранируем спецсимволы фильтра drawtext."""
+    out = text.replace("\\", "\\\\")
+    for ch in (":", "'", "%", "[", "]", ",", ";"):
+        out = out.replace(ch, "\\" + ch)
+    return out
+
+
+def wrap_headline(text: str, width: int = 18, max_lines: int = 3) -> list[str]:
+    words = (text or "").split()
+    lines, line = [], ""
+    for word in words:
+        if len(line) + len(word) + 1 > width and line:
+            lines.append(line)
+            line = word
+        else:
+            line = f"{line} {word}".strip()
+    if line:
+        lines.append(line)
+    return lines[:max_lines]
+
+
+def make_thumbnail(src: Path, dst: Path, size: tuple[int, int] = (1280, 720),
+                   headline: str = "") -> Path:
+    """Обложка: кадр нужного размера плюс крупный заголовок по теме ролика."""
     w, h = size
-    _ff([
-        "-i", str(src),
-        "-vf", f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}",
-        "-q:v", "2", str(dst),
-    ], timeout=300)
+    chain = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
+
+    font = bold_font()
+    lines = wrap_headline(headline.strip().upper()) if headline else []
+    if lines and font:
+        # Затемняем нижнюю треть, чтобы белый текст читался на любом кадре.
+        chain += (f",drawbox=x=0:y={int(h * 0.55)}:w={w}:h={int(h * 0.45)}"
+                  f":color=black@0.45:t=fill")
+        font_size = int(h * 0.115) if len(lines) <= 2 else int(h * 0.095)
+        line_gap = int(font_size * 1.12)
+        block_h = line_gap * len(lines)
+        top = h - int(h * 0.07) - block_h
+        for i, line in enumerate(lines):
+            y = top + i * line_gap
+            chain += (
+                f",drawtext=fontfile='{font}':text='{_escape_drawtext(line)}'"
+                f":fontcolor=white:fontsize={font_size}"
+                f":borderw={max(3, int(font_size * 0.07))}:bordercolor=black@0.9"
+                f":x={int(w * 0.05)}:y={y}"
+            )
+
+    _ff(["-i", str(src), "-vf", chain, "-q:v", "2", str(dst)], timeout=300)
     return dst
 
 

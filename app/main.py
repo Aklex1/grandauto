@@ -48,7 +48,8 @@ STATUS_LABELS = {
     "metadata": "метаданные", "shorts": "шортсы", "done": "готов", "failed": "ошибка",
     "cancelled": "отменён", "planned": "в плане", "in_progress": "в работе", "skipped": "пропущено",
     "pending": "ожидает", "running": "выполняется", "ready": "готов", "processing": "обработка",
-    "voiced": "озвучена", "voice_failed": "нет озвучки",
+    "voiced": "озвучена", "voice_failed": "нет озвучки", "piece_ready": "сцена готова",
+    "scenes_ready": "сцены готовы",
     "clip_failed": "нет видеоряда",
 }
 
@@ -234,6 +235,8 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
                      resolution: str = Form("720p"), clip_duration: int = Form(5),
                      clip_coverage_sec: int = Form(20),
                      visual_source: str = Form("generate"), library_share: int = Form(50),
+                     background_music: str = Form(""), music_style: str = Form(""),
+                     music_volume_db: float = Form(-24.0),
                      target_minutes: float = Form(8.0), scene_count: int = Form(8),
                      visual_style: str = Form(""), script_style: str = Form(""),
                      thumb_style: str = Form(""), burn_subtitles: str = Form(""),
@@ -258,6 +261,9 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
     channel.clip_coverage_sec = max(6, min(90, clip_coverage_sec))
     channel.visual_source = visual_source if visual_source in ("generate", "library", "mix") else "generate"
     channel.library_share = max(0, min(100, library_share))
+    channel.background_music = bool(background_music)
+    channel.music_style = music_style
+    channel.music_volume_db = max(-40.0, min(-6.0, music_volume_db))
     channel.target_minutes = max(1.0, min(30.0, target_minutes))
     channel.scene_count = max(3, min(30, scene_count))
     channel.visual_style = visual_style
@@ -538,6 +544,16 @@ def video_action(video_id: int, session: Session = Depends(get_session),
         queue.enqueue(session, "build_video", video_id=video.id)
     elif action == "shorts":
         queue.enqueue(session, "make_shorts", video_id=video.id)
+    elif action == "assemble_all":
+        ready = [sc.id for sc in sorted(video.scenes, key=lambda x: x.idx) if sc.piece_path]
+        if not ready:
+            raise HTTPException(status_code=400, detail="Готовых сцен пока нет")
+        video.status = "assemble"
+        video.stage = "assemble"
+        video.error = ""
+        session.commit()
+        queue.enqueue(session, "assemble_final", video_id=video.id,
+                      payload={"scene_ids": ready})
     elif action == "delete":
         channel = session.get(Channel, video.channel_id)
         folder = config.MEDIA_DIR / channel.slug / f"{video.id:06d}"
@@ -545,6 +561,33 @@ def video_action(video_id: int, session: Session = Depends(get_session),
         session.delete(video)
         session.commit()
         return RedirectResponse(f"/channels/{channel.id}?tab=videos", status_code=303)
+    return RedirectResponse(f"/videos/{video_id}", status_code=303)
+
+
+@app.post("/videos/{video_id}/assemble")
+async def video_assemble(video_id: int, request: Request,
+                         session: Session = Depends(get_session),
+                         _user: str = Depends(require_user)):
+    """Сборка длинного ролика из отмеченных сцен."""
+    video = _video_or_404(session, video_id)
+    form = await request.form()
+    raw_ids = form.getlist("scene_ids")
+    scene_ids: list[int] = []
+    for value in raw_ids:
+        try:
+            scene_ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    ready = {sc.id for sc in video.scenes if sc.piece_path}
+    scene_ids = [i for i in scene_ids if i in ready]
+    if not scene_ids:
+        raise HTTPException(status_code=400, detail="Не отмечена ни одна готовая сцена")
+
+    video.status = "assemble"
+    video.stage = "assemble"
+    video.error = ""
+    session.commit()
+    queue.enqueue(session, "assemble_final", video_id=video.id, payload={"scene_ids": scene_ids})
     return RedirectResponse(f"/videos/{video_id}", status_code=303)
 
 
@@ -674,6 +717,17 @@ def queue_run_schedule(session: Session = Depends(get_session), _user: str = Dep
 
 
 # --------------------------------------------------------------------------- медиа и API
+
+@app.post("/api/suno-callback")
+async def suno_callback(request: Request):
+    """Приёмник уведомлений Suno. Результат мы забираем опросом, но адрес обязателен."""
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001
+        payload = {}
+    log.info("Suno callback: %s", str(payload)[:300])
+    return {"code": 200, "msg": "ok"}
+
 
 @app.head("/media/{path:path}")
 @app.get("/media/{path:path}")

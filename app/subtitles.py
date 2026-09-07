@@ -182,8 +182,9 @@ def split_cues_to_fit(cues: list[Cue], max_chars: int) -> list[Cue]:
     return out
 
 
-def wrap_two_lines(text: str, width: int = 42) -> str:
-    words = text.split()
+def wrap_lines(text: str, width: int = 42, max_lines: int = 2) -> str:
+    """Переносим текст по словам и склеиваем ASS-переносом."""
+    words = (text or "").split()
     lines, line = [], ""
     for word in words:
         if len(line) + len(word) + 1 > width and line:
@@ -193,7 +194,7 @@ def wrap_two_lines(text: str, width: int = 42) -> str:
             line = f"{line} {word}".strip()
     if line:
         lines.append(line)
-    return "\\N".join(lines[:2]) if len(lines) > 1 else (lines[0] if lines else "")
+    return "\\N".join(lines[:max_lines])
 
 
 def write_srt(cues: list[Cue], dst: Path) -> Path:
@@ -220,45 +221,66 @@ PlayResX: {w}
 PlayResY: {h}
 WrapStyle: 0
 ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Main,{font},{size},&H00FFFFFF,&H000000FF,&H00101010,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,{margin_h},{margin_h},{margin_v},1
+Style: Main,{font},{size},&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,100,100,{spacing},0,3,{outline},0,2,{margin_h},{margin_h},{margin_v},1
+Style: Title,{font},{title_size},&H00FFFFFF,&H000000FF,&H00101010,&HB4000000,-1,0,0,0,100,100,0,0,3,{title_outline},0,8,{margin_h},{margin_h},{title_margin},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-
 # Средняя ширина символа DejaVu Sans относительно кегля — по ней подбираем размер шрифта.
 CHAR_WIDTH_RATIO = 0.55
 
 
-def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720),
-              vertical: bool = False, font: str = "DejaVu Sans") -> Path:
-    """ASS-субтитры для вшивания: крупные, с обводкой, по центру внизу.
-
-    Кегль считается от ШИРИНЫ кадра и числа символов в строке, иначе в вертикальном
-    формате (1080×1920) текст вылезает за края.
-    """
+def _style_params(size: tuple[int, int], vertical: bool, font: str) -> tuple[dict, int]:
+    """Единые параметры оформления для всех роликов: кегль от ширины кадра, подложка."""
     w, h = size
     chars_per_line = 26 if vertical else 42
     margin_h = int(w * 0.06)
     usable = w - 2 * margin_h
     font_size = int(usable / (chars_per_line * CHAR_WIDTH_RATIO))
     font_size = max(20, min(font_size, int(h * 0.06)))
-    header = ASS_HEADER.format(
-        w=w, h=h, font=font, size=font_size,
-        outline=max(2, int(font_size * 0.09)),
-        shadow=1,
-        margin_h=margin_h,
-        margin_v=int(h * (0.09 if not vertical else 0.20)),
-    )
-    lines = [header]
+    title_size = int(font_size * (1.15 if vertical else 1.0))
+    params = {
+        "w": w, "h": h, "font": font, "size": font_size,
+        "outline": max(6, int(font_size * 0.28)),   # BorderStyle 3 — это ширина подложки
+        "spacing": 0,
+        "margin_h": margin_h,
+        "margin_v": int(h * (0.09 if not vertical else 0.20)),
+        "title_size": title_size,
+        "title_outline": max(8, int(title_size * 0.32)),
+        "title_margin": int(h * (0.05 if not vertical else 0.08)),
+    }
+    return params, chars_per_line
+
+
+def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720),
+              vertical: bool = False, font: str = "DejaVu Sans",
+              title: str = "", title_seconds: float = 0.0) -> Path:
+    """ASS-субтитры для вшивания.
+
+    Кегль считается от ШИРИНЫ кадра и числа символов в строке, иначе в вертикальном
+    формате текст вылезает за края. Под текстом рисуется полупрозрачная подложка
+    (BorderStyle 3), чтобы буквы читались на любом фоне.
+    """
+    params, chars_per_line = _style_params(size, vertical, font)
+    lines = [ASS_HEADER.format(**params)]
+
+    if title:
+        end = title_seconds if title_seconds > 0 else 4.0
+        head = wrap_lines(title, int(chars_per_line * 0.85), max_lines=3)
+        if head:
+            lines.append(
+                f"Dialogue: 1,{_fmt_ass_ts(0)},{_fmt_ass_ts(end)},Title,,0,0,0,,{head}")
+
     # Реплика длиннее двух строк не влезает в кадр — режем её на несколько,
     # распределяя время пропорционально длине кусков.
     for cue in split_cues_to_fit(cues, chars_per_line * 2):
-        text = wrap_two_lines(cue.text, chars_per_line)
+        text = wrap_lines(cue.text, chars_per_line, max_lines=2)
         if not text:
             continue
         lines.append(

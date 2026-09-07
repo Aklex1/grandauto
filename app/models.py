@@ -85,6 +85,8 @@ class Channel(Base):
     make_shorts: Mapped[bool] = mapped_column(Boolean, default=True)
     shorts_count: Mapped[int] = mapped_column(Integer, default=3)
     background_music: Mapped[bool] = mapped_column(Boolean, default=False)
+    music_style: Mapped[str] = mapped_column(Text, default="")
+    music_volume_db: Mapped[float] = mapped_column(Float, default=-24.0)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -138,6 +140,7 @@ class Video(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     tags: Mapped[str] = mapped_column(Text, default="")
     title_variants: Mapped[str] = mapped_column(Text, default="")
+    thumb_text: Mapped[str] = mapped_column(String(120), default="")
 
     video_path: Mapped[str] = mapped_column(String(500), default="")
     audio_path: Mapped[str] = mapped_column(String(500), default="")
@@ -175,6 +178,9 @@ class Scene(Base):
     narration: Mapped[str] = mapped_column(Text, default="")
     visual_prompt: Mapped[str] = mapped_column(Text, default="")
     audio_path: Mapped[str] = mapped_column(String(500), default="")
+    piece_path: Mapped[str] = mapped_column(String(500), default="")  # готовая сцена-ролик
+    piece_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    include: Mapped[bool] = mapped_column(Boolean, default=True)      # войдёт в длинный ролик
     clip_path: Mapped[str] = mapped_column(String(500), default="")
     clip_paths: Mapped[str] = mapped_column(Text, default="")
     clip_sources: Mapped[str] = mapped_column(Text, default="")  # generated | library
@@ -299,6 +305,26 @@ class Footage(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    channel: Mapped[Optional[Channel]] = relationship()
+
+
+class MusicTrack(Base):
+    """Фоновая музыка, сгенерированная Suno (переиспользуется между роликами канала)."""
+
+    __tablename__ = "music_tracks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    style: Mapped[str] = mapped_column(Text, default="")
+    path: Mapped[str] = mapped_column(String(500), default="")
+    source_url: Mapped[str] = mapped_column(String(600), default="")
+    duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
     channel: Mapped[Optional[Channel]] = relationship()
 

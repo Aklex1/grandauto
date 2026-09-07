@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from sqlalchemy.orm import Session
 
-from . import config, footage, media, prompts, storage, subtitles, tts
+from . import config, footage, media, music, prompts, storage, subtitles, tts
 from .db import session_scope
 from .kie import KieClient, KieError, extract_urls
 from .models import Channel, Event, Footage as FootageModel, PlanItem, Scene, Short, Video, utcnow
@@ -29,8 +29,9 @@ STAGE_PROGRESS = {
     "visuals": 65,
     "assemble": 80,
     "subtitles": 88,
+    "metadata": 90,
     "thumbnail": 93,
-    "metadata": 97,
+    "scenes_ready": 95,
     "done": 100,
 }
 
@@ -369,16 +370,28 @@ def _fallback_clip_for(scene: Scene, scenes: list[Scene]) -> Optional[Path]:
     return storage.abspath(nearest.clip_path)
 
 
-def assemble(session: Session, video: Video, channel: Channel, workdir: Path,
-             out_dir: Path) -> Path:
-    _set_stage(session, video, "assemble", "Собираю ролик")
+def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir: Path,
+                       out_dir: Path) -> int:
+    """Собираем каждую сцену в самостоятельный ролик с озвучкой и субтитрами.
+
+    Длинный ролик не склеивается автоматически: в интерфейсе можно отметить нужные
+    сцены и собрать из них итоговый ролик в любом составе и порядке.
+    """
+    _set_stage(session, video, "assemble", "Собираю сцены по отдельности")
     size = media.target_size(channel.resolution, channel.aspect_ratio)
+    pieces_dir = out_dir / "scenes"
+    pieces_dir.mkdir(parents=True, exist_ok=True)
     scenes = list(video.scenes)
-    scene_files: list[Path] = []
+    ready = 0
 
     for scene in scenes:
         if not scene.audio_path:
             continue
+        piece = pieces_dir / f"scene_{scene.idx:02d}.mp4"
+        if scene.piece_path and storage.abspath(scene.piece_path).exists():
+            ready += 1
+            continue
+
         audio = storage.abspath(scene.audio_path)
         clips = [storage.abspath(p) for p in _scene_clips(scene)]
         clips = [c for c in clips if c.exists()]
@@ -389,70 +402,146 @@ def assemble(session: Session, video: Video, channel: Channel, workdir: Path,
                           stage="assemble", level="warn")
                 continue
             clips = [Path(fallback)]
-        dst = workdir / f"scene_{scene.idx:02d}_full.mp4"
-        media.build_scene(clips, audio, dst, size,
-                          duration=scene.audio_sec, workdir=workdir / f"w{scene.idx:02d}")
-        scene_files.append(dst)
 
-    if not scene_files:
-        raise RuntimeError("нет ни одной готовой сцены для сборки")
+        raw = workdir / f"scene_{scene.idx:02d}_raw.mp4"
+        media.build_scene(clips, audio, raw, size, duration=scene.audio_sec,
+                          workdir=workdir / f"w{scene.idx:02d}")
 
-    raw = workdir / "full_raw.mp4"
-    media.concat_scenes(scene_files, raw, workdir)
-    final = out_dir / "video.mp4"
-    shutil.copyfile(raw, final)
-    video.duration_sec = storage.media_duration(final)
-    video.video_path = storage.rel(final)
-    video.file_size = final.stat().st_size
+        # Субтитры сцены: текст берём из сценария, тайминг — из распознавания этой сцены.
+        cues = _scene_cues(session, video, channel, scene, audio)
+        if cues and channel.burn_subtitles:
+            ass = workdir / f"scene_{scene.idx:02d}.ass"
+            subtitles.write_ass(cues, ass, size=size,
+                                vertical=channel.aspect_ratio == "9:16")
+            try:
+                media.burn_subtitles(raw, ass, piece)
+            except RuntimeError as exc:
+                log_event(session, video.id, f"Сцена {scene.idx + 1}: субтитры не вшиты ({exc})",
+                          stage="assemble", level="warn")
+                shutil.copyfile(raw, piece)
+        else:
+            shutil.copyfile(raw, piece)
+
+        scene.piece_path = storage.rel(piece)
+        scene.piece_sec = storage.media_duration(piece)
+        scene.status = "piece_ready"
+        session.commit()
+        ready += 1
+
+    if ready == 0:
+        raise RuntimeError("не удалось собрать ни одной сцены")
+    log_event(session, video.id, f"Сцены собраны: {ready} из {len(scenes)}", stage="assemble")
+    return ready
+
+
+def _scene_cues(session: Session, video: Video, channel: Channel, scene: Scene,
+                audio: Path) -> list[subtitles.Cue]:
+    """Реплики одной сцены: слова из сценария, тайминг из распознавания её озвучки."""
+    raw: list[subtitles.Cue] = []
+    if config.WHISPER_ENABLED:
+        try:
+            raw = subtitles.transcribe(audio, language=channel.language)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Whisper не сработал на сцене %s: %s", scene.idx, exc)
+    pair = [(scene.narration, scene.audio_sec or storage.media_duration(audio))]
+    if raw:
+        return subtitles.align_script(raw, pair)
+    return subtitles.cues_from_scenes(pair)
+
+
+def assemble_selected(session: Session, video: Video, channel: Channel,
+                      scene_ids: Optional[list[int]] = None) -> Path:
+    """Склеиваем выбранные сцены в готовый ролик и накладываем фоновую музыку."""
+    _set_stage(session, video, "assemble", "Собираю длинный ролик из выбранных сцен")
+    out_dir = storage.video_dir(channel.slug, video.id)
+    workdir = config.TMP_DIR / f"assemble_{video.id}"
+    shutil.rmtree(workdir, ignore_errors=True)
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    scenes = [sc for sc in video.scenes if sc.piece_path
+              and storage.abspath(sc.piece_path).exists()]
+    if scene_ids:
+        wanted = list(dict.fromkeys(scene_ids))  # сохраняем порядок выбора
+        by_id = {sc.id: sc for sc in scenes}
+        scenes = [by_id[i] for i in wanted if i in by_id]
+    else:
+        scenes = [sc for sc in scenes if sc.include]
+    if not scenes:
+        raise RuntimeError("не выбрано ни одной готовой сцены")
+
+    for sc in video.scenes:
+        sc.include = sc in scenes
     session.commit()
+
+    pieces = [storage.abspath(sc.piece_path) for sc in scenes]
+    raw = workdir / "full_raw.mp4"
+    media.concat_scenes(pieces, raw, workdir)
+
+    # Субтитры целого ролика собираем из сцен в выбранном порядке.
+    cues: list[subtitles.Cue] = []
+    offset = 0.0
+    for sc in scenes:
+        piece_cues = subtitles.cues_from_scenes([(sc.narration, sc.piece_sec or sc.audio_sec)])
+        for cue in piece_cues:
+            cues.append(subtitles.Cue(start=cue.start + offset, end=cue.end + offset,
+                                      text=cue.text))
+        offset += sc.piece_sec or sc.audio_sec
+    if cues:
+        subtitles.write_srt(cues, out_dir / "subtitles.srt")
+        subtitles.write_vtt(cues, out_dir / "subtitles.vtt")
+        video.srt_path = storage.rel(out_dir / "subtitles.srt")
+        video.vtt_path = storage.rel(out_dir / "subtitles.vtt")
+
+    final = out_dir / "video.mp4"
+    if channel.background_music:
+        track = _background_track(session, video, channel)
+        if track is not None:
+            try:
+                mixed = workdir / "with_music.mp4"
+                media.mix_background_music(raw, storage.abspath(track.path), mixed,
+                                           music_db=channel.music_volume_db or -24.0)
+                shutil.move(str(mixed), str(final))
+                track.used_count += 1
+                session.commit()
+                log_event(session, video.id, f"Наложена фоновая музыка: {track.title}",
+                          stage="assemble")
+            except RuntimeError as exc:
+                log_event(session, video.id, f"Музыку наложить не удалось: {exc}",
+                          stage="assemble", level="warn")
+                shutil.copyfile(raw, final)
+        else:
+            shutil.copyfile(raw, final)
+    else:
+        shutil.copyfile(raw, final)
+
+    video.video_path = storage.rel(final)
+    video.duration_sec = storage.media_duration(final)
+    video.file_size = final.stat().st_size
+    video.status = "done"
+    video.stage = "done"
+    video.progress = 100
+    video.finished_at = utcnow()
+    session.commit()
+    shutil.rmtree(workdir, ignore_errors=True)
     log_event(session, video.id,
-              f"Черновая сборка готова: {video.duration_sec / 60:.1f} мин", stage="assemble")
+              f"Ролик собран из {len(scenes)} сцен, {video.duration_sec / 60:.1f} мин",
+              stage="done")
     return final
 
 
-def make_subtitles(session: Session, video: Video, channel: Channel, source: Path,
-                   out_dir: Path) -> Path:
-    _set_stage(session, video, "subtitles", "Распознаю речь и делаю субтитры")
-    size = media.target_size(channel.resolution, channel.aspect_ratio)
-    cues = []
-    if config.WHISPER_ENABLED:
-        try:
-            cues = subtitles.transcribe(source, language=channel.language)
-        except Exception as exc:  # noqa: BLE001 — падать из-за ASR нельзя
-            log_event(session, video.id, f"Whisper недоступен ({exc}), считаю тайминги по сценам",
-                      stage="subtitles", level="warn")
-    if not cues:
-        cues = subtitles.cues_from_scenes(
-            [(s.narration, s.audio_sec) for s in video.scenes if s.audio_path])
-
-    files = subtitles.build_all(cues, out_dir / "subtitles", size)
-    video.srt_path = storage.rel(files["srt"])
-    video.vtt_path = storage.rel(files["vtt"])
-    video.ass_path = storage.rel(files["ass"])
-    session.commit()
-
-    result = source
-    if channel.burn_subtitles:
-        burned = out_dir / "video_subbed.mp4"
-        try:
-            media.burn_subtitles(source, files["ass"], burned)
-            # Чистую версию сохраняем: из неё режутся шортсы со своими субтитрами,
-            # иначе на вертикальном кадре субтитры наложились бы дважды.
-            shutil.move(str(source), str(out_dir / CLEAN_NAME))
-            shutil.move(str(burned), str(source))
-            result = source
-        except RuntimeError as exc:
-            log_event(session, video.id, f"Не удалось вшить субтитры: {exc}",
-                      stage="subtitles", level="warn")
-    video.duration_sec = storage.media_duration(result)
-    video.file_size = Path(result).stat().st_size
-    session.commit()
-    log_event(session, video.id, f"Субтитры готовы: {len(cues)} реплик", stage="subtitles")
-    return result
+def _background_track(session: Session, video: Video, channel: Channel):
+    client = client_for(session)
+    try:
+        return music.ensure_track(session, client, channel.id, channel.topic,
+                                  channel.music_style)
+    except Exception as exc:  # noqa: BLE001
+        log_event(session, video.id, f"Фоновая музыка недоступна: {exc}",
+                  stage="assemble", level="warn")
+        return None
 
 
 def make_thumbnail(session: Session, client: KieClient, video: Video, channel: Channel,
-                   out_dir: Path, source_video: Path) -> float:
+                   out_dir: Path, source_video: Optional[Path] = None) -> float:
     _set_stage(session, video, "thumbnail", "Рисую обложку")
     prompt = prompts.thumbnail(channel.name, video.title, video.book_title, channel.thumb_style)
     credits = 0.0
@@ -470,17 +559,40 @@ def make_thumbnail(session: Session, client: KieClient, video: Video, channel: C
         raw = out_dir / f"thumb_raw{storage.guess_ext(urls[0], '.png')}"
         storage.download(urls[0], raw)
         thumb = out_dir / "thumbnail.jpg"
-        media.make_thumbnail(raw, thumb)
+        media.make_thumbnail(raw, thumb, headline=_thumb_headline(video))
         raw.unlink(missing_ok=True)
     except Exception as exc:  # noqa: BLE001
         log_event(session, video.id, f"Генератор обложек не сработал ({exc}), беру кадр из ролика",
                   stage="thumbnail", level="warn")
         thumb = out_dir / "thumbnail.jpg"
-        media.frame_grab(source_video, thumb, at=min(5.0, max(1.0, video.duration_sec / 3)))
+        fallback = source_video or _any_scene_piece(video)
+        if fallback is None:
+            raise
+        grabbed = out_dir / "thumb_frame.jpg"
+        media.frame_grab(fallback, grabbed, at=3.0)
+        media.make_thumbnail(grabbed, thumb, headline=_thumb_headline(video))
+        grabbed.unlink(missing_ok=True)
 
     video.thumb_path = storage.rel(thumb)
     session.commit()
     return credits
+
+
+def _thumb_headline(video: Video) -> str:
+    """Короткая фраза для обложки: берём подготовленную моделью либо начало заголовка."""
+    if video.thumb_text:
+        return video.thumb_text
+    words = (video.title or video.book_title or "").split()
+    return " ".join(words[:4])
+
+
+def _any_scene_piece(video: Video) -> Optional[Path]:
+    for scene in video.scenes:
+        if scene.piece_path:
+            path = storage.abspath(scene.piece_path)
+            if path.exists():
+                return path
+    return None
 
 
 def make_metadata(session: Session, client: KieClient, video: Video, channel: Channel) -> float:
@@ -498,6 +610,8 @@ def make_metadata(session: Session, client: KieClient, video: Video, channel: Ch
     video.description = str(data.get("description") or "")
     video.tags = ", ".join(data.get("tags") or [])
     video.title_variants = json.dumps(data.get("title_variants") or [], ensure_ascii=False)
+    if data.get("thumb_text"):
+        video.thumb_text = str(data["thumb_text"])[:120]
     if data.get("pinned_comment"):
         log_event(session, video.id, f"Закреплённый комментарий: {data['pinned_comment']}",
                   stage="metadata")
@@ -563,11 +677,14 @@ def make_shorts(session: Session, client: KieClient, video: Video, channel: Chan
         session.commit()
         try:
             ass = None
-            if burn_own_subs:
-                piece_cues = subtitles.shift_cues(cues, start, end)
-                if piece_cues:
-                    ass = out_dir / f"short_{idx:02d}.ass"
-                    subtitles.write_ass(piece_cues, ass, size=media.VERTICAL, vertical=True)
+            piece_cues = subtitles.shift_cues(cues, start, end) if burn_own_subs else []
+            # Заголовок держим в кадре первые секунды — он и цепляет зрителя,
+            # и не мешает читать субтитры дальше.
+            head_seconds = min(4.5, max(2.5, (end - start) * 0.18))
+            if piece_cues or short.title:
+                ass = out_dir / f"short_{idx:02d}.ass"
+                subtitles.write_ass(piece_cues, ass, size=media.VERTICAL, vertical=True,
+                                    title=short.title, title_seconds=head_seconds)
             dst = out_dir / f"short_{idx:02d}.mp4"
             media.cut_short(source, dst, start, end, ass=ass)
             short.path = storage.rel(dst)
@@ -662,32 +779,27 @@ def _build_video_locked(video_id: int) -> None:
                 credits += generate_visuals(session, client, video, channel, out_dir)
             _check_cancelled(session, video_id)
 
-            final = assemble(session, video, channel, workdir, out_dir)
+            build_scene_pieces(session, video, channel, workdir, out_dir)
             _check_cancelled(session, video_id)
 
-            final = make_subtitles(session, video, channel, final, out_dir)
-            credits += make_thumbnail(session, client, video, channel, out_dir, final)
             credits += make_metadata(session, client, video, channel)
+            credits += make_thumbnail(session, client, video, channel, out_dir)
 
             video.cost_credits = round((video.cost_credits or 0) + credits, 3)
-            video.status = "done"
-            video.stage = "done"
-            video.progress = 100
-            video.finished_at = utcnow()
+            # Длинный ролик не склеиваем автоматически: состав сцен выбирается в панели.
+            video.status = "scenes_ready"
+            video.stage = "scenes_ready"
+            video.progress = 95
             session.commit()
             log_event(session, video.id,
-                      f"Ролик готов. Потрачено кредитов: {video.cost_credits:.2f}", stage="done")
+                      f"Сцены готовы к сборке. Потрачено кредитов: {video.cost_credits:.2f}",
+                      stage="scenes_ready")
 
             if video.plan_item_id:
                 item = session.get(PlanItem, video.plan_item_id)
                 if item:
                     item.status = "done"
                     session.commit()
-
-            if channel.make_shorts:
-                from .queue import enqueue  # локальный импорт: избегаем цикла
-
-                enqueue(session, "make_shorts", video_id=video.id)
 
         except PipelineCancelled:
             video.status = "cancelled"
@@ -708,6 +820,34 @@ def _build_video_locked(video_id: int) -> None:
             raise
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
+
+
+def assemble_job(video_id: int, scene_ids: Optional[list[int]] = None) -> None:
+    """Фоновая задача: собрать длинный ролик из выбранных сцен."""
+    lock = _video_lock(video_id)
+    if not lock.acquire(blocking=False):
+        raise AlreadyBuilding(f"ролик {video_id} уже собирается")
+    try:
+        with session_scope() as session:
+            video = session.get(Video, video_id)
+            if video is None:
+                raise RuntimeError(f"ролик {video_id} не найден")
+            channel = session.get(Channel, video.channel_id)
+            try:
+                assemble_selected(session, video, channel, scene_ids)
+            except Exception as exc:  # noqa: BLE001
+                video.status = "failed"
+                video.error = str(exc)[:2000]
+                session.commit()
+                log_event(session, video.id, f"Сборка не удалась: {exc}",
+                          stage="assemble", level="error")
+                raise
+            if channel.make_shorts and not video.shorts:
+                from .queue import enqueue
+
+                enqueue(session, "make_shorts", video_id=video.id)
+    finally:
+        lock.release()
 
 
 def build_shorts_job(video_id: int) -> None:

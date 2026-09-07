@@ -298,6 +298,14 @@
           <label>Шортсов<input name="shorts_count" type="number" min="0" max="10" value="{{ channel.shorts_count }}"></label>
         </div>
         <label><input type="checkbox" name="burn_subtitles" style="width:auto" {% if channel.burn_subtitles %}checked{% endif %}> Вшивать субтитры в видео</label>
+        <label><input type="checkbox" name="background_music" style="width:auto" {% if channel.background_music %}checked{% endif %}> Фоновая музыка (Suno через KIE)</label>
+        <div class="grid cols-2">
+          <label>Стиль музыки (английский; пусто — подберётся по тематике)
+            <input name="music_style" value="{{ channel.music_style }}"
+                   placeholder="cinematic ambient, deep strings, no vocals"></label>
+          <label>Громкость музыки, дБ
+            <input name="music_volume_db" type="number" step="1" min="-40" max="-6" value="{{ channel.music_volume_db }}"></label>
+        </div>
         <label><input type="checkbox" name="make_shorts" style="width:auto" {% if channel.make_shorts %}checked{% endif %}> Автоматически нарезать шортсы</label>
       </fieldset>
     </div>

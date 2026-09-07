@@ -63,7 +63,11 @@
         <span>Кредитов: {{ '%.2f'|format(video.cost_credits) }}</span>
       </div>
     {% else %}
-      <div class="thumb-placeholder">Ролик ещё не собран</div>
+      <div class="thumb-placeholder">
+        {% if video.status == 'scenes_ready' %}Сцены готовы — отметьте нужные ниже и соберите ролик
+        {% else %}Ролик ещё не собран{% endif %}
+      </div>
+      {% if video.thumb_path %}<img src="/media/{{ video.thumb_path }}" alt="обложка" class="mt">{% endif %}
     {% endif %}
   </div>
 
@@ -92,6 +96,49 @@
     {% endif %}
   </div>
 </div>
+
+{% set pieces = video.scenes | selectattr('piece_path') | list %}
+{% if pieces %}
+<div class="card">
+  <div class="row between mb">
+    <div>
+      <h2 style="margin:0">Сцены ({{ pieces|length }})</h2>
+      <div class="small muted">Отметьте сцены, из которых собрать длинный ролик.
+        Порядок сохраняется по номерам сцен. Каждая сцена — законченный кусок
+        с озвучкой и субтитрами, её можно скачать отдельно.</div>
+    </div>
+    <form method="post" action="/videos/{{ video.id }}/action" class="inline-form">
+      <input type="hidden" name="action" value="assemble_all">
+      <button class="btn btn-sm">Собрать все сцены</button>
+    </form>
+  </div>
+
+  <form method="post" action="/videos/{{ video.id }}/assemble">
+    <div class="video-grid">
+      {% for sc in pieces %}
+      <div class="video-card">
+        <video controls preload="none" src="/media/{{ sc.piece_path }}"
+               {% if channel.aspect_ratio == '9:16' %}style="aspect-ratio:9/16;object-fit:cover"{% endif %}></video>
+        <div class="body">
+          <label class="row" style="margin-bottom:6px">
+            <input type="checkbox" name="scene_ids" value="{{ sc.id }}" style="width:auto"
+                   {% if sc.include %}checked{% endif %}>
+            <b>{{ sc.idx + 1 }}. {{ sc.heading }}</b>
+          </label>
+          <div class="small muted">{{ '%.0f'|format(sc.piece_sec or sc.audio_sec) }} с</div>
+          <div class="small mt">{{ sc.narration[:180] }}{% if sc.narration|length > 180 %}…{% endif %}</div>
+          <a class="btn btn-sm mt" href="/media/{{ sc.piece_path }}?download=1">⬇ Скачать сцену</a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="row mt">
+      <button class="btn btn-primary">Создать длинный ролик из отмеченных сцен</button>
+      <span class="small muted">Пересборка заменит текущий готовый ролик.</span>
+    </div>
+  </form>
+</div>
+{% endif %}
 
 {% if video.shorts %}
 <div class="card">
