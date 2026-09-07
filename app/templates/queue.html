@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Очередь — Контент-завод{% endblock %}
+{% block content %}
+<div class="row between mb">
+  <h1>Очередь и журнал</h1>
+  <form method="post" action="/queue/run-schedule" class="inline-form">
+    <button class="btn btn-primary">Запустить расписание сейчас</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Задачи</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>#</th><th>Тип</th><th>Ролик</th><th>Статус</th><th>Попыток</th><th>Создана</th><th>Завершена</th><th>Ошибка</th></tr>
+    {% for j in jobs %}
+    <tr>
+      <td class="muted">{{ j.id }}</td>
+      <td class="mono small">{{ j.kind }}</td>
+      <td>{% if j.video_id %}<a href="/videos/{{ j.video_id }}">#{{ j.video_id }}</a>{% else %}—{% endif %}</td>
+      <td><span class="badge {% if j.status == 'running' %}run{% elif j.status == 'failed' %}err{% elif j.status == 'done' %}ok{% endif %}">{{ labels.get(j.status, j.status) }}</span></td>
+      <td class="small">{{ j.attempts }}</td>
+      <td class="small muted nowrap">{{ j.created_at.strftime('%d.%m %H:%M:%S') }}</td>
+      <td class="small muted nowrap">{% if j.finished_at %}{{ j.finished_at.strftime('%d.%m %H:%M:%S') }}{% endif %}</td>
+      <td class="small" style="color:var(--err);max-width:340px">{{ j.error[:300] }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="muted">Очередь пуста</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Журнал событий</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Время</th><th>Ролик</th><th>Этап</th><th>Сообщение</th></tr>
+    {% for e in events %}
+    <tr>
+      <td class="small muted nowrap">{{ e.created_at.strftime('%d.%m %H:%M:%S') }}</td>
+      <td>{% if e.video_id %}<a href="/videos/{{ e.video_id }}">#{{ e.video_id }}</a>{% else %}—{% endif %}</td>
+      <td><span class="badge {% if e.level == 'error' %}err{% elif e.level == 'warn' %}warn{% endif %}">{{ e.stage or e.level }}</span></td>
+      <td class="small">{{ e.message }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">Событий нет</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

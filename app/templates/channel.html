@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}{{ channel.name }} — Контент-завод{% endblock %}
+{% block content %}
+<div class="row between mb">
+  <div>
+    <h1>{{ channel.name }}</h1>
+    <div class="muted small">{{ channel.topic }}</div>
+  </div>
+  <form method="post" action="/channels/{{ channel.id }}/run-now" class="row">
+    <input type="number" name="count" value="1" min="1" max="5" style="width:70px">
+    <button class="btn btn-primary">Собрать ролик(и) сейчас</button>
+  </form>
+</div>
+
+<div class="tabs">
+  <a href="?tab=plan" class="{% if tab == 'plan' %}active{% endif %}">Контент-план ({{ plan|length }})</a>
+  <a href="?tab=videos" class="{% if tab == 'videos' %}active{% endif %}">Ролики ({{ videos|length }})</a>
+  <a href="?tab=schedule" class="{% if tab == 'schedule' %}active{% endif %}">Расписание</a>
+  <a href="?tab=settings" class="{% if tab == 'settings' %}active{% endif %}">Настройки канала</a>
+</div>
+
+{% if tab == 'plan' %}
+<div class="grid cols-4 mb">
+  <div class="stat"><div class="label">Всего тем</div><div class="value">{{ plan|length }}</div></div>
+  <div class="stat"><div class="label">Осталось</div><div class="value">{{ plan_left }}</div></div>
+  <div class="stat"><div class="label">Снято</div><div class="value" style="color:var(--ok)">{{ plan_done }}</div></div>
+  <div class="stat"><div class="label">Хватит на</div><div class="value">{{ plan_left }} дн.</div></div>
+</div>
+
+<div class="card tight">
+  <div class="row between">
+    <h2 style="margin:0">Добавить тему</h2>
+    <form method="post" action="/channels/{{ channel.id }}/plan/extend" class="row inline-form">
+      <input type="number" name="count" value="30" min="5" max="60" style="width:80px">
+      <button class="btn btn-sm">Дописать план через AI</button>
+    </form>
+  </div>
+  <form method="post" action="/channels/{{ channel.id }}/plan/add" class="grid cols-3 mt">
+    <label>Книга<input name="book_title" required placeholder="Атомные привычки"></label>
+    <label>Автор<input name="book_author" placeholder="Джеймс Клир"></label>
+    <label>Дата<input name="scheduled_date" type="date"></label>
+    <label style="grid-column:1/-1">Угол подачи<input name="angle" placeholder="Система маленьких шагов вместо мотивации"></label>
+    <div><button class="btn btn-primary">Добавить в план</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <tr><th>#</th><th>Дата</th><th>Книга</th><th>Угол подачи</th><th>Статус</th><th></th></tr>
+    {% for item in plan %}
+    <tr>
+      <td class="muted">{{ item.position + 1 }}</td>
+      <td class="nowrap small">{{ item.scheduled_date or '—' }}</td>
+      <td><b>{{ item.book_title }}</b><div class="small muted">{{ item.book_author }}</div></td>
+      <td class="small muted">{{ item.angle }}</td>
+      <td>
+        {% if item.status == 'done' %}<span class="badge ok">снято</span>
+        {% elif item.status == 'failed' %}<span class="badge err">ошибка</span>
+        {% elif item.status == 'queued' %}<span class="badge run">в очереди</span>
+        {% else %}<span class="badge">в плане</span>{% endif %}
+      </td>
+      <td class="right nowrap">
+        <form method="post" action="/plan/{{ item.id }}/generate" class="inline-form">
+          <button class="btn btn-sm">Снять ролик</button>
+        </form>
+        <form method="post" action="/plan/{{ item.id }}/delete" class="inline-form"
+              data-confirm="Удалить тему «{{ item.book_title }}» из плана?">
+          <button class="btn btn-sm btn-danger">×</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+{% elif tab == 'videos' %}
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <tr><th>#</th><th>Название</th><th>Статус</th><th>Прогресс</th><th>Длит.</th><th>Размер</th><th>Кредиты</th><th>Создан</th><th></th></tr>
+    {% for v in videos %}
+    <tr>
+      <td class="muted">{{ v.id }}</td>
+      <td><a href="/videos/{{ v.id }}">{{ v.title or v.book_title }}</a>
+        <div class="small muted">{{ v.book_title }} — {{ v.book_author }}</div></td>
+      <td>
+        {% if v.status == 'done' %}<span class="badge ok">готов</span>
+        {% elif v.status == 'failed' %}<span class="badge err">ошибка</span>
+        {% elif v.status == 'cancelled' %}<span class="badge">отменён</span>
+        {% else %}<span class="badge run" data-stage-for="{{ v.id }}">{{ labels.get(v.stage, v.stage or v.status) }}</span>{% endif %}
+      </td>
+      <td style="min-width:110px"><div class="progress" data-progress-for="{{ v.id }}"><span style="width:{{ v.progress }}%"></span></div></td>
+      <td class="small nowrap">{{ '%.1f'|format(v.duration_sec / 60) }} мин</td>
+      <td class="small nowrap">{{ human_size(v.file_size) }}</td>
+      <td class="small">{{ '%.1f'|format(v.cost_credits) }}</td>
+      <td class="small muted nowrap">{{ v.created_at.strftime('%d.%m %H:%M') }}</td>
+      <td class="right">{% if v.video_path %}<a class="btn btn-sm" href="/media/{{ v.video_path }}?download=1">Скачать</a>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="muted">Роликов пока нет</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+{% elif tab == 'schedule' %}
+<div class="card">
+  <h2>Сколько роликов генерировать по дням недели</h2>
+  <p class="muted small">Планировщик проверяет расписание каждые 15 минут и берёт следующие темы из контент-плана.
+     Время указывается в UTC.</p>
+  <form method="post" action="/channels/{{ channel.id }}/schedule">
+    <div class="table-wrap">
+    <table>
+      <tr><th>День</th><th>Включён</th><th>Роликов</th><th>Время запуска (UTC)</th></tr>
+      {% for wd in range(7) %}
+      {% set rule = rules.get(wd) %}
+      <tr>
+        <td><b>{{ weekdays[wd] }}</b></td>
+        <td><input type="checkbox" name="enabled_{{ wd }}" style="width:auto"
+                   {% if not rule or rule.enabled %}checked{% endif %}></td>
+        <td><input type="number" name="count_{{ wd }}" min="0" max="10" style="width:80px"
+                   value="{{ rule.count if rule else 1 }}"></td>
+        <td><input type="time" name="run_at_{{ wd }}" style="width:130px"
+                   value="{{ rule.run_at if rule else '04:00' }}"></td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+    <label class="mt"><input type="checkbox" name="redistribute" style="width:auto"> Перераспределить даты контент-плана под это расписание</label>
+    <button class="btn btn-primary">Сохранить расписание</button>
+  </form>
+</div>
+
+{% else %}
+<form method="post" action="/channels/{{ channel.id }}/settings">
+  <div class="grid cols-2">
+    <div class="card">
+      <fieldset><legend>Канал</legend>
+        <label>Название<input name="name" value="{{ channel.name }}" required></label>
+        <label>Тематика<textarea name="topic">{{ channel.topic }}</textarea></label>
+        <label>Описание<textarea name="description">{{ channel.description }}</textarea></label>
+        <label><input type="checkbox" name="is_active" style="width:auto" {% if channel.is_active %}checked{% endif %}> Канал активен</label>
+      </fieldset>
+
+      <fieldset><legend>Модели генерации (KIE)</legend>
+        <label>Текстовая модель (сценарии, план, метаданные)
+          <select name="chat_model">
+            {% for m in models if m.kind == 'chat' %}
+              <option value="{{ m.path }}" {% if m.path == channel.chat_model %}selected{% endif %}>{{ m.path }}</option>
+            {% endfor %}
+            <option value="{{ channel.chat_model }}" selected>{{ channel.chat_model }}</option>
+          </select></label>
+        <label>Модель видео
+          <select name="video_model">
+            {% for m in models if m.kind == 'video' %}
+              <option value="{{ m.path }}" {% if m.path == channel.video_model %}selected{% endif %}>{{ m.path }}</option>
+            {% endfor %}
+            <option value="{{ channel.video_model }}" selected>{{ channel.video_model }}</option>
+          </select></label>
+        <label>Модель обложек
+          <select name="image_model">
+            {% for m in models if m.kind == 'image' %}
+              <option value="{{ m.path }}" {% if m.path == channel.image_model %}selected{% endif %}>{{ m.path }}</option>
+            {% endfor %}
+            <option value="{{ channel.image_model }}" selected>{{ channel.image_model }}</option>
+          </select></label>
+        <label>Модель озвучки
+          <select name="tts_model">
+            {% for m in models if m.kind == 'tts' %}
+              <option value="{{ m.path }}" {% if m.path == channel.tts_model %}selected{% endif %}>{{ m.path }}</option>
+            {% endfor %}
+            <option value="{{ channel.tts_model }}" selected>{{ channel.tts_model }}</option>
+          </select></label>
+      </fieldset>
+    </div>
+
+    <div class="card">
+      <fieldset><legend>Голос</legend>
+        <label>Голос диктора
+          <select name="voice_id" data-voice-preview>
+            {% for v in voices %}
+              <option value="{{ v.voice_id }}" data-preview="{{ v.preview_url }}"
+                      {% if v.voice_id == channel.voice_id %}selected{% endif %}>
+                [{{ v.provider }}] {{ v.name }}{% if v.description %} — {{ v.description }}{% endif %}
+              </option>
+            {% endfor %}
+          </select></label>
+        <audio id="voice-preview" controls style="width:100%"></audio>
+        <label class="mt">Подпись голоса<input name="voice_name" value="{{ channel.voice_name }}"></label>
+        <div class="grid cols-3">
+          <label>Стабильность<input name="voice_stability" type="number" step="0.05" min="0" max="1" value="{{ channel.voice_stability }}"></label>
+          <label>Похожесть<input name="voice_similarity" type="number" step="0.05" min="0" max="1" value="{{ channel.voice_similarity }}"></label>
+          <label>Скорость<input name="voice_speed" type="number" step="0.05" min="0.7" max="1.2" value="{{ channel.voice_speed }}"></label>
+        </div>
+      </fieldset>
+
+      <fieldset><legend>Формат ролика</legend>
+        <div class="grid cols-3">
+          <label>Соотношение
+            <select name="aspect_ratio">
+              {% for a in ['16:9','9:16','1:1'] %}<option {% if channel.aspect_ratio == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
+            </select></label>
+          <label>Разрешение
+            <select name="resolution">
+              {% for r in ['480p','720p','1080p'] %}<option {% if channel.resolution == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+            </select></label>
+          <label>Клип, сек<input name="clip_duration" type="number" min="4" max="15" value="{{ channel.clip_duration }}"></label>
+          <label>Длительность, мин<input name="target_minutes" type="number" step="0.5" min="1" max="30" value="{{ channel.target_minutes }}"></label>
+          <label>Сцен<input name="scene_count" type="number" min="3" max="30" value="{{ channel.scene_count }}"></label>
+          <label>Шортсов<input name="shorts_count" type="number" min="0" max="10" value="{{ channel.shorts_count }}"></label>
+        </div>
+        <label><input type="checkbox" name="burn_subtitles" style="width:auto" {% if channel.burn_subtitles %}checked{% endif %}> Вшивать субтитры в видео</label>
+        <label><input type="checkbox" name="make_shorts" style="width:auto" {% if channel.make_shorts %}checked{% endif %}> Автоматически нарезать шортсы</label>
+      </fieldset>
+    </div>
+  </div>
+
+  <div class="card">
+    <fieldset><legend>Стиль</legend>
+      <label>Стиль сценария<textarea name="script_style">{{ channel.script_style }}</textarea></label>
+      <label>Визуальный стиль (английский, идёт в видеогенератор)<textarea name="visual_style">{{ channel.visual_style }}</textarea></label>
+      <label>Стиль обложки (английский)<textarea name="thumb_style">{{ channel.thumb_style }}</textarea></label>
+    </fieldset>
+    <button class="btn btn-primary">Сохранить настройки канала</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

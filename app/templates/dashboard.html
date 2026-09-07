@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Обзор — Контент-завод{% endblock %}
+{% block content %}
+<div class="row between mb">
+  <h1>Обзор производства</h1>
+  <form method="post" action="/queue/run-schedule" class="inline-form">
+    <button class="btn btn-primary" type="submit">Запустить расписание сейчас</button>
+  </form>
+</div>
+
+<div class="grid cols-4 mb">
+  <div class="stat"><div class="label">Всего роликов</div><div class="value">{{ stats.total }}</div></div>
+  <div class="stat"><div class="label">Готово</div><div class="value" style="color:var(--ok)">{{ stats.done }}</div></div>
+  <div class="stat"><div class="label">В работе</div><div class="value" style="color:var(--accent)">{{ stats.active }}</div></div>
+  <div class="stat"><div class="label">Ошибок</div><div class="value" style="color:var(--err)">{{ stats.failed }}</div></div>
+  <div class="stat"><div class="label">Шортсов</div><div class="value">{{ stats.shorts }}</div></div>
+  <div class="stat"><div class="label">Потрачено кредитов</div><div class="value">{{ stats.spent }}</div></div>
+  <div class="stat"><div class="label">Занято хранилище</div><div class="value">{{ human_size(disk.media) }}</div>
+    <div class="small muted">свободно {{ human_size(disk.free) }}</div></div>
+  <div class="stat"><div class="label">Прайс KIE обновлён</div>
+    <div class="value small">{{ settings.prices_updated_at[:16] or '—' }}</div></div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Каналы</h2>
+    <div class="table-wrap">
+    <table>
+      <tr><th>Канал</th><th>Модель видео</th><th>Голос</th><th>Статус</th><th></th></tr>
+      {% for ch in channels %}
+      <tr>
+        <td><a href="/channels/{{ ch.id }}"><b>{{ ch.name }}</b></a><div class="small muted">{{ ch.slug }}</div></td>
+        <td class="small mono">{{ ch.video_model }}</td>
+        <td class="small">{{ ch.voice_name or ch.voice_id }}</td>
+        <td>{% if ch.is_active %}<span class="badge ok">активен</span>{% else %}<span class="badge">выключен</span>{% endif %}</td>
+        <td class="right">
+          <form method="post" action="/channels/{{ ch.id }}/run-now" class="inline-form">
+            <input type="hidden" name="count" value="1">
+            <button class="btn btn-sm">Собрать ролик</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Ближайшие темы по плану</h2>
+    <div class="table-wrap">
+    <table>
+      <tr><th>Дата</th><th>Книга</th><th>Канал</th></tr>
+      {% for item in upcoming %}
+      <tr>
+        <td class="nowrap">{{ item.scheduled_date }}</td>
+        <td>{{ item.book_title }}<div class="small muted">{{ item.book_author }}</div></td>
+        <td class="small">{{ item.channel.name }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">План пуст</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Последние ролики</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>#</th><th>Название</th><th>Канал</th><th>Статус</th><th>Прогресс</th><th>Длит.</th><th>Кредиты</th><th></th></tr>
+    {% for v in recent %}
+    <tr>
+      <td class="muted">{{ v.id }}</td>
+      <td><a href="/videos/{{ v.id }}">{{ v.title or v.book_title }}</a>
+          <div class="small muted">{{ v.book_title }}</div></td>
+      <td class="small">{{ v.channel.name }}</td>
+      <td>
+        {% if v.status == 'done' %}<span class="badge ok">готов</span>
+        {% elif v.status == 'failed' %}<span class="badge err">ошибка</span>
+        {% elif v.status == 'cancelled' %}<span class="badge">отменён</span>
+        {% else %}<span class="badge run" data-stage-for="{{ v.id }}">{{ labels.get(v.stage, v.stage or v.status) }}</span>{% endif %}
+      </td>
+      <td style="min-width:120px">
+        <div class="progress" data-progress-for="{{ v.id }}"><span style="width:{{ v.progress }}%"></span></div>
+      </td>
+      <td class="nowrap small">{{ '%.1f'|format(v.duration_sec / 60) }} мин</td>
+      <td class="small">{{ '%.1f'|format(v.cost_credits) }}</td>
+      <td class="right">{% if v.video_path %}<a class="btn btn-sm" href="/media/{{ v.video_path }}?download=1">Скачать</a>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="muted">Роликов пока нет</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+{% if jobs %}
+<div class="card">
+  <h2>Очередь задач ({{ jobs|length }})</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>#</th><th>Тип</th><th>Ролик</th><th>Статус</th><th>Создана</th></tr>
+    {% for j in jobs %}
+    <tr><td class="muted">{{ j.id }}</td><td class="mono small">{{ j.kind }}</td>
+      <td>{% if j.video_id %}<a href="/videos/{{ j.video_id }}">#{{ j.video_id }}</a>{% else %}—{% endif %}</td>
+      <td><span class="badge {% if j.status == 'running' %}run{% endif %}">{{ labels.get(j.status, j.status) }}</span></td>
+      <td class="small muted">{{ j.created_at.strftime('%d.%m %H:%M') }}</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

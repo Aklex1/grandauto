@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}{{ video.title or video.book_title }} — Контент-завод{% endblock %}
+{% block content %}
+<div class="row between mb">
+  <div>
+    <h1>{{ video.title or video.book_title }}</h1>
+    <div class="muted small">
+      <a href="/channels/{{ channel.id }}">{{ channel.name }}</a> ·
+      «{{ video.book_title }}» — {{ video.book_author }} ·
+      создан {{ video.created_at.strftime('%d.%m.%Y %H:%M') }}
+    </div>
+  </div>
+  <div class="row">
+    {% if video.status in ['done','failed','cancelled'] %}
+      <form method="post" action="/videos/{{ video.id }}/action" class="inline-form">
+        <input type="hidden" name="action" value="retry"><button class="btn btn-sm">Продолжить сборку</button></form>
+      <form method="post" action="/videos/{{ video.id }}/action" class="inline-form"
+            data-confirm="Пересобрать ролик с нуля? Сценарий и все файлы будут сгенерированы заново.">
+        <input type="hidden" name="action" value="rebuild_full"><button class="btn btn-sm">Пересобрать с нуля</button></form>
+      <form method="post" action="/videos/{{ video.id }}/action" class="inline-form">
+        <input type="hidden" name="action" value="shorts"><button class="btn btn-sm">Нарезать шортсы</button></form>
+    {% else %}
+      <form method="post" action="/videos/{{ video.id }}/action" class="inline-form">
+        <input type="hidden" name="action" value="cancel"><button class="btn btn-sm btn-danger">Отменить</button></form>
+    {% endif %}
+    <form method="post" action="/videos/{{ video.id }}/action" class="inline-form"
+          data-confirm="Удалить ролик и все его файлы безвозвратно?">
+      <input type="hidden" name="action" value="delete"><button class="btn btn-sm btn-danger">Удалить</button></form>
+  </div>
+</div>
+
+{% if video.status == 'failed' %}
+<div class="alert alert-error"><b>Сборка остановилась.</b><pre style="margin-top:8px">{{ video.error }}</pre></div>
+{% elif video.status not in ['done','cancelled'] %}
+<div class="card tight">
+  <div class="row between mb">
+    <b>Этап: <span data-stage-for="{{ video.id }}">{{ labels.get(video.stage, video.stage or video.status) }}</span></b>
+    <span class="muted small">страница обновляется автоматически</span>
+  </div>
+  <div class="progress" data-progress-for="{{ video.id }}"><span style="width:{{ video.progress }}%"></span></div>
+</div>
+{% endif %}
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Просмотр</h2>
+    {% if video.video_path %}
+      <video controls preload="metadata" {% if video.thumb_path %}poster="/media/{{ video.thumb_path }}"{% endif %}>
+        <source src="/media/{{ video.video_path }}" type="video/mp4">
+        {% if video.vtt_path %}<track kind="subtitles" srclang="ru" label="Русские" src="/media/{{ video.vtt_path }}" default>{% endif %}
+      </video>
+      <div class="row mt">
+        <a class="btn btn-primary" href="/media/{{ video.video_path }}?download=1">⬇ Видео (MP4)</a>
+        {% if video.thumb_path %}<a class="btn" href="/media/{{ video.thumb_path }}?download=1">⬇ Обложка</a>{% endif %}
+        {% if video.srt_path %}<a class="btn" href="/media/{{ video.srt_path }}?download=1">⬇ Субтитры SRT</a>{% endif %}
+        {% if video.vtt_path %}<a class="btn" href="/media/{{ video.vtt_path }}?download=1">⬇ VTT</a>{% endif %}
+      </div>
+      <div class="row mt small muted">
+        <span>Длительность: {{ '%.1f'|format(video.duration_sec / 60) }} мин</span>
+        <span>Размер: {{ human_size(video.file_size) }}</span>
+        <span>Кредитов: {{ '%.2f'|format(video.cost_credits) }}</span>
+      </div>
+    {% else %}
+      <div class="thumb-placeholder">Ролик ещё не собран</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Метаданные для YouTube</h2>
+    <form method="post" action="/videos/{{ video.id }}/meta">
+      <label>Заголовок<input name="title" value="{{ video.title }}"></label>
+      {% if variants %}
+      <div class="small muted mb">Варианты заголовка:
+        <ul>{% for t in variants %}<li>{{ t }}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
+      <label>Описание<textarea name="description" style="min-height:200px">{{ video.description }}</textarea></label>
+      <label>Теги<textarea name="tags" style="min-height:70px">{{ video.tags }}</textarea></label>
+      <button class="btn btn-primary">Сохранить</button>
+    </form>
+  </div>
+</div>
+
+{% if video.shorts %}
+<div class="card">
+  <h2>Шортсы ({{ video.shorts|length }})</h2>
+  <div class="video-grid">
+    {% for s in video.shorts %}
+    <div class="video-card">
+      {% if s.path %}
+        <video controls preload="metadata" style="aspect-ratio:9/16;object-fit:cover"><source src="/media/{{ s.path }}" type="video/mp4"></video>
+      {% else %}
+        <div class="thumb-placeholder">{{ labels.get(s.status, s.status) }}</div>
+      {% endif %}
+      <div class="body">
+        <div class="title">{{ s.title }}</div>
+        <div class="small muted">{{ '%.0f'|format(s.start_sec) }}с — {{ '%.0f'|format(s.end_sec) }}с</div>
+        {% if s.caption %}<div class="small mt">{{ s.caption }}</div>{% endif %}
+        {% if s.hashtags %}<div class="small muted">#{{ s.hashtags.replace(', ', ' #') }}</div>{% endif %}
+        {% if s.error %}<div class="small" style="color:var(--err)">{{ s.error }}</div>{% endif %}
+        {% if s.path %}<a class="btn btn-sm mt" href="/media/{{ s.path }}?download=1">⬇ Скачать</a>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Сцены ({{ video.scenes|length }})</h2>
+    <div class="scene-list">
+      {% for s in video.scenes %}
+      <div class="scene">
+        <div class="head">
+          <b>{{ s.idx + 1 }}. {{ s.heading }}</b>
+          <span class="badge {% if s.status == 'ready' %}ok{% elif s.status == 'clip_failed' %}err{% endif %}">{{ labels.get(s.status, s.status) }}</span>
+        </div>
+        <div class="small">{{ s.narration }}</div>
+        <div class="small muted mt">🎬 {{ s.visual_prompt }}</div>
+        <div class="row mt small">
+          {% if s.audio_path %}<a href="/media/{{ s.audio_path }}">🔊 озвучка {{ '%.1f'|format(s.audio_sec) }}с</a>{% endif %}
+          {% if s.clip_path %}<a href="/media/{{ s.clip_path }}">🎞 клип {{ '%.1f'|format(s.clip_sec) }}с</a>{% endif %}
+          {% if s.error %}<span style="color:var(--err)">{{ s.error }}</span>{% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="muted">Сцены появятся после генерации сценария</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Журнал сборки</h2>
+    <div class="table-wrap">
+    <table>
+      {% for e in events %}
+      <tr>
+        <td class="small muted nowrap">{{ e.created_at.strftime('%H:%M:%S') }}</td>
+        <td class="small"><span class="badge {% if e.level == 'error' %}err{% elif e.level == 'warn' %}warn{% endif %}">{{ e.stage or e.level }}</span></td>
+        <td class="small">{{ e.message }}</td>
+      </tr>
+      {% else %}
+      <tr><td class="muted">Записей нет</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+</div>
+
+{% if video.script %}
+<div class="card">
+  <h2>Сценарий</h2>
+  <pre>{{ video.script }}</pre>
+</div>
+{% endif %}
+{% endblock %}

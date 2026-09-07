@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Настройки — Контент-завод{% endblock %}
+{% block content %}
+<h1 class="mb">Настройки системы</h1>
+
+<div class="grid cols-4 mb">
+  <div class="stat"><div class="label">Баланс KIE</div><div class="value">{{ settings.credits_balance or '—' }}</div>
+    <div class="small muted">{{ settings.credits_checked_at[:16] }}</div></div>
+  <div class="stat"><div class="label">Хранилище занято</div><div class="value">{{ human_size(disk.media) }}</div></div>
+  <div class="stat"><div class="label">Свободно на диске</div><div class="value">{{ human_size(disk.free) }}</div></div>
+  <div class="stat"><div class="label">Моделей в каталоге</div><div class="value">{{ models|length }}</div>
+    <div class="small muted">{{ settings.models_updated_at[:16] }}</div></div>
+</div>
+
+<form method="post" action="/settings">
+<div class="grid cols-2">
+  <div class="card">
+    <fieldset><legend>Доступ к KIE</legend>
+      <label>API-ключ KIE (оставьте пустым, чтобы не менять)
+        <input name="kie_api_key" type="password" placeholder="••••••••••••••••" autocomplete="off"></label>
+      <label>Курс: долларов за кредит
+        <input name="usd_per_credit" type="number" step="0.0001" value="{{ settings.usd_per_credit }}"></label>
+    </fieldset>
+
+    <fieldset><legend>Модели по умолчанию для новых каналов</legend>
+      <label>Текстовая<input name="default_chat_model" value="{{ settings.default_chat_model }}"></label>
+      <label>Видео<input name="default_video_model" value="{{ settings.default_video_model }}"></label>
+      <label>Обложки<input name="default_image_model" value="{{ settings.default_image_model }}"></label>
+      <label>Озвучка<input name="default_tts_model" value="{{ settings.default_tts_model }}"></label>
+    </fieldset>
+  </div>
+
+  <div class="card">
+    <fieldset><legend>Озвучка: запасной провайдер</legend>
+      <p class="small muted">Если основной движок озвучки вернёт ошибку, сцена будет озвучена запасным —
+        конвейер не остановится.</p>
+      <label><input type="checkbox" name="tts_allow_fallback" style="width:auto"
+        {% if settings.tts_allow_fallback == '1' %}checked{% endif %}> Включить автоматический фолбэк</label>
+      <label>Запасная модель<input name="tts_fallback_model" value="{{ settings.tts_fallback_model }}"></label>
+      <label>Запасной голос<input name="tts_fallback_voice" value="{{ settings.tts_fallback_voice }}"></label>
+    </fieldset>
+
+    <fieldset><legend>Конвейер</legend>
+      <label><input type="checkbox" name="auto_run_schedule" style="width:auto"
+        {% if settings.auto_run_schedule == '1' %}checked{% endif %}> Автозапуск по расписанию каналов</label>
+      <label>Параллельных запросов на сцену
+        <input name="scene_concurrency" type="number" min="1" max="8" value="{{ settings.scene_concurrency }}"></label>
+    </fieldset>
+
+    <fieldset><legend>Доступ в панель</legend>
+      <label>Новый пароль администратора (оставьте пустым, чтобы не менять)
+        <input name="new_password" type="password" autocomplete="new-password"></label>
+    </fieldset>
+  </div>
+</div>
+<div class="card"><button class="btn btn-primary">Сохранить настройки</button></div>
+</form>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Каталог голосов ({{ voices|length }})</h2>
+    <div class="table-wrap" style="max-height:460px;overflow:auto">
+    <table>
+      <tr><th>Провайдер</th><th>Голос</th><th>Описание</th><th></th></tr>
+      {% for v in voices %}
+      <tr>
+        <td><span class="badge">{{ v.provider }}</span></td>
+        <td><b>{{ v.name }}</b><div class="small muted mono">{{ v.voice_id }}</div></td>
+        <td class="small muted">{{ v.description }}</td>
+        <td>{% if v.preview_url %}<a class="btn btn-sm" href="{{ v.preview_url }}" target="_blank" rel="noopener">▶</a>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Модели KIE ({{ models|length }})</h2>
+    <div class="table-wrap" style="max-height:460px;overflow:auto">
+    <table>
+      <tr><th>Тип</th><th>Путь модели</th></tr>
+      {% for m in models %}
+      <tr><td><span class="badge">{{ m.kind }}</span></td><td class="mono small">{{ m.path }}</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
