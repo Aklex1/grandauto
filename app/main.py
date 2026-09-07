@@ -595,6 +595,7 @@ def queue_run_schedule(session: Session = Depends(get_session), _user: str = Dep
 
 # --------------------------------------------------------------------------- медиа и API
 
+@app.head("/media/{path:path}")
 @app.get("/media/{path:path}")
 def media(path: str, request: Request, download: int = 0, _user: str = Depends(require_user)):
     target = webutil.safe_media_path(config.MEDIA_DIR, path)
