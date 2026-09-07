@@ -12,15 +12,16 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.datastructures import UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import (bootstrap, config, estimate, planner, prompts, queue, scheduler, storage,
-               sync, webutil)
+from . import (bootstrap, config, estimate, footage, planner, prompts, queue, scheduler,
+               storage, sync, webutil)
 from . import settings_store as st
 from .db import get_session, session_scope
 from .kie import KieClient
-from .models import (Channel, Event, Job, ModelPath, PlanItem, PriceItem,
+from .models import (Channel, Event, Footage, Job, ModelPath, PlanItem, PriceItem,
                      ScheduleRule, Short, Video, Voice, utcnow)
 from .security import make_session, read_session, verify_password
 
@@ -207,12 +208,17 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
     ).scalars().all()}
     voices = session.execute(select(Voice).order_by(Voice.provider, Voice.name)).scalars().all()
     models = session.execute(select(ModelPath).order_by(ModelPath.path)).scalars().all()
+    clips = session.execute(
+        select(Footage).where((Footage.channel_id == channel.id) | (Footage.channel_id.is_(None)))
+        .order_by(Footage.id.desc())).scalars().all()
+    lib_bytes, lib_sec = footage.library_size(clips)
 
     return templates.TemplateResponse("channel.html", base_context(
         request, session, channel=channel, plan=plan, videos=videos, rules=rules,
         voices=voices, models=models, tab=tab,
         plan_done=sum(1 for p in plan if p.status == "done"),
         plan_left=sum(1 for p in plan if p.status == "planned"),
+        clips=clips, lib_bytes=lib_bytes, lib_sec=lib_sec,
         **estimate.channel_estimate_context(session, channel)))
 
 
@@ -227,6 +233,7 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
                      voice_speed: float = Form(1.0), aspect_ratio: str = Form("16:9"),
                      resolution: str = Form("720p"), clip_duration: int = Form(5),
                      clip_coverage_sec: int = Form(20),
+                     visual_source: str = Form("generate"), library_share: int = Form(50),
                      target_minutes: float = Form(8.0), scene_count: int = Form(8),
                      visual_style: str = Form(""), script_style: str = Form(""),
                      thumb_style: str = Form(""), burn_subtitles: str = Form(""),
@@ -249,6 +256,8 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
     channel.resolution = resolution
     channel.clip_duration = max(4, min(15, clip_duration))
     channel.clip_coverage_sec = max(6, min(90, clip_coverage_sec))
+    channel.visual_source = visual_source if visual_source in ("generate", "library", "mix") else "generate"
+    channel.library_share = max(0, min(100, library_share))
     channel.target_minutes = max(1.0, min(30.0, target_minutes))
     channel.scene_count = max(3, min(30, scene_count))
     channel.visual_style = visual_style
@@ -395,6 +404,77 @@ def channel_run_now(channel_id: int, session: Session = Depends(get_session),
 
 
 # --------------------------------------------------------------------------- ролики
+
+@app.post("/channels/{channel_id}/footage/upload")
+async def footage_upload(channel_id: int, request: Request,
+                         session: Session = Depends(get_session),
+                         _user: str = Depends(require_user)):
+    """Загрузка своих видео в библиотеку канала (файлами или по прямым ссылкам)."""
+    channel = _channel_or_404(session, channel_id)
+    form = await request.form()
+    shared = bool(form.get("shared"))
+    tags = str(form.get("tags") or "")
+    title = str(form.get("title") or "")
+    target_channel = None if shared else channel.id
+    slug = None if shared else channel.slug
+
+    added, problems = 0, []
+    for upload in form.getlist("files"):
+        if not isinstance(upload, UploadFile) or not upload.filename:
+            continue
+        try:
+            footage.add_from_upload(session, upload.file, upload.filename,
+                                    channel_id=target_channel, channel_slug=slug,
+                                    title=title, tags=tags)
+            added += 1
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"{upload.filename}: {exc}")
+
+    for raw in str(form.get("urls") or "").splitlines():
+        url = raw.strip()
+        if not url:
+            continue
+        try:
+            footage.add_from_url(session, url, channel_id=target_channel, channel_slug=slug,
+                                 title=title, tags=tags)
+            added += 1
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"{url}: {exc}")
+
+    message = f"Добавлено футажей: {added}"
+    if problems:
+        message += ". Не удалось: " + "; ".join(problems[:5])
+    session.add(Event(level="warn" if problems else "info", stage="библиотека", message=message[:4000]))
+    session.commit()
+    return RedirectResponse(f"/channels/{channel_id}?tab=footage", status_code=303)
+
+
+@app.post("/footage/{footage_id}/delete")
+def footage_delete(footage_id: int, session: Session = Depends(get_session),
+                   _user: str = Depends(require_user)):
+    item = session.get(Footage, footage_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Футаж не найден")
+    channel_id = item.channel_id
+    footage.delete(session, item)
+    target = f"/channels/{channel_id}?tab=footage" if channel_id else "/settings"
+    return RedirectResponse(target, status_code=303)
+
+
+@app.post("/footage/{footage_id}/update")
+def footage_update(footage_id: int, session: Session = Depends(get_session),
+                   _user: str = Depends(require_user),
+                   title: str = Form(""), tags: str = Form(""), is_active: str = Form("")):
+    item = session.get(Footage, footage_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Футаж не найден")
+    item.title = title.strip()[:300] or item.title
+    item.tags = tags.strip()
+    item.is_active = bool(is_active)
+    session.commit()
+    target = f"/channels/{item.channel_id}?tab=footage" if item.channel_id else "/settings"
+    return RedirectResponse(target, status_code=303)
+
 
 @app.get("/videos/{video_id}", response_class=HTMLResponse)
 def video_page(video_id: int, request: Request, session: Session = Depends(get_session),

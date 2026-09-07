@@ -71,6 +71,9 @@ class Channel(Base):
     resolution: Mapped[str] = mapped_column(String(16), default="720p")
     clip_duration: Mapped[int] = mapped_column(Integer, default=5)
     clip_coverage_sec: Mapped[int] = mapped_column(Integer, default=20)
+    # generate — только генерация, library — только загруженные футажи, mix — смешанный
+    visual_source: Mapped[str] = mapped_column(String(16), default="generate")
+    library_share: Mapped[int] = mapped_column(Integer, default=50)
     target_minutes: Mapped[float] = mapped_column(Float, default=8.0)
     scene_count: Mapped[int] = mapped_column(Integer, default=8)
 
@@ -174,6 +177,7 @@ class Scene(Base):
     audio_path: Mapped[str] = mapped_column(String(500), default="")
     clip_path: Mapped[str] = mapped_column(String(500), default="")
     clip_paths: Mapped[str] = mapped_column(Text, default="")
+    clip_sources: Mapped[str] = mapped_column(Text, default="")  # generated | library
     audio_sec: Mapped[float] = mapped_column(Float, default=0.0)
     clip_sec: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String(24), default="pending")
@@ -273,6 +277,30 @@ class ModelPath(Base):
     path: Mapped[str] = mapped_column(String(200), unique=True)
     kind: Mapped[str] = mapped_column(String(20), default="other", index=True)  # video|image|chat|tts|other
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Footage(Base):
+    """Загруженное видео для нарезки видеоряда (своя библиотека футажей)."""
+
+    __tablename__ = "footage"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # None — общий футаж, доступный всем каналам
+    channel_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(300), default="")
+    tags: Mapped[str] = mapped_column(Text, default="")
+    path: Mapped[str] = mapped_column(String(500), default="")
+    source_url: Mapped[str] = mapped_column(String(600), default="")
+    duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    channel: Mapped[Optional[Channel]] = relationship()
 
 
 class Voice(Base):

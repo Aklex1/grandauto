@@ -15,6 +15,7 @@
 <div class="tabs">
   <a href="?tab=plan" class="{% if tab == 'plan' %}active{% endif %}">Контент-план ({{ plan|length }})</a>
   <a href="?tab=videos" class="{% if tab == 'videos' %}active{% endif %}">Ролики ({{ videos|length }})</a>
+  <a href="?tab=footage" class="{% if tab == 'footage' %}active{% endif %}">Библиотека видео ({{ clips|length }})</a>
   <a href="?tab=schedule" class="{% if tab == 'schedule' %}active{% endif %}">Расписание</a>
   <a href="?tab=settings" class="{% if tab == 'settings' %}active{% endif %}">Настройки канала</a>
 </div>
@@ -100,6 +101,75 @@
     </tr>
     {% else %}
     <tr><td colspan="9" class="muted">Роликов пока нет</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+{% elif tab == 'footage' %}
+<div class="grid cols-4 mb">
+  <div class="stat"><div class="label">Видео в библиотеке</div><div class="value">{{ clips|length }}</div></div>
+  <div class="stat"><div class="label">Суммарная длительность</div><div class="value">{{ '%.0f'|format(lib_sec / 60) }} мин</div></div>
+  <div class="stat"><div class="label">Занимают на диске</div><div class="value">{{ human_size(lib_bytes) }}</div></div>
+  <div class="stat"><div class="label">Режим видеоряда</div><div class="value small">
+    {% if channel.visual_source == 'library' %}только библиотека
+    {% elif channel.visual_source == 'mix' %}смешанный, {{ channel.library_share }}%
+    {% else %}только генерация{% endif %}</div></div>
+</div>
+
+<div class="card">
+  <h2>Загрузить своё видео</h2>
+  <p class="small muted">Из этих файлов конвейер нарезает фрагменты нужной длины и подгоняет их
+    под формат канала. Поддерживаются mp4, mov, mkv, webm, m4v, avi. Чем длиннее исходник,
+    тем больше непохожих фрагментов из него можно взять.</p>
+  <form method="post" action="/channels/{{ channel.id }}/footage/upload" enctype="multipart/form-data">
+    <div class="grid cols-2">
+      <label>Файлы с компьютера<input type="file" name="files" multiple accept="video/*"></label>
+      <label>Или прямые ссылки на видеофайлы, по одной в строке
+        <textarea name="urls" placeholder="https://example.com/broll-city-night.mp4"></textarea></label>
+      <label>Название (необязательно)<input name="title" placeholder="Город ночью, тайм-лапс"></label>
+      <label>Теги через запятую — по ним футаж подбирается под смысл сцены
+        <input name="tags" placeholder="город, ночь, офис, работа"></label>
+    </div>
+    <label><input type="checkbox" name="shared" style="width:auto"> Общий футаж — доступен всем каналам</label>
+    <button class="btn btn-primary">Загрузить</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Библиотека</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Просмотр</th><th>Название и теги</th><th>Длительность</th><th>Разрешение</th><th>Размер</th><th>Использован</th><th></th></tr>
+    {% for f in clips %}
+    <tr>
+      <td style="width:180px">
+        <video controls preload="none" style="width:170px" src="/media/{{ f.path }}"></video>
+      </td>
+      <td>
+        <form method="post" action="/footage/{{ f.id }}/update">
+          <input name="title" value="{{ f.title }}" style="margin-bottom:4px">
+          <input name="tags" value="{{ f.tags }}" placeholder="теги через запятую">
+          <label class="small mt"><input type="checkbox" name="is_active" style="width:auto"
+            {% if f.is_active %}checked{% endif %}> используется</label>
+          {% if f.channel_id is none %}<span class="badge">общий</span>{% endif %}
+          <button class="btn btn-sm">Сохранить</button>
+        </form>
+      </td>
+      <td class="nowrap">{{ '%.0f'|format(f.duration_sec) }} с</td>
+      <td class="nowrap small">{{ f.width }}×{{ f.height }}</td>
+      <td class="nowrap small">{{ human_size(f.file_size) }}</td>
+      <td class="small">{{ f.used_count }} раз</td>
+      <td class="right">
+        <a class="btn btn-sm" href="/media/{{ f.path }}?download=1">⬇</a>
+        <form method="post" action="/footage/{{ f.id }}/delete" class="inline-form"
+              data-confirm="Удалить футаж «{{ f.title }}» вместе с файлом?">
+          <button class="btn btn-sm btn-danger">×</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">Библиотека пуста — загрузите первое видео выше</td></tr>
     {% endfor %}
   </table>
   </div>
@@ -194,6 +264,20 @@
           <label>Похожесть<input name="voice_similarity" type="number" step="0.05" min="0" max="1" value="{{ channel.voice_similarity }}"></label>
           <label>Скорость<input name="voice_speed" type="number" step="0.05" min="0.7" max="1.2" value="{{ channel.voice_speed }}"></label>
         </div>
+      </fieldset>
+
+      <fieldset><legend>Источник видеоряда</legend>
+        <label>Откуда берём кадры
+          <select name="visual_source">
+            <option value="generate" {% if channel.visual_source == 'generate' %}selected{% endif %}>Только генерация (Seedance)</option>
+            <option value="mix" {% if channel.visual_source == 'mix' %}selected{% endif %}>Смешанный: генерация + своя библиотека</option>
+            <option value="library" {% if channel.visual_source == 'library' %}selected{% endif %}>Только своя библиотека (бесплатно)</option>
+          </select></label>
+        <label>Доля кадров из библиотеки, % (для смешанного режима)
+          <input name="library_share" type="number" min="0" max="100" value="{{ channel.library_share }}"></label>
+        <p class="small muted">В библиотеке сейчас {{ clips|length }} видео.
+          Кадры из библиотеки не стоят кредитов и нарезаются случайными непересекающимися
+          фрагментами, поэтому в одном ролике повторов не будет.</p>
       </fieldset>
 
       <fieldset><legend>Формат ролика</legend>

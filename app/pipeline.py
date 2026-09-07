@@ -12,10 +12,10 @@ from typing import Callable, Optional
 
 from sqlalchemy.orm import Session
 
-from . import config, media, prompts, storage, subtitles, tts
+from . import config, footage, media, prompts, storage, subtitles, tts
 from .db import session_scope
 from .kie import KieClient, KieError, extract_urls
-from .models import Channel, Event, PlanItem, Scene, Short, Video, utcnow
+from .models import Channel, Event, Footage as FootageModel, PlanItem, Scene, Short, Video, utcnow
 from . import settings_store as st
 
 log = logging.getLogger("cf.pipeline")
@@ -187,31 +187,74 @@ def voice_scenes(session: Session, client: KieClient, video: Video, channel: Cha
 
 def generate_visuals(session: Session, client: KieClient, video: Video, channel: Channel,
                      out_dir: Path) -> float:
-    _set_stage(session, video, "visuals", "Генерирую видеоряд")
+    _set_stage(session, video, "visuals", "Готовлю видеоряд")
     concurrency = max(1, st.get_int(session, "scene_concurrency", 3))
     clips_dir = out_dir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
     resolution = channel.resolution if channel.resolution in ("480p", "720p") else "720p"
+    size = media.target_size(channel.resolution, channel.aspect_ratio)
 
     scenes = list(video.scenes)
 
     coverage = max(6, int(getattr(channel, "clip_coverage_sec", 20) or 20))
 
     # Сколько уникальных клипов нужно каждой сцене, чтобы кадр не «залипал».
-    tasks: list[tuple[int, int, str]] = []
-    scenes = [s for s in scenes if not _scene_clips_ok(s)]
+    scenes = [sc for sc in scenes if not _scene_clips_ok(sc)]
     if not scenes:
         return 0.0
-    scene_ids = [s.id for s in scenes]
+    scene_ids = [sc.id for sc in scenes]
+
+    # Часть кадров можно не генерировать, а нарезать из загруженной библиотеки —
+    # это бесплатно и добавляет живого материала.
+    library = footage.available(session, channel.id)
+    picker = footage.SegmentPicker(library, seed=video.id)
+    source_mode = getattr(channel, "visual_source", "generate") or "generate"
+    share = int(getattr(channel, "library_share", 50) or 0)
+    if source_mode != "generate" and not library:
+        log_event(session, video.id,
+                  "Библиотека футажей пуста — весь видеоряд будет сгенерирован",
+                  stage="visuals", level="warn")
+
+    tasks: list[tuple[int, int, str, str]] = []
     for scene in scenes:
         base_prompt = scene.visual_prompt or scene.heading or video.title
         count = media.clips_needed(scene.audio_sec or coverage, coverage)
+        plan = footage.plan_sources(count, source_mode, share, bool(library))
         for part in range(count):
             prompt = base_prompt if part == 0 else f"{base_prompt}. Alternative angle {part + 1}"
-            tasks.append((scene.id, part, prompt))
+            tasks.append((scene.id, part, prompt, plan[part]))
 
-    def work(task: tuple[int, int, str]):
-        scene_id, part, prompt = task
+    # Нарезку из библиотеки делаем заранее в один поток: это локальный ffmpeg,
+    # параллелить его вместе с сетевыми запросами смысла нет.
+    library_clips: dict[tuple[int, int], Path] = {}
+    for scene in scenes:
+        hint = f"{scene.heading} {scene.visual_prompt}"
+        for scene_id, part, _prompt, origin in tasks:
+            if origin != "library" or scene_id != scene.id:
+                continue
+            chosen = picker.pick(float(channel.clip_duration), hint)
+            if chosen is None:
+                continue
+            item, start, end = chosen
+            dest = clips_dir / f"scene_{scene_id:04d}_{part:02d}_lib.mp4"
+            try:
+                footage.cut_segment(storage.abspath(item.path), dest, start, end - start, size)
+                library_clips[(scene_id, part)] = dest
+                row = session.get(FootageModel, item.id)
+                if row is not None:
+                    row.used_count += 1
+            except Exception as exc:  # noqa: BLE001 — не смогли вырезать, сгенерируем
+                log.warning("Фрагмент из библиотеки не вырезан: %s", exc)
+    session.commit()
+    if library_clips:
+        log_event(session, video.id,
+                  f"Из библиотеки нарезано фрагментов: {len(library_clips)}", stage="visuals")
+
+    def work(task: tuple[int, int, str, str]):
+        scene_id, part, prompt, origin = task
+        ready = library_clips.get((scene_id, part))
+        if ready is not None:
+            return scene_id, part, ready, 0.0, "", "library"
         payload = {
             "prompt": prompt,
             "aspect_ratio": channel.aspect_ratio,
@@ -228,17 +271,20 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
                 raise KieError("в ответе нет ссылки на видео")
             dest = clips_dir / f"scene_{scene_id:04d}_{part:02d}{storage.guess_ext(video_url, '.mp4')}"
             storage.download(video_url, dest)
-            return scene_id, part, dest, float(result.get("_credits") or 0), ""
+            return scene_id, part, dest, float(result.get("_credits") or 0), "", "generated"
         except Exception as exc:  # noqa: BLE001 — одна сцена не должна ронять весь ролик
             log.warning("Клип %s/%s не сгенерирован: %s", scene_id, part, exc)
-            return scene_id, part, None, 0.0, str(exc)[:500]
+            return scene_id, part, None, 0.0, str(exc)[:500], "generated"
 
     expected: dict[int, int] = {}
-    for scene_id, _part, _prompt in tasks:
+    for scene_id, _part, _prompt, _origin in tasks:
         expected[scene_id] = expected.get(scene_id, 0) + 1
 
     credits = 0.0
-    by_scene: dict[int, list[Path]] = {}
+    # part -> путь/происхождение: держим по номеру части, чтобы порядок кадров
+    # в сцене совпадал с порядком генерации, а не с порядком завершения задач.
+    by_scene: dict[int, dict[int, Path]] = {}
+    origins: dict[int, dict[int, str]] = {}
     errors: dict[int, str] = {}
     seen: dict[int, int] = {}
     ok = 0
@@ -246,10 +292,14 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
     def flush(scene_id: int) -> int:
         """Записываем сцену в БД, как только готовы все её клипы — чтобы прогресс был виден."""
         row = session.get(Scene, scene_id)
-        paths = sorted(by_scene.get(scene_id, []))
+        parts = sorted(by_scene.get(scene_id, {}))
+        paths = [by_scene[scene_id][part] for part in parts]
         if paths:
             row.clip_path = storage.rel(paths[0])
             row.clip_paths = json.dumps([storage.rel(p) for p in paths], ensure_ascii=False)
+            row.clip_sources = json.dumps(
+                [origins.get(scene_id, {}).get(part, "generated") for part in parts],
+                ensure_ascii=False)
             row.clip_sec = sum(storage.media_duration(p) for p in paths)
             row.status = "ready"
             row.error = ""
@@ -261,10 +311,11 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
         return 0
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        for scene_id, _part, path, cost, error in pool.map(work, tasks):
+        for scene_id, part, path, cost, error, origin in pool.map(work, tasks):
             credits += cost
             if path is not None:
-                by_scene.setdefault(scene_id, []).append(path)
+                by_scene.setdefault(scene_id, {})[part] = path
+                origins.setdefault(scene_id, {})[part] = origin
             elif error:
                 errors[scene_id] = error
             seen[scene_id] = seen.get(scene_id, 0) + 1
@@ -277,8 +328,11 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
 
     if ok == 0:
         raise RuntimeError("не удалось сгенерировать ни одного видеоклипа")
+    generated = sum(1 for d in origins.values() for o in d.values() if o == "generated")
+    from_library = sum(1 for d in origins.values() for o in d.values() if o == "library")
     log_event(session, video.id,
-              f"Видеоряд готов: {len(tasks)} клипов для {ok} из {len(scenes)} сцен",
+              f"Видеоряд готов: {len(tasks)} клипов для {ok} из {len(scenes)} сцен "
+              f"(сгенерировано {generated}, из библиотеки {from_library})",
               stage="visuals")
     return credits
 
