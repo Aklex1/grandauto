@@ -16,11 +16,27 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Код и конфиг живут в рабочем каталоге (/opt/kie_ai_bot), а сам скрипт —
+# в каталоге репозитория, поэтому ищем .env в обоих местах.
+APP_DIR = Path(os.getenv("KIE_APP_DIR", "/opt/kie_ai_bot"))
+REPO_DIR = Path(__file__).resolve().parent.parent
+
+for candidate in (APP_DIR, REPO_DIR, Path.cwd()):
+    if (candidate / "config.py").exists():
+        sys.path.insert(0, str(candidate))
+        break
+else:
+    sys.path.insert(0, str(REPO_DIR))
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+for candidate in (APP_DIR / ".env", REPO_DIR / ".env", Path.cwd() / ".env"):
+    if candidate.exists():
+        load_dotenv(candidate)
+        print(f"Конфигурация: {candidate}")
+        break
+else:
+    print("⚠️  Файл .env не найден — читаю только переменные окружения")
 
 try:
     from telethon import TelegramClient
@@ -33,8 +49,9 @@ SESSION = os.getenv("TELETHON_SESSION", "/opt/kie_ai_bot/telethon.session")
 
 if not API_ID or not API_HASH:
     sys.exit(
-        "В .env не заданы TELETHON_API_ID и TELETHON_API_HASH.\n"
-        "Получите их на https://my.telegram.org -> API development tools."
+        f"В {APP_DIR}/.env не заданы TELETHON_API_ID и TELETHON_API_HASH.\n"
+        "Получите их на https://my.telegram.org -> API development tools\n"
+        "(App api_id -> TELETHON_API_ID, App api_hash -> TELETHON_API_HASH)."
     )
 
 print(f"Файл сессии: {SESSION}")

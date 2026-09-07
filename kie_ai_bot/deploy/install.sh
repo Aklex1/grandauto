@@ -37,6 +37,9 @@ cp -f "${SRC_DIR}/requirements.txt" "${APP_DIR}/"
 if [[ -e "${SRC_DIR}/prometheus.yml" ]]; then cp -f "${SRC_DIR}/prometheus.yml" "${APP_DIR}/"; fi
 cp -rf "${SRC_DIR}/middlewares" "${APP_DIR}/"
 cp -rf "${SRC_DIR}/models"      "${APP_DIR}/"
+# Скрипты развёртывания кладём рядом с кодом, чтобы их можно было
+# запускать прямо из рабочего каталога
+cp -rf "${SRC_DIR}/deploy"      "${APP_DIR}/"
 mkdir -p "${APP_DIR}/app_uploads"
 mkdir -p "${APP_DIR}/autopost_media"
 # Каталог для референсного фото автопостинга
