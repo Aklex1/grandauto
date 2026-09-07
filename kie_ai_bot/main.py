@@ -48,6 +48,7 @@ from kie_api import create_grok_imagine_video_task, get_grok_imagine_cost
 import kie_api
 from config import TELEGRAM_BOT_TOKEN, CALLBACK_BASE_URL, is_admin as check_admin
 from autopost import setup_autopost, setup_autopost_routes, autopost_worker
+from telethon_source import telethon_worker
 from database import (
     create_tables,
     add_user,
@@ -9192,6 +9193,7 @@ async def main():
         start_api(),
         start_task_monitor(),  # Запуск мониторинга pending задач
         autopost_worker(bot),  # Очередь автопостинга и суточный лимит
+        telethon_worker(),     # Чтение чужого канала-источника
     )
 
     
