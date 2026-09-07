@@ -148,8 +148,10 @@ def recover_stuck_jobs() -> None:
                 job.error = "прервано рестартом сервиса"
             else:
                 job.status = "pending"
+        # scenes_ready — законное состояние ожидания выбора сцен, а не зависшая сборка.
+        resting = ["done", "failed", "cancelled", "queued", "scenes_ready"]
         videos = session.execute(
-            select(Video).where(Video.status.notin_(["done", "failed", "cancelled", "queued"]))
+            select(Video).where(Video.status.notin_(resting))
         ).scalars().all()
         for video in videos:
             video.status = "queued"
