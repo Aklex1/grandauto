@@ -290,6 +290,63 @@ def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720)
     return dst
 
 
+def align_script(cues: list[Cue], scenes: list[tuple[str, float]], max_chars: int = 90) -> list[Cue]:
+    """Текст берём из сценария, тайминг — из распознавания.
+
+    Whisper иногда искажает слова, а точный текст у нас уже есть. Поэтому реплики
+    распознавания используются только как временной скелет: они дают, когда речь
+    звучит и где паузы, а слова подставляются из сценария сцены.
+    """
+    out: list[Cue] = []
+    offset = 0.0
+    for narration, duration in scenes:
+        window_start, window_end = offset, offset + duration
+        offset = window_end
+        chunks = split_text(narration, max_chars)
+        if not chunks:
+            continue
+
+        speech = [c for c in cues
+                  if window_start <= (c.start + c.end) / 2 < window_end and c.end > c.start]
+        if not speech:
+            # ASR ничего не нашёл в этом окне — раскладываем равномерно
+            total = sum(len(c) for c in chunks) or 1
+            cursor = window_start
+            for chunk in chunks:
+                share = duration * (len(chunk) / total)
+                out.append(Cue(start=cursor, end=cursor + share, text=chunk))
+                cursor += share
+            continue
+
+        speech.sort(key=lambda c: c.start)
+        speech_total = sum(c.end - c.start for c in speech) or 1.0
+        chars_total = sum(len(c) for c in chunks) or 1
+
+        # Идём по «скелету» речи и раздаём каждому куску текста его долю времени.
+        seg_index = 0
+        seg_left = speech[0].end - speech[0].start
+        cursor = speech[0].start
+        for chunk in chunks:
+            need = speech_total * (len(chunk) / chars_total)
+            start = cursor
+            end = cursor
+            while need > 1e-6 and seg_index < len(speech):
+                take = min(need, seg_left)
+                end = cursor + take
+                cursor = end
+                seg_left -= take
+                need -= take
+                if seg_left <= 1e-6:
+                    seg_index += 1
+                    if seg_index < len(speech):
+                        cursor = speech[seg_index].start
+                        seg_left = speech[seg_index].end - speech[seg_index].start
+            if end <= start:
+                end = min(window_end, start + 1.2)
+            out.append(Cue(start=start, end=end, text=chunk))
+    return out
+
+
 def shift_cues(cues: list[Cue], start: float, end: float) -> list[Cue]:
     """Обрезаем и сдвигаем реплики под фрагмент шортса."""
     out: list[Cue] = []
