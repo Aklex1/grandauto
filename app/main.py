@@ -45,9 +45,9 @@ STATUS_LABELS = {
     "queued": "в очереди", "script": "сценарий", "voice": "озвучка", "visuals": "видеоряд",
     "assemble": "сборка", "subtitles": "субтитры", "thumbnail": "обложка",
     "metadata": "метаданные", "shorts": "шортсы", "done": "готов", "failed": "ошибка",
-    "cancelled": "отменён", "planned": "в плане", "in_progress": "в работе", "skipped": "пропущен",
+    "cancelled": "отменён", "planned": "в плане", "in_progress": "в работе", "skipped": "пропущено",
     "pending": "ожидает", "running": "выполняется", "ready": "готов", "processing": "обработка",
-    "skipped": "пропущена", "voiced": "озвучена", "voice_failed": "нет озвучки",
+    "voiced": "озвучена", "voice_failed": "нет озвучки",
     "clip_failed": "нет видеоряда",
 }
 
@@ -534,6 +534,40 @@ def settings_save(session: Session = Depends(get_session), _user: str = Depends(
         from .security import hash_password
 
         st.set_value(session, "admin_password_hash", hash_password(new_password.strip()))
+    session.commit()
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/cleanup")
+def settings_cleanup(session: Session = Depends(get_session), _user: str = Depends(require_user),
+                     mode: str = Form("clips")):
+    """Освобождение места: удаляем промежуточные файлы готовых роликов."""
+    freed = 0
+    removed = 0
+    videos = session.execute(select(Video).where(Video.status == "done")).scalars().all()
+    for video in videos:
+        if not video.video_path:
+            continue
+        folder = storage.abspath(video.video_path).parent
+        targets = []
+        if mode in ("clips", "all"):
+            targets.append(folder / "clips")
+        if mode in ("audio", "all"):
+            targets.append(folder / "audio")
+        for target in targets:
+            if not target.exists():
+                continue
+            freed += storage.dir_size(target)
+            shutil.rmtree(target, ignore_errors=True)
+            removed += 1
+        if mode == "all":
+            clean = folder / "video_clean.mp4"
+            if clean.exists():
+                freed += clean.stat().st_size
+                clean.unlink(missing_ok=True)
+    session.add(Event(level="info", stage="обслуживание",
+                      message=f"Очистка ({mode}): освобождено {storage.human_size(freed)} "
+                              f"в {removed} папках"))
     session.commit()
     return RedirectResponse("/settings", status_code=303)
 

@@ -56,6 +56,30 @@
 <div class="card"><button class="btn btn-primary">Сохранить настройки</button></div>
 </form>
 
+<div class="card">
+  <h2>Обслуживание хранилища</h2>
+  <p class="small muted">У готовых роликов остаются исходные клипы, файлы озвучки и копия
+    без вшитых субтитров. Они нужны только для пересборки и нарезки новых шортсов —
+    если место кончается, их можно удалить. Сам ролик, обложка и субтитры остаются.</p>
+  <div class="row">
+    <form method="post" action="/settings/cleanup" class="inline-form"
+          data-confirm="Удалить исходные клипы у всех готовых роликов?">
+      <input type="hidden" name="mode" value="clips">
+      <button class="btn">Удалить клипы готовых роликов</button>
+    </form>
+    <form method="post" action="/settings/cleanup" class="inline-form"
+          data-confirm="Удалить файлы озвучки у всех готовых роликов?">
+      <input type="hidden" name="mode" value="audio">
+      <button class="btn">Удалить файлы озвучки</button>
+    </form>
+    <form method="post" action="/settings/cleanup" class="inline-form"
+          data-confirm="Удалить клипы, озвучку и копию без субтитров у всех готовых роликов? После этого шортсы будут нарезаться из версии со вшитыми субтитрами.">
+      <input type="hidden" name="mode" value="all">
+      <button class="btn btn-danger">Полная очистка промежуточных файлов</button>
+    </form>
+  </div>
+</div>
+
 <div class="grid cols-2">
   <div class="card">
     <h2>Каталог голосов ({{ voices|length }})</h2>
