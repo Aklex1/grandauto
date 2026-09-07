@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Контент-завод{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">🏭 Контент-завод</a>
+  <nav class="nav">
+    <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Обзор</a>
+    {% for ch in channels %}
+      <a href="/channels/{{ ch.id }}" class="{% if request.url.path == '/channels/' ~ ch.id %}active{% endif %}">{{ ch.name }}</a>
+    {% endfor %}
+    <a href="/library" class="{% if request.url.path == '/library' %}active{% endif %}">Готовые видео</a>
+    <a href="/prices" class="{% if request.url.path == '/prices' %}active{% endif %}">Цены KIE</a>
+    <a href="/queue" class="{% if request.url.path == '/queue' %}active{% endif %}">Очередь</a>
+    <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">Настройки</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="badge" id="credits" title="Баланс кредитов KIE">
+      {{ settings.credits_balance or '—' }} cr
+    </span>
+    <a class="btn btn-ghost" href="/logout">Выйти</a>
+  </div>
+</header>
+<main class="wrap">
+  {% block content %}{% endblock %}
+</main>
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

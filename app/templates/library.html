@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Готовые видео — Контент-завод{% endblock %}
+{% block content %}
+<div class="row between mb">
+  <h1>Готовые видео ({{ videos|length }})</h1>
+  <div class="row">
+    <a class="btn btn-sm {% if not selected_channel %}btn-primary{% endif %}" href="/library">Все каналы</a>
+    {% for ch in channels %}
+      <a class="btn btn-sm {% if selected_channel == ch.id %}btn-primary{% endif %}" href="/library?channel_id={{ ch.id }}">{{ ch.name }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="video-grid">
+  {% for v in videos %}
+  <div class="video-card">
+    {% if v.thumb_path %}
+      <a href="/videos/{{ v.id }}"><img src="/media/{{ v.thumb_path }}" alt="{{ v.title }}" loading="lazy"></a>
+    {% else %}
+      <div class="thumb-placeholder">🎬</div>
+    {% endif %}
+    <div class="body">
+      <div class="title"><a href="/videos/{{ v.id }}">{{ v.title or v.book_title }}</a></div>
+      <div class="small muted">{{ v.channel.name }} · {{ '%.1f'|format(v.duration_sec / 60) }} мин · {{ human_size(v.file_size) }}</div>
+      <div class="small muted">{{ v.book_title }} — {{ v.book_author }}</div>
+      <div class="row mt">
+        <a class="btn btn-sm btn-primary" href="/videos/{{ v.id }}">Открыть</a>
+        <a class="btn btn-sm" href="/media/{{ v.video_path }}?download=1">⬇ MP4</a>
+        {% if v.srt_path %}<a class="btn btn-sm" href="/media/{{ v.srt_path }}?download=1">⬇ SRT</a>{% endif %}
+        {% if v.shorts %}<span class="badge">{{ v.shorts|length }} шортс.</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="card muted">Готовых роликов пока нет</div>
+  {% endfor %}
+</div>
+{% endblock %}

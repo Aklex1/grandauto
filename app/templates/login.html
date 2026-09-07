@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход — Контент-завод</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-body">
+<form class="login-card" method="post" action="/login">
+  <h1>🏭 Контент-завод</h1>
+  <p class="muted">Панель управления производством роликов</p>
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+  <label>Логин<input name="username" autocomplete="username" required autofocus></label>
+  <label>Пароль<input name="password" type="password" autocomplete="current-password" required></label>
+  <button class="btn btn-primary" type="submit">Войти</button>
+</form>
+</body>
+</html>

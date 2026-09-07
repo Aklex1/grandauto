@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Цены KIE — Контент-завод{% endblock %}
+{% block content %}
+<div class="row between mb">
+  <div>
+    <h1>Актуальные цены KIE</h1>
+    <div class="muted small">Обновлено: {{ settings.prices_updated_at[:19] or 'ещё не синхронизировано' }} ·
+      автообновление раз в сутки в 03:20 UTC · 1 кредит ≈ ${{ usd_per_credit }}</div>
+  </div>
+  <form method="post" action="/prices/refresh" class="inline-form">
+    <button class="btn btn-primary">Обновить сейчас</button>
+  </form>
+</div>
+
+<div class="card tight">
+  <form method="get" class="row">
+    <input name="q" value="{{ q }}" placeholder="Поиск по модели: seedance, eleven, banana…" style="max-width:340px">
+    <select name="kind" style="max-width:180px">
+      <option value="">Все типы</option>
+      {% for k in kinds %}<option value="{{ k }}" {% if k == kind %}selected{% endif %}>{{ k }}</option>{% endfor %}
+    </select>
+    <button class="btn">Фильтр</button>
+    <span class="muted small">Найдено: {{ items|length }}</span>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <tr><th>Модель / тариф</th><th>Тип</th><th>Провайдер</th><th class="right">Кредиты</th><th>Единица</th><th class="right">USD</th><th class="right">Скидка</th></tr>
+    {% for p in items %}
+    <tr>
+      <td>{{ p.model_description }}</td>
+      <td><span class="badge">{{ p.interface_type }}</span></td>
+      <td class="small muted">{{ p.provider }}</td>
+      <td class="right mono">{{ p.credit_price }}</td>
+      <td class="small muted">{{ p.credit_unit }}</td>
+      <td class="right mono">${{ p.usd_price }}</td>
+      <td class="right small">{% if p.discount_rate %}−{{ '%.0f'|format(p.discount_rate) }}%{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">Прайс ещё не загружен — нажмите «Обновить сейчас»</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}
