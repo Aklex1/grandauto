@@ -406,6 +406,9 @@ def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir
         raw = workdir / f"scene_{scene.idx:02d}_raw.mp4"
         media.build_scene(clips, audio, raw, size, duration=scene.audio_sec,
                           workdir=workdir / f"w{scene.idx:02d}")
+        # Чистую сцену храним отдельно: из неё собирается мастер для нарезки шортсов,
+        # иначе горизонтальные субтитры поедут при кропе в вертикаль.
+        clean_piece = pieces_dir / f"scene_{scene.idx:02d}_clean.mp4"
 
         # Субтитры сцены: текст берём из сценария, тайминг — из распознавания этой сцены.
         cues = _scene_cues(session, video, channel, scene, audio)
@@ -415,12 +418,15 @@ def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir
                                 vertical=channel.aspect_ratio == "9:16")
             try:
                 media.burn_subtitles(raw, ass, piece)
+                shutil.copyfile(raw, clean_piece)
             except RuntimeError as exc:
                 log_event(session, video.id, f"Сцена {scene.idx + 1}: субтитры не вшиты ({exc})",
                           stage="assemble", level="warn")
                 shutil.copyfile(raw, piece)
+                clean_piece.unlink(missing_ok=True)
         else:
             shutil.copyfile(raw, piece)
+            clean_piece.unlink(missing_ok=True)
 
         scene.piece_path = storage.rel(piece)
         scene.piece_sec = storage.media_duration(piece)
@@ -477,6 +483,13 @@ def assemble_selected(session: Session, video: Video, channel: Channel,
     raw = workdir / "full_raw.mp4"
     media.concat_scenes(pieces, raw, workdir)
 
+    # Мастер без вшитых субтитров — источник для нарезки шортсов.
+    clean_pieces = [p.with_name(p.stem + "_clean.mp4") for p in pieces]
+    raw_clean = None
+    if all(p.exists() for p in clean_pieces):
+        raw_clean = workdir / "full_clean.mp4"
+        media.concat_scenes(clean_pieces, raw_clean, workdir / "clean")
+
     # Субтитры целого ролика собираем из сцен в выбранном порядке.
     cues: list[subtitles.Cue] = []
     offset = 0.0
@@ -493,26 +506,38 @@ def assemble_selected(session: Session, video: Video, channel: Channel,
         video.vtt_path = storage.rel(out_dir / "subtitles.vtt")
 
     final = out_dir / "video.mp4"
+    clean_final = out_dir / CLEAN_NAME
+    music_applied = False
     if channel.background_music:
         track = _background_track(session, video, channel)
         if track is not None:
             try:
+                volume = channel.music_volume_db or -20.0
                 mixed = workdir / "with_music.mp4"
                 media.mix_background_music(raw, storage.abspath(track.path), mixed,
-                                           music_db=channel.music_volume_db or -20.0)
+                                           music_db=volume)
                 shutil.move(str(mixed), str(final))
+                # Тот же трек кладём и в чистый мастер, чтобы шортсы звучали
+                # так же, как длинный ролик.
+                if raw_clean is not None:
+                    mixed_clean = workdir / "clean_with_music.mp4"
+                    media.mix_background_music(raw_clean, storage.abspath(track.path),
+                                               mixed_clean, music_db=volume)
+                    shutil.move(str(mixed_clean), str(clean_final))
                 track.used_count += 1
                 session.commit()
+                music_applied = True
                 log_event(session, video.id, f"Наложена фоновая музыка: {track.title}",
                           stage="assemble")
             except RuntimeError as exc:
                 log_event(session, video.id, f"Музыку наложить не удалось: {exc}",
                           stage="assemble", level="warn")
-                shutil.copyfile(raw, final)
-        else:
-            shutil.copyfile(raw, final)
-    else:
+    if not music_applied:
         shutil.copyfile(raw, final)
+        if raw_clean is not None:
+            shutil.copyfile(raw_clean, clean_final)
+    if raw_clean is None:
+        clean_final.unlink(missing_ok=True)
 
     video.video_path = storage.rel(final)
     video.duration_sec = storage.media_duration(final)
