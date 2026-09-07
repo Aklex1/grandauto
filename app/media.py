@@ -111,9 +111,27 @@ def build_scene(clips: list[Path], audio: Path, dst: Path, size: tuple[int, int]
 
 
 def concat_scenes(scenes: list[Path], dst: Path, workdir: Path) -> Path:
+    """Склейка кусков.
+
+    Куски делает этот же конвейер, поэтому кодек и параметры у них одинаковые —
+    сначала пробуем склеить копированием потоков: это секунды вместо минут
+    перекодирования. Если копирование не проходит (разные параметры у части файлов),
+    молча падаем на перекодирование.
+    """
     workdir.mkdir(parents=True, exist_ok=True)
     listing = workdir / "scenes.txt"
     listing.write_text("".join(f"file '{p}'\n" for p in scenes), encoding="utf-8")
+
+    try:
+        _ff([
+            "-f", "concat", "-safe", "0", "-i", str(listing),
+            "-c", "copy", "-fflags", "+genpts", "-movflags", "+faststart", str(dst),
+        ], timeout=900)
+        if dst.exists() and dst.stat().st_size > 0:
+            return dst
+    except RuntimeError as exc:
+        log.info("Склейка копированием не прошла (%s), перекодирую", exc)
+
     _ff([
         "-f", "concat", "-safe", "0", "-i", str(listing),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
