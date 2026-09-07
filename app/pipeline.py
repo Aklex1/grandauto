@@ -499,7 +499,7 @@ def assemble_selected(session: Session, video: Video, channel: Channel,
             try:
                 mixed = workdir / "with_music.mp4"
                 media.mix_background_music(raw, storage.abspath(track.path), mixed,
-                                           music_db=channel.music_volume_db or -24.0)
+                                           music_db=channel.music_volume_db or -20.0)
                 shutil.move(str(mixed), str(final))
                 track.used_count += 1
                 session.commit()

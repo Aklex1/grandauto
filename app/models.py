@@ -86,7 +86,7 @@ class Channel(Base):
     shorts_count: Mapped[int] = mapped_column(Integer, default=3)
     background_music: Mapped[bool] = mapped_column(Boolean, default=False)
     music_style: Mapped[str] = mapped_column(Text, default="")
-    music_volume_db: Mapped[float] = mapped_column(Float, default=-24.0)
+    music_volume_db: Mapped[float] = mapped_column(Float, default=-20.0)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 

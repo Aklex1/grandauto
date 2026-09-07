@@ -123,13 +123,23 @@ def concat_scenes(scenes: list[Path], dst: Path, workdir: Path) -> Path:
     return dst
 
 
-def mix_background_music(video: Path, music: Path, dst: Path, music_db: float = -22.0) -> Path:
+def mix_background_music(video: Path, music: Path, dst: Path, music_db: float = -24.0) -> Path:
+    """Подмешиваем фон под голос.
+
+    amix по умолчанию нормализует входы и приглушает речь, поэтому normalize=0:
+    голос сохраняет исходный уровень, а музыка добавляется ровно на заданной громкости.
+    Лёгкий sidechain-компрессор дополнительно притапливает фон, когда звучит голос.
+    """
     _ff([
         "-i", str(video), "-stream_loop", "-1", "-i", str(music),
         "-filter_complex",
-        f"[1:a]volume={music_db}dB[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=3[a]",
-        "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-        "-movflags", "+faststart", str(dst),
+        (f"[1:a]volume={music_db}dB,aformat=sample_fmts=fltp:sample_rates=48000:"
+         f"channel_layouts=stereo[bg];"
+         f"[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asplit[voice][key];"
+         f"[bg][key]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=350[duck];"
+         f"[voice][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]"),
+        "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-ar", "48000", "-ac", "2", "-movflags", "+faststart", str(dst),
     ], timeout=2400)
     return dst
 
