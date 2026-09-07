@@ -386,6 +386,14 @@ def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir
     scenes = list(video.scenes)
     ready = 0
 
+    # Трек нужен уже здесь: версия сцены с музыкой кладётся рядом с чистой.
+    track_path = None
+    if channel.background_music:
+        track = _background_track(session, video, channel)
+        if track is not None and track.path:
+            candidate = storage.abspath(track.path)
+            track_path = candidate if candidate.exists() else None
+
     for scene in scenes:
         if not scene.audio_path:
             continue
@@ -431,6 +439,7 @@ def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir
             clean_piece.unlink(missing_ok=True)
 
         scene.piece_path = storage.rel(piece)
+        scene.piece_music_path = _add_music_copy(session, video, channel, piece, track_path)
         scene.piece_sec = storage.media_duration(piece)
         scene.status = "piece_ready"
         session.commit()
@@ -440,6 +449,27 @@ def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir
         raise RuntimeError("не удалось собрать ни одной сцены")
     log_event(session, video.id, f"Сцены собраны: {ready} из {len(scenes)}", stage="assemble")
     return ready
+
+
+def _add_music_copy(session: Session, video: Video, channel: Channel, piece: Path,
+                    track_path: Optional[Path]) -> str:
+    """Кладём рядом с куском версию с фоновой музыкой — её и показываем в карточке.
+
+    Сам кусок остаётся чистым: из чистых собирается длинный ролик, поэтому музыка
+    не накладывается дважды и не рвётся на стыках.
+    """
+    if track_path is None:
+        return ""
+    dest = piece.with_name(piece.stem + "_music.mp4")
+    try:
+        media.mix_background_music(piece, track_path, dest,
+                                   music_db=channel.music_volume_db or -20.0)
+        return storage.rel(dest)
+    except RuntimeError as exc:
+        log_event(session, video.id, f"Музыку в кусок {piece.stem} добавить не удалось: {exc}",
+                  stage="assemble", level="warn")
+        dest.unlink(missing_ok=True)
+        return ""
 
 
 def _scene_cues(session: Session, video: Video, channel: Channel, scene: Scene,
@@ -528,7 +558,14 @@ def ensure_bridge(session: Session, client: KieClient, video: Video, channel: Ch
             shutil.copyfile(raw, piece)
             shutil.copyfile(raw, clean)
 
+        track = None
+        if channel.background_music:
+            row = _background_track(session, video, channel)
+            if row is not None and row.path:
+                candidate = storage.abspath(row.path)
+                track = candidate if candidate.exists() else None
         bridge.piece_path = storage.rel(piece)
+        bridge.piece_music_path = _add_music_copy(session, video, channel, piece, track)
         bridge.clean_path = storage.rel(clean)
         bridge.piece_sec = storage.media_duration(piece)
         bridge.status = "ready"

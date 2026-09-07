@@ -181,6 +181,7 @@ class Scene(Base):
     visual_prompt: Mapped[str] = mapped_column(Text, default="")
     audio_path: Mapped[str] = mapped_column(String(500), default="")
     piece_path: Mapped[str] = mapped_column(String(500), default="")  # готовая сцена-ролик
+    piece_music_path: Mapped[str] = mapped_column(String(500), default="")  # она же с музыкой
     piece_sec: Mapped[float] = mapped_column(Float, default=0.0)
     include: Mapped[bool] = mapped_column(Boolean, default=True)      # войдёт в длинный ролик
     clip_path: Mapped[str] = mapped_column(String(500), default="")
@@ -209,6 +210,7 @@ class Bridge(Base):
     audio_path: Mapped[str] = mapped_column(String(500), default="")
     clip_path: Mapped[str] = mapped_column(String(500), default="")
     piece_path: Mapped[str] = mapped_column(String(500), default="")
+    piece_music_path: Mapped[str] = mapped_column(String(500), default="")
     clean_path: Mapped[str] = mapped_column(String(500), default="")
     piece_sec: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String(24), default="pending")

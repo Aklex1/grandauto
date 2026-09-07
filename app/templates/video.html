@@ -117,7 +117,7 @@
     <div class="video-grid">
       {% for sc in pieces %}
       <div class="video-card">
-        <video controls preload="none" src="/media/{{ sc.piece_path }}"
+        <video controls preload="none" src="/media/{{ sc.piece_music_path or sc.piece_path }}"
                {% if channel.aspect_ratio == '9:16' %}style="aspect-ratio:9/16;object-fit:cover"{% endif %}></video>
         <div class="body">
           <label class="row" style="margin-bottom:6px">
@@ -127,7 +127,10 @@
           </label>
           <div class="small muted">{{ '%.0f'|format(sc.piece_sec or sc.audio_sec) }} с</div>
           <div class="small mt">{{ sc.narration[:180] }}{% if sc.narration|length > 180 %}…{% endif %}</div>
-          <a class="btn btn-sm mt" href="/media/{{ sc.piece_path }}?download=1">⬇ Скачать сцену</a>
+          <div class="row mt">
+            <a class="btn btn-sm" href="/media/{{ sc.piece_music_path or sc.piece_path }}?download=1">⬇ Скачать сцену</a>
+            {% if sc.piece_music_path %}<span class="badge">с музыкой</span>{% endif %}
+          </div>
         </div>
       </div>
       {% endfor %}
@@ -152,7 +155,7 @@
   <div class="video-grid">
     {% for b in video.bridges %}
     <div class="video-card">
-      {% if b.piece_path %}<video controls preload="none" src="/media/{{ b.piece_path }}"></video>
+      {% if b.piece_path %}<video controls preload="none" src="/media/{{ b.piece_music_path or b.piece_path }}"></video>
       {% else %}<div class="thumb-placeholder">{{ labels.get(b.status, b.status) }}</div>{% endif %}
       <div class="body">
         <div class="small muted">{{ '%.0f'|format(b.piece_sec) }} с</div>
