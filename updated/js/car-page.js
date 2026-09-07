@@ -143,6 +143,12 @@
    * -------------------------------------------------------------------- */
   var PRICES_API = '/wp-json/grandauto/v1/prices';
   var TIER_KEYS = ['1_3', '4_8', '9_15', '16_30'];
+  var TIER_LABELS = {
+    '1_3': '1-3 суток',
+    '4_8': '4-8 суток',
+    '9_15': '9-15 суток',
+    '16_30': '16-30 суток'
+  };
 
   function fmtNum(n) {
     return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -260,11 +266,16 @@
               '.tab-content[data-tab="' + tab + '"] .price-list[data-tariff="' + season + '"]'
             );
             if (!list) return;
-            var vals = list.querySelectorAll('.price-list__val');
-            TIER_KEYS.forEach(function (tk, idx) {
-              if (idx >= vals.length || arr[tk] == null) return;
-              vals[idx].textContent = fmtNum(Math.floor(arr[tk] * factors[tab]));
+            // Пересобираем список целиком из API — устойчиво к тому, что в
+            // статике у части машин пропущены отдельные периоды аренды.
+            var html = '';
+            TIER_KEYS.forEach(function (tk) {
+              if (arr[tk] == null) return;
+              var v = Math.floor(arr[tk] * factors[tab]);
+              html += '<li><span class="price-list__val">' + fmtNum(v) +
+                '</span> <span class="price-list__days">' + TIER_LABELS[tk] + '</span></li>';
             });
+            if (html) list.innerHTML = html;
           });
         });
 
