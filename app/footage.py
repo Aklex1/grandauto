@@ -22,6 +22,22 @@ log = logging.getLogger("cf.footage")
 LIBRARY_DIRNAME = "_library"
 ALLOWED_SUFFIXES = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 MIN_USABLE_SEC = 2.0
+MIN_USABLE_BYTES = 16 * 1024
+
+# CDN стоков отвечают 403 на «неброузерный» запрос, поэтому представляемся браузером.
+BROWSER_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/124.0.0.0 Safari/537.36")
+
+
+def download_headers(referer: str = "") -> dict[str, str]:
+    headers = {
+        "User-Agent": BROWSER_UA,
+        "Accept": "video/*,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    if referer:
+        headers["Referer"] = referer
+    return headers
 
 
 class FootageError(RuntimeError):
@@ -140,7 +156,7 @@ def add_from_upload(session: Session, fileobj, filename: str, *, channel_id: Opt
 def add_from_url(session: Session, url: str, *, channel_id: Optional[int],
                  channel_slug: Optional[str], title: str = "", tags: str = "",
                  provider: str = "", author: str = "", license_note: str = "",
-                 page_url: str = "") -> Footage:
+                 page_url: str = "", referer: str = "") -> Footage:
     """Скачиваем футаж по прямой ссылке на видеофайл."""
     url = (url or "").strip()
     if not url.startswith(("http://", "https://")):
@@ -149,15 +165,34 @@ def add_from_url(session: Session, url: str, *, channel_id: Optional[int],
     name = Path(url.split("?", 1)[0]).name or "footage.mp4"
     dest = library_dir(channel_slug) / _safe_name(name)
     try:
-        with httpx.Client(timeout=600, follow_redirects=True) as client:
+        with httpx.Client(timeout=600, follow_redirects=True,
+                          headers=download_headers(referer)) as client:
             with client.stream("GET", url) as resp:
+                if resp.status_code == 403:
+                    raise FootageError(
+                        "Сервер отдал 403 — ссылка на файл требует авторизации или "
+                        "устарела. Повторите поиск и импортируйте заново")
                 resp.raise_for_status()
+                # HTML-страница ошибки, сохранённая под именем .mp4, потом выглядит как
+                # непонятный сбой ffprobe — ловим её сразу.
+                ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+                if ctype and not (ctype.startswith("video/")
+                                  or ctype in ("application/octet-stream", "binary/octet-stream")):
+                    raise FootageError(f"По ссылке не видео, а {ctype}")
                 with open(dest, "wb") as out:
                     for chunk in resp.iter_bytes(chunk_size=1 << 20):
                         out.write(chunk)
+    except FootageError:
+        dest.unlink(missing_ok=True)
+        raise
     except httpx.HTTPError as exc:
         dest.unlink(missing_ok=True)
         raise FootageError(f"Не удалось скачать: {exc}") from exc
+
+    if dest.stat().st_size < MIN_USABLE_BYTES:
+        size = dest.stat().st_size
+        dest.unlink(missing_ok=True)
+        raise FootageError(f"Скачалось всего {storage.human_size(size)} — это не видеофайл")
     try:
         return _register(session, dest, channel_id=channel_id, channel_slug=channel_slug,
                          title=title or Path(name).stem, tags=tags, source_url=url,

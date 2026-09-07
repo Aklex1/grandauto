@@ -27,12 +27,14 @@ PROVIDERS = {
         "title": "Pexels",
         "key_setting": "pexels_api_key",
         "key_url": "https://www.pexels.com/api/new/",
+        "site": "https://www.pexels.com/",
         "license": "Pexels License — свободно, в том числе коммерчески",
     },
     "pixabay": {
         "title": "Pixabay",
         "key_setting": "pixabay_api_key",
         "key_url": "https://pixabay.com/api/docs/",
+        "site": "https://pixabay.com/",
         "license": "Pixabay Content License — свободно, в том числе коммерчески",
     },
 }
@@ -295,6 +297,7 @@ def import_items(session: Session, items: list[dict], *, channel_id: Optional[in
                 author=item.author,
                 license_note=meta.get("license", ""),
                 page_url=item.page_url,
+                referer=meta.get("site", ""),
             )
             added += 1
         except Exception as exc:  # noqa: BLE001 — один битый ролик не должен рушить пачку

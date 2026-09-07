@@ -217,6 +217,14 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         .order_by(Footage.id.desc())).scalars().all()
     lib_bytes, lib_sec = footage.library_size(clips)
     lib_stats = footage.stats(session, channel.id)
+    lib_events = session.execute(
+        select(Event).where(Event.stage == "библиотека")
+        .order_by(Event.id.desc()).limit(8)).scalars().all()
+    # показываем и незавершённые задачи, и упавшие: иначе причина сбоя не видна
+    lib_jobs = session.execute(
+        select(Job).where(Job.kind == "stock_import",
+                          Job.status.in_(("pending", "running", "failed")))
+        .order_by(Job.id.desc()).limit(5)).scalars().all()
 
     stock_ctx = _stock_context(session, channel, tab, q=q, provider=provider,
                                orientation=orientation, min_duration=min_duration, page=page)
@@ -227,6 +235,7 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         plan_done=sum(1 for p in plan if p.status == "done"),
         plan_left=sum(1 for p in plan if p.status == "planned"),
         clips=clips, lib_bytes=lib_bytes, lib_sec=lib_sec, lib_stats=lib_stats,
+        lib_events=lib_events, lib_jobs=lib_jobs,
         cleanup_modes=footage.CLEANUP_MODES, **stock_ctx,
         **estimate.channel_estimate_context(session, channel)))
 

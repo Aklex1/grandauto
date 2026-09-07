@@ -12,6 +12,30 @@
   </form>
 </div>
 
+{% macro library_log() %}
+{% if lib_jobs or lib_events %}
+<div class="card">
+  <h2>Что происходит с библиотекой</h2>
+  {% for j in lib_jobs %}
+  <p class="small">
+    {% if j.status == 'failed' %}
+    <span class="badge">сбой</span> задача импорта #{{ j.id }} упала: {{ j.error or 'без текста ошибки' }}
+    {% elif j.status == 'running' %}
+    <span class="badge">идёт</span> задача импорта #{{ j.id }} — файлы качаются, обновите страницу через минуту
+    {% else %}
+    <span class="badge">в очереди</span> задача импорта #{{ j.id }} ждёт свободного воркера
+    {% endif %}
+  </p>
+  {% endfor %}
+  {% for e in lib_events %}
+  <p class="small {% if e.level != 'info' %}{% else %}muted{% endif %}">
+    {{ e.created_at.strftime('%d.%m %H:%M') }} — {{ e.message }}
+  </p>
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
 <div class="tabs">
   <a href="?tab=plan" class="{% if tab == 'plan' %}active{% endif %}">Контент-план ({{ plan|length }})</a>
   <a href="?tab=videos" class="{% if tab == 'videos' %}active{% endif %}">Ролики ({{ videos|length }})</a>
@@ -170,6 +194,8 @@
     «Файлы без записи в базе» появляются, если закачка оборвалась на середине.</p>
 </div>
 
+{{ library_log() }}
+
 <div class="card">
   <h2>Библиотека</h2>
   <div class="table-wrap">
@@ -267,6 +293,8 @@
 {% if stock_error %}
 <div class="alert alert-error">{{ stock_error }}</div>
 {% endif %}
+
+{{ library_log() }}
 
 {% if stock_result %}
 <div class="card">
