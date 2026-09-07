@@ -175,3 +175,72 @@ function ga_rental_car_bulk_editor_hint() {
     echo '<div class="notice notice-info"><p>Цены редактируются на странице каждого автомобиля — блоки «Арендный автомобиль» (базовый сезон) и «Цены низкого сезона». '
         . 'Для массовой правки: <a href="' . $url . '">таблица цен всех автомобилей</a>.</p></div>';
 }
+
+/* -------------------------------------------------------------------------
+ *  Публичный REST API цен для статической витрины /updated/
+ *
+ *  Адрес: https://grandauto19.ru/wp-json/grandauto/v1/prices
+ *  По каждому опубликованному авто отдаёт цены обоих сезонов из ACF:
+ *    base — базовый сезон (price_st_*)
+ *    low  — низкий сезон  (price_low_*, если пусто → базовая − 15%)
+ *  плюс проценты скидок карт лояльности (silver/gold) из настроек темы.
+ *  Витрина применяет скидки поверх цены выбранного сезона.
+ *  Массовое заполнение цен — update_prices_script.php.
+ * ---------------------------------------------------------------------- */
+
+add_action( 'rest_api_init', 'ga_register_prices_route' );
+function ga_register_prices_route() {
+    register_rest_route( 'grandauto/v1', '/prices', array(
+        'methods'             => 'GET',
+        'permission_callback' => '__return_true',
+        'callback'            => 'ga_rental_prices_payload',
+    ) );
+}
+
+function ga_rental_prices_payload() {
+
+    $out = array(
+        'updated' => gmdate( 'c' ),
+        'silver'  => (float) get_option( 'discount_silver', 0 ),
+        'gold'    => (float) get_option( 'discount_gold', 0 ),
+        'cars'    => array(),
+    );
+
+    $posts = get_posts( array(
+        'post_type'   => 'rental_car',
+        'post_status' => 'publish',
+        'numberposts' => -1,
+        'orderby'     => 'menu_order title',
+        'order'       => 'ASC',
+    ) );
+
+    foreach ( $posts as $p ) {
+        $base = array();
+        $low  = array();
+
+        foreach ( ga_price_tiers() as $tier => $label ) {
+            if ( '30' === $tier ) {
+                continue; // витрина показывает 4 периода: 1-3, 4-8, 9-15, 16-30
+            }
+            $b = (float) get_post_meta( $p->ID, 'price_st_' . $tier, true );
+            $l = trim( (string) get_post_meta( $p->ID, 'price_low_' . $tier, true ) );
+
+            $base[ $tier ] = ( $b > 0 ) ? $b : null;
+
+            if ( '' === $l || (float) $l <= 0 ) {
+                $low[ $tier ] = ( $b > 0 ) ? (float) floor( $b * 0.85 ) : null;
+            } else {
+                $low[ $tier ] = (float) $l;
+            }
+        }
+
+        $out['cars'][] = array(
+            'id'   => $p->ID,
+            'slug' => $p->post_name,
+            'base' => $base,
+            'low'  => $low,
+        );
+    }
+
+    return rest_ensure_response( $out );
+}
