@@ -30,10 +30,11 @@ redis-cli ping >/dev/null 2>&1 && echo "Redis: OK" || warn "Redis не отве�
 
 log "3/8 Код в ${APP_DIR}"
 mkdir -p "${APP_DIR}"
-# Копируем исходники, не трогая .env, venv, загрузки и БД
-for f in *.py requirements.txt prometheus.yml; do
-    [[ -e "${SRC_DIR}/${f}" ]] && cp -f "${SRC_DIR}"/${f} "${APP_DIR}/" || true
-done
+# Копируем исходники, не трогая .env, venv, загрузки и БД.
+# Пути только через SRC_DIR — скрипт должен работать из любого каталога.
+cp -f "${SRC_DIR}"/*.py "${APP_DIR}/"
+cp -f "${SRC_DIR}/requirements.txt" "${APP_DIR}/"
+if [[ -e "${SRC_DIR}/prometheus.yml" ]]; then cp -f "${SRC_DIR}/prometheus.yml" "${APP_DIR}/"; fi
 cp -rf "${SRC_DIR}/middlewares" "${APP_DIR}/"
 cp -rf "${SRC_DIR}/models"      "${APP_DIR}/"
 mkdir -p "${APP_DIR}/app_uploads"
@@ -43,9 +44,13 @@ mkdir -p /opt/refer
 find "${APP_DIR}" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
 log "4/8 Виртуальное окружение и зависимости"
-[[ -d "${APP_DIR}/venv" ]] || python3 -m venv "${APP_DIR}/venv"
+if [[ ! -x "${PY}" ]]; then
+    rm -rf "${APP_DIR}/venv"
+    python3 -m venv "${APP_DIR}/venv" || die "Не удалось создать venv. Установите пакет: apt-get install -y python3-venv"
+fi
+[[ -x "${PY}" ]] || die "venv создан, но ${PY} отсутствует — проверьте вывод выше"
 "${APP_DIR}/venv/bin/pip" install --upgrade -q pip wheel
-"${APP_DIR}/venv/bin/pip" install -q -r "${APP_DIR}/requirements.txt"
+"${APP_DIR}/venv/bin/pip" install -q -r "${APP_DIR}/requirements.txt" || die "Не удалось установить зависимости из requirements.txt"
 echo "Python: $(${PY} --version)"
 
 log "5/8 Конфигурация (.env)"
