@@ -15,11 +15,11 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import bootstrap, config, planner, prompts, queue, scheduler, storage, sync, tts, webutil
+from . import bootstrap, config, planner, prompts, queue, scheduler, storage, sync, webutil
 from . import settings_store as st
 from .db import get_session, session_scope
 from .kie import KieClient
-from .models import (Channel, Event, Job, ModelPath, PlanItem, PriceItem, Scene, Setting,
+from .models import (Channel, Event, Job, ModelPath, PlanItem, PriceItem,
                      ScheduleRule, Short, Video, Voice, utcnow)
 from .security import make_session, read_session, verify_password
 
@@ -222,6 +222,7 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
                      voice_stability: float = Form(0.45), voice_similarity: float = Form(0.8),
                      voice_speed: float = Form(1.0), aspect_ratio: str = Form("16:9"),
                      resolution: str = Form("720p"), clip_duration: int = Form(5),
+                     clip_coverage_sec: int = Form(20),
                      target_minutes: float = Form(8.0), scene_count: int = Form(8),
                      visual_style: str = Form(""), script_style: str = Form(""),
                      thumb_style: str = Form(""), burn_subtitles: str = Form(""),
@@ -243,6 +244,7 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
     channel.aspect_ratio = aspect_ratio
     channel.resolution = resolution
     channel.clip_duration = max(4, min(15, clip_duration))
+    channel.clip_coverage_sec = max(6, min(90, clip_coverage_sec))
     channel.target_minutes = max(1.0, min(30.0, target_minutes))
     channel.scene_count = max(3, min(30, scene_count))
     channel.visual_style = visual_style

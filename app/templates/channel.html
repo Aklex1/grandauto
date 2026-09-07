@@ -207,6 +207,8 @@
               {% for r in ['480p','720p','1080p'] %}<option {% if channel.resolution == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
             </select></label>
           <label>Клип, сек<input name="clip_duration" type="number" min="4" max="15" value="{{ channel.clip_duration }}"></label>
+          <label title="Сколько секунд ролика закрывает один сгенерированный клип (зацикливанием). Меньше — разнообразнее и дороже."
+            >Секунд на клип<input name="clip_coverage_sec" type="number" min="6" max="90" value="{{ channel.clip_coverage_sec }}"></label>
           <label>Длительность, мин<input name="target_minutes" type="number" step="0.5" min="1" max="30" value="{{ channel.target_minutes }}"></label>
           <label>Сцен<input name="scene_count" type="number" min="3" max="30" value="{{ channel.scene_count }}"></label>
           <label>Шортсов<input name="shorts_count" type="number" min="0" max="10" value="{{ channel.shorts_count }}"></label>

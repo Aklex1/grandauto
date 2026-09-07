@@ -19,6 +19,9 @@ from . import settings_store as st
 
 log = logging.getLogger("cf.pipeline")
 
+# Мастер-ролик со вшитыми субтитрами лежит в video.mp4, чистая версия — рядом.
+CLEAN_NAME = "video_clean.mp4"
+
 STAGE_PROGRESS = {
     "script": 10,
     "voice": 35,
@@ -107,15 +110,17 @@ def generate_script(session: Session, client: KieClient, video: Video, channel: 
 
 
 def voice_scenes(session: Session, client: KieClient, video: Video, channel: Channel,
-                 workdir: Path) -> float:
+                 out_dir: Path) -> float:
     _set_stage(session, video, "voice", "Озвучиваю сцены")
     allow_fallback = st.get_bool(session, "tts_allow_fallback", True)
     fallback_model = st.get(session, "tts_fallback_model", "google/gemini-3-1-flash-tts")
     fallback_voice = st.get(session, "tts_fallback_voice", "Charon")
     concurrency = max(1, st.get_int(session, "scene_concurrency", 3))
 
-    scenes = list(video.scenes)
-    audio_dir = workdir / "audio"
+    scenes = [s for s in video.scenes if not _scene_audio_ok(s)]
+    if not scenes:
+        return 0.0
+    audio_dir = out_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
 
     def work(scene: Scene):
@@ -145,17 +150,31 @@ def voice_scenes(session: Session, client: KieClient, video: Video, channel: Cha
 
 
 def generate_visuals(session: Session, client: KieClient, video: Video, channel: Channel,
-                     workdir: Path) -> float:
+                     out_dir: Path) -> float:
     _set_stage(session, video, "visuals", "Генерирую видеоряд")
     concurrency = max(1, st.get_int(session, "scene_concurrency", 3))
-    clips_dir = workdir / "clips"
+    clips_dir = out_dir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
     resolution = channel.resolution if channel.resolution in ("480p", "720p") else "720p"
 
     scenes = list(video.scenes)
 
-    def work(scene: Scene):
-        prompt = scene.visual_prompt or scene.heading or video.title
+    coverage = max(6, int(getattr(channel, "clip_coverage_sec", 20) or 20))
+
+    # Сколько уникальных клипов нужно каждой сцене, чтобы кадр не «залипал».
+    tasks: list[tuple[int, int, str]] = []
+    scenes = [s for s in scenes if not _scene_clips_ok(s)]
+    if not scenes:
+        return 0.0
+    for scene in scenes:
+        base_prompt = scene.visual_prompt or scene.heading or video.title
+        count = media.clips_needed(scene.audio_sec or coverage, coverage)
+        for part in range(count):
+            prompt = base_prompt if part == 0 else f"{base_prompt}. Alternative angle {part + 1}"
+            tasks.append((scene.id, part, prompt))
+
+    def work(task: tuple[int, int, str]):
+        scene_id, part, prompt = task
         payload = {
             "prompt": prompt,
             "aspect_ratio": channel.aspect_ratio,
@@ -170,33 +189,68 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
                 (".mp4", ".mov", ".webm"))), None) or (urls[0] if urls else None)
             if not video_url:
                 raise KieError("в ответе нет ссылки на видео")
-            dest = clips_dir / f"scene_{scene.idx:02d}{storage.guess_ext(video_url, '.mp4')}"
+            dest = clips_dir / f"scene_{scene_id:04d}_{part:02d}{storage.guess_ext(video_url, '.mp4')}"
             storage.download(video_url, dest)
-            return scene.id, dest, float(result.get("_credits") or 0), ""
-        except Exception as exc:  # noqa: BLE001 — сцена не должна ронять весь ролик
-            log.warning("Клип для сцены %s не сгенерирован: %s", scene.idx, exc)
-            return scene.id, None, 0.0, str(exc)[:500]
+            return scene_id, part, dest, float(result.get("_credits") or 0), ""
+        except Exception as exc:  # noqa: BLE001 — одна сцена не должна ронять весь ролик
+            log.warning("Клип %s/%s не сгенерирован: %s", scene_id, part, exc)
+            return scene_id, part, None, 0.0, str(exc)[:500]
 
     credits = 0.0
-    ok = 0
+    by_scene: dict[int, list[Path]] = {}
+    errors: dict[int, str] = {}
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        for scene_id, path, cost, error in pool.map(work, scenes):
-            scene = session.get(Scene, scene_id)
+        for scene_id, _part, path, cost, error in pool.map(work, tasks):
             credits += cost
             if path is not None:
-                scene.clip_path = storage.rel(path)
-                scene.clip_sec = storage.media_duration(path)
-                scene.status = "ready"
-                ok += 1
-            else:
-                scene.status = "clip_failed"
-                scene.error = error
-            session.commit()
+                by_scene.setdefault(scene_id, []).append(path)
+            elif error:
+                errors[scene_id] = error
+
+    ok = 0
+    for scene in scenes:
+        row = session.get(Scene, scene.id)
+        paths = sorted(by_scene.get(scene.id, []))
+        if paths:
+            row.clip_path = storage.rel(paths[0])
+            row.clip_paths = json.dumps([storage.rel(p) for p in paths], ensure_ascii=False)
+            row.clip_sec = sum(storage.media_duration(p) for p in paths)
+            row.status = "ready"
+            ok += 1
+        else:
+            row.status = "clip_failed"
+            row.error = errors.get(scene.id, "клип не сгенерирован")
+        session.commit()
 
     if ok == 0:
         raise RuntimeError("не удалось сгенерировать ни одного видеоклипа")
-    log_event(session, video.id, f"Видеоряд готов: {ok} из {len(scenes)} клипов", stage="visuals")
+    log_event(session, video.id,
+              f"Видеоряд готов: {len(tasks)} клипов для {ok} из {len(scenes)} сцен",
+              stage="visuals")
     return credits
+
+
+def _scene_audio_ok(scene: Scene) -> bool:
+    """Озвучка считается готовой, только если файл реально лежит на диске."""
+    return bool(scene.audio_path) and storage.abspath(scene.audio_path).exists()
+
+
+def _scene_clips_ok(scene: Scene) -> bool:
+    paths = _scene_clips(scene)
+    return bool(paths) and all(storage.abspath(p).exists() for p in paths)
+
+
+def _scene_clips(scene: Scene) -> list[str]:
+    """Все клипы сцены: новый формат — список в clip_paths, старый — одиночный clip_path."""
+    raw = getattr(scene, "clip_paths", "") or ""
+    if raw:
+        try:
+            paths = json.loads(raw)
+            if isinstance(paths, list) and paths:
+                return [str(p) for p in paths]
+        except ValueError:
+            pass
+    return [scene.clip_path] if scene.clip_path else []
 
 
 def _fallback_clip_for(scene: Scene, scenes: list[Scene]) -> Optional[Path]:
@@ -219,13 +273,17 @@ def assemble(session: Session, video: Video, channel: Channel, workdir: Path,
         if not scene.audio_path:
             continue
         audio = storage.abspath(scene.audio_path)
-        clip = storage.abspath(scene.clip_path) if scene.clip_path else _fallback_clip_for(scene, scenes)
-        if clip is None or not Path(clip).exists():
-            log_event(session, video.id, f"Сцена {scene.idx + 1}: нет видеоряда, пропускаю",
-                      stage="assemble", level="warn")
-            continue
+        clips = [storage.abspath(p) for p in _scene_clips(scene)]
+        clips = [c for c in clips if c.exists()]
+        if not clips:
+            fallback = _fallback_clip_for(scene, scenes)
+            if fallback is None or not Path(fallback).exists():
+                log_event(session, video.id, f"Сцена {scene.idx + 1}: нет видеоряда, пропускаю",
+                          stage="assemble", level="warn")
+                continue
+            clips = [Path(fallback)]
         dst = workdir / f"scene_{scene.idx:02d}_full.mp4"
-        media.build_scene([Path(clip)], audio, dst, size,
+        media.build_scene(clips, audio, dst, size,
                           duration=scene.audio_sec, workdir=workdir / f"w{scene.idx:02d}")
         scene_files.append(dst)
 
@@ -271,6 +329,9 @@ def make_subtitles(session: Session, video: Video, channel: Channel, source: Pat
         burned = out_dir / "video_subbed.mp4"
         try:
             media.burn_subtitles(source, files["ass"], burned)
+            # Чистую версию сохраняем: из неё режутся шортсы со своими субтитрами,
+            # иначе на вертикальном кадре субтитры наложились бы дважды.
+            shutil.move(str(source), str(out_dir / CLEAN_NAME))
             shutil.move(str(burned), str(source))
             result = source
         except RuntimeError as exc:
@@ -344,8 +405,12 @@ def make_shorts(session: Session, client: KieClient, video: Video, channel: Chan
     """Нарезаем вертикальные шортсы из готового ролика."""
     if not video.video_path:
         raise RuntimeError("ролик ещё не собран")
-    source = storage.abspath(video.video_path)
-    out_dir = source.parent / "shorts"
+    master = storage.abspath(video.video_path)
+    clean = master.parent / CLEAN_NAME
+    # Режем из версии без вшитых субтитров, если она есть.
+    source = clean if clean.exists() else master
+    burn_own_subs = source is clean or not channel.burn_subtitles
+    out_dir = master.parent / "shorts"
     out_dir.mkdir(parents=True, exist_ok=True)
     count = count or channel.shorts_count or 3
 
@@ -390,11 +455,14 @@ def make_shorts(session: Session, client: KieClient, video: Video, channel: Chan
         session.add(short)
         session.commit()
         try:
-            piece_cues = subtitles.shift_cues(cues, start, end)
-            ass = out_dir / f"short_{idx:02d}.ass"
-            subtitles.write_ass(piece_cues, ass, size=media.VERTICAL, vertical=True)
+            ass = None
+            if burn_own_subs:
+                piece_cues = subtitles.shift_cues(cues, start, end)
+                if piece_cues:
+                    ass = out_dir / f"short_{idx:02d}.ass"
+                    subtitles.write_ass(piece_cues, ass, size=media.VERTICAL, vertical=True)
             dst = out_dir / f"short_{idx:02d}.mp4"
-            media.cut_short(source, dst, start, end, ass=ass if piece_cues else None)
+            media.cut_short(source, dst, start, end, ass=ass)
             short.path = storage.rel(dst)
             short.status = "ready"
             made += 1
@@ -469,12 +537,12 @@ def build_video(video_id: int, on_progress: Optional[Callable[[str], None]] = No
                 credits += generate_script(session, client, video, channel)
             _check_cancelled(session, video_id)
 
-            if any(not s.audio_path for s in video.scenes):
-                credits += voice_scenes(session, client, video, channel, workdir)
+            if any(not _scene_audio_ok(s) for s in video.scenes):
+                credits += voice_scenes(session, client, video, channel, out_dir)
             _check_cancelled(session, video_id)
 
-            if any(not s.clip_path for s in video.scenes):
-                credits += generate_visuals(session, client, video, channel, workdir)
+            if any(not _scene_clips_ok(s) for s in video.scenes):
+                credits += generate_visuals(session, client, video, channel, out_dir)
             _check_cancelled(session, video_id)
 
             final = assemble(session, video, channel, workdir, out_dir)

@@ -65,3 +65,38 @@ def init_db():
     from . import models  # noqa: F401  (регистрация моделей)
 
     Base.metadata.create_all(engine)
+    ensure_columns()
+
+
+def ensure_columns() -> list[str]:
+    """Простая миграция: добавляет колонки, появившиеся в моделях после создания таблиц."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    added: list[str] = []
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            have = {col["name"] for col in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in have:
+                    continue
+                col_type = column.type.compile(engine.dialect)
+                default = ""
+                if column.default is not None and getattr(column.default, "is_scalar", False):
+                    value = column.default.arg
+                    if isinstance(value, bool):
+                        value = 1 if value else 0
+                    if isinstance(value, str):
+                        value = "'" + value.replace("'", "''") + "'"
+                    default = f" DEFAULT {value}"
+                conn.execute(text(
+                    f'ALTER TABLE {table.name} ADD COLUMN {column.name} {col_type}{default}'))
+                added.append(f"{table.name}.{column.name}")
+    if added:
+        import logging
+
+        logging.getLogger("cf.db").info("Схема дополнена колонками: %s", ", ".join(added))
+    return added

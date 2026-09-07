@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +12,44 @@ from . import storage
 from .kie import KieClient, KieError, extract_urls
 
 log = logging.getLogger("cf.tts")
+
+# Предохранитель: если провайдер стабильно падает, временно перестаём его дёргать —
+# иначе каждая сцена ждёт таймаут впустую.
+_BREAKER_THRESHOLD = 2
+_BREAKER_COOLDOWN = 600.0
+_breaker_lock = threading.Lock()
+_breaker: dict[str, tuple[int, float]] = {}
+
+
+def _breaker_open(model: str) -> bool:
+    with _breaker_lock:
+        fails, until = _breaker.get(model, (0, 0.0))
+        if until and time.time() < until:
+            return True
+        if until and time.time() >= until:
+            _breaker.pop(model, None)
+        return False
+
+
+def _breaker_fail(model: str) -> None:
+    with _breaker_lock:
+        fails, _until = _breaker.get(model, (0, 0.0))
+        fails += 1
+        until = time.time() + _BREAKER_COOLDOWN if fails >= _BREAKER_THRESHOLD else 0.0
+        _breaker[model] = (fails, until)
+        if until:
+            log.warning("Провайдер озвучки %s временно отключён на %.0f мин",
+                        model, _BREAKER_COOLDOWN / 60)
+
+
+def _breaker_ok(model: str) -> None:
+    with _breaker_lock:
+        _breaker.pop(model, None)
+
+
+def breaker_state() -> dict[str, tuple[int, float]]:
+    with _breaker_lock:
+        return dict(_breaker)
 
 ELEVEN_MODELS = {
     "elevenlabs/text-to-speech-multilingual-v2",
@@ -116,7 +156,11 @@ def synthesize(client: KieClient, text: str, dest: Path, *, model: str, voice_id
                          "gemini-fallback"))
 
     errors: list[str] = []
-    for tts_model, payload, provider in attempts:
+    for index, (tts_model, payload, provider) in enumerate(attempts):
+        # Последнюю попытку делаем всегда: иначе озвучивать будет нечем.
+        if index < len(attempts) - 1 and _breaker_open(tts_model):
+            errors.append(f"{tts_model}: временно отключён после серии ошибок")
+            continue
         try:
             result = client.run_task(tts_model, payload, timeout=900, poll=4)
             urls = extract_urls(result)
@@ -130,10 +174,12 @@ def synthesize(client: KieClient, text: str, dest: Path, *, model: str, voice_id
             duration = storage.media_duration(path)
             if duration <= 0:
                 raise TTSError(f"{tts_model}: скачан пустой аудиофайл")
+            _breaker_ok(tts_model)
             return TTSResult(path=path, duration=duration,
                              credits=float(result.get("_credits") or 0), provider=provider)
         except (KieError, TTSError, OSError) as exc:
             log.warning("TTS %s не сработал: %s", tts_model, exc)
+            _breaker_fail(tts_model)
             errors.append(f"{tts_model}: {exc}")
 
     raise TTSError("Озвучка не удалась. " + " | ".join(errors))

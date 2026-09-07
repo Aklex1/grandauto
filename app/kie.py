@@ -163,7 +163,14 @@ class KieClient:
         total = 0.0
         last: Exception | None = None
         for attempt in range(attempts):
-            text, credits = self.chat(model, messages, temperature=temperature, timeout=timeout)
+            try:
+                text, credits = self.chat(model, messages, temperature=temperature, timeout=timeout)
+            except KieError as exc:
+                # Шлюз KIE иногда отвечает 524/пустым телом — повторяем.
+                last = exc
+                log.warning("chat_json(%s): попытка %s — %s", model, attempt + 1, exc)
+                time.sleep(3 * (attempt + 1))
+                continue
             total += credits
             if text and text.strip():
                 try:

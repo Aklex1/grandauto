@@ -79,7 +79,46 @@ def transcribe(audio: Path, language: str = "ru") -> list[Cue]:
         text = (seg.text or "").strip()
         if text:
             cues.append(Cue(start=float(seg.start), end=float(seg.end), text=text))
-    return cues
+    return refine_cues(cues)
+
+
+def refine_cues(cues: list[Cue], *, max_chars: int = 90, max_dur: float = 6.5,
+                max_gap: float = 0.6) -> list[Cue]:
+    """Whisper режет по паузам и рвёт фразы. Склеиваем куски в цельные реплики."""
+    if not cues:
+        return []
+    merged: list[Cue] = []
+    for cue in cues:
+        text = re.sub(r"\s+", " ", (cue.text or "").strip())
+        if not text:
+            continue
+        if merged:
+            prev = merged[-1]
+            ends_sentence = prev.text.rstrip().endswith((".", "!", "?", "…", ":"))
+            fits = (len(prev.text) + len(text) + 1 <= max_chars
+                    and cue.end - prev.start <= max_dur
+                    and cue.start - prev.end <= max_gap)
+            if fits and not ends_sentence:
+                prev.text = f"{prev.text} {text}".strip()
+                prev.end = cue.end
+                continue
+        merged.append(Cue(start=cue.start, end=cue.end, text=text))
+
+    # Слишком длинные реплики режем по словам, распределяя время пропорционально.
+    out: list[Cue] = []
+    for cue in merged:
+        if len(cue.text) <= max_chars:
+            out.append(cue)
+            continue
+        chunks = split_text(cue.text, max_chars)
+        total = sum(len(c) for c in chunks) or 1
+        cursor = cue.start
+        span = cue.end - cue.start
+        for chunk in chunks:
+            share = span * (len(chunk) / total)
+            out.append(Cue(start=cursor, end=cursor + share, text=chunk))
+            cursor += share
+    return out
 
 
 def cues_from_scenes(scene_texts: Iterable[tuple[str, float]], max_chars: int = 84) -> list[Cue]:

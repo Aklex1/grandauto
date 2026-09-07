@@ -70,6 +70,7 @@ class Channel(Base):
     aspect_ratio: Mapped[str] = mapped_column(String(16), default="16:9")
     resolution: Mapped[str] = mapped_column(String(16), default="720p")
     clip_duration: Mapped[int] = mapped_column(Integer, default=5)
+    clip_coverage_sec: Mapped[int] = mapped_column(Integer, default=20)
     target_minutes: Mapped[float] = mapped_column(Float, default=8.0)
     scene_count: Mapped[int] = mapped_column(Integer, default=8)
 
@@ -172,6 +173,7 @@ class Scene(Base):
     visual_prompt: Mapped[str] = mapped_column(Text, default="")
     audio_path: Mapped[str] = mapped_column(String(500), default="")
     clip_path: Mapped[str] = mapped_column(String(500), default="")
+    clip_paths: Mapped[str] = mapped_column(Text, default="")
     audio_sec: Mapped[float] = mapped_column(Float, default=0.0)
     clip_sec: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String(24), default="pending")
