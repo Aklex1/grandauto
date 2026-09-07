@@ -161,6 +161,27 @@ def split_text(text: str, max_chars: int = 84) -> list[str]:
     return out
 
 
+def split_cues_to_fit(cues: list[Cue], max_chars: int) -> list[Cue]:
+    """Режем слишком длинные реплики, чтобы каждая помещалась в две строки кадра."""
+    out: list[Cue] = []
+    for cue in cues:
+        text = (cue.text or "").strip()
+        if not text:
+            continue
+        if len(text) <= max_chars:
+            out.append(cue)
+            continue
+        chunks = split_text(text, max_chars)
+        total = sum(len(c) for c in chunks) or 1
+        cursor = cue.start
+        span = max(0.1, cue.end - cue.start)
+        for chunk in chunks:
+            share = span * (len(chunk) / total)
+            out.append(Cue(start=cursor, end=cursor + share, text=chunk))
+            cursor += share
+    return out
+
+
 def wrap_two_lines(text: str, width: int = 42) -> str:
     words = text.split()
     lines, line = [], ""
@@ -197,7 +218,7 @@ ASS_HEADER = """[Script Info]
 ScriptType: v4.00+
 PlayResX: {w}
 PlayResY: {h}
-WrapStyle: 2
+WrapStyle: 0
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
@@ -209,22 +230,35 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
+# Средняя ширина символа DejaVu Sans относительно кегля — по ней подбираем размер шрифта.
+CHAR_WIDTH_RATIO = 0.55
+
+
 def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720),
               vertical: bool = False, font: str = "DejaVu Sans") -> Path:
-    """ASS-субтитры для вшивания: крупные, с обводкой, по центру внизу."""
+    """ASS-субтитры для вшивания: крупные, с обводкой, по центру внизу.
+
+    Кегль считается от ШИРИНЫ кадра и числа символов в строке, иначе в вертикальном
+    формате (1080×1920) текст вылезает за края.
+    """
     w, h = size
-    font_size = int(h * (0.055 if not vertical else 0.045))
+    chars_per_line = 26 if vertical else 42
+    margin_h = int(w * 0.06)
+    usable = w - 2 * margin_h
+    font_size = int(usable / (chars_per_line * CHAR_WIDTH_RATIO))
+    font_size = max(20, min(font_size, int(h * 0.06)))
     header = ASS_HEADER.format(
         w=w, h=h, font=font, size=font_size,
         outline=max(2, int(font_size * 0.09)),
         shadow=1,
-        margin_h=int(w * 0.07),
-        margin_v=int(h * (0.09 if not vertical else 0.22)),
+        margin_h=margin_h,
+        margin_v=int(h * (0.09 if not vertical else 0.20)),
     )
-    width = 34 if vertical else 42
     lines = [header]
-    for cue in cues:
-        text = wrap_two_lines(cue.text, width)
+    # Реплика длиннее двух строк не влезает в кадр — режем её на несколько,
+    # распределяя время пропорционально длине кусков.
+    for cue in split_cues_to_fit(cues, chars_per_line * 2):
+        text = wrap_two_lines(cue.text, chars_per_line)
         if not text:
             continue
         lines.append(
