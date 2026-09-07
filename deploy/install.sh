@@ -8,8 +8,8 @@ DATA_DIR="${DATA_DIR:-/var/lib/contentfactory}"
 ENV_FILE="/etc/contentfactory.env"
 SERVICE="contentfactory"
 PORT="${CF_PORT:-80}"
-REPO_URL="${REPO_URL:-https://github.com/aklex1/grandauto.git}"
-REPO_BRANCH="${REPO_BRANCH:-claude/content-factory-server-0qz0yw}"
+REPO_URL="${REPO_URL:-https://github.com/Aklex1/ContentFactory.git}"
+REPO_BRANCH="${REPO_BRANCH:-main}"
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 

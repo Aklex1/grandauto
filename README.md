@@ -39,7 +39,7 @@ Ubuntu 24.04 LTS, root-доступ. Скрипт установки сам по
 ## Установка
 
 ```bash
-git clone -b claude/content-factory-server-0qz0yw https://github.com/aklex1/grandauto.git /opt/contentfactory
+git clone https://github.com/Aklex1/ContentFactory.git /opt/contentfactory
 cd /opt/contentfactory
 KIE_API_KEY=ваш_ключ CF_ADMIN_PASSWORD=ваш_пароль bash deploy/install.sh
 ```
