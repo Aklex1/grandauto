@@ -25,6 +25,12 @@ DEFAULTS: dict[str, Any] = {
     "auto_run_schedule": "1",
     "scene_concurrency": "3",
     "usd_per_credit": "0.005",
+    # бета: пакетный импорт футажей из бесплатных стоков
+    "pexels_api_key": "",
+    "pixabay_api_key": "",
+    "stock_provider": "pexels",
+    "stock_min_duration": "6",
+    "stock_per_page": "24",
 }
 
 

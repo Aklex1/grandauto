@@ -34,6 +34,25 @@
     });
   });
 
+  // Бета-вкладка стоков: «отметить все» и счётчик выбранных.
+  document.querySelectorAll('[data-toggle-all]').forEach(master => {
+    const scope = document.querySelector(master.getAttribute('data-toggle-all'));
+    if (!scope) return;
+    const boxes = () => scope.querySelectorAll('input[type=checkbox][name=item]');
+    const counter = document.querySelector('[data-selected-count]');
+    const refresh = () => {
+      if (!counter) return;
+      const n = scope.querySelectorAll('input[type=checkbox][name=item]:checked').length;
+      counter.textContent = n;
+    };
+    master.addEventListener('change', () => {
+      boxes().forEach(b => { b.checked = master.checked; });
+      refresh();
+    });
+    boxes().forEach(b => b.addEventListener('change', refresh));
+    refresh();
+  });
+
   document.querySelectorAll('[data-voice-preview]').forEach(sel => {
     sel.addEventListener('change', () => {
       const opt = sel.options[sel.selectedIndex];

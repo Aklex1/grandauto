@@ -47,6 +47,19 @@
         <input name="scene_concurrency" type="number" min="1" max="8" value="{{ settings.scene_concurrency }}"></label>
     </fieldset>
 
+    <fieldset><legend>Стоки видео <span class="badge">beta</span></legend>
+      <p class="small muted">Ключи бесплатные. Пустое поле не затирает сохранённый ключ,
+        дефис «-» очищает его.</p>
+      <label>Ключ Pexels
+        <input name="pexels_api_key" placeholder="{% if settings.pexels_api_key %}сохранён{% else %}не задан — pexels.com/api/new/{% endif %}"></label>
+      <label>Ключ Pixabay
+        <input name="pixabay_api_key" placeholder="{% if settings.pixabay_api_key %}сохранён{% else %}не задан — pixabay.com/api/docs/{% endif %}"></label>
+      <label>Минимальная длительность в выдаче, с
+        <input name="stock_min_duration" type="number" min="0" max="60" step="1" value="{{ settings.stock_min_duration }}"></label>
+      <label>Результатов на страницу
+        <input name="stock_per_page" type="number" min="3" max="50" value="{{ settings.stock_per_page }}"></label>
+    </fieldset>
+
     <fieldset><legend>Доступ в панель</legend>
       <label>Новый пароль администратора (оставьте пустым, чтобы не менять)
         <input name="new_password" type="password" autocomplete="new-password"></label>

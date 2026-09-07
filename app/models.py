@@ -323,6 +323,11 @@ class Footage(Base):
     tags: Mapped[str] = mapped_column(Text, default="")
     path: Mapped[str] = mapped_column(String(500), default="")
     source_url: Mapped[str] = mapped_column(String(600), default="")
+    # откуда приехал футаж: "" — загружен вручную, иначе pexels/pixabay
+    provider: Mapped[str] = mapped_column(String(40), default="")
+    author: Mapped[str] = mapped_column(String(200), default="")
+    license_note: Mapped[str] = mapped_column(String(300), default="")
+    page_url: Mapped[str] = mapped_column(String(600), default="")
     duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
     width: Mapped[int] = mapped_column(Integer, default=0)
     height: Mapped[int] = mapped_column(Integer, default=0)

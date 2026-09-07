@@ -83,6 +83,23 @@ def _run_job(job_id: int) -> None:
             sync.sync_prices()
         elif kind == "sync_models":
             sync.sync_models()
+        elif kind == "stock_import":
+            from . import stock
+            from .models import Event
+
+            with session_scope() as session:
+                added, problems = stock.import_items(
+                    session, payload.get("items") or [],
+                    channel_id=payload.get("channel_id"),
+                    channel_slug=payload.get("channel_slug"),
+                    query=payload.get("query", ""),
+                    extra_tags=payload.get("extra_tags", ""))
+                message = f"Импорт из стока «{payload.get('query', '')}»: добавлено {added}"
+                if problems:
+                    message += ". Не удалось: " + "; ".join(problems[:5])
+                session.add(Event(level="warn" if problems else "info",
+                                  stage="библиотека", message=message[:4000]))
+                session.commit()
         elif kind == "plan_day":
             from . import planner
 

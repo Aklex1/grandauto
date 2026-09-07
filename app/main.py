@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import (bootstrap, config, estimate, footage, planner, prompts, queue, scheduler,
-               storage, sync, webutil)
+               stock, storage, sync, webutil)
 from . import settings_store as st
 from .db import get_session, session_scope
 from .kie import KieClient
@@ -196,6 +196,8 @@ def dashboard(request: Request, session: Session = Depends(get_session),
 
 @app.get("/channels/{channel_id}", response_class=HTMLResponse)
 def channel_page(channel_id: int, request: Request, tab: str = "plan",
+                 q: str = "", provider: str = "", orientation: str = "",
+                 min_duration: float = -1.0, page: int = 1,
                  session: Session = Depends(get_session), _user: str = Depends(require_user)):
     channel = _channel_or_404(session, channel_id)
     plan = session.execute(
@@ -214,13 +216,52 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         .order_by(Footage.id.desc())).scalars().all()
     lib_bytes, lib_sec = footage.library_size(clips)
 
+    stock_ctx = _stock_context(session, channel, tab, q=q, provider=provider,
+                               orientation=orientation, min_duration=min_duration, page=page)
+
     return templates.TemplateResponse("channel.html", base_context(
         request, session, channel=channel, plan=plan, videos=videos, rules=rules,
         voices=voices, models=models, tab=tab,
         plan_done=sum(1 for p in plan if p.status == "done"),
         plan_left=sum(1 for p in plan if p.status == "planned"),
-        clips=clips, lib_bytes=lib_bytes, lib_sec=lib_sec,
+        clips=clips, lib_bytes=lib_bytes, lib_sec=lib_sec, **stock_ctx,
         **estimate.channel_estimate_context(session, channel)))
+
+
+def _stock_context(session: Session, channel: Channel, tab: str, *, q: str, provider: str,
+                   orientation: str, min_duration: float, page: int) -> dict:
+    """Готовим вкладку стоков: настройки формы и, если задан запрос, живую выдачу."""
+    chosen = provider if provider in stock.PROVIDERS else st.get(session, "stock_provider", "pexels")
+    if chosen not in stock.PROVIDERS:
+        chosen = "pexels"
+    if min_duration < 0:
+        min_duration = st.get_float(session, "stock_min_duration", 6.0)
+    ctx = {
+        "stock_providers": stock.PROVIDERS,
+        "stock_configured": stock.configured(session),
+        "stock_provider": chosen,
+        "stock_query": q.strip(),
+        "stock_orientation": orientation or stock.orientation_for_channel(channel.aspect_ratio),
+        "stock_min_duration": min_duration,
+        "stock_page": max(1, page),
+        "stock_result": None,
+        "stock_error": "",
+    }
+    if tab != "stock" or not q.strip():
+        return ctx
+    try:
+        result = stock.search(session, chosen, q,
+                              per_page=st.get_int(session, "stock_per_page", 24),
+                              page=ctx["stock_page"],
+                              orientation=ctx["stock_orientation"],
+                              min_duration=min_duration)
+        ctx["stock_result"] = result
+    except stock.StockError as exc:
+        ctx["stock_error"] = str(exc)
+    except Exception as exc:  # noqa: BLE001 — поиск не должен ронять страницу канала
+        log.exception("Поиск в стоке провалился")
+        ctx["stock_error"] = f"Сбой поиска: {exc}"
+    return ctx
 
 
 @app.post("/channels/{channel_id}/settings")
@@ -455,6 +496,43 @@ async def footage_upload(channel_id: int, request: Request,
     return RedirectResponse(f"/channels/{channel_id}?tab=footage", status_code=303)
 
 
+@app.post("/channels/{channel_id}/stock/import")
+async def stock_import(channel_id: int, request: Request,
+                       session: Session = Depends(get_session),
+                       _user: str = Depends(require_user)):
+    """Бета: ставим в очередь скачивание отмеченных роликов из стока."""
+    channel = _channel_or_404(session, channel_id)
+    form = await request.form()
+    shared = bool(form.get("shared"))
+    query = str(form.get("query") or "")
+    extra_tags = str(form.get("tags") or "")
+
+    items = []
+    for raw in form.getlist("item"):
+        try:
+            items.append(json.loads(str(raw)))
+        except json.JSONDecodeError:
+            continue
+    if not items:
+        session.add(Event(level="warn", stage="библиотека",
+                          message="Импорт из стока: ни один ролик не отмечен"))
+        session.commit()
+        return RedirectResponse(f"/channels/{channel_id}?tab=stock", status_code=303)
+
+    queue.enqueue(session, "stock_import", payload={
+        "channel_id": None if shared else channel.id,
+        "channel_slug": None if shared else channel.slug,
+        "query": query,
+        "extra_tags": extra_tags,
+        "items": items,
+    })
+    session.add(Event(level="info", stage="библиотека",
+                      message=f"Импорт из стока: в очередь поставлено {len(items)} роликов "
+                              f"по запросу «{query}»"))
+    session.commit()
+    return RedirectResponse(f"/channels/{channel_id}?tab=footage", status_code=303)
+
+
 @app.post("/footage/{footage_id}/delete")
 def footage_delete(footage_id: int, session: Session = Depends(get_session),
                    _user: str = Depends(require_user)):
@@ -646,7 +724,9 @@ def settings_save(session: Session = Depends(get_session), _user: str = Depends(
                   default_tts_model: str = Form(""), tts_fallback_model: str = Form(""),
                   tts_fallback_voice: str = Form(""), tts_allow_fallback: str = Form(""),
                   auto_run_schedule: str = Form(""), scene_concurrency: int = Form(3),
-                  usd_per_credit: float = Form(0.005), new_password: str = Form("")):
+                  usd_per_credit: float = Form(0.005), new_password: str = Form(""),
+                  pexels_api_key: str = Form(""), pixabay_api_key: str = Form(""),
+                  stock_min_duration: float = Form(6.0), stock_per_page: int = Form(24)):
     if kie_api_key.strip():
         st.set_value(session, "kie_api_key", kie_api_key.strip())
     for key, value in (("default_chat_model", default_chat_model),
@@ -661,6 +741,15 @@ def settings_save(session: Session = Depends(get_session), _user: str = Depends(
     st.set_value(session, "auto_run_schedule", "1" if auto_run_schedule else "0")
     st.set_value(session, "scene_concurrency", max(1, min(8, scene_concurrency)))
     st.set_value(session, "usd_per_credit", usd_per_credit)
+    # ключи стоков: пустое поле не затирает сохранённый ключ, слово "-" очищает
+    for key, value in (("pexels_api_key", pexels_api_key), ("pixabay_api_key", pixabay_api_key)):
+        value = value.strip()
+        if value == "-":
+            st.set_value(session, key, "")
+        elif value:
+            st.set_value(session, key, value)
+    st.set_value(session, "stock_min_duration", max(0.0, min(60.0, stock_min_duration)))
+    st.set_value(session, "stock_per_page", max(3, min(50, stock_per_page)))
     if new_password.strip():
         from .security import hash_password
 

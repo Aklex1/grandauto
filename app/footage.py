@@ -66,7 +66,8 @@ def probe(path: Path) -> dict:
 
 
 def _register(session: Session, path: Path, *, channel_id: Optional[int], channel_slug: Optional[str],
-              title: str, tags: str, source_url: str = "") -> Footage:
+              title: str, tags: str, source_url: str = "", provider: str = "",
+              author: str = "", license_note: str = "", page_url: str = "") -> Footage:
     info = probe(path)
     if info["duration"] < MIN_USABLE_SEC:
         path.unlink(missing_ok=True)
@@ -81,6 +82,10 @@ def _register(session: Session, path: Path, *, channel_id: Optional[int], channe
         tags=tags.strip(),
         path=storage.rel(path),
         source_url=source_url,
+        provider=provider,
+        author=author,
+        license_note=license_note,
+        page_url=page_url,
         duration_sec=info["duration"],
         width=info["width"],
         height=info["height"],
@@ -115,7 +120,9 @@ def add_from_upload(session: Session, fileobj, filename: str, *, channel_id: Opt
 
 
 def add_from_url(session: Session, url: str, *, channel_id: Optional[int],
-                 channel_slug: Optional[str], title: str = "", tags: str = "") -> Footage:
+                 channel_slug: Optional[str], title: str = "", tags: str = "",
+                 provider: str = "", author: str = "", license_note: str = "",
+                 page_url: str = "") -> Footage:
     """Скачиваем футаж по прямой ссылке на видеофайл."""
     url = (url or "").strip()
     if not url.startswith(("http://", "https://")):
@@ -134,7 +141,9 @@ def add_from_url(session: Session, url: str, *, channel_id: Optional[int],
         raise FootageError(f"Не удалось скачать: {exc}") from exc
     try:
         return _register(session, dest, channel_id=channel_id, channel_slug=channel_slug,
-                         title=title or Path(name).stem, tags=tags, source_url=url)
+                         title=title or Path(name).stem, tags=tags, source_url=url,
+                         provider=provider, author=author, license_note=license_note,
+                         page_url=page_url)
     except Exception:
         dest.unlink(missing_ok=True)
         raise

@@ -16,6 +16,7 @@
   <a href="?tab=plan" class="{% if tab == 'plan' %}active{% endif %}">Контент-план ({{ plan|length }})</a>
   <a href="?tab=videos" class="{% if tab == 'videos' %}active{% endif %}">Ролики ({{ videos|length }})</a>
   <a href="?tab=footage" class="{% if tab == 'footage' %}active{% endif %}">Библиотека видео ({{ clips|length }})</a>
+  <a href="?tab=stock" class="{% if tab == 'stock' %}active{% endif %}">Стоки <span class="badge">beta</span></a>
   <a href="?tab=schedule" class="{% if tab == 'schedule' %}active{% endif %}">Расписание</a>
   <a href="?tab=settings" class="{% if tab == 'settings' %}active{% endif %}">Настройки канала</a>
 </div>
@@ -153,13 +154,15 @@
           <label class="small mt"><input type="checkbox" name="is_active" style="width:auto"
             {% if f.is_active %}checked{% endif %}> используется</label>
           {% if f.channel_id is none %}<span class="badge">общий</span>{% endif %}
+          {% if f.provider %}<span class="badge">{{ f.provider }}</span>{% endif %}
           <button class="btn btn-sm">Сохранить</button>
         </form>
       </td>
       <td class="nowrap">{{ '%.0f'|format(f.duration_sec) }} с</td>
       <td class="nowrap small">{{ f.width }}×{{ f.height }}</td>
       <td class="nowrap small">{{ human_size(f.file_size) }}</td>
-      <td class="small">{{ f.used_count }} раз</td>
+      <td class="small">{{ f.used_count }} раз
+        {% if f.author %}<div class="muted">© {{ f.author }}</div>{% endif %}</td>
       <td class="right">
         <a class="btn btn-sm" href="/media/{{ f.path }}?download=1">⬇</a>
         <form method="post" action="/footage/{{ f.id }}/delete" class="inline-form"
@@ -174,6 +177,125 @@
   </table>
   </div>
 </div>
+
+{% elif tab == 'stock' %}
+<div class="card">
+  <h2>Пакетный импорт со стоков <span class="badge">beta</span></h2>
+  <p class="small muted">Ищем видео в бесплатных банках и одной кнопкой заливаем пачку в библиотеку
+    канала. Pexels и Pixabay отдают ролики по лицензии, которая разрешает коммерческое
+    использование, — такой видеоряд безопасно ставить в монетизируемые ролики. Теги проставляются
+    автоматически из поискового запроса, поэтому конвейер сразу сможет подбирать эти кадры под смысл
+    сцены.</p>
+
+  {% if not stock_configured %}
+  <div class="alert alert-warn">
+    Не задан ни один ключ. Получите бесплатный ключ и впишите его в
+    <a href="/settings">Настройках</a>:
+    {% for name, meta in stock_providers.items() %}
+      <a href="{{ meta.key_url }}" target="_blank" rel="noopener">{{ meta.title }}</a>{% if not loop.last %}, {% endif %}
+    {% endfor %}.
+  </div>
+  {% endif %}
+
+  <form method="get">
+    <input type="hidden" name="tab" value="stock">
+    <div class="grid cols-4">
+      <label>Запрос
+        <input name="q" value="{{ stock_query }}" placeholder="city night, gym workout, ocean"
+               required></label>
+      <label>Сток
+        <select name="provider">
+          {% for name, meta in stock_providers.items() %}
+          <option value="{{ name }}" {% if stock_provider == name %}selected{% endif %}>
+            {{ meta.title }}{% if name not in stock_configured %} — нет ключа{% endif %}</option>
+          {% endfor %}
+        </select></label>
+      <label>Ориентация
+        <select name="orientation">
+          <option value="landscape" {% if stock_orientation == 'landscape' %}selected{% endif %}>горизонтальная 16:9</option>
+          <option value="portrait" {% if stock_orientation == 'portrait' %}selected{% endif %}>вертикальная 9:16</option>
+          <option value="any" {% if stock_orientation == 'any' %}selected{% endif %}>любая</option>
+        </select></label>
+      <label>Минимальная длительность, с
+        <input name="min_duration" type="number" min="0" max="60" step="1"
+               value="{{ '%.0f'|format(stock_min_duration) }}"></label>
+    </div>
+    <p class="small muted">Запросы на английском дают заметно больше результатов — стоки индексируют
+      теги по-английски. Ролики короче 6 секунд брать не стоит: из них нечего нарезать.</p>
+    <button class="btn btn-primary">Найти</button>
+  </form>
+</div>
+
+{% if stock_error %}
+<div class="alert alert-error">{{ stock_error }}</div>
+{% endif %}
+
+{% if stock_result %}
+<div class="card">
+  <h2>Найдено: {{ stock_result.items|length }}{% if stock_result.total %} из {{ stock_result.total }}{% endif %}</h2>
+  {% if stock_result.items %}
+  <form method="post" action="/channels/{{ channel.id }}/stock/import">
+    <input type="hidden" name="query" value="{{ stock_result.query }}">
+    <div class="row mb">
+      <label class="small"><input type="checkbox" data-toggle-all="#stock-results" style="width:auto">
+        отметить все</label>
+      <span class="small muted">выбрано: <b data-selected-count>0</b></span>
+      <span class="spacer"></span>
+      <label class="small"><input type="checkbox" name="shared" style="width:auto">
+        общие футажи — для всех каналов</label>
+    </div>
+    <div class="grid cols-2 mb">
+      <label>Дополнительные теги (к автоматическим)
+        <input name="tags" placeholder="город, вечер"></label>
+    </div>
+
+    <div class="video-grid" id="stock-results">
+      {% for item in stock_result.items %}
+      <div class="video-card">
+        <label style="display:block;cursor:pointer">
+          {% if item.preview_url %}
+          <img src="{{ item.preview_url }}" alt="" loading="lazy"
+               style="width:100%;border-radius:6px;display:block">
+          {% else %}
+          <div class="thumb-placeholder">без превью</div>
+          {% endif %}
+          <div class="small mt">
+            <input type="checkbox" name="item" style="width:auto"
+                   value='{{ item.as_dict()|tojson }}'>
+            {{ item.title[:70] }}
+          </div>
+        </label>
+        <div class="small muted">
+          {{ '%.0f'|format(item.duration_sec) }} с · {{ item.width }}×{{ item.height }}
+          · {{ item.orientation }}
+          {% if item.author %}<br>автор: {{ item.author }}{% endif %}
+          {% if item.page_url %}
+          · <a href="{{ item.page_url }}" target="_blank" rel="noopener">источник</a>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="row mt">
+      <button class="btn btn-primary">Импортировать отмеченные</button>
+      <span class="small muted">Скачивание идёт фоновой задачей — можно закрыть страницу.
+        Результат появится во вкладке «Библиотека видео».</span>
+    </div>
+  </form>
+  {% else %}
+  <p class="muted">По этому запросу ничего не нашлось. Попробуйте другую формулировку,
+    другую ориентацию или уменьшите минимальную длительность.</p>
+  {% endif %}
+
+  <div class="row mt">
+    {% if stock_page > 1 %}
+    <a class="btn btn-sm" href="?tab=stock&q={{ stock_query|urlencode }}&provider={{ stock_provider }}&orientation={{ stock_orientation }}&min_duration={{ '%.0f'|format(stock_min_duration) }}&page={{ stock_page - 1 }}">← страница {{ stock_page - 1 }}</a>
+    {% endif %}
+    <a class="btn btn-sm" href="?tab=stock&q={{ stock_query|urlencode }}&provider={{ stock_provider }}&orientation={{ stock_orientation }}&min_duration={{ '%.0f'|format(stock_min_duration) }}&page={{ stock_page + 1 }}">страница {{ stock_page + 1 }} →</a>
+  </div>
+</div>
+{% endif %}
 
 {% elif tab == 'schedule' %}
 <div class="card">
