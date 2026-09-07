@@ -31,6 +31,8 @@ DEFAULTS: dict[str, Any] = {
     "stock_provider": "pexels",
     "stock_min_duration": "6",
     "stock_per_page": "24",
+    # неснижаемый остаток на диске: ниже него загрузка футажей останавливается
+    "disk_min_free_gb": "5",
 }
 
 

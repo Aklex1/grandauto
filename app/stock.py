@@ -278,6 +278,12 @@ def import_items(session: Session, items: list[dict], *, channel_id: Optional[in
         if not item.download_url:
             problems.append(f"{item.title}: нет ссылки на файл")
             continue
+        try:
+            # проверяем перед каждым файлом: пачка может быть на десятки гигабайт
+            footage.ensure_free_space(session)
+        except footage.FootageError as exc:
+            problems.append(f"Импорт остановлен: {exc}")
+            break
         tags = ", ".join(t for t in (suggest_tags(query, item), extra_tags.strip()) if t)
         meta = PROVIDERS.get(item.provider, {})
         try:

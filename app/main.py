@@ -141,6 +141,7 @@ def base_context(request: Request, session: Session, **extra) -> dict:
         "labels": STATUS_LABELS,
         "settings": st.all_settings(session),
         "human_size": storage.human_size,
+        "disk_free_global": storage.free_bytes(),
         "now": utcnow(),
     }
     ctx.update(extra)
@@ -215,6 +216,7 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         select(Footage).where((Footage.channel_id == channel.id) | (Footage.channel_id.is_(None)))
         .order_by(Footage.id.desc())).scalars().all()
     lib_bytes, lib_sec = footage.library_size(clips)
+    lib_stats = footage.stats(session, channel.id)
 
     stock_ctx = _stock_context(session, channel, tab, q=q, provider=provider,
                                orientation=orientation, min_duration=min_duration, page=page)
@@ -224,7 +226,8 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         voices=voices, models=models, tab=tab,
         plan_done=sum(1 for p in plan if p.status == "done"),
         plan_left=sum(1 for p in plan if p.status == "planned"),
-        clips=clips, lib_bytes=lib_bytes, lib_sec=lib_sec, **stock_ctx,
+        clips=clips, lib_bytes=lib_bytes, lib_sec=lib_sec, lib_stats=lib_stats,
+        cleanup_modes=footage.CLEANUP_MODES, **stock_ctx,
         **estimate.channel_estimate_context(session, channel)))
 
 
@@ -237,6 +240,8 @@ def _stock_context(session: Session, channel: Channel, tab: str, *, q: str, prov
     if min_duration < 0:
         min_duration = st.get_float(session, "stock_min_duration", 6.0)
     ctx = {
+        "disk_free": storage.free_bytes(),
+        "disk_reserve": footage.min_free_bytes(session),
         "stock_providers": stock.PROVIDERS,
         "stock_configured": stock.configured(session),
         "stock_provider": chosen,
@@ -496,6 +501,27 @@ async def footage_upload(channel_id: int, request: Request,
     return RedirectResponse(f"/channels/{channel_id}?tab=footage", status_code=303)
 
 
+@app.post("/channels/{channel_id}/footage/cleanup")
+def footage_cleanup(channel_id: int, session: Session = Depends(get_session),
+                    _user: str = Depends(require_user), mode: str = Form("unused")):
+    """Освобождение места в библиотеке видео."""
+    channel = _channel_or_404(session, channel_id)
+    try:
+        removed, freed = footage.cleanup(session, mode, channel_id=channel.id)
+    except footage.FootageError as exc:
+        session.add(Event(level="warn", stage="библиотека", message=str(exc)[:4000]))
+        session.commit()
+        return RedirectResponse(f"/channels/{channel_id}?tab=footage", status_code=303)
+
+    session.add(Event(
+        level="info", stage="библиотека",
+        message=f"Очистка библиотеки ({footage.CLEANUP_MODES[mode]}): удалено {removed}, "
+                f"освобождено {storage.human_size(freed)}, "
+                f"свободно на диске {storage.human_size(storage.free_bytes())}"))
+    session.commit()
+    return RedirectResponse(f"/channels/{channel_id}?tab=footage", status_code=303)
+
+
 @app.post("/channels/{channel_id}/stock/import")
 async def stock_import(channel_id: int, request: Request,
                        session: Session = Depends(get_session),
@@ -726,7 +752,8 @@ def settings_save(session: Session = Depends(get_session), _user: str = Depends(
                   auto_run_schedule: str = Form(""), scene_concurrency: int = Form(3),
                   usd_per_credit: float = Form(0.005), new_password: str = Form(""),
                   pexels_api_key: str = Form(""), pixabay_api_key: str = Form(""),
-                  stock_min_duration: float = Form(6.0), stock_per_page: int = Form(24)):
+                  stock_min_duration: float = Form(6.0), stock_per_page: int = Form(24),
+                  disk_min_free_gb: float = Form(5.0)):
     if kie_api_key.strip():
         st.set_value(session, "kie_api_key", kie_api_key.strip())
     for key, value in (("default_chat_model", default_chat_model),
@@ -750,6 +777,7 @@ def settings_save(session: Session = Depends(get_session), _user: str = Depends(
             st.set_value(session, key, value)
     st.set_value(session, "stock_min_duration", max(0.0, min(60.0, stock_min_duration)))
     st.set_value(session, "stock_per_page", max(3, min(50, stock_per_page)))
+    st.set_value(session, "disk_min_free_gb", max(0.0, min(500.0, disk_min_free_gb)))
     if new_password.strip():
         from .security import hash_password
 

@@ -24,6 +24,9 @@
     <span class="badge" id="credits" title="Баланс кредитов KIE">
       {{ settings.credits_balance or '—' }} cr
     </span>
+    <span class="badge" title="Свободно на диске с данными">
+      💾 {{ human_size(disk_free_global) }}
+    </span>
     <a class="btn btn-ghost" href="/logout">Выйти</a>
   </div>
 </header>

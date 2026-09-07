@@ -98,6 +98,23 @@ def _register(session: Session, path: Path, *, channel_id: Optional[int], channe
     return item
 
 
+def min_free_bytes(session: Session) -> int:
+    from . import settings_store as st
+
+    return int(max(0.0, st.get_float(session, "disk_min_free_gb", 5.0)) * (1 << 30))
+
+
+def ensure_free_space(session: Session, need: int = 0) -> None:
+    """Не даём забить диск под ноль: оставляем неснижаемый остаток из настроек."""
+    reserve = min_free_bytes(session)
+    free = storage.free_bytes()
+    if free - need < reserve:
+        raise FootageError(
+            f"На диске осталось {storage.human_size(free)} — это ниже "
+            f"неснижаемого остатка {storage.human_size(reserve)}. "
+            f"Освободите место во вкладке «Библиотека видео» или уменьшите остаток в настройках")
+
+
 def add_from_upload(session: Session, fileobj, filename: str, *, channel_id: Optional[int],
                     channel_slug: Optional[str], title: str = "", tags: str = "") -> Footage:
     """Сохраняем загруженный через панель файл в библиотеку."""
@@ -105,6 +122,7 @@ def add_from_upload(session: Session, fileobj, filename: str, *, channel_id: Opt
     if suffix and suffix not in ALLOWED_SUFFIXES:
         raise FootageError(f"Формат {suffix} не поддерживается. "
                            f"Допустимы: {', '.join(sorted(ALLOWED_SUFFIXES))}")
+    ensure_free_space(session)
     dest = library_dir(channel_slug) / _safe_name(filename)
     with open(dest, "wb") as out:
         shutil.copyfileobj(fileobj, out, length=1 << 20)
@@ -127,6 +145,7 @@ def add_from_url(session: Session, url: str, *, channel_id: Optional[int],
     url = (url or "").strip()
     if not url.startswith(("http://", "https://")):
         raise FootageError("Нужна прямая ссылка на видеофайл (http/https)")
+    ensure_free_space(session)
     name = Path(url.split("?", 1)[0]).name or "footage.mp4"
     dest = library_dir(channel_slug) / _safe_name(name)
     try:
@@ -259,6 +278,110 @@ def delete(session: Session, item: Footage) -> None:
         storage.abspath(item.path).unlink(missing_ok=True)
     session.delete(item)
     session.commit()
+
+
+def stats(session: Session, channel_id: Optional[int]) -> dict:
+    """Сводка по библиотеке канала: что занимает место и что можно освободить."""
+    rows = session.execute(
+        select(Footage).where(
+            (Footage.channel_id == channel_id) | (Footage.channel_id.is_(None)))
+    ).scalars().all()
+
+    def group(items: list[Footage]) -> dict:
+        return {"count": len(items), "bytes": sum(i.file_size or 0 for i in items)}
+
+    unused = [r for r in rows if not r.used_count]
+    inactive = [r for r in rows if not r.is_active]
+    from_stock = [r for r in rows if r.provider]
+    missing = [r for r in rows if not r.path or not storage.abspath(r.path).exists()]
+
+    total_bytes, total_sec = library_size(rows)
+    return {
+        "total": {"count": len(rows), "bytes": total_bytes, "seconds": total_sec},
+        "unused": group(unused),
+        "inactive": group(inactive),
+        "stock": group(from_stock),
+        "missing": group(missing),
+        "orphans": orphan_stats(session),
+        "free": storage.free_bytes(),
+    }
+
+
+def orphan_stats(session: Session) -> dict:
+    """Файлы, лежащие в библиотеке на диске, но потерявшие запись в базе."""
+    known = {r.path for r in session.execute(select(Footage)).scalars() if r.path}
+    count, size = 0, 0
+    root = config.MEDIA_DIR / LIBRARY_DIRNAME
+    if root.exists():
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in ALLOWED_SUFFIXES:
+                continue
+            if storage.rel(path) in known:
+                continue
+            count += 1
+            size += path.stat().st_size
+    return {"count": count, "bytes": size}
+
+
+CLEANUP_MODES = {
+    "unused": "ни разу не использованные",
+    "inactive": "отключённые",
+    "stock": "импортированные со стоков",
+    "missing": "записи без файла на диске",
+    "orphans": "файлы без записи в базе",
+}
+
+
+def cleanup(session: Session, mode: str, channel_id: Optional[int] = None) -> tuple[int, int]:
+    """Удаляем выбранную группу футажей. Возвращаем сколько удалено и сколько байт освобождено."""
+    if mode not in CLEANUP_MODES:
+        raise FootageError(f"Неизвестный режим очистки: {mode}")
+
+    if mode == "orphans":
+        known = {r.path for r in session.execute(select(Footage)).scalars() if r.path}
+        removed, freed = 0, 0
+        root = config.MEDIA_DIR / LIBRARY_DIRNAME
+        if root.exists():
+            for path in sorted(root.rglob("*")):
+                if not path.is_file() or path.suffix.lower() not in ALLOWED_SUFFIXES:
+                    continue
+                if storage.rel(path) in known:
+                    continue
+                freed += path.stat().st_size
+                path.unlink(missing_ok=True)
+                removed += 1
+        log.info("Очистка «%s»: удалено %s файлов, освобождено %s",
+                 CLEANUP_MODES[mode], removed, storage.human_size(freed))
+        return removed, freed
+
+    query = select(Footage)
+    if channel_id is not None:
+        query = query.where(
+            (Footage.channel_id == channel_id) | (Footage.channel_id.is_(None)))
+    rows = session.execute(query).scalars().all()
+
+    if mode == "unused":
+        targets = [r for r in rows if not r.used_count]
+    elif mode == "inactive":
+        targets = [r for r in rows if not r.is_active]
+    elif mode == "stock":
+        targets = [r for r in rows if r.provider]
+    else:  # missing
+        targets = [r for r in rows if not r.path or not storage.abspath(r.path).exists()]
+
+    removed, freed = 0, 0
+    for item in targets:
+        if item.path:
+            path = storage.abspath(item.path)
+            if path.exists():
+                freed += path.stat().st_size
+                path.unlink(missing_ok=True)
+        session.delete(item)
+        removed += 1
+    session.commit()
+    log.info("Очистка «%s»: удалено %s футажей, освобождено %s",
+             CLEANUP_MODES[mode], removed, storage.human_size(freed))
+    return removed, freed
 
 
 def library_size(items: Iterable[Footage]) -> tuple[int, float]:

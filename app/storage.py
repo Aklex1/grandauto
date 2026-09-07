@@ -92,6 +92,11 @@ def disk_usage() -> dict:
     }
 
 
+def free_bytes() -> int:
+    """Сколько места осталось на диске с данными."""
+    return shutil.disk_usage(config.DATA_DIR).free
+
+
 def human_size(num: Optional[int]) -> str:
     if not num:
         return "0 B"

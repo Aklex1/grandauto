@@ -112,10 +112,11 @@
   <div class="stat"><div class="label">Видео в библиотеке</div><div class="value">{{ clips|length }}</div></div>
   <div class="stat"><div class="label">Суммарная длительность</div><div class="value">{{ '%.0f'|format(lib_sec / 60) }} мин</div></div>
   <div class="stat"><div class="label">Занимают на диске</div><div class="value">{{ human_size(lib_bytes) }}</div></div>
-  <div class="stat"><div class="label">Режим видеоряда</div><div class="value small">
-    {% if channel.visual_source == 'library' %}только библиотека
-    {% elif channel.visual_source == 'mix' %}смешанный, {{ channel.library_share }}%
-    {% else %}только генерация{% endif %}</div></div>
+  <div class="stat"><div class="label">Свободно на диске</div>
+    <div class="value">{{ human_size(lib_stats.free) }}</div>
+    <div class="small muted">режим: {% if channel.visual_source == 'library' %}только библиотека
+      {% elif channel.visual_source == 'mix' %}микс {{ channel.library_share }}%
+      {% else %}только генерация{% endif %}</div></div>
 </div>
 
 <div class="card">
@@ -135,6 +136,38 @@
     <label><input type="checkbox" name="shared" style="width:auto"> Общий футаж — доступен всем каналам</label>
     <button class="btn btn-primary">Загрузить</button>
   </form>
+</div>
+
+<div class="card">
+  <h2>Хранилище</h2>
+  <p class="small muted">Свободно <b>{{ human_size(lib_stats.free) }}</b>,
+    библиотека занимает {{ human_size(lib_stats.total.bytes) }}
+    ({{ lib_stats.total.count }} видео, {{ '%.0f'|format(lib_stats.total.seconds / 60) }} мин).
+    Загрузка новых футажей останавливается, когда свободного места остаётся меньше
+    неснижаемого остатка из <a href="/settings">настроек</a>.</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Что удалить</th><th>Сколько</th><th>Освободится</th><th></th></tr>
+    {% for mode, label in cleanup_modes.items() %}
+    {% set group = lib_stats[mode] %}
+    <tr>
+      <td>{{ label }}</td>
+      <td class="nowrap">{{ group.count }}</td>
+      <td class="nowrap">{{ human_size(group.bytes) }}</td>
+      <td class="right">
+        <form method="post" action="/channels/{{ channel.id }}/footage/cleanup" class="inline-form"
+              data-confirm="Удалить {{ group.count }} — {{ label }} — и освободить {{ human_size(group.bytes) }}?">
+          <input type="hidden" name="mode" value="{{ mode }}">
+          <button class="btn btn-sm btn-danger" {% if not group.count %}disabled{% endif %}>Удалить</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p class="small muted mt">«Ни разу не использованные» — футажи, которые ещё не попали ни в один
+    ролик: их безопасно удалять сразу после импорта, если выдача стока не подошла.
+    «Файлы без записи в базе» появляются, если закачка оборвалась на середине.</p>
 </div>
 
 <div class="card">
@@ -186,6 +219,11 @@
     использование, — такой видеоряд безопасно ставить в монетизируемые ролики. Теги проставляются
     автоматически из поискового запроса, поэтому конвейер сразу сможет подбирать эти кадры под смысл
     сцены.</p>
+
+  <p class="small">Свободно на диске: <b>{{ human_size(disk_free) }}</b>,
+    неснижаемый остаток {{ human_size(disk_reserve) }}. Импорт остановится сам, если места
+    станет меньше. Освободить — во вкладке
+    <a href="?tab=footage">«Библиотека видео»</a>.</p>
 
   {% if not stock_configured %}
   <div class="alert alert-warn">
