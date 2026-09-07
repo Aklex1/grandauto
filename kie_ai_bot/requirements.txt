@@ -1,0 +1,31 @@
+# Основные зависимости
+aiogram>=3.0.0
+python-dotenv>=1.0.0
+pymysql>=1.1.0
+flask>=3.0.0
+httpx>=0.25.0
+uvicorn>=0.24.0
+fastapi>=0.104.0
+python-multipart>=0.0.6
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0
+PyJWT>=2.8.0
+
+# Redis для кэширования, очередей и FSM storage
+redis>=5.0.0
+aioredis>=2.0.0
+
+# Production WSGI server для Flask
+gunicorn>=21.2.0
+
+# Утилиты
+python-dateutil>=2.8.0
+
+# Мониторинг
+prometheus-client>=0.19.0
+
+# Обработка изображений
+Pillow>=10.0.0
+
+# Email отправка (встроено в Python, но можно использовать дополнительные библиотеки)
+# Для Gmail может потребоваться настройка "Ненадежные приложения" или App Password

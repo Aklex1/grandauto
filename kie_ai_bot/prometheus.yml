@@ -1,0 +1,44 @@
+# Конфигурация Prometheus
+global:
+  scrape_interval: 15s  # Как часто собирать метрики
+  evaluation_interval: 15s  # Как часто оценивать правила
+  external_labels:
+    monitor: 'kie-ai-bot'
+
+# Правила алертов (опционально)
+rule_files:
+  # - "alerts.yml"
+
+# Конфигурация scrape (что мониторить)
+scrape_configs:
+  # Мониторинг самого Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Мониторинг Telegram бота
+  - job_name: 'telegram-bot'
+    static_configs:
+      - targets: ['172.17.0.1:8001']  # IP Docker bridge для доступа к хосту
+    metrics_path: '/metrics'
+
+  # Мониторинг Webhook сервера
+  - job_name: 'webhook-server'
+    static_configs:
+      - targets: 
+          - '172.17.0.1:8000'  # Основной порт webhook (Flask endpoint /metrics)
+          - '172.17.0.1:8002'  # Отдельный metrics server (если запущен)
+    metrics_path: '/metrics'
+
+  # Мониторинг Redis (опционально - раскомментируйте если используете redis_exporter)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['localhost:9121']  # Redis Exporter порт
+  #   metrics_path: '/metrics'
+
+  # Мониторинг MySQL (опционально - раскомментируйте если используете mysql_exporter)
+  # - job_name: 'mysql'
+  #   static_configs:
+  #     - targets: ['localhost:9104']  # MySQL Exporter порт
+  #   metrics_path: '/metrics'
+
