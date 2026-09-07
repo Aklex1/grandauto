@@ -41,6 +41,8 @@ POLL_INTERVAL = _env_int("TELETHON_POLL_INTERVAL", 600)
 BACKFILL_LIMIT = _env_int("TELETHON_BACKFILL_LIMIT", 3)
 # Сколько постов просматривать за один проход
 SCAN_LIMIT = _env_int("TELETHON_SCAN_LIMIT", 20)
+# Как глубоко уходить в историю, если под свежими постами промпта нет
+MAX_LOOKBACK = _env_int("TELETHON_MAX_LOOKBACK", 60)
 # Комментарий короче этого считается болтовнёй, а не промптом
 MIN_PROMPT_LEN = _env_int("TELETHON_MIN_PROMPT_LEN", 40)
 # Сколько комментариев просматривать под постом
@@ -58,7 +60,7 @@ def _max_known_id() -> int:
         return int(row["m"] or 0)
 
 
-def _store(source_msg_id: int, photo_path: str, prompt: str, source_caption: str) -> None:
+def _store(source_msg_id: int, photo_path: Optional[str], prompt: str, source_caption: str) -> None:
     status = "ready" if prompt else "waiting_prompt"
     with closing(_connect()) as conn:
         conn.execute(
@@ -68,6 +70,15 @@ def _store(source_msg_id: int, photo_path: str, prompt: str, source_caption: str
             (source_msg_id, photo_path, prompt or None, source_caption or "", status, _now()),
         )
         conn.commit()
+
+
+async def _download_photo(message) -> Optional[str]:
+    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    path = await message.download_media(file=str(MEDIA_DIR / f"post_{message.id}.jpg"))
+    if not path:
+        logger.warning("[telethon] пост %s: фото не скачалось", message.id)
+        return None
+    return str(path)
 
 
 async def _pick_prompt(client, channel, message) -> str:
@@ -91,37 +102,102 @@ async def _pick_prompt(client, channel, message) -> str:
     return (message.message or "").strip()
 
 
+def _needed_count() -> int:
+    """Сколько постов с промптом имеет смысл найти за этот проход."""
+    free = autopost.DAILY_LIMIT - autopost._published_today()
+    with closing(_connect()) as conn:
+        ready = conn.execute(
+            "SELECT COUNT(*) AS n FROM autopost_posts WHERE status = 'ready'"
+        ).fetchone()["n"]
+    return max(0, free - int(ready))
+
+
+async def _recheck_waiting(client, channel) -> int:
+    """Посты, у которых промпта ещё не было: комментарий мог появиться позже."""
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            "SELECT source_msg_id FROM autopost_posts WHERE status = 'waiting_prompt'"
+        ).fetchall()
+
+    found = 0
+    for row in rows:
+        try:
+            message = await client.get_messages(channel, ids=row["source_msg_id"])
+        except Exception:
+            continue
+        if not message:
+            continue
+        prompt = await _pick_prompt(client, channel, message)
+        if prompt:
+            photo_path = await _download_photo(message)
+            if not photo_path:
+                continue
+            with closing(_connect()) as conn:
+                conn.execute(
+                    "UPDATE autopost_posts SET prompt = ?, photo_path = ?, status = 'ready' "
+                    "WHERE source_msg_id = ?",
+                    (prompt, photo_path, row["source_msg_id"]),
+                )
+                conn.commit()
+            found += 1
+            logger.info("[telethon] пост %s: промпт появился в комментариях", row["source_msg_id"])
+    return found
+
+
 async def _scan_once(client) -> int:
+    """Идёт по постам от новых к старым, пока не наберёт нужное число постов
+    с промптом. Пост без промпта не останавливает обход — переходим к более
+    раннему; такие посты остаются в очереди и перепроверяются позже."""
     from telethon.tl.types import MessageMediaPhoto
 
     channel = await client.get_entity(autopost.SOURCE_CHAT_ID)
-    known = _known_ids()
-    first_run = not known
-    limit = BACKFILL_LIMIT if first_run else SCAN_LIMIT
-    min_id = 0 if first_run else _max_known_id()
 
-    added = 0
+    found = await _recheck_waiting(client, channel)
+    needed = _needed_count() - found
+    if needed <= 0:
+        return found
+
+    known = _known_ids()
+    if not known:
+        # На самом первом запуске не набираем больше, чем backfill
+        needed = min(needed, BACKFILL_LIMIT)
+    limit = MAX_LOOKBACK
+
+    seen = 0
     async for message in client.iter_messages(channel, limit=limit):
-        if message.id in known or message.id <= min_id:
+        seen += 1
+        if message.id in known:
             continue
         if not isinstance(message.media, MessageMediaPhoto):
             continue
 
         prompt = await _pick_prompt(client, channel, message)
-        MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-        photo_path = await message.download_media(file=str(MEDIA_DIR / f"post_{message.id}.jpg"))
-        if not photo_path:
-            logger.warning("[telethon] пост %s: фото не скачалось", message.id)
-            continue
 
-        _store(message.id, str(photo_path), prompt, message.message or "")
-        added += 1
-        logger.info(
-            "[telethon] пост %s добавлен в очередь (промпт: %s символов)",
-            message.id, len(prompt),
-        )
+        photo_path = None
+        if prompt:
+            photo_path = await _download_photo(message)
+            if not photo_path:
+                continue
 
-    return added
+        _store(message.id, photo_path, prompt, message.message or "")
+
+        if prompt:
+            found += 1
+            logger.info(
+                "[telethon] пост %s взят в работу (промпт: %s символов)",
+                message.id, len(prompt),
+            )
+            if found >= needed:
+                break
+        else:
+            logger.info(
+                "[telethon] пост %s: промпта в комментариях нет, смотрим более ранний",
+                message.id,
+            )
+
+    if not found:
+        logger.info("[telethon] промптов не найдено, просмотрено постов: %s", seen)
+    return found
 
 
 async def telethon_worker() -> None:
