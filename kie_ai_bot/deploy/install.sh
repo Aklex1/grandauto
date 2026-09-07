@@ -37,6 +37,9 @@ done
 cp -rf "${SRC_DIR}/middlewares" "${APP_DIR}/"
 cp -rf "${SRC_DIR}/models"      "${APP_DIR}/"
 mkdir -p "${APP_DIR}/app_uploads"
+mkdir -p "${APP_DIR}/autopost_media"
+# Каталог для референсного фото автопостинга
+mkdir -p /opt/refer
 find "${APP_DIR}" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
 log "4/8 Виртуальное окружение и зависимости"
