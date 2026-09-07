@@ -553,7 +553,7 @@ def video_action(video_id: int, session: Session = Depends(get_session),
         video.error = ""
         session.commit()
         queue.enqueue(session, "assemble_final", video_id=video.id,
-                      payload={"scene_ids": ready})
+                      payload={"scene_ids": ready, "with_bridges": False})
     elif action == "delete":
         channel = session.get(Channel, video.channel_id)
         folder = config.MEDIA_DIR / channel.slug / f"{video.id:06d}"
@@ -583,11 +583,13 @@ async def video_assemble(video_id: int, request: Request,
     if not scene_ids:
         raise HTTPException(status_code=400, detail="Не отмечена ни одна готовая сцена")
 
+    with_bridges = bool(form.get("with_bridges"))
     video.status = "assemble"
     video.stage = "assemble"
     video.error = ""
     session.commit()
-    queue.enqueue(session, "assemble_final", video_id=video.id, payload={"scene_ids": scene_ids})
+    queue.enqueue(session, "assemble_final", video_id=video.id,
+                  payload={"scene_ids": scene_ids, "with_bridges": with_bridges})
     return RedirectResponse(f"/videos/{video_id}", status_code=303)
 
 

@@ -165,6 +165,8 @@ class Video(Base):
                                                  order_by="Short.idx")
     events: Mapped[list["Event"]] = relationship(back_populates="video", cascade="all, delete-orphan",
                                                  order_by="Event.id")
+    bridges: Mapped[list["Bridge"]] = relationship(cascade="all, delete-orphan",
+                                                   order_by="Bridge.id")
 
 
 class Scene(Base):
@@ -190,6 +192,28 @@ class Scene(Base):
     error: Mapped[str] = mapped_column(Text, default="")
 
     video: Mapped[Video] = relationship(back_populates="scenes")
+
+
+class Bridge(Base):
+    """Связка между несмежными сценами: досоздаётся при сборке длинного ролика."""
+
+    __tablename__ = "bridges"
+    __table_args__ = (UniqueConstraint("video_id", "from_scene_id", "to_scene_id",
+                                       name="uq_bridge_pair"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    video_id: Mapped[int] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"), index=True)
+    from_scene_id: Mapped[int] = mapped_column(Integer)
+    to_scene_id: Mapped[int] = mapped_column(Integer)
+    narration: Mapped[str] = mapped_column(Text, default="")
+    visual_prompt: Mapped[str] = mapped_column(Text, default="")
+    audio_path: Mapped[str] = mapped_column(String(500), default="")
+    clip_path: Mapped[str] = mapped_column(String(500), default="")
+    piece_path: Mapped[str] = mapped_column(String(500), default="")
+    clean_path: Mapped[str] = mapped_column(String(500), default="")
+    piece_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Short(Base):

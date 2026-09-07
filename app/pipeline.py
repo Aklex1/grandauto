@@ -10,12 +10,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import config, footage, media, music, prompts, storage, subtitles, tts
 from .db import session_scope
 from .kie import KieClient, KieError, extract_urls
-from .models import Channel, Event, Footage as FootageModel, PlanItem, Scene, Short, Video, utcnow
+from .models import (Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
+                     Scene, Short, Video, utcnow)
 from . import settings_store as st
 
 log = logging.getLogger("cf.pipeline")
@@ -455,9 +457,143 @@ def _scene_cues(session: Session, video: Video, channel: Channel, scene: Scene,
     return subtitles.cues_from_scenes(pair)
 
 
+def ensure_bridge(session: Session, client: KieClient, video: Video, channel: Channel,
+                  prev: Scene, nxt: Scene, out_dir: Path, workdir: Path) -> Optional[BridgeModel]:
+    """Досоздаём короткую связку между несмежными сценами.
+
+    Когда из ролика берут не подряд идущие куски, стык звучит рвано. Связка — это
+    отдельная мини-сцена на пару предложений со своей озвучкой и видеорядом.
+    Готовые связки переиспользуются: одна и та же пара сцен не генерируется дважды.
+    """
+    existing = session.execute(
+        select(BridgeModel).where(BridgeModel.video_id == video.id,
+                                  BridgeModel.from_scene_id == prev.id,
+                                  BridgeModel.to_scene_id == nxt.id)
+    ).scalars().first()
+    if existing and existing.piece_path and storage.abspath(existing.piece_path).exists():
+        return existing
+
+    bridge = existing or BridgeModel(video_id=video.id, from_scene_id=prev.id,
+                                     to_scene_id=nxt.id)
+    if existing is None:
+        session.add(bridge)
+        session.commit()
+
+    bridges_dir = out_dir / "bridges"
+    bridges_dir.mkdir(parents=True, exist_ok=True)
+    size = media.target_size(channel.resolution, channel.aspect_ratio)
+    tail = " ".join((prev.narration or "").split()[-45:])
+    head = " ".join((nxt.narration or "").split()[:45])
+
+    try:
+        data, _credits = client.chat_json(
+            channel.chat_model,
+            prompts.bridge(channel.name, channel.topic, prev.heading, tail,
+                           nxt.heading, head),
+            temperature=0.7)
+        bridge.narration = str(data.get("narration") or "").strip()
+        bridge.visual_prompt = str(data.get("visual_prompt") or "").strip()
+        if not bridge.narration:
+            raise RuntimeError("модель вернула пустую связку")
+
+        result = tts.synthesize(
+            client, bridge.narration, bridges_dir / f"bridge_{bridge.id:03d}",
+            model=channel.tts_model, voice_id=channel.voice_id,
+            stability=channel.voice_stability, similarity=channel.voice_similarity,
+            speed=channel.voice_speed,
+            fallback_model=st.get(session, "tts_fallback_model", "google/gemini-3-1-flash-tts"),
+            fallback_voice=st.get(session, "tts_fallback_voice", "Charon"),
+            allow_fallback=st.get_bool(session, "tts_allow_fallback", True))
+        bridge.audio_path = storage.rel(result.path)
+        session.commit()
+
+        clip = _bridge_clip(session, client, video, channel, bridge, bridges_dir, size)
+        if clip is None:
+            raise RuntimeError("не удалось получить видеоряд для связки")
+
+        raw = workdir / f"bridge_{bridge.id:03d}_raw.mp4"
+        media.build_scene([clip], result.path, raw, size, duration=result.duration,
+                          workdir=workdir / f"b{bridge.id:03d}")
+
+        piece = bridges_dir / f"bridge_{bridge.id:03d}.mp4"
+        clean = bridges_dir / f"bridge_{bridge.id:03d}_clean.mp4"
+        cues = subtitles.cues_from_scenes([(bridge.narration, result.duration)])
+        if cues and channel.burn_subtitles:
+            ass = workdir / f"bridge_{bridge.id:03d}.ass"
+            subtitles.write_ass(cues, ass, size=size,
+                                vertical=channel.aspect_ratio == "9:16")
+            media.burn_subtitles(raw, ass, piece)
+            shutil.copyfile(raw, clean)
+        else:
+            shutil.copyfile(raw, piece)
+            shutil.copyfile(raw, clean)
+
+        bridge.piece_path = storage.rel(piece)
+        bridge.clean_path = storage.rel(clean)
+        bridge.piece_sec = storage.media_duration(piece)
+        bridge.status = "ready"
+        bridge.error = ""
+        session.commit()
+        log_event(session, video.id,
+                  f"Создана связка между сценами {prev.idx + 1} и {nxt.idx + 1} "
+                  f"({bridge.piece_sec:.0f} с)", stage="assemble")
+        return bridge
+    except Exception as exc:  # noqa: BLE001 — без связки просто склеим встык
+        bridge.status = "failed"
+        bridge.error = str(exc)[:1000]
+        session.commit()
+        log_event(session, video.id,
+                  f"Связку между сценами {prev.idx + 1} и {nxt.idx + 1} создать не удалось: {exc}",
+                  stage="assemble", level="warn")
+        return None
+
+
+def _bridge_clip(session: Session, client: KieClient, video: Video, channel: Channel,
+                 bridge: BridgeModel, bridges_dir: Path, size: tuple[int, int]) -> Optional[Path]:
+    """Видеоряд для связки: сперва пробуем библиотеку, иначе генерируем один клип."""
+    library = footage.available(session, channel.id)
+    if library and getattr(channel, "visual_source", "generate") != "generate":
+        picker = footage.SegmentPicker(library, seed=bridge.id)
+        chosen = picker.pick(float(channel.clip_duration), bridge.visual_prompt)
+        if chosen is not None:
+            item, start, end = chosen
+            dest = bridges_dir / f"bridge_{bridge.id:03d}_clip.mp4"
+            try:
+                footage.cut_segment(storage.abspath(item.path), dest, start, end - start, size)
+                bridge.clip_path = storage.rel(dest)
+                session.commit()
+                return dest
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Фрагмент библиотеки для связки не вырезан: %s", exc)
+
+    payload = {
+        "prompt": bridge.visual_prompt or bridge.narration[:200],
+        "aspect_ratio": channel.aspect_ratio,
+        "resolution": channel.resolution if channel.resolution in ("480p", "720p") else "720p",
+        "duration": int(channel.clip_duration),
+        "generate_audio": False,
+    }
+    try:
+        result = client.run_task(channel.video_model, payload, timeout=1800, poll=6)
+        urls = extract_urls(result)
+        url = next((u for u in urls if u.split("?")[0].lower().endswith(
+            (".mp4", ".mov", ".webm"))), None) or (urls[0] if urls else None)
+        if not url:
+            return None
+        dest = bridges_dir / f"bridge_{bridge.id:03d}_clip{storage.guess_ext(url, '.mp4')}"
+        storage.download(url, dest)
+        bridge.clip_path = storage.rel(dest)
+        session.commit()
+        return dest
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Клип для связки не сгенерирован: %s", exc)
+        return None
+
+
 def assemble_selected(session: Session, video: Video, channel: Channel,
-                      scene_ids: Optional[list[int]] = None) -> Path:
-    """Склеиваем выбранные сцены в готовый ролик и накладываем фоновую музыку."""
+                      scene_ids: Optional[list[int]] = None,
+                      with_bridges: bool = True) -> Path:
+    """Склеиваем выбранные куски в готовый ролик, достраивая связки между несмежными."""
     _set_stage(session, video, "assemble", "Собираю длинный ролик из выбранных сцен")
     out_dir = storage.video_dir(channel.slug, video.id)
     workdir = config.TMP_DIR / f"assemble_{video.id}"
@@ -479,12 +615,30 @@ def assemble_selected(session: Session, video: Video, channel: Channel,
         sc.include = sc in scenes
     session.commit()
 
-    pieces = [storage.abspath(sc.piece_path) for sc in scenes]
+    # Между несмежными кусками вставляем связки, чтобы переход не был рваным.
+    ordered: list[tuple[str, object]] = []
+    client = client_for(session)
+    for position, scene in enumerate(scenes):
+        if position > 0 and with_bridges:
+            prev = scenes[position - 1]
+            if scene.idx - prev.idx > 1:
+                bridge = ensure_bridge(session, client, video, channel, prev, scene,
+                                       out_dir, workdir)
+                if bridge is not None and bridge.piece_path:
+                    ordered.append(("bridge", bridge))
+        ordered.append(("scene", scene))
+
+    pieces = [storage.abspath(item.piece_path) for _kind, item in ordered]
     raw = workdir / "full_raw.mp4"
     media.concat_scenes(pieces, raw, workdir)
 
     # Мастер без вшитых субтитров — источник для нарезки шортсов.
-    clean_pieces = [p.with_name(p.stem + "_clean.mp4") for p in pieces]
+    clean_pieces = [
+        storage.abspath(item.clean_path) if kind == "bridge" and item.clean_path
+        else storage.abspath(item.piece_path).with_name(
+            storage.abspath(item.piece_path).stem + "_clean.mp4")
+        for kind, item in ordered
+    ]
     raw_clean = None
     if all(p.exists() for p in clean_pieces):
         raw_clean = workdir / "full_clean.mp4"
@@ -493,12 +647,13 @@ def assemble_selected(session: Session, video: Video, channel: Channel,
     # Субтитры целого ролика собираем из сцен в выбранном порядке.
     cues: list[subtitles.Cue] = []
     offset = 0.0
-    for sc in scenes:
-        piece_cues = subtitles.cues_from_scenes([(sc.narration, sc.piece_sec or sc.audio_sec)])
+    for kind, item in ordered:
+        length = item.piece_sec or getattr(item, "audio_sec", 0.0)
+        piece_cues = subtitles.cues_from_scenes([(item.narration, length)])
         for cue in piece_cues:
             cues.append(subtitles.Cue(start=cue.start + offset, end=cue.end + offset,
                                       text=cue.text))
-        offset += sc.piece_sec or sc.audio_sec
+        offset += length
     if cues:
         subtitles.write_srt(cues, out_dir / "subtitles.srt")
         subtitles.write_vtt(cues, out_dir / "subtitles.vtt")
@@ -548,8 +703,10 @@ def assemble_selected(session: Session, video: Video, channel: Channel,
     video.finished_at = utcnow()
     session.commit()
     shutil.rmtree(workdir, ignore_errors=True)
+    bridge_count = sum(1 for kind, _ in ordered if kind == "bridge")
+    note = f" и {bridge_count} связок" if bridge_count else ""
     log_event(session, video.id,
-              f"Ролик собран из {len(scenes)} сцен, {video.duration_sec / 60:.1f} мин",
+              f"Ролик собран из {len(scenes)} кусков{note}, {video.duration_sec / 60:.1f} мин",
               stage="done")
     return final
 
@@ -847,7 +1004,8 @@ def _build_video_locked(video_id: int) -> None:
             shutil.rmtree(workdir, ignore_errors=True)
 
 
-def assemble_job(video_id: int, scene_ids: Optional[list[int]] = None) -> None:
+def assemble_job(video_id: int, scene_ids: Optional[list[int]] = None,
+                 with_bridges: bool = True) -> None:
     """Фоновая задача: собрать длинный ролик из выбранных сцен."""
     lock = _video_lock(video_id)
     if not lock.acquire(blocking=False):
@@ -859,7 +1017,7 @@ def assemble_job(video_id: int, scene_ids: Optional[list[int]] = None) -> None:
                 raise RuntimeError(f"ролик {video_id} не найден")
             channel = session.get(Channel, video.channel_id)
             try:
-                assemble_selected(session, video, channel, scene_ids)
+                assemble_selected(session, video, channel, scene_ids, with_bridges)
             except Exception as exc:  # noqa: BLE001
                 video.status = "failed"
                 video.error = str(exc)[:2000]

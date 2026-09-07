@@ -133,10 +133,35 @@
       {% endfor %}
     </div>
     <div class="row mt">
-      <button class="btn btn-primary">Создать длинный ролик из отмеченных сцен</button>
-      <span class="small muted">Пересборка заменит текущий готовый ролик.</span>
+      <button class="btn btn-primary">Сделать длинное видео из отмеченных</button>
+      <label class="row" style="margin:0">
+        <input type="checkbox" name="with_bridges" style="width:auto" checked>
+        <span class="small">Досоздавать связки между несмежными кусками</span>
+      </label>
     </div>
+    <div class="small muted mt">Если между отмеченными кусками остался пропуск, конвейер
+      сам напишет и озвучит короткий переход и подставит под него видеоряд, чтобы стык
+      не был рваным. Пересборка заменит текущий готовый ролик.</div>
   </form>
+</div>
+{% endif %}
+
+{% if video.bridges %}
+<div class="card">
+  <h2>Связки между кусками ({{ video.bridges|length }})</h2>
+  <div class="video-grid">
+    {% for b in video.bridges %}
+    <div class="video-card">
+      {% if b.piece_path %}<video controls preload="none" src="/media/{{ b.piece_path }}"></video>
+      {% else %}<div class="thumb-placeholder">{{ labels.get(b.status, b.status) }}</div>{% endif %}
+      <div class="body">
+        <div class="small muted">{{ '%.0f'|format(b.piece_sec) }} с</div>
+        <div class="small mt">{{ b.narration }}</div>
+        {% if b.error %}<div class="small" style="color:var(--err)">{{ b.error }}</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
 </div>
 {% endif %}
 

@@ -77,7 +77,8 @@ def _run_job(job_id: int) -> None:
         elif kind == "make_shorts":
             pipeline.build_shorts_job(video_id)
         elif kind == "assemble_final":
-            pipeline.assemble_job(video_id, payload.get("scene_ids"))
+            pipeline.assemble_job(video_id, payload.get("scene_ids"),
+                                  bool(payload.get("with_bridges", True)))
         elif kind == "sync_prices":
             sync.sync_prices()
         elif kind == "sync_models":
