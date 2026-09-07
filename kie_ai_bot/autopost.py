@@ -21,8 +21,10 @@
 """
 
 import asyncio
+import html
 import logging
 import os
+import re
 import sqlite3
 import time
 from contextlib import closing
@@ -71,6 +73,16 @@ OUTPUT_FORMAT = os.getenv("AUTOPOST_OUTPUT_FORMAT", "png")
 # Публиковать ли текст промпта вместе с картинкой
 PUBLISH_PROMPT = os.getenv("AUTOPOST_PUBLISH_PROMPT", "1").strip() in ("1", "true", "yes", "on")
 
+# --- Оформление поста (как в целевом канале) ---
+BOT_URL = os.getenv("AUTOPOST_BOT_URL", "https://t.me/Neuro_HubAI_bot?start=Sv_lana0707")
+SITE_URL = os.getenv("AUTOPOST_SITE_URL", "https://genius-bot.ru/neurohub/?ref=sv07")
+MAX_URL = os.getenv("AUTOPOST_MAX_URL", "")
+# Хештег по умолчанию, если в исходном посте своих нет
+DEFAULT_HASHTAGS = os.getenv("AUTOPOST_HASHTAGS", "#Женский")
+FOOTER = os.getenv("AUTOPOST_FOOTER", "⚜️⚜️⚜️⚜️⚜️⚜️⚜️⚜️")
+
+CAPTION_LIMIT = 1024
+
 CALLBACK_PATH = "/autopost-callback"
 
 
@@ -90,6 +102,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS autopost_posts (
                 source_msg_id   INTEGER PRIMARY KEY,
                 photo_file_id   TEXT,
+                source_caption  TEXT,
                 photo_path      TEXT,
                 prompt          TEXT,
                 task_id         TEXT,
@@ -102,6 +115,10 @@ def init_db() -> None:
             )
             """
         )
+        # Миграция для баз, созданных до появления колонки
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(autopost_posts)")}
+        if "source_caption" not in cols:
+            conn.execute("ALTER TABLE autopost_posts ADD COLUMN source_caption TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_autopost_status ON autopost_posts(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_autopost_task ON autopost_posts(task_id)")
         conn.commit()
@@ -218,20 +235,70 @@ async def _submit_to_kie(bot: Bot, row: sqlite3.Row) -> bool:
     return True
 
 
+# --- Оформление поста -------------------------------------------------------
+
+def _hashtags_from(source_caption: Optional[str]) -> str:
+    """Забирает хештеги из исходного поста, иначе берёт значение по умолчанию."""
+    tags = re.findall(r"#[^\s#]+", source_caption or "")
+    return " ".join(tags) if tags else DEFAULT_HASHTAGS
+
+
+def build_caption(prompt: str, source_caption: Optional[str] = None) -> str:
+    """Подпись в том же виде, что и остальные посты канала."""
+    lines = [_hashtags_from(source_caption)]
+    if BOT_URL:
+        lines.append(f'<a href="{BOT_URL}">БОТ</a> через который можно сделать фото. ')
+    if SITE_URL:
+        lines.append(f'<a href="{SITE_URL}">САЙТ</a> через который можно сделать фото. ')
+    if MAX_URL:
+        lines.append(f'<a href="{MAX_URL}">Канал с промтами в MAX</a> 📱')
+    header = "\n".join(lines)
+
+    body = f"<blockquote><code>{html.escape(prompt.strip())}</code></blockquote>" if prompt.strip() else ""
+    parts = [header]
+    if body:
+        parts.append(body)
+    if FOOTER:
+        parts.append(FOOTER)
+    return "\n".join(parts)
+
+
+def _visible_len(caption_html: str) -> int:
+    """Telegram считает лимит подписи по видимому тексту, а не по HTML-разметке."""
+    return len(html.unescape(re.sub(r"<[^>]+>", "", caption_html)))
+
+
+def build_header_only() -> str:
+    """Шапка без промпта — если промпт не влезает в подпись к фото."""
+    return build_caption("")
+
+
 # --- Публикация результата ----------------------------------------------------
 
 async def _publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
     source_msg_id = row["source_msg_id"]
-    caption = (row["prompt"] or "").strip() if PUBLISH_PROMPT else None
-    if caption and len(caption) > 1024:
-        caption = caption[:1021] + "..."
+    prompt = (row["prompt"] or "").strip()
+    source_caption = row["source_caption"] if "source_caption" in row.keys() else None
+
+    caption = build_caption(prompt, source_caption) if PUBLISH_PROMPT else build_header_only()
+    # Промпты бывают длиннее лимита подписи — тогда шапка идёт с фото,
+    # а промпт отдельным сообщением следом.
+    prompt_as_separate_message = None
+    if _visible_len(caption) > CAPTION_LIMIT:
+        caption = build_header_only()
+        prompt_as_separate_message = f"<blockquote><code>{html.escape(prompt)}</code></blockquote>"
+        logger.info("[autopost] пост %s: промпт длинный, уйдёт отдельным сообщением", source_msg_id)
+
+    async def _send(photo):
+        return await bot.send_photo(
+            chat_id=TARGET_CHAT_ID,
+            photo=photo,
+            caption=caption,
+            parse_mode="HTML",
+        )
 
     try:
-        await bot.send_photo(
-            chat_id=TARGET_CHAT_ID,
-            photo=URLInputFile(result_url),
-            caption=caption,
-        )
+        sent = await _send(URLInputFile(result_url))
     except Exception as e:
         # Резервный путь: телеграм иногда не может забрать картинку по ссылке
         logger.warning("[autopost] пост %s: send_photo по URL не прошёл (%s), пробуем файлом", source_msg_id, e)
@@ -242,15 +309,22 @@ async def _publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
                 resp = await client.get(result_url)
                 resp.raise_for_status()
                 dest.write_bytes(resp.content)
-            await bot.send_photo(
-                chat_id=TARGET_CHAT_ID,
-                photo=FSInputFile(str(dest)),
-                caption=caption,
-            )
+            sent = await _send(FSInputFile(str(dest)))
         except Exception as e2:
             logger.error("[autopost] пост %s: публикация не удалась: %s", source_msg_id, e2)
             _update(source_msg_id, status="error", error=f"публикация: {e2}")
             return
+
+    if prompt_as_separate_message:
+        try:
+            await bot.send_message(
+                chat_id=TARGET_CHAT_ID,
+                text=prompt_as_separate_message,
+                parse_mode="HTML",
+                reply_to_message_id=sent.message_id,
+            )
+        except Exception as e:
+            logger.error("[autopost] пост %s: промпт отдельным сообщением не ушёл: %s", source_msg_id, e)
 
     _update(source_msg_id, status="published", result_url=result_url, published_at=_now(), error=None)
     logger.info("[autopost] пост %s опубликован в %s", source_msg_id, TARGET_CHAT_ID)
@@ -350,8 +424,9 @@ def setup_autopost(dp: Dispatcher, bot: Bot) -> None:
         with closing(_connect()) as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO autopost_posts "
-                "(source_msg_id, photo_file_id, status, created_at) VALUES (?, ?, 'waiting_prompt', ?)",
-                (message.message_id, photo.file_id, _now()),
+                "(source_msg_id, photo_file_id, source_caption, status, created_at) "
+                "VALUES (?, ?, ?, 'waiting_prompt', ?)",
+                (message.message_id, photo.file_id, message.caption or "", _now()),
             )
             conn.commit()
         logger.info("[autopost] новый пост %s, ждём промпт в комментариях", message.message_id)
