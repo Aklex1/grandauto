@@ -47,6 +47,8 @@ STATUS_LABELS = {
     "metadata": "метаданные", "shorts": "шортсы", "done": "готов", "failed": "ошибка",
     "cancelled": "отменён", "planned": "в плане", "in_progress": "в работе", "skipped": "пропущен",
     "pending": "ожидает", "running": "выполняется", "ready": "готов", "processing": "обработка",
+    "skipped": "пропущена", "voiced": "озвучена", "voice_failed": "нет озвучки",
+    "clip_failed": "нет видеоряда",
 }
 
 

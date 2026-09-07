@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -36,6 +37,25 @@ STAGE_PROGRESS = {
 
 class PipelineCancelled(RuntimeError):
     """Пользователь отменил сборку из интерфейса."""
+
+
+class AlreadyBuilding(RuntimeError):
+    """Ролик уже собирается другим воркером."""
+
+
+# Один ролик собирается строго одним воркером: параллельные сборки дублируют
+# запросы к платным API и портят выходные файлы.
+_build_locks_guard = threading.Lock()
+_build_locks: dict[int, threading.Lock] = {}
+
+
+def _video_lock(video_id: int) -> threading.Lock:
+    with _build_locks_guard:
+        lock = _build_locks.get(video_id)
+        if lock is None:
+            lock = threading.Lock()
+            _build_locks[video_id] = lock
+        return lock
 
 
 def log_event(session: Session, video_id: Optional[int], message: str, *,
@@ -534,6 +554,16 @@ def _parse_ts(value: str) -> float:
 
 def build_video(video_id: int, on_progress: Optional[Callable[[str], None]] = None) -> None:
     """Полный цикл производства ролика. Вызывается воркером очереди."""
+    lock = _video_lock(video_id)
+    if not lock.acquire(blocking=False):
+        raise AlreadyBuilding(f"ролик {video_id} уже собирается")
+    try:
+        _build_video_locked(video_id)
+    finally:
+        lock.release()
+
+
+def _build_video_locked(video_id: int) -> None:
     with session_scope() as session:
         video = session.get(Video, video_id)
         if video is None:

@@ -62,7 +62,18 @@ def _run_job(job_id: int) -> None:
     error = ""
     try:
         if kind == "build_video":
-            pipeline.build_video(video_id)
+            try:
+                pipeline.build_video(video_id)
+            except pipeline.AlreadyBuilding as exc:
+                log.info("Задача %s пропущена: %s", job_id, exc)
+                with session_scope() as session:
+                    job = session.get(Job, job_id)
+                    if job is not None:
+                        job.status = "skipped"
+                        job.error = str(exc)
+                        job.finished_at = utcnow()
+                        session.commit()
+                return
         elif kind == "make_shorts":
             pipeline.build_shorts_job(video_id)
         elif kind == "sync_prices":
