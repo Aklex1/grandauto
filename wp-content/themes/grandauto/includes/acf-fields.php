@@ -234,11 +234,29 @@ function ga_rental_prices_payload() {
             }
         }
 
+        $hp      = trim( (string) get_post_meta( $p->ID, 'car_hp', true ) );
+        $year    = trim( (string) get_post_meta( $p->ID, 'car_year', true ) );
+        $gas     = trim( (string) get_post_meta( $p->ID, 'car_gasoline', true ) );
+        $pledge  = trim( (string) get_post_meta( $p->ID, 'car_pledge', true ) );
+
         $out['cars'][] = array(
             'id'   => $p->ID,
             'slug' => $p->post_name,
             'base' => $base,
             'low'  => $low,
+            'info' => array(
+                'title'        => get_the_title( $p->ID ),
+                'year'         => ( '' !== $year ) ? (int) $year : null,
+                'hp'           => ( '' !== $hp ) ? (int) $hp : null,
+                'transmission' => trim( (string) get_post_meta( $p->ID, 'car_transmission', true ) ),
+                'wd'           => trim( (string) get_post_meta( $p->ID, 'car_wd', true ) ),
+                'gasoline'     => ( '' !== $gas ) ? (float) $gas : null,
+                'driverplace'  => trim( (string) get_post_meta( $p->ID, 'car_driverplace', true ) ),
+                'pledge'       => ( '' !== $pledge ) ? (int) $pledge : null,
+                'kasko'        => trim( (string) get_post_meta( $p->ID, 'kasko', true ) ),
+                'defence'      => trim( (string) get_post_meta( $p->ID, 'defence', true ) ),
+                'casco'        => (bool) get_post_meta( $p->ID, 'car_st_casco', true ),
+            ),
         );
     }
 

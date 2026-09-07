@@ -145,12 +145,66 @@
             var m = (link.getAttribute('href') || '').match(/car\/([^\/.]+)\.html/);
             if (!m) return;
             var c = bySlug[m[1]];
-            if (!c || !c.base || c.base['16_30'] == null) return;
-            var p = Math.round(c.base['16_30']);
-            card.dataset.price = String(p);
-            var strong = card.querySelector('.car-card__price strong');
-            if (strong) strong.textContent = fmt(p);
-            if (p > maxPrice) maxPrice = p;
+            if (!c) return;
+
+            // Цена «от N ₽/сут» = базовый сезон, 16-30 суток
+            if (c.base && c.base['16_30'] != null) {
+              var p = Math.round(c.base['16_30']);
+              card.dataset.price = String(p);
+              var strong = card.querySelector('.car-card__price strong');
+              if (strong) strong.textContent = fmt(p);
+              if (p > maxPrice) maxPrice = p;
+            }
+
+            // Остальные данные карточки из админки
+            var info = c.info;
+            if (!info) return;
+            var title = info.title || '';
+            var year = info.year != null ? String(info.year) : '';
+
+            // Заголовок + год
+            var h3 = card.querySelector('h3');
+            if (h3 && title) {
+              h3.textContent = title + ' ';
+              if (year) {
+                var ys = document.createElement('span');
+                ys.className = 'car-card__year';
+                ys.textContent = year;
+                h3.appendChild(ys);
+              }
+            }
+
+            // Строка характеристик: «год · коробка · привод»
+            var specs = card.querySelector('.car-card__specs');
+            if (specs) {
+              var parts = [year, info.transmission, info.wd].filter(function (x) { return x; });
+              specs.textContent = parts.join(' · ');
+            }
+
+            // Фильтр по коробке передач
+            if (info.transmission) card.dataset.trans = info.transmission;
+
+            // Alt изображения
+            var img = card.querySelector('img');
+            if (img && title) img.setAttribute('alt', title);
+
+            // Бейдж КАСКО
+            var badge = card.querySelector('.car-card__badge.badge--casco');
+            if (info.casco) {
+              if (!badge) {
+                var imgBox = card.querySelector('.car-card__img');
+                if (imgBox) {
+                  badge = document.createElement('span');
+                  badge.className = 'car-card__badge badge--casco';
+                  badge.textContent = 'КАСКО';
+                  imgBox.insertBefore(badge, imgBox.firstChild);
+                }
+              } else {
+                badge.style.display = '';
+              }
+            } else if (badge) {
+              badge.style.display = 'none';
+            }
           });
 
           if (maxPrice && parseInt(priceFilter.max, 10) < maxPrice) {

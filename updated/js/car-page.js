@@ -148,6 +148,82 @@
     return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   }
 
+  /* Обновляет текстовые данные карточки из ACF: заголовок, год,
+   * характеристики, залог, КАСКО, защита шин, бейдж КАСКО.
+   * Фотографии не трогаются — остаются файлами витрины. */
+  function applyCarInfo(root, info) {
+    if (!info) return;
+
+    var title = info.title || '';
+    var year = info.year != null ? String(info.year) : '';
+
+    // Заголовок H1: «Название, год»
+    var h1 = root.querySelector('h1');
+    if (h1 && title) h1.textContent = title + (year ? ', ' + year : '');
+
+    // Заголовок в карточке бронирования: «Название <span>год</span>»
+    var bookHead = root.querySelector('.book-card__head h2');
+    if (bookHead && title) {
+      bookHead.textContent = title + ' ';
+      if (year) {
+        var y = document.createElement('span');
+        y.textContent = year;
+        bookHead.appendChild(y);
+      }
+    }
+
+    // Бейдж КАСКО (в шапке карточки и на фото)
+    root.querySelectorAll('.event-badge--casco, .badge--casco').forEach(function (b) {
+      b.style.display = info.casco ? '' : 'none';
+    });
+
+    // Таблица характеристик — пересобираем из непустых значений
+    var list = root.querySelector('.characteristics__list');
+    if (list) {
+      var rows = [
+        ['Мощность двигателя', info.hp != null ? info.hp + ' л.с.' : ''],
+        ['Положение руля', info.driverplace || ''],
+        ['Коробка передач', info.transmission || ''],
+        ['Привод', info.wd || ''],
+        ['Средний расход на 100 км', info.gasoline != null ? info.gasoline + ' л' : ''],
+        ['Залог', info.pledge != null ? fmtNum(info.pledge) + ' руб.' : ''],
+        ['Год выпуска', year]
+      ];
+      var html = '';
+      rows.forEach(function (r) {
+        if (!r[1]) return;
+        html += '<div class="characteristics__row"><span></span><span></span></div>';
+      });
+      list.innerHTML = html;
+      var domRows = list.querySelectorAll('.characteristics__row');
+      var j = 0;
+      rows.forEach(function (r) {
+        if (!r[1]) return;
+        var spans = domRows[j].querySelectorAll('span');
+        spans[0].textContent = r[0];
+        spans[1].textContent = r[1];
+        j++;
+      });
+    }
+
+    // КАСКО и защита шин
+    setExtra(root, '.car-extra--kasko', info.kasko);
+    setExtra(root, '.car-extra--defence', info.defence);
+  }
+
+  function setExtra(root, selector, value) {
+    var box = root.querySelector(selector);
+    if (!box) return;
+    var val = (value == null) ? '' : String(value).trim();
+    if (!val) {
+      box.style.display = 'none';
+      return;
+    }
+    box.style.display = '';
+    var span = box.querySelector('span');
+    if (span) span.textContent = val;
+  }
+
   function hydratePrices(root) {
     root = getRoot(root);
     var box = root.querySelector('.dyncontent') || document.querySelector('.dyncontent');
@@ -167,6 +243,8 @@
           }
         }
         if (!car) return;
+
+        applyCarInfo(root, car.info);
 
         var factors = {
           standard: 1,
