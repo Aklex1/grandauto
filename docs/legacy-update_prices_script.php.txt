@@ -1,0 +1,115 @@
+<?php
+/**
+ * Скрипт для заполнения цен низкого сезона
+ * Запустите этот файл через браузер: yoursite.com/wp-content/themes/grandauto/update_prices_script.php
+ */
+
+// Подключаем WordPress
+require_once('../../../wp-load.php');
+
+// Массив с данными цен низкого сезона
+$prices_data = [
+    'LAND CRUSER PRADO 2016г.' => ['9700', '9300', '8900', '8300'],
+    'TANK 300 2023г.' => ['9700', '9300', '8900', '8300'],
+    'MAZDA CX-5 2019г.' => ['6900', '6600', '6200', '6000'],
+    'TOYOTA CAMRY 2019 г.' => ['6900', '6600', '6200', '6000'],
+    'TOYOTA RAV-4 2017г.' => ['5600', '5400', '5200', '5000'],
+    'TOYOTA RAV-4 2015г.' => ['4800', '4500', '4300', '4000'],
+    'HYUNDAI CRETA 2018г.' => ['4400', '4100', '3900', '3700'],
+    'MAZDA CX-5 2014г.' => ['4500', '4200', '3900', '3600'],
+    'TOYOTA CAMRY 2015г.' => ['4100', '3900', '3700', '3500'],
+    'HONDA CROSSTOUR 2012г.' => ['4100', '3900', '3700', '3500'],
+    'HYUNDAI CRETA 2017г.' => ['4000', '3800', '3600', '3300'],
+    'MAZDA 6 2016г.' => ['3900', '3700', '3500', '3200'],
+    'TOYOTA RAV-4 2012г.' => ['3700', '3500', '3200', '3000'],
+    'HYUNDAI AVANTE 2018 г.' => ['3800', '3600', '3400', '3000'],
+    'KIA RIO 2021г. синяя' => ['3700', '3500', '3200', '3000'],
+    'GEELY EMGRAND 2023г.' => ['3600', '3300', '3100', '2900'],
+    'SOLARIS HS 2024г.' => ['3500', '3300', '3200', '3000'],
+    'HYUNDAI SOLARIS 2021г.(2шт)' => ['3200', '3000', '2900', '2700'],
+    'TOYOTA CAMRY 2008г.' => ['3500', '3200', '3000', '2700'],
+    'VW POLO SPORT 2022г.' => ['3200', '3000', '2900', '2700'],
+    'HYUNDAI SOLARIS 2021г.' => ['3300', '3100', '2900', '2700'],
+    'SKODA RAPID 2021г.(2шт)' => ['3300', '3100', '2900', '2700'],
+    'SKODA OCTAVIA 2012г.' => ['3200', '3000', '2800', '2600'],
+    'TOYOTA CAMRY 2005г' => ['3200', '3000', '2800', '2600'],
+    'KIA RIO 2021г.' => ['3400', '3200', '3000', '2800'],
+    'VW POLO 2021г.' => ['2800', '2600', '2400', '2200'],
+    'TOYOTA WISH 2010г.' => ['2800', '2600', '2400', '2200'],
+    'TOYOTA PRIUS 2010г. (2шт)' => ['2600', '2400', '2200', '2000'],
+    'VW POLO 2017г.' => ['2400', '2200', '2000', '1800'],
+    'VW POLO 2016г.' => ['2300', '2100', '1900', '1700'],
+    'TOYOTA FIELDER 2005г.' => ['2100', '1900', '1700', '1500']
+];
+
+// Поля для обновления
+$price_fields = ['price_low_1_3', 'price_low_4_8', 'price_low_9_15', 'price_low_16_30'];
+
+$updated_count = 0;
+$not_found = [];
+
+echo "<h2>Обновление цен низкого сезона</h2>";
+
+foreach ($prices_data as $car_title => $prices) {
+    // Ищем пост по названию
+    $posts = get_posts([
+        'post_type' => 'rental_car',
+        'title' => $car_title,
+        'numberposts' => 1,
+        'post_status' => 'publish'
+    ]);
+    
+    if (empty($posts)) {
+        // Пробуем найти по частичному совпадению
+        $posts = get_posts([
+            'post_type' => 'rental_car',
+            's' => explode(' ', $car_title)[0], // Поиск по первому слову
+            'numberposts' => 10,
+            'post_status' => 'publish'
+        ]);
+        
+        // Ищем наиболее похожий пост
+        $best_match = null;
+        foreach ($posts as $post) {
+            if (strpos($post->post_title, explode(' ', $car_title)[0]) !== false) {
+                $best_match = $post;
+                break;
+            }
+        }
+        
+        if ($best_match) {
+            $posts = [$best_match];
+        }
+    }
+    
+    if (!empty($posts)) {
+        $post = $posts[0];
+        echo "<p>Обновляем: <strong>{$post->post_title}</strong> (ID: {$post->ID})</p>";
+        
+        // Обновляем поля цен
+        foreach ($price_fields as $index => $field) {
+            update_field($field, $prices[$index], $post->ID);
+        }
+        
+        $updated_count++;
+    } else {
+        $not_found[] = $car_title;
+        echo "<p style='color: red;'>Не найден: <strong>{$car_title}</strong></p>";
+    }
+}
+
+echo "<hr>";
+echo "<h3>Результат:</h3>";
+echo "<p>Обновлено автомобилей: <strong>{$updated_count}</strong></p>";
+
+if (!empty($not_found)) {
+    echo "<p>Не найдены следующие автомобили:</p>";
+    echo "<ul>";
+    foreach ($not_found as $car) {
+        echo "<li>{$car}</li>";
+    }
+    echo "</ul>";
+}
+
+echo "<p><strong>Готово!</strong> Теперь вы можете проверить цены в админ панели WordPress.</p>";
+?>
