@@ -220,6 +220,23 @@
   </div>
 
   <div class="card">
+    <fieldset><legend>Оценка стоимости одного ролика по текущему прайсу KIE</legend>
+      <div class="table-wrap">
+      <table>
+        <tr><th>Статья</th><th>Расчёт</th><th class="right">Кредиты</th></tr>
+        {% for line in estimate.lines %}
+        <tr><td><b>{{ line.label }}</b></td><td class="small muted">{{ line.detail }}</td>
+            <td class="right mono">{{ '%.1f'|format(line.credits) }}</td></tr>
+        {% endfor %}
+        <tr><td colspan="2" class="right"><b>Итого за ролик</b></td>
+            <td class="right mono"><b>{{ '%.1f'|format(estimate.credits) }} cr ≈ ${{ '%.2f'|format(estimate_usd) }}</b></td></tr>
+      </table>
+      </div>
+      {% for w in estimate.warnings %}<div class="alert alert-warn">{{ w }}</div>{% endfor %}
+      <p class="small muted">Оценка меняется вместе с настройками выше — главный рычаг цены
+        это «секунд на клип» и разрешение. Сохраните настройки, чтобы пересчитать.</p>
+    </fieldset>
+
     <fieldset><legend>Стиль</legend>
       <label>Стиль сценария<textarea name="script_style">{{ channel.script_style }}</textarea></label>
       <label>Визуальный стиль (английский, идёт в видеогенератор)<textarea name="visual_style">{{ channel.visual_style }}</textarea></label>

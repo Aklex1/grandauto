@@ -117,35 +117,51 @@ def voice_scenes(session: Session, client: KieClient, video: Video, channel: Cha
     fallback_voice = st.get(session, "tts_fallback_voice", "Charon")
     concurrency = max(1, st.get_int(session, "scene_concurrency", 3))
 
-    scenes = [s for s in video.scenes if not _scene_audio_ok(s)]
-    if not scenes:
+    # В потоки отдаём только простые данные: ORM-сессия не потокобезопасна.
+    todo = [(s.id, s.idx, s.narration) for s in video.scenes if not _scene_audio_ok(s)]
+    if not todo:
         return 0.0
     audio_dir = out_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
+    voice_settings = {
+        "model": channel.tts_model, "voice_id": channel.voice_id,
+        "stability": channel.voice_stability, "similarity": channel.voice_similarity,
+        "speed": channel.voice_speed, "fallback_model": fallback_model,
+        "fallback_voice": fallback_voice, "allow_fallback": allow_fallback,
+    }
 
-    def work(scene: Scene):
-        result = tts.synthesize(
-            client, scene.narration, audio_dir / f"scene_{scene.idx:02d}",
-            model=channel.tts_model, voice_id=channel.voice_id,
-            stability=channel.voice_stability, similarity=channel.voice_similarity,
-            speed=channel.voice_speed, fallback_model=fallback_model,
-            fallback_voice=fallback_voice, allow_fallback=allow_fallback,
-        )
-        return scene.id, result
+    def work(item: tuple[int, int, str]):
+        scene_id, idx, narration = item
+        try:
+            result = tts.synthesize(client, narration, audio_dir / f"scene_{idx:02d}",
+                                    **voice_settings)
+            return scene_id, result, ""
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Сцена %s не озвучена: %s", idx, exc)
+            return scene_id, None, str(exc)[:500]
 
     credits = 0.0
+    done = 0
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        for scene_id, result in pool.map(work, scenes):
+        for scene_id, result, error in pool.map(work, todo):
             scene = session.get(Scene, scene_id)
-            scene.audio_path = storage.rel(result.path)
-            scene.audio_sec = result.duration
-            scene.status = "voiced"
-            credits += result.credits
+            if result is None:
+                scene.status = "voice_failed"
+                scene.error = error
+            else:
+                scene.audio_path = storage.rel(result.path)
+                scene.audio_sec = result.duration
+                scene.status = "voiced"
+                scene.error = ""
+                credits += result.credits
+                done += 1
             session.commit()
 
+    if done == 0:
+        raise RuntimeError("не удалось озвучить ни одной сцены")
     total = sum(s.audio_sec for s in video.scenes)
     log_event(session, video.id,
-              f"Озвучка готова: {len(scenes)} файлов, {total / 60:.1f} мин", stage="voice")
+              f"Озвучка готова: {done} из {len(todo)} сцен, {total / 60:.1f} мин", stage="voice")
     return credits
 
 
@@ -166,6 +182,7 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
     scenes = [s for s in scenes if not _scene_clips_ok(s)]
     if not scenes:
         return 0.0
+    scene_ids = [s.id for s in scenes]
     for scene in scenes:
         base_prompt = scene.visual_prompt or scene.heading or video.title
         count = media.clips_needed(scene.audio_sec or coverage, coverage)
@@ -208,9 +225,9 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
                 errors[scene_id] = error
 
     ok = 0
-    for scene in scenes:
-        row = session.get(Scene, scene.id)
-        paths = sorted(by_scene.get(scene.id, []))
+    for scene_id in scene_ids:
+        row = session.get(Scene, scene_id)
+        paths = sorted(by_scene.get(scene_id, []))
         if paths:
             row.clip_path = storage.rel(paths[0])
             row.clip_paths = json.dumps([storage.rel(p) for p in paths], ensure_ascii=False)
@@ -219,7 +236,7 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
             ok += 1
         else:
             row.status = "clip_failed"
-            row.error = errors.get(scene.id, "клип не сгенерирован")
+            row.error = errors.get(scene_id, "клип не сгенерирован")
         session.commit()
 
     if ok == 0:

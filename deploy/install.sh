@@ -21,7 +21,7 @@ apt-get update -qq
 apt-get install -y --no-install-recommends \
   python3 python3-venv python3-dev python3-pip \
   ffmpeg git curl ca-certificates fonts-dejavu-core \
-  build-essential pkg-config ufw
+  build-essential pkg-config ufw openssl
 
 log "Готовлю каталоги"
 mkdir -p "$APP_DIR" "$DATA_DIR"/{media,tmp,logs,models}
@@ -31,7 +31,8 @@ if [[ -d "$APP_DIR/.git" ]]; then
   git -C "$APP_DIR" fetch origin "$REPO_BRANCH"
   git -C "$APP_DIR" checkout "$REPO_BRANCH"
   git -C "$APP_DIR" reset --hard "origin/$REPO_BRANCH"
-elif [[ -f "$(dirname "$0")/../requirements.txt" ]]; then
+elif [[ -f "$(dirname "$0")/../requirements.txt" ]] \
+     && [[ "$(cd "$(dirname "$0")/.." && pwd)" != "$APP_DIR" ]]; then
   log "Копирую код из текущей папки"
   cp -r "$(dirname "$0")/.."/. "$APP_DIR"/
 else

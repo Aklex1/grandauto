@@ -15,7 +15,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import bootstrap, config, planner, prompts, queue, scheduler, storage, sync, webutil
+from . import (bootstrap, config, estimate, planner, prompts, queue, scheduler, storage,
+               sync, webutil)
 from . import settings_store as st
 from .db import get_session, session_scope
 from .kie import KieClient
@@ -209,7 +210,8 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         request, session, channel=channel, plan=plan, videos=videos, rules=rules,
         voices=voices, models=models, tab=tab,
         plan_done=sum(1 for p in plan if p.status == "done"),
-        plan_left=sum(1 for p in plan if p.status == "planned")))
+        plan_left=sum(1 for p in plan if p.status == "planned"),
+        **estimate.channel_estimate_context(session, channel)))
 
 
 @app.post("/channels/{channel_id}/settings")
