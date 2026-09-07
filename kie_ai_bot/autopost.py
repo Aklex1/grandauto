@@ -83,6 +83,15 @@ FOOTER = os.getenv("AUTOPOST_FOOTER", "⚜️⚜️⚜️⚜️⚜️⚜️⚜�
 
 CAPTION_LIMIT = 1024
 
+# Как отдавать картинки в Kie AI:
+# 1 — загружать в файловое хранилище Kie (не требует публичного адреса у бота),
+# 0 — отдавать ссылками на собственный FastAPI (нужен доступный снаружи CALLBACK_BASE_URL).
+UPLOAD_VIA_KIE = os.getenv("AUTOPOST_UPLOAD_VIA_KIE", "1").strip() in ("1", "true", "yes", "on")
+KIE_UPLOAD_URL = os.getenv("KIE_UPLOAD_URL", "https://kieai.redpandaai.co/api/file-base64-upload")
+# Если callback от Kie не пришёл за столько минут — узнаём результат опросом
+POLL_AFTER_MINUTES = _env_int("AUTOPOST_POLL_AFTER_MINUTES", 5)
+KIE_RECORD_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
+
 CALLBACK_PATH = "/autopost-callback"
 
 
@@ -181,6 +190,36 @@ async def _download_photo(bot: Bot, file_id: str, source_msg_id: int) -> Path:
 
 # --- Отправка задачи в KIE ----------------------------------------------------
 
+async def _upload_to_kie(path: Path) -> Optional[str]:
+    """Кладёт файл в файловое хранилище Kie AI и возвращает публичную ссылку."""
+    import base64
+
+    from config import KIE_API_KEY
+
+    mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+    payload = {
+        "base64Data": f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode(),
+        "uploadPath": "images/autopost",
+        "fileName": path.name,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(
+                KIE_UPLOAD_URL,
+                headers={"Authorization": f"Bearer {KIE_API_KEY}", "Content-Type": "application/json"},
+                json=payload,
+            )
+        resp.raise_for_status()
+        url = ((resp.json() or {}).get("data") or {}).get("downloadUrl")
+        if not url:
+            logger.error("[autopost] загрузка %s: в ответе нет downloadUrl: %s", path.name, resp.text[:200])
+        return url
+    except Exception as e:
+        logger.error("[autopost] загрузка %s в Kie не удалась: %s", path.name, e)
+        return None
+
+
+
 async def _submit_to_kie(bot: Bot, row: sqlite3.Row) -> bool:
     from kie_api import create_nano_banana_task
 
@@ -203,10 +242,18 @@ async def _submit_to_kie(bot: Bot, row: sqlite3.Row) -> bool:
             _update(source_msg_id, status="error", error=f"скачивание фото: {e}")
             return False
 
-    image_urls = [
-        _public_url(f"/autopost/media/{Path(photo_path).name}"),
-        _public_url("/autopost/reference.jpg"),
-    ]
+    if UPLOAD_VIA_KIE:
+        post_url = await _upload_to_kie(Path(photo_path))
+        ref_url = await _upload_to_kie(REFERENCE_IMAGE)
+        if not post_url or not ref_url:
+            _update(source_msg_id, status="error", error="не удалось загрузить картинки в Kie AI")
+            return False
+        image_urls = [post_url, ref_url]
+    else:
+        image_urls = [
+            _public_url(f"/autopost/media/{Path(photo_path).name}"),
+            _public_url("/autopost/reference.jpg"),
+        ]
 
     logger.info("[autopost] пост %s -> KIE, промпт: %.80s", source_msg_id, prompt)
     try:
@@ -354,6 +401,53 @@ def _extract_result_url(task_data: dict) -> Optional[str]:
     return None
 
 
+# --- Резервный путь: узнаём результат опросом, если callback не пришёл ---------
+
+async def _poll_stuck_tasks(bot: Bot) -> None:
+    """Kie присылает callback на CALLBACK_BASE_URL; если он недоступен снаружи,
+    результат всё равно заберётся опросом recordInfo."""
+    from config import KIE_API_KEY
+
+    deadline = time.time() - POLL_AFTER_MINUTES * 60
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM autopost_posts WHERE status = 'generating' AND task_id IS NOT NULL"
+        ).fetchall()
+
+    for row in rows:
+        try:
+            sent = datetime.fromisoformat(row["sent_at"]).timestamp()
+        except Exception:
+            continue
+        if sent > deadline:
+            continue  # ещё ждём callback
+
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.get(
+                    KIE_RECORD_URL,
+                    params={"taskId": row["task_id"]},
+                    headers={"Authorization": f"Bearer {KIE_API_KEY}"},
+                )
+            task_data = (resp.json() or {}).get("data") or {}
+        except Exception as e:
+            logger.error("[autopost] пост %s: опрос статуса не удался: %s", row["source_msg_id"], e)
+            continue
+
+        state = (task_data.get("state") or task_data.get("status") or "").lower()
+        if state in ("success", "succeeded", "completed"):
+            result_url = _extract_result_url(task_data)
+            if result_url:
+                logger.info("[autopost] пост %s: результат получен опросом", row["source_msg_id"])
+                await _publish(bot, row, result_url)
+            else:
+                _update(row["source_msg_id"], status="error", error="Kie вернул успех без ссылки")
+        elif state in ("fail", "failed", "error"):
+            _update(row["source_msg_id"], status="error",
+                    error=task_data.get("failMsg") or task_data.get("msg") or "генерация не удалась")
+            logger.error("[autopost] пост %s: генерация не удалась", row["source_msg_id"])
+
+
 # --- Фоновый воркер: очередь и суточный лимит ---------------------------------
 
 async def autopost_worker(bot: Bot) -> None:
@@ -382,6 +476,8 @@ async def autopost_worker(bot: Bot) -> None:
                     ).fetchall()
                 for row in rows:
                     await _submit_to_kie(bot, row)
+
+            await _poll_stuck_tasks(bot)
 
             # Посты, которые слишком долго ждут промпт в комментариях
             deadline = time.time() - PROMPT_WAIT_HOURS * 3600
