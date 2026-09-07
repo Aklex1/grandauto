@@ -54,6 +54,8 @@
         {% if video.thumb_path %}<a class="btn" href="/media/{{ video.thumb_path }}?download=1">⬇ Обложка</a>{% endif %}
         {% if video.srt_path %}<a class="btn" href="/media/{{ video.srt_path }}?download=1">⬇ Субтитры SRT</a>{% endif %}
         {% if video.vtt_path %}<a class="btn" href="/media/{{ video.vtt_path }}?download=1">⬇ VTT</a>{% endif %}
+        {% if clean_path %}<a class="btn" href="/media/{{ clean_path }}?download=1"
+           title="Тот же ролик без вшитых субтитров — для перезалива или своей нарезки">⬇ Без субтитров</a>{% endif %}
       </div>
       <div class="row mt small muted">
         <span>Длительность: {{ '%.1f'|format(video.duration_sec / 60) }} мин</span>
@@ -78,6 +80,16 @@
       <label>Теги<textarea name="tags" style="min-height:70px">{{ video.tags }}</textarea></label>
       <button class="btn btn-primary">Сохранить</button>
     </form>
+    {% if video.description or video.tags %}
+    <details class="mt">
+      <summary class="muted small">Показать одним блоком для копирования в YouTube</summary>
+      <textarea readonly style="min-height:220px;margin-top:8px">{{ video.title }}
+
+{{ video.description }}
+
+Теги: {{ video.tags }}</textarea>
+    </details>
+    {% endif %}
   </div>
 </div>
 

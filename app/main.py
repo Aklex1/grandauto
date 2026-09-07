@@ -410,8 +410,14 @@ def video_page(video_id: int, request: Request, session: Session = Depends(get_s
             variants = json.loads(video.title_variants)
         except ValueError:
             variants = []
+    clean_path = ""
+    if video.video_path:
+        candidate = storage.abspath(video.video_path).parent / "video_clean.mp4"
+        if candidate.exists():
+            clean_path = storage.rel(candidate)
     return templates.TemplateResponse("video.html", base_context(
-        request, session, video=video, channel=channel, events=events, variants=variants))
+        request, session, video=video, channel=channel, events=events, variants=variants,
+        clean_path=clean_path))
 
 
 @app.get("/library", response_class=HTMLResponse)
