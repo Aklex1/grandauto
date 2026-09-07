@@ -233,19 +233,18 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
             log.warning("Клип %s/%s не сгенерирован: %s", scene_id, part, exc)
             return scene_id, part, None, 0.0, str(exc)[:500]
 
+    expected: dict[int, int] = {}
+    for scene_id, _part, _prompt in tasks:
+        expected[scene_id] = expected.get(scene_id, 0) + 1
+
     credits = 0.0
     by_scene: dict[int, list[Path]] = {}
     errors: dict[int, str] = {}
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        for scene_id, _part, path, cost, error in pool.map(work, tasks):
-            credits += cost
-            if path is not None:
-                by_scene.setdefault(scene_id, []).append(path)
-            elif error:
-                errors[scene_id] = error
-
+    seen: dict[int, int] = {}
     ok = 0
-    for scene_id in scene_ids:
+
+    def flush(scene_id: int) -> int:
+        """Записываем сцену в БД, как только готовы все её клипы — чтобы прогресс был виден."""
         row = session.get(Scene, scene_id)
         paths = sorted(by_scene.get(scene_id, []))
         if paths:
@@ -253,11 +252,28 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
             row.clip_paths = json.dumps([storage.rel(p) for p in paths], ensure_ascii=False)
             row.clip_sec = sum(storage.media_duration(p) for p in paths)
             row.status = "ready"
-            ok += 1
-        else:
-            row.status = "clip_failed"
-            row.error = errors.get(scene_id, "клип не сгенерирован")
+            row.error = ""
+            session.commit()
+            return 1
+        row.status = "clip_failed"
+        row.error = errors.get(scene_id, "клип не сгенерирован")
         session.commit()
+        return 0
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        for scene_id, _part, path, cost, error in pool.map(work, tasks):
+            credits += cost
+            if path is not None:
+                by_scene.setdefault(scene_id, []).append(path)
+            elif error:
+                errors[scene_id] = error
+            seen[scene_id] = seen.get(scene_id, 0) + 1
+            if seen[scene_id] >= expected[scene_id]:
+                ok += flush(scene_id)
+
+    for scene_id in scene_ids:
+        if seen.get(scene_id, 0) < expected.get(scene_id, 0):
+            ok += flush(scene_id)
 
     if ok == 0:
         raise RuntimeError("не удалось сгенерировать ни одного видеоклипа")
