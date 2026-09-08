@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 import autopost
-from autopost import MEDIA_DIR, add_post, channel_quota, free_slots, init_db, known_msg_ids
+from autopost import add_post, channel_quota, free_slots, init_db, known_msg_ids
 
 logger = logging.getLogger("autopost.telethon")
 
@@ -46,6 +46,41 @@ MIN_PROMPT_LEN = _env_int("TELETHON_MIN_PROMPT_LEN", 40)
 COMMENTS_LIMIT = _env_int("TELETHON_COMMENTS_LIMIT", 30)
 
 
+_client = None
+_client_lock = asyncio.Lock()
+
+
+async def get_client():
+    """Общий клиент на весь процесс: файл сессии нельзя открывать дважды."""
+    global _client
+    async with _client_lock:
+        if _client is not None and _client.is_connected():
+            return _client
+        _client = await make_client()
+        return _client
+
+
+async def get_discussion_message_id(channel_id: int, message_id: int):
+    """id поста внутри связанной группы обсуждений — по нему бот отвечает
+    комментарием. Через Bot API это не узнать, а Telethon отдаёт напрямую."""
+    client = await get_client()
+    if not client:
+        return None
+    try:
+        from telethon.tl.functions.messages import GetDiscussionMessageRequest
+
+        result = await client(GetDiscussionMessageRequest(
+            peer=await client.get_entity(channel_id), msg_id=message_id
+        ))
+        messages = getattr(result, "messages", None) or []
+        return messages[0].id if messages else None
+    except Exception as e:
+        logger.warning(
+            "[telethon] не удалось найти пост %s в группе обсуждений: %s", message_id, e
+        )
+        return None
+
+
 async def make_client():
     """Готовый к работе клиент или None, если модуль не настроен."""
     if not API_ID or not API_HASH:
@@ -66,17 +101,6 @@ async def make_client():
     client = TelegramClient(SESSION_PATH, API_ID, API_HASH)
     await client.start()  # сессия уже есть, интерактивного ввода не будет
     return client
-
-
-async def _download_first_photo(message, source_chat_id: int) -> Optional[str]:
-    """Скачивает фото поста в рабочий каталог."""
-    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    name = f"post_{abs(source_chat_id)}_{message.id}.jpg"
-    path = await message.download_media(file=str(MEDIA_DIR / name))
-    if not path:
-        logger.warning("[telethon] пост %s: фото не скачалось", message.id)
-        return None
-    return str(path)
 
 
 async def pick_prompt(client, channel, message) -> str:
@@ -131,14 +155,10 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
             )
             continue
 
-        photo_path = await _download_first_photo(message, source_chat_id)
-        if not photo_path:
-            continue
-
+        # Само фото поста не скачиваем: в Kie AI уходит только референсное фото
         found.append({
             "source_chat_id": source_chat_id,
             "source_msg_id": message.id,
-            "photo_path": photo_path,
             "prompt": prompt,
             "source_caption": message.message or "",
         })
@@ -191,7 +211,7 @@ async def telethon_worker() -> None:
         logger.warning("[telethon] AUTOPOST_ENABLED=0 — читать источники некуда, выключено")
         return
 
-    client = await make_client()
+    client = await get_client()
     if not client:
         return
 

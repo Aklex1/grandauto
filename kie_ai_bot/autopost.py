@@ -185,8 +185,9 @@ def get_post(source_chat_id: int, source_msg_id: int) -> Optional[sqlite3.Row]:
         ).fetchone()
 
 
-def add_post(source_chat_id: int, source_msg_id: int, photo_path: str,
-             prompt: str, source_caption: str = "", status: str = "ready") -> Optional[int]:
+def add_post(source_chat_id: int, source_msg_id: int, prompt: str,
+             source_caption: str = "", photo_path: Optional[str] = None,
+             status: str = "ready") -> Optional[int]:
     """Кладёт пост в очередь. Возвращает id записи или None, если уже был."""
     with closing(_connect()) as conn:
         cur = conn.execute(
@@ -294,6 +295,19 @@ def build_caption(source_caption: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
+def _visible_len(caption_html: str) -> int:
+    """Telegram считает лимит подписи по видимому тексту, а не по разметке."""
+    return len(html.unescape(re.sub(r"<[^>]+>", "", caption_html)))
+
+
+def build_caption_with_prompt(header: str, prompt: str) -> str:
+    """Подпись вместе с промптом, если он туда влезает."""
+    if not prompt:
+        return header
+    full = f"{header}\n{build_comment(prompt)}"
+    return full if _visible_len(full) <= CAPTION_LIMIT else header
+
+
 def build_comment(prompt: str) -> str:
     """Комментарий с промптом — цитатой моноширинным шрифтом, копируется по тапу."""
     text = prompt.strip()
@@ -351,23 +365,16 @@ async def submit_to_kie(row: sqlite3.Row) -> bool:
         _update(row_id, status="error", error=msg)
         return False
 
-    photo_path = row["photo_path"]
-    if not photo_path or not Path(photo_path).exists():
-        _update(row_id, status="error", error="файл фото не найден")
-        return False
-
+    # В Kie AI уходит только референсное фото с сервера: картинку исходного
+    # поста не используем, генерация идёт по промпту поверх нашей модели.
     if UPLOAD_VIA_KIE:
-        post_url = await _upload_to_kie(Path(photo_path))
         ref_url = await _upload_to_kie(REFERENCE_IMAGE)
-        if not post_url or not ref_url:
-            _update(row_id, status="error", error="не удалось загрузить картинки в Kie AI")
+        if not ref_url:
+            _update(row_id, status="error", error="не удалось загрузить референс в Kie AI")
             return False
-        image_urls = [post_url, ref_url]
+        image_urls = [ref_url]
     else:
-        image_urls = [
-            _public_url(f"/autopost/media/{Path(photo_path).name}"),
-            _public_url("/autopost/reference.jpg"),
-        ]
+        image_urls = [_public_url("/autopost/reference.jpg")]
 
     logger.info("[autopost] запись %s -> Kie AI, промпт: %.80s", row_id, prompt)
     try:
@@ -415,41 +422,63 @@ async def _resolve_discussion_chat(bot: Bot) -> int:
 
 
 async def _comment_with_prompt(bot: Bot, channel_msg_id: int, prompt: str) -> bool:
-    """Отправляет промпт комментарием под опубликованным постом."""
+    """Отправляет промпт комментарием под опубликованным постом.
+
+    Чтобы ответить в группу обсуждений, нужен id поста уже внутри неё.
+    Bot API такого соответствия не отдаёт, поэтому спрашиваем у Telethon;
+    если он недоступен, ждём автопересылку, которую ловит обработчик."""
     discussion_chat = await _resolve_discussion_chat(bot)
     if not discussion_chat:
         return False
 
-    # Пост долетает до группы обсуждений не мгновенно
-    deadline = time.time() + DISCUSSION_WAIT
-    while time.time() < deadline:
-        discussion_msg_id = _discussion_map.get(channel_msg_id)
-        if discussion_msg_id:
-            try:
-                await bot.send_message(
-                    chat_id=discussion_chat,
-                    text=build_comment(prompt),
-                    parse_mode="HTML",
-                    reply_to_message_id=discussion_msg_id,
-                )
-                logger.info("[autopost] промпт добавлен комментарием к посту %s", channel_msg_id)
-                return True
-            except Exception as e:
-                logger.error("[autopost] не удалось отправить комментарий: %s", e)
-                return False
-        await asyncio.sleep(1)
+    discussion_msg_id = None
+    try:
+        import telethon_source
 
-    logger.warning(
-        "[autopost] пост %s не появился в группе обсуждений за %s с — комментарий не отправлен",
-        channel_msg_id, DISCUSSION_WAIT,
-    )
-    return False
+        discussion_msg_id = await telethon_source.get_discussion_message_id(
+            TARGET_CHAT_ID, channel_msg_id
+        )
+    except Exception as e:
+        logger.warning("[autopost] Telethon не подсказал id обсуждения: %s", e)
+
+    if not discussion_msg_id:
+        # Пост долетает до группы обсуждений не мгновенно
+        deadline = time.time() + DISCUSSION_WAIT
+        while time.time() < deadline and not discussion_msg_id:
+            discussion_msg_id = _discussion_map.get(channel_msg_id)
+            if not discussion_msg_id:
+                await asyncio.sleep(1)
+
+    if not discussion_msg_id:
+        logger.warning(
+            "[autopost] пост %s не найден в группе обсуждений — комментарий не отправлен",
+            channel_msg_id,
+        )
+        return False
+
+    try:
+        await bot.send_message(
+            chat_id=discussion_chat,
+            text=build_comment(prompt),
+            parse_mode="HTML",
+            reply_to_message_id=discussion_msg_id,
+        )
+        logger.info("[autopost] промпт добавлен комментарием к посту %s", channel_msg_id)
+        return True
+    except Exception as e:
+        logger.error("[autopost] не удалось отправить комментарий: %s", e)
+        return False
 
 
 async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
+    """Публикует картинку вместе с промптом: в подписи, если он туда влезает,
+    иначе комментарием под постом. На два поста публикация не разбивается."""
     row_id = row["id"]
     prompt = (row["prompt"] or "").strip()
-    caption = build_caption(row["source_caption"])
+    header = build_caption(row["source_caption"])
+
+    caption = build_caption_with_prompt(header, prompt)
+    prompt_in_caption = caption != header
 
     async def _send(photo):
         return await bot.send_photo(
@@ -477,8 +506,30 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
     _update(row_id, status="published", result_url=result_url, published_at=_now(), error=None)
     logger.info("[autopost] запись %s опубликована в %s", row_id, TARGET_CHAT_ID)
 
-    if prompt:
-        await _comment_with_prompt(bot, sent.message_id, prompt)
+    if prompt and not prompt_in_caption:
+        posted = await _comment_with_prompt(bot, sent.message_id, prompt)
+        if not posted:
+            # Комментарий не ушёл — промпт всё равно должен быть виден,
+            # поэтому дописываем его в подпись, обрезав до лимита.
+            await _append_prompt_to_caption(bot, sent.message_id, header, prompt)
+
+
+async def _append_prompt_to_caption(bot: Bot, message_id: int, header: str, prompt: str) -> None:
+    room = CAPTION_LIMIT - _visible_len(header) - 20
+    if room < 100:
+        logger.error("[autopost] промпт не поместился в подпись и комментарий не ушёл")
+        return
+    text = prompt if len(prompt) <= room else prompt[: room - 3] + "..."
+    try:
+        await bot.edit_message_caption(
+            chat_id=TARGET_CHAT_ID,
+            message_id=message_id,
+            caption=f"{header}\n{build_comment(text)}",
+            parse_mode="HTML",
+        )
+        logger.info("[autopost] промпт добавлен в подпись поста %s", message_id)
+    except Exception as e:
+        logger.error("[autopost] не удалось дописать промпт в подпись: %s", e)
 
 
 def _extract_result_url(task_data: dict) -> Optional[str]:

@@ -6,101 +6,135 @@
     /autopost_test          — по одному посту с каждого канала-источника
     /autopost_test 2        — по два поста с каждого канала
 
-Берёт свежие посты, генерирует и публикует их сразу, минуя суточный лимит,
-и присылает администратору отчёт по каждому каналу. Нужен для проверки
-настройки: видны ли каналы, находятся ли промпты в комментариях, доходит ли
-результат до целевого канала.
+Берёт свежие посты, генерирует и публикует их сразу, минуя суточный лимит
+и равномерное распределение, и присылает администратору отчёт по каждому
+каналу. Нужен для проверки настройки: видны ли каналы, находятся ли промпты
+в комментариях, доходит ли результат до целевого канала.
+
+Результат прогон забирает сам, опросом Kie AI, не дожидаясь фонового воркера
+и callback-а — так тест работает даже при закрытом снаружи порте 8010.
 """
 
 import asyncio
 import logging
+from contextlib import closing
 
+import httpx
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message
 
 import autopost
 import telethon_source
-from config import is_admin
+from config import KIE_API_KEY, is_admin
 
 logger = logging.getLogger("autopost.test")
 
 # Сколько ждать готовности картинки от Kie AI, секунд
-RESULT_WAIT = 300
+RESULT_WAIT = 420
 POLL_STEP = 5
 
 
-async def _wait_result(row_id: int) -> tuple:
-    """Ждёт, пока запись перейдёт в published или error."""
-    from contextlib import closing
-
-    for _ in range(RESULT_WAIT // POLL_STEP):
-        await asyncio.sleep(POLL_STEP)
-        with closing(autopost._connect()) as conn:
-            row = conn.execute(
-                "SELECT status, error, result_url FROM autopost_posts WHERE id = ?", (row_id,)
-            ).fetchone()
-        if not row:
-            return "error", "запись пропала из очереди"
-        if row["status"] == "published":
-            return "published", row["result_url"]
-        if row["status"] == "error":
-            return "error", row["error"]
-    return "error", f"результат не пришёл за {RESULT_WAIT} секунд"
+def _row(row_id: int):
+    with closing(autopost._connect()) as conn:
+        return conn.execute("SELECT * FROM autopost_posts WHERE id = ?", (row_id,)).fetchone()
 
 
-async def run_test(bot: Bot, per_channel: int = 1) -> list:
+async def _await_kie_result(task_id: str) -> tuple:
+    """Опрашивает Kie AI до готовности. Возвращает (url, None) или (None, ошибка)."""
+    headers = {"Authorization": f"Bearer {KIE_API_KEY}"}
+    async with httpx.AsyncClient(timeout=60) as client:
+        for _ in range(RESULT_WAIT // POLL_STEP):
+            await asyncio.sleep(POLL_STEP)
+            try:
+                resp = await client.get(
+                    autopost.KIE_RECORD_URL, params={"taskId": task_id}, headers=headers
+                )
+                task_data = (resp.json() or {}).get("data") or {}
+            except Exception as e:
+                logger.warning("[autopost-test] опрос %s не удался: %s", task_id, e)
+                continue
+
+            state = (task_data.get("state") or task_data.get("status") or "").lower()
+            if state in ("success", "succeeded", "completed"):
+                url = autopost._extract_result_url(task_data)
+                return (url, None) if url else (None, "Kie вернул успех без ссылки")
+            if state in ("fail", "failed", "error"):
+                return None, (task_data.get("failMsg") or task_data.get("msg") or "генерация не удалась")
+    return None, f"результат не пришёл за {RESULT_WAIT} секунд"
+
+
+async def _process_one(bot: Bot, post: dict) -> dict:
+    """Ставит пост в очередь, генерирует и публикует. Возвращает результат."""
+    entry = {"channel": post["source_chat_id"], "post": post["source_msg_id"],
+             "prompt_len": len(post["prompt"])}
+
+    row_id = autopost.add_post(**post)
+    if not row_id:
+        existing = autopost.get_post(post["source_chat_id"], post["source_msg_id"])
+        if existing and existing["status"] == "published":
+            return {**entry, "status": "skipped", "detail": "пост уже публиковался"}
+        row_id = existing["id"] if existing else None
+    if not row_id:
+        return {**entry, "status": "error", "detail": "не удалось поставить в очередь"}
+
+    row = _row(row_id)
+    if not await autopost.submit_to_kie(row):
+        fresh = _row(row_id)
+        return {**entry, "status": "error",
+                "detail": (fresh["error"] if fresh else "не удалось отправить в Kie")}
+
+    row = _row(row_id)
+    result_url, error = await _await_kie_result(row["task_id"])
+    if error:
+        autopost._update(row_id, status="error", error=error)
+        return {**entry, "status": "error", "detail": error}
+
+    await autopost.publish(bot, row, result_url)
+
+    fresh = _row(row_id)
+    if fresh and fresh["status"] == "published":
+        return {**entry, "status": "published", "detail": result_url}
+    return {**entry, "status": "error",
+            "detail": (fresh["error"] if fresh else "публикация не удалась")}
+
+
+async def run_test(bot: Bot, per_channel: int = 1, progress=None) -> list:
     """Прогоняет по per_channel постов с каждого канала. Возвращает отчёт."""
-    report = []
     client = await telethon_source.make_client()
     if not client:
         return [{"channel": None, "status": "error",
-                 "detail": "Telethon не настроен: нет сессии или ключей"}]
+                 "detail": "Telethon не настроен: нет файла сессии или ключей"}]
 
     autopost.init_db()
+    report = []
     try:
         for source_chat_id in autopost.SOURCE_CHAT_IDS:
-            entry = {"channel": source_chat_id}
+            logger.info("[autopost-test] канал %s", source_chat_id)
             try:
-                posts = await telethon_source.find_posts(client, source_chat_id, needed=per_channel)
+                posts = await telethon_source.find_posts(
+                    client, source_chat_id, needed=per_channel
+                )
             except Exception as e:
-                entry.update(status="error", detail=f"канал недоступен: {e}")
-                report.append(entry)
+                report.append({"channel": source_chat_id, "status": "error",
+                               "detail": f"канал недоступен: {e}"})
                 continue
 
             if not posts:
-                entry.update(status="skipped", detail="нет постов с промптом в комментариях")
-                report.append(entry)
+                report.append({"channel": source_chat_id, "status": "skipped",
+                               "detail": "нет постов с промптом в комментариях"})
                 continue
 
             for post in posts:
-                row_id = autopost.add_post(**post)
-                if not row_id:
-                    existing = autopost.get_post(post["source_chat_id"], post["source_msg_id"])
-                    row_id = existing["id"] if existing else None
-                if not row_id:
-                    report.append({**entry, "status": "skipped", "detail": "пост уже обработан"})
-                    continue
-
-                from contextlib import closing
-                with closing(autopost._connect()) as conn:
-                    row = conn.execute(
-                        "SELECT * FROM autopost_posts WHERE id = ?", (row_id,)
-                    ).fetchone()
-
-                if not await autopost.submit_to_kie(row):
-                    with closing(autopost._connect()) as conn:
-                        err = conn.execute(
-                            "SELECT error FROM autopost_posts WHERE id = ?", (row_id,)
-                        ).fetchone()
-                    report.append({**entry, "status": "error",
-                                   "detail": (err["error"] if err else "не удалось отправить в Kie")})
-                    continue
-
-                status, detail = await _wait_result(row_id)
-                report.append({**entry, "status": status, "detail": detail,
-                               "post": post["source_msg_id"],
-                               "prompt_len": len(post["prompt"])})
+                try:
+                    entry = await _process_one(bot, post)
+                except Exception as e:
+                    logger.error("[autopost-test] пост %s: %s", post["source_msg_id"], e, exc_info=True)
+                    entry = {"channel": source_chat_id, "post": post["source_msg_id"],
+                             "status": "error", "detail": str(e)}
+                report.append(entry)
+                if progress:
+                    await progress(entry)
     finally:
         await client.disconnect()
 
@@ -112,16 +146,14 @@ def _format_report(report: list) -> str:
     lines = ["<b>Пробный прогон автопостинга</b>", ""]
     for item in report:
         icon = icons.get(item.get("status"), "•")
-        channel = item.get("channel") or "—"
-        line = f"{icon} <code>{channel}</code>"
+        line = f"{icon} <code>{item.get('channel') or '—'}</code>"
         if item.get("post"):
             line += f" пост {item['post']}"
         if item.get("prompt_len"):
             line += f", промпт {item['prompt_len']} симв."
         lines.append(line)
-        detail = str(item.get("detail") or "")
-        if item.get("status") != "published" and detail:
-            lines.append(f"   {detail[:200]}")
+        if item.get("status") != "published" and item.get("detail"):
+            lines.append(f"   {str(item['detail'])[:200]}")
     published = sum(1 for i in report if i.get("status") == "published")
     lines += ["", f"Опубликовано: {published} из {len(report)}"]
     return "\n".join(lines)
@@ -135,7 +167,12 @@ def setup_autopost_test(dp: Dispatcher, bot: Bot) -> None:
     @dp.message(Command("autopost_test"))
     async def autopost_test_handler(message: Message):
         user = message.from_user
+        logger.info(
+            "[autopost-test] команда от %s (%s)",
+            user.id if user else "?", user.username if user else "?",
+        )
         if not user or not is_admin(user.id, user.username):
+            logger.warning("[autopost-test] отказано: не администратор")
             return
 
         parts = (message.text or "").split()
@@ -145,11 +182,25 @@ def setup_autopost_test(dp: Dispatcher, bot: Bot) -> None:
             per_channel = 1
 
         await message.answer(
-            f"Запускаю пробный прогон: {len(autopost.SOURCE_CHAT_IDS)} каналов, "
-            f"по {per_channel} посту с каждого.\nЭто займёт несколько минут."
+            f"Запускаю пробный прогон: каналов {len(autopost.SOURCE_CHAT_IDS)}, "
+            f"по {per_channel} посту с каждого.\n"
+            "Буду присылать результат по мере готовности."
         )
+
+        async def progress(entry: dict):
+            icon = {"published": "✅", "skipped": "⏭", "error": "❌"}.get(entry.get("status"), "•")
+            text = f"{icon} канал <code>{entry.get('channel')}</code>"
+            if entry.get("post"):
+                text += f", пост {entry['post']}"
+            if entry.get("status") != "published" and entry.get("detail"):
+                text += f"\n{str(entry['detail'])[:200]}"
+            try:
+                await message.answer(text, parse_mode="HTML")
+            except Exception:
+                pass
+
         try:
-            report = await run_test(bot, per_channel)
+            report = await run_test(bot, per_channel, progress=progress)
         except Exception as e:
             logger.error("[autopost-test] прогон не удался: %s", e, exc_info=True)
             await message.answer(f"❌ Прогон не удался: {e}")
