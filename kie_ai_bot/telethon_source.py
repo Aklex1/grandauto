@@ -458,6 +458,12 @@ async def telethon_worker() -> None:
         "[telethon] запущен под аккаунтом %s, каналов-источников: %s, опрос каждые %s с",
         getattr(me, "username", None) or me.id, len(autopost.SOURCE_CHAT_IDS), POLL_INTERVAL,
     )
+    # Проверяем OCR сразу, а не при первой картинке: иначе о неготовности
+    # узнаём только по уже опубликованной рекламе
+    if SKIP_IMAGES_WITH_TEXT:
+        _ocr_available()
+    else:
+        logger.warning("[telethon] проверка текста на картинках выключена настройкой")
 
     while True:
         try:
