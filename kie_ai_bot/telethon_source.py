@@ -66,19 +66,28 @@ CAPTION_MIN_LEN = _env_int("AUTOPOST_CAPTION_MIN_LEN", 200)
 AD_STOP_WORDS = [
     w.strip().lower() for w in os.getenv(
         "AUTOPOST_AD_STOP_WORDS",
+        # обучение и инфопродукты
         "курс,курсы,обучени,обуча,наставнич,вебинар,марафон,интенсив,мастер-класс,"
         "мастеркласс,воркшоп,тренинг,запишись,записывайся,запись на,мест осталось,"
-        "успей купить,купить,покупк,оплати,оплата,стоимость,скидк,промокод,тариф,"
-        "рассрочк,реклама,ученик,ученики,разбор за,приходи учиться,продаю,продажа,"
-        "бесплатный вебинар,бесплатный урок,гайд за,подписка за",
+        "успей купить,покупк,оплати,оплата,стоимость,скидк,промокод,тариф,"
+        "рассрочк,ученик,ученики,разбор за,приходи учиться,продаю,продажа,"
+        "бесплатный вебинар,бесплатный урок,гайд за,подписка за,"
+        # прямая реклама и продажа услуг
+        "реклам,advertis,по вопросам рекламы,для заказов,orders,прайс,услуги,"
+        "продвижен,накрутк,трафик,сотрудничеств,vpn,впн,telegram premium,"
+        "тг премиум,подписка от,в наличии,заказать,на заказ,пиши в лс,писать в лс",
     ).split(",") if w.strip()
 ]
 # Пропускать посты, если на исходном фото есть текст (обычно это реклама)
 SKIP_IMAGES_WITH_TEXT = os.getenv(
     "AUTOPOST_SKIP_IMAGES_WITH_TEXT", "1"
 ).strip().lower() in ("1", "true", "yes", "on")
-# Сколько букв на картинке считается текстом
-IMAGE_TEXT_MIN_CHARS = _env_int("AUTOPOST_IMAGE_TEXT_MIN_CHARS", 12)
+# Сколько распознанных букв на картинке уже считается текстом.
+# Любая надпись поверх фото — признак рекламного креатива, поэтому порог низкий;
+# пара символов оставлена, чтобы шум распознавания не отсекал чистые фото.
+IMAGE_TEXT_MIN_CHARS = _env_int("AUTOPOST_IMAGE_TEXT_MIN_CHARS", 4)
+# Не брать посты, пока OCR не работает (иначе реклама с надписями пройдёт фильтр)
+REQUIRE_OCR = os.getenv("AUTOPOST_REQUIRE_OCR", "0").strip().lower() in ("1", "true", "yes", "on")
 
 _MARKER_RE = re.compile(
     r"(?:" + "|".join(re.escape(w) + r"\w*" for w in PROMPT_MARKERS) + r")\s*[:\-—–>»]*\s*",
@@ -229,6 +238,36 @@ def looks_like_ad(*texts) -> str:
     return ""
 
 
+_ocr_checked = False
+_ocr_ok = False
+
+
+def _ocr_available() -> bool:
+    """Готов ли OCR. Проверяется один раз, о неготовности сообщается в лог:
+    без него посты с рекламным текстом на картинке пройдут фильтр."""
+    global _ocr_checked, _ocr_ok
+    if _ocr_checked:
+        return _ocr_ok
+
+    _ocr_checked = True
+    try:
+        import pytesseract
+        from PIL import Image  # noqa: F401
+
+        pytesseract.get_tesseract_version()
+        _ocr_ok = True
+        logger.info("[telethon] проверка текста на картинках включена")
+    except Exception as e:
+        _ocr_ok = False
+        logger.error(
+            "[telethon] ПРОВЕРКА ТЕКСТА НА КАРТИНКАХ НЕ РАБОТАЕТ (%s). "
+            "Рекламные креативы с надписями будут проходить фильтр. "
+            "Установите: apt-get install -y tesseract-ocr tesseract-ocr-rus "
+            "&& venv/bin/pip install pytesseract", e,
+        )
+    return _ocr_ok
+
+
 async def image_has_text(client, message) -> bool:
     """Есть ли на картинке заметный текст. Надписи поверх фото почти всегда
     означают рекламный креатив, а не пример работы промпта.
@@ -236,12 +275,13 @@ async def image_has_text(client, message) -> bool:
     Требует tesseract и pytesseract; без них проверка молча пропускается."""
     if not SKIP_IMAGES_WITH_TEXT:
         return False
-    try:
-        import pytesseract
-        from PIL import Image
-    except ImportError:
-        logger.debug("[telethon] pytesseract не установлен — текст на фото не проверяется")
-        return False
+    if not _ocr_available():
+        # Без OCR надписи на картинке не видны. Строгий режим лучше пропустит
+        # пост, чем опубликует чужую рекламу.
+        return REQUIRE_OCR
+
+    import pytesseract
+    from PIL import Image
 
     tmp_dir = Path(tempfile.gettempdir())
     path = None
@@ -254,8 +294,8 @@ async def image_has_text(client, message) -> bool:
         letters = re.sub(r"[^0-9A-Za-zА-Яа-яЁё]", "", text or "")
         if len(letters) >= IMAGE_TEXT_MIN_CHARS:
             logger.info(
-                "[telethon] пост %s: на фото текст (%s символов) — пропускаем",
-                message.id, len(letters),
+                "[telethon] пост %s: на фото надпись (%s символов: %.40s) — пропускаем",
+                message.id, len(letters), " ".join((text or "").split()),
             )
             return True
         return False
