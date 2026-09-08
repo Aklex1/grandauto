@@ -148,6 +148,16 @@ async def run_test(bot: Bot, per_channel: int = 1, progress=None) -> list:
     return report
 
 
+async def _say(message: Message, text: str) -> None:
+    """Сообщение админу: сетевой сбой не должен ронять весь прогон."""
+    try:
+        await autopost.with_retries(
+            lambda: message.answer(text, parse_mode="HTML"), what="ответ администратору"
+        )
+    except Exception as e:
+        logger.warning("[autopost-test] не удалось ответить администратору: %s", e)
+
+
 def _format_report(report: list) -> str:
     icons = {"published": "✅", "skipped": "⏭", "error": "❌"}
     lines = ["<b>Пробный прогон автопостинга</b>", ""]
@@ -166,6 +176,9 @@ def _format_report(report: list) -> str:
     return "\n".join(lines)
 
 
+_running = False
+
+
 def setup_autopost_test(dp: Dispatcher, bot: Bot) -> None:
     """Регистрирует админскую команду /autopost_test."""
     if not autopost.ENABLED:
@@ -182,16 +195,23 @@ def setup_autopost_test(dp: Dispatcher, bot: Bot) -> None:
             logger.warning("[autopost-test] отказано: не администратор")
             return
 
+        global _running
+        if _running:
+            await _say(message, "Прогон уже идёт — дождитесь отчёта.")
+            return
+
         parts = (message.text or "").split()
         try:
             per_channel = max(1, min(3, int(parts[1]))) if len(parts) > 1 else 1
         except ValueError:
             per_channel = 1
 
-        await message.answer(
+        _running = True
+        await _say(
+            message,
             f"Запускаю пробный прогон: каналов {len(autopost.SOURCE_CHAT_IDS)}, "
             f"по {per_channel} посту с каждого.\n"
-            "Буду присылать результат по мере готовности."
+            "Буду присылать результат по мере готовности.",
         )
 
         async def progress(entry: dict):
@@ -201,18 +221,17 @@ def setup_autopost_test(dp: Dispatcher, bot: Bot) -> None:
                 text += f", пост {entry['post']}"
             if entry.get("status") != "published" and entry.get("detail"):
                 text += f"\n{str(entry['detail'])[:200]}"
-            try:
-                await message.answer(text, parse_mode="HTML")
-            except Exception:
-                pass
+            await _say(message, text)
 
         try:
             report = await run_test(bot, per_channel, progress=progress)
         except Exception as e:
             logger.error("[autopost-test] прогон не удался: %s", e, exc_info=True)
-            await message.answer(f"❌ Прогон не удался: {e}")
+            await _say(message, f"❌ Прогон не удался: {e}")
             return
+        finally:
+            _running = False
 
-        await message.answer(_format_report(report), parse_mode="HTML")
+        await _say(message, _format_report(report))
 
     logger.info("[autopost] команда /autopost_test доступна администраторам")

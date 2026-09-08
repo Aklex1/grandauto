@@ -159,7 +159,9 @@ except (ImportError, Exception) as e:
     logging.warning(f"⚠️ Redis недоступен, используется MemoryStorage: {e}")
 
 # --- Bot & Dispatcher ---
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
+# Увеличенный таймаут: с сервера связь до api.telegram.org бывает медленной
+from aiogram.client.session.aiohttp import AiohttpSession
+bot = Bot(token=TELEGRAM_BOT_TOKEN, session=AiohttpSession(timeout=120))
 dp = Dispatcher(storage=storage)
 
 # Rate Limiting Middleware

@@ -422,20 +422,45 @@ async def submit_to_kie(row: sqlite3.Row) -> bool:
 
 # --- Публикация результата ----------------------------------------------------
 
+async def with_retries(action, attempts: int = 3, delay: float = 3.0, what: str = "запрос"):
+    """Повторяет запрос к Telegram при сетевом сбое: с сервера связь до
+    api.telegram.org иногда отваливается по таймауту."""
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await action()
+        except Exception as e:
+            last_error = e
+            if attempt < attempts:
+                logger.warning(
+                    "[autopost] %s не прошёл (попытка %s из %s): %s", what, attempt, attempts, e
+                )
+                await asyncio.sleep(delay * attempt)
+    logger.error("[autopost] %s не удался: %s", what, last_error)
+    raise last_error
+
+
 async def _resolve_discussion_chat(bot: Bot) -> int:
     """Группа обсуждений целевого канала — туда уходят комментарии."""
     global DISCUSSION_CHAT_ID
     if DISCUSSION_CHAT_ID:
         return DISCUSSION_CHAT_ID
     try:
-        chat = await bot.get_chat(TARGET_CHAT_ID)
+        chat = await with_retries(
+            lambda: bot.get_chat(TARGET_CHAT_ID), what="определение группы обсуждений"
+        )
         DISCUSSION_CHAT_ID = getattr(chat, "linked_chat_id", None) or 0
         if DISCUSSION_CHAT_ID:
             logger.info("[autopost] группа обсуждений целевого канала: %s", DISCUSSION_CHAT_ID)
         else:
-            logger.warning("[autopost] у целевого канала нет группы обсуждений — промпт пойдёт в подпись")
-    except Exception as e:
-        logger.error("[autopost] не удалось определить группу обсуждений: %s", e)
+            logger.warning(
+                "[autopost] у целевого канала нет группы обсуждений — промпт пойдёт в подпись"
+            )
+    except Exception:
+        logger.error(
+            "[autopost] группу обсуждений определить не удалось. Задайте её явно: "
+            "AUTOPOST_DISCUSSION_CHAT_ID в .env"
+        )
     return DISCUSSION_CHAT_ID
 
 
@@ -475,11 +500,14 @@ async def _comment_with_prompt(bot: Bot, channel_msg_id: int, prompt: str) -> bo
         return False
 
     try:
-        await bot.send_message(
-            chat_id=discussion_chat,
-            text=build_comment(prompt),
-            parse_mode="HTML",
-            reply_to_message_id=discussion_msg_id,
+        await with_retries(
+            lambda: bot.send_message(
+                chat_id=discussion_chat,
+                text=build_comment(prompt),
+                parse_mode="HTML",
+                reply_to_message_id=discussion_msg_id,
+            ),
+            what="отправка комментария",
         )
         logger.info("[autopost] промпт добавлен комментарием к посту %s", channel_msg_id)
         return True
@@ -501,8 +529,11 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
     caption = header
 
     async def _send(photo):
-        return await bot.send_photo(
-            chat_id=TARGET_CHAT_ID, photo=photo, caption=caption, parse_mode="HTML"
+        return await with_retries(
+            lambda: bot.send_photo(
+                chat_id=TARGET_CHAT_ID, photo=photo, caption=caption, parse_mode="HTML"
+            ),
+            what="публикация поста",
         )
 
     try:
