@@ -102,6 +102,8 @@ CAPTION_LIMIT = 1024
 MESSAGE_LIMIT = 4096
 # Сколько ждать, пока пост долетит до группы обсуждений, секунд
 DISCUSSION_WAIT = _env_int("AUTOPOST_DISCUSSION_WAIT", 20)
+# Сколько раз пробовать добавить комментарий, прежде чем дописать промпт в подпись
+COMMENT_MAX_TRIES = _env_int("AUTOPOST_COMMENT_MAX_TRIES", 5)
 
 # Как отдавать картинки в Kie AI:
 # 1 — загружать в файловое хранилище Kie (публичный адрес боту не нужен),
@@ -155,10 +157,23 @@ def init_db() -> None:
                 created_at      TEXT NOT NULL,
                 sent_at         TEXT,
                 published_at    TEXT,
+                channel_msg_id  INTEGER,
+                prompt_posted   INTEGER NOT NULL DEFAULT 0,
+                comment_tries   INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(source_chat_id, source_msg_id)
             )
             """
         )
+        # Миграция баз, созданных до появления комментариев с промптом
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(autopost_posts)")}
+        for column, ddl in (
+            ("channel_msg_id", "INTEGER"),
+            ("prompt_posted", "INTEGER NOT NULL DEFAULT 0"),
+            ("comment_tries", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if column not in cols:
+                conn.execute(f"ALTER TABLE autopost_posts ADD COLUMN {column} {ddl}")
+
         conn.execute("CREATE INDEX IF NOT EXISTS idx_autopost_status ON autopost_posts(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_autopost_task ON autopost_posts(task_id)")
         conn.commit()
@@ -557,12 +572,17 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
     _update(row_id, status="published", result_url=result_url, published_at=_now(), error=None)
     logger.info("[autopost] запись %s опубликована в %s", row_id, TARGET_CHAT_ID)
 
+    _update(row_id, channel_msg_id=sent.message_id)
+
     if prompt:
         posted = await _comment_with_prompt(bot, sent.message_id, prompt)
+        _update(row_id, prompt_posted=1 if posted else 0, comment_tries=1)
         if not posted:
-            # Комментарий не ушёл — чтобы промпт не пропал совсем,
-            # дописываем его в подпись, обрезав до лимита Telegram.
-            await _append_prompt_to_caption(bot, sent.message_id, header, prompt)
+            # Не режем промпт в подпись — воркер повторит попытку позже,
+            # когда обсуждение под постом успеет создаться
+            logger.warning(
+                "[autopost] запись %s: комментарий не ушёл, повторим позже", row_id
+            )
 
 
 async def _append_prompt_to_caption(bot: Bot, message_id: int, header: str, prompt: str) -> None:
@@ -654,6 +674,35 @@ async def _poll_stuck_tasks(bot: Bot) -> None:
 
 # --- Фоновый воркер: очередь и суточный лимит ---------------------------------
 
+async def _retry_missing_comments(bot: Bot) -> None:
+    """Дописывает промпт комментарием к постам, где это не удалось сразу.
+
+    Обсуждение под свежим постом создаётся не мгновенно, а связь до Telegram
+    иногда отваливается — поэтому попытка повторяется."""
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM autopost_posts WHERE status = 'published' "
+            "AND prompt_posted = 0 AND channel_msg_id IS NOT NULL "
+            "AND prompt IS NOT NULL AND comment_tries < ?",
+            (COMMENT_MAX_TRIES,),
+        ).fetchall()
+
+    for row in rows:
+        tries = (row["comment_tries"] or 0) + 1
+        posted = await _comment_with_prompt(bot, row["channel_msg_id"], row["prompt"])
+        _update(row["id"], prompt_posted=1 if posted else 0, comment_tries=tries)
+        if posted:
+            logger.info("[autopost] запись %s: промпт добавлен со %s попытки", row["id"], tries)
+        elif tries >= COMMENT_MAX_TRIES:
+            logger.error(
+                "[autopost] запись %s: промпт не удалось добавить за %s попыток — "
+                "дописываю его в подпись поста", row["id"], tries,
+            )
+            await _append_prompt_to_caption(
+                bot, row["channel_msg_id"], build_caption(row["source_caption"]), row["prompt"]
+            )
+
+
 async def autopost_worker(bot: Bot) -> None:
     if not ENABLED:
         logger.info("[autopost] выключен (AUTOPOST_ENABLED=0)")
@@ -699,6 +748,7 @@ async def autopost_worker(bot: Bot) -> None:
                             await submit_to_kie(row)
 
             await _poll_stuck_tasks(bot)
+            await _retry_missing_comments(bot)
         except Exception as e:
             logger.error("[autopost] ошибка воркера: %s", e, exc_info=True)
 

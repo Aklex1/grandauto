@@ -140,25 +140,40 @@ async def get_client():
         return _client
 
 
-async def get_discussion_message_id(channel_id: int, message_id: int):
+async def get_discussion_message_id(channel_id: int, message_id: int, attempts: int = 3):
     """id поста внутри связанной группы обсуждений — по нему бот отвечает
-    комментарием. Через Bot API это не узнать, а Telethon отдаёт напрямую."""
+    комментарием. Через Bot API это не узнать, а Telethon отдаёт напрямую.
+
+    Обсуждение под свежим постом создаётся не сразу, поэтому запрос
+    повторяется несколько раз с паузой."""
     client = await get_client()
     if not client:
+        logger.warning("[telethon] клиент недоступен — id обсуждения не получить")
         return None
-    try:
-        from telethon.tl.functions.messages import GetDiscussionMessageRequest
 
-        result = await client(GetDiscussionMessageRequest(
-            peer=await client.get_entity(channel_id), msg_id=message_id
-        ))
-        messages = getattr(result, "messages", None) or []
-        return messages[0].id if messages else None
-    except Exception as e:
-        logger.warning(
-            "[telethon] не удалось найти пост %s в группе обсуждений: %s", message_id, e
-        )
-        return None
+    from telethon.tl.functions.messages import GetDiscussionMessageRequest
+
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            result = await client(GetDiscussionMessageRequest(
+                peer=await client.get_entity(channel_id), msg_id=message_id
+            ))
+            messages = getattr(result, "messages", None) or []
+            if messages:
+                return messages[0].id
+            last_error = "обсуждение под постом ещё не создано"
+        except Exception as e:
+            last_error = e
+
+        if attempt < attempts:
+            await asyncio.sleep(3 * attempt)
+
+    logger.warning(
+        "[telethon] пост %s в группе обсуждений не найден за %s попыток: %s",
+        message_id, attempts, last_error,
+    )
+    return None
 
 
 async def make_client():
