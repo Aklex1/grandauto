@@ -116,6 +116,29 @@ def thumbnail(channel_name: str, video_title: str, book_title: str, thumb_style:
     )
 
 
+def short_cover(channel_name: str, topic: str, heading: str, narration: str,
+                thumb_style: str = "") -> str:
+    """Промпт обложки вертикального шортса.
+
+    Текст модели не заказываем: кириллицу генераторы изображений рисуют плохо,
+    заголовок накладывается своим шрифтом поверх. Зато просим оставить внизу
+    место под него и держать композицию в верхних двух третях кадра.
+    """
+    style = thumb_style or ("bold high-contrast mobile thumbnail, cinematic lighting, "
+                            "dramatic close-up portrait, vivid saturated accent colors")
+    hook = (narration or "").strip().replace("\n", " ")[:180]
+    return (
+        f"Vertical 9:16 cover image for a short video. "
+        f"Topic: {heading} (channel: {channel_name}, subject: {topic}). "
+        f"Scene mood: {hook}. {style}. "
+        f"Bright, eye-catching, punchy colors, strong contrast, expressive human face, "
+        f"sharp focus, shallow depth of field, dramatic rim light, "
+        f"subject centered in the upper two thirds, clean uncluttered bottom third "
+        f"left empty for a headline. "
+        f"No text, no letters, no words, no captions, no watermark, no logo, no borders."
+    )
+
+
 def bridge(channel_name: str, topic: str, prev_heading: str, prev_tail: str,
            next_heading: str, next_head: str) -> list[dict]:
     """Промпт для короткой связки между двумя несмежными сценами."""

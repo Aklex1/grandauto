@@ -272,29 +272,48 @@ def wrap_headline(text: str, width: int = 18, max_lines: int = 3) -> list[str]:
     return lines[:max_lines]
 
 
+# Средняя ширина прописной буквы жирного шрифта относительно кегля. Взята с запасом:
+# у кириллических прописных DejaVu Sans Bold широкие Ж, Ш, Щ, М доходят до 0.87 em,
+# и заниженная оценка выносила заголовок за края кадра.
+CAPS_WIDTH_RATIO = 0.80
+HEADLINE_CHARS = 14
+
+
 def make_thumbnail(src: Path, dst: Path, size: tuple[int, int] = (1280, 720),
                    headline: str = "") -> Path:
-    """Обложка: кадр нужного размера плюс крупный заголовок по теме ролика."""
+    """Обложка: кадр нужного размера плюс крупный заголовок по теме ролика.
+
+    Кегль считается от ШИРИНЫ кадра, а не от высоты: в вертикальном формате
+    9:16 высота вдвое больше ширины, и размер по высоте выносил текст за края.
+    """
     w, h = size
     chain = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
 
     font = bold_font()
-    lines = wrap_headline(headline.strip().upper()) if headline else []
+    lines = wrap_headline(headline.strip().upper(), width=HEADLINE_CHARS,
+                          max_lines=3) if headline else []
     if lines and font:
-        # Затемняем нижнюю треть, чтобы белый текст читался на любом кадре.
-        chain += (f",drawbox=x=0:y={int(h * 0.55)}:w={w}:h={int(h * 0.45)}"
-                  f":color=black@0.45:t=fill")
-        font_size = int(h * 0.115) if len(lines) <= 2 else int(h * 0.095)
-        line_gap = int(font_size * 1.12)
+        usable = w * 0.90
+        font_size = int(usable / (HEADLINE_CHARS * CAPS_WIDTH_RATIO))
+        font_size = max(24, min(font_size, int(h * 0.13)))
+        line_gap = int(font_size * 1.14)
         block_h = line_gap * len(lines)
-        top = h - int(h * 0.07) - block_h
+        bottom_pad = int(h * 0.07)
+        top = h - bottom_pad - block_h
+
+        # Затемняем подложку ровно под текстовым блоком, а не фиксированную треть:
+        # в вертикальном кадре треть — это половина экрана.
+        box_top = max(0, top - int(font_size * 0.45))
+        box_h = min(h - box_top, block_h + int(font_size * 0.9))
+        chain += f",drawbox=x=0:y={box_top}:w={w}:h={box_h}:color=black@0.5:t=fill"
+
         for i, line in enumerate(lines):
             y = top + i * line_gap
             chain += (
                 f",drawtext=fontfile='{font}':text='{_escape_drawtext(line)}'"
                 f":fontcolor=white:fontsize={font_size}"
                 f":borderw={max(3, int(font_size * 0.07))}:bordercolor=black@0.9"
-                f":x={int(w * 0.05)}:y={y}"
+                f":x=(w-text_w)/2:y={y}"      # по центру, иначе длинная строка уходит за край
             )
 
     _ff(["-i", str(src), "-vf", chain, "-q:v", "2", str(dst)], timeout=300)

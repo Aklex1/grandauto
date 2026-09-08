@@ -401,8 +401,9 @@ def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir
         if scene.piece_path and storage.abspath(scene.piece_path).exists():
             ready += 1
             continue
-        if assemble_scene_piece(session, video, channel, scene, workdir, pieces_dir,
-                                track_path, size, fallback_from=scenes):
+        ok, _cues = assemble_scene_piece(session, video, channel, scene, workdir,
+                                         pieces_dir, track_path, size, fallback_from=scenes)
+        if ok:
             ready += 1
 
     if ready == 0:
@@ -414,7 +415,8 @@ def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir
 def assemble_scene_piece(session: Session, video: Video, channel: Channel, scene: Scene,
                          workdir: Path, pieces_dir: Path, track_path: Optional[Path],
                          size: tuple[int, int],
-                         fallback_from: Optional[list[Scene]] = None) -> bool:
+                         fallback_from: Optional[list[Scene]] = None
+                         ) -> tuple[bool, list[subtitles.Cue]]:
     """Один законченный кусок: видеоряд под озвучку, субтитры, копия с музыкой.
 
     Общая для первой сборки и для пересборки отдельной сцены, чтобы кусок после
@@ -431,7 +433,7 @@ def assemble_scene_piece(session: Session, video: Video, channel: Channel, scene
         if fallback is None or not Path(fallback).exists():
             log_event(session, video.id, f"Сцена {scene.idx + 1}: нет видеоряда, пропускаю",
                       stage="assemble", level="warn")
-            return False
+            return False, []
         clips = [Path(fallback)]
 
     workdir.mkdir(parents=True, exist_ok=True)
@@ -465,6 +467,123 @@ def assemble_scene_piece(session: Session, video: Video, channel: Channel, scene
     scene.piece_sec = storage.media_duration(piece)
     scene.status = "piece_ready"
     session.commit()
+    return True, cues
+
+
+def _track_file(session: Session, video: Video, channel: Channel) -> Optional[Path]:
+    if not channel.background_music:
+        return None
+    track = _background_track(session, video, channel)
+    if track is None or not track.path:
+        return None
+    candidate = storage.abspath(track.path)
+    return candidate if candidate.exists() else None
+
+
+def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
+                 title: str, source: Path, workdir: Path, thumb: Path) -> None:
+    """Обложка шортса: картинка от nano banana плюс заголовок своим шрифтом.
+
+    Если генератор не ответил, берём кадр из самой сцены — обложка нужна всегда,
+    а ролик из-за неё падать не должен.
+    """
+    raw: Optional[Path] = None
+    try:
+        client = client_for(session)
+        prompt = prompts.short_cover(channel.name, channel.topic, scene.heading,
+                                     scene.narration, channel.thumb_style)
+        result = client.run_task(channel.image_model, {
+            "prompt": prompt,
+            "aspect_ratio": "9:16",
+            "resolution": "1K",
+            "output_format": "png",
+        }, timeout=900, poll=5)
+        urls = extract_urls(result)
+        if not urls:
+            raise KieError("в ответе нет ссылки на изображение")
+        raw = workdir / f"cover_{scene.idx:02d}{storage.guess_ext(urls[0], '.png')}"
+        storage.download(urls[0], raw)
+    except Exception as exc:  # noqa: BLE001
+        log_event(session, video.id,
+                  f"Сцена {scene.idx + 1}: генератор обложек не сработал ({exc}), "
+                  f"беру кадр из сцены", stage="assemble", level="warn")
+        raw = None
+
+    if raw is None or not raw.exists():
+        raw = workdir / f"cover_{scene.idx:02d}.jpg"
+        # Кадр берём из ЧИСТОГО источника, а не из готового шортса: там заголовок
+        # и субтитры уже вшиты, и поверх них лёг бы второй заголовок.
+        at = min(1.5, max(0.5, (scene.piece_sec or 4.0) * 0.15))
+        media.frame_grab(source, raw, at=at)
+
+    media.make_thumbnail(raw, thumb, size=media.VERTICAL, headline=title)
+    raw.unlink(missing_ok=True)
+
+
+def build_scene_short(session: Session, video: Video, channel: Channel, scene: Scene,
+                      workdir: Path, pieces_dir: Path, track_path: Optional[Path],
+                      cues: Optional[list[subtitles.Cue]] = None) -> bool:
+    """Вертикальная версия сцены, готовая к публикации: заголовок в кадре и обложка.
+
+    Лежит отдельным файлом от piece_path: заголовок нужен шортсу, но в каждой
+    сцене длинного ролика он выглядел бы нелепо.
+    """
+    # Источник — чистый кусок без вшитых субтитров: у горизонтального канала
+    # кроп в вертикаль срезал бы subtitles по краям вместе с картинкой.
+    clean = pieces_dir / f"scene_{scene.idx:02d}_clean.mp4"
+    source = clean if clean.exists() else storage.abspath(scene.piece_path)
+    if not source.exists():
+        raise RuntimeError("нет исходного куска сцены")
+
+    duration = scene.piece_sec or storage.media_duration(source)
+    title = (scene.short_title or scene.heading or video.title or "").strip()
+
+    if cues is None and scene.audio_path:
+        cues = _scene_cues(session, video, channel, scene, storage.abspath(scene.audio_path))
+    cues = cues or []
+
+    workdir.mkdir(parents=True, exist_ok=True)
+    ass = None
+    if cues or title:
+        ass = workdir / f"short_{scene.idx:02d}.ass"
+        # заголовок висит первые секунды — дальше он мешал бы читать субтитры
+        head_seconds = min(4.5, max(2.5, duration * 0.18))
+        subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
+                            title=title, title_seconds=head_seconds,
+                            style=_subtitle_style(channel))
+
+    raw = workdir / f"short_{scene.idx:02d}_raw.mp4"
+    media.cut_short(source, raw, 0.0, duration, ass=ass)
+
+    dest = pieces_dir / f"scene_{scene.idx:02d}_short.mp4"
+    if track_path is not None:
+        try:
+            media.mix_background_music(raw, track_path, dest,
+                                       music_db=channel.music_volume_db or -20.0)
+        except RuntimeError as exc:
+            log_event(session, video.id,
+                      f"Сцена {scene.idx + 1}: музыка в шортс не легла ({exc})",
+                      stage="assemble", level="warn")
+            shutil.copyfile(raw, dest)
+    else:
+        shutil.copyfile(raw, dest)
+
+    # Обложка с тем же заголовком — чтобы шортс можно было выложить как есть.
+    thumb = pieces_dir / f"scene_{scene.idx:02d}_thumb.jpg"
+    try:
+        _scene_cover(session, video, channel, scene, title, source, workdir, thumb)
+        scene.thumb_path = storage.rel(thumb)
+    except Exception as exc:  # noqa: BLE001 — шортс важнее обложки
+        log_event(session, video.id, f"Сцена {scene.idx + 1}: обложка не сделана ({exc})",
+                  stage="assemble", level="warn")
+        scene.thumb_path = ""
+
+    scene.short_path = storage.rel(dest)
+    scene.short_title = title
+    session.commit()
+    log_event(session, video.id,
+              f"Сцена {scene.idx + 1}: шортс готов — {duration:.0f} с, заголовок «{title}»",
+              stage="assemble")
     return True
 
 
@@ -771,8 +890,9 @@ def assemble_selected(session: Session, video: Video, channel: Channel,
 
 
 def _background_track(session: Session, video: Video, channel: Channel):
-    client = client_for(session)
     try:
+        # client_for внутри try: без ключа KIE это «нет музыки», а не падение сборки
+        client = client_for(session)
         return music.ensure_track(session, client, channel.id, channel.topic,
                                   channel.music_style)
     except Exception as exc:  # noqa: BLE001
@@ -1178,7 +1298,6 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
         scene = session.get(Scene, scene_id)
         video = session.get(Video, scene.video_id)
         channel = session.get(Channel, video.channel_id)
-        client = client_for(session)
         out_dir = storage.video_dir(channel.slug, video.id)
         workdir = config.TMP_DIR / f"regen_{scene.id}"
         shutil.rmtree(workdir, ignore_errors=True)
@@ -1192,6 +1311,10 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
 
         # Озвучку трогаем, только если изменился текст, голос или модель речи —
         # иначе это лишние деньги и лишнее ожидание.
+        make_short = bool(options.get("make_short"))
+        short_title = (options.get("short_title") or scene.short_title
+                       or scene.heading or "").strip()[:200]
+
         redo_voice = bool(options.get("redo_voice"))
         if narration != (scene.narration or ""):
             redo_voice = True
@@ -1199,6 +1322,22 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
             redo_voice = True
         if not _scene_audio_ok(scene):
             redo_voice = True
+
+        if options.get("only_short"):
+            scene.short_title = short_title
+            session.commit()
+            log_event(session, video.id,
+                      f"Сцена {scene.idx + 1}: собираю шортс из готового куска",
+                      stage="regen")
+            try:
+                build_scene_short(session, video, channel, scene, workdir,
+                                  out_dir / "scenes", _track_file(session, video, channel))
+            finally:
+                shutil.rmtree(workdir, ignore_errors=True)
+            return
+
+        # клиент нужен только дальше, где идут реальные вызовы KIE
+        client = client_for(session)
 
         scene.visual_prompt = prompt
         scene.narration = narration
@@ -1266,20 +1405,26 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
             scene.piece_music_path = ""
             session.commit()
 
-            track_path = None
-            if channel.background_music:
-                track = _background_track(session, video, channel)
-                if track is not None and track.path:
-                    candidate = storage.abspath(track.path)
-                    track_path = candidate if candidate.exists() else None
+            track_path = _track_file(session, video, channel)
 
             size = media.target_size(channel.resolution, channel.aspect_ratio)
             pieces_dir = out_dir / "scenes"
             pieces_dir.mkdir(parents=True, exist_ok=True)
-            ok = assemble_scene_piece(session, video, channel, scene, workdir, pieces_dir,
-                                      track_path, size)
+            ok, cues = assemble_scene_piece(session, video, channel, scene, workdir,
+                                            pieces_dir, track_path, size)
             if not ok:
                 raise RuntimeError("кусок сцены не собрался")
+
+            if make_short:
+                scene.short_title = short_title
+                session.commit()
+                try:
+                    build_scene_short(session, video, channel, scene, workdir, pieces_dir,
+                                      track_path, cues)
+                except Exception as exc:  # noqa: BLE001 — кусок уже готов, шортс вторичен
+                    log_event(session, video.id,
+                              f"{label}: шортс не собрался — {exc}",
+                              stage="regen", level="warn")
 
             video.cost_credits = (video.cost_credits or 0) + credits
             session.commit()

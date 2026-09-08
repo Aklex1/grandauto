@@ -187,6 +187,12 @@ class Scene(Base):
     piece_path: Mapped[str] = mapped_column(String(500), default="")  # готовая сцена-ролик
     piece_music_path: Mapped[str] = mapped_column(String(500), default="")  # она же с музыкой
     piece_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    # Готовая к публикации вертикальная версия сцены: заголовок в кадре, субтитры,
+    # музыка. Лежит отдельно от piece_path, потому что заголовок в каждой сцене
+    # длинного ролика выглядел бы нелепо.
+    short_title: Mapped[str] = mapped_column(String(200), default="")
+    short_path: Mapped[str] = mapped_column(String(500), default="")
+    thumb_path: Mapped[str] = mapped_column(String(500), default="")
     include: Mapped[bool] = mapped_column(Boolean, default=True)      # войдёт в длинный ролик
     clip_path: Mapped[str] = mapped_column(String(500), default="")
     clip_paths: Mapped[str] = mapped_column(Text, default="")

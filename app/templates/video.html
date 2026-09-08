@@ -144,6 +144,39 @@
             {% if sc.piece_music_path %}<span class="badge">с музыкой</span>{% endif %}
             {% if sc.status == 'regen_failed' %}<span class="badge err">пересборка не удалась</span>{% endif %}
           </div>
+
+          {% if sc.short_path %}
+          <div class="card mt" style="padding:10px">
+            <div class="small"><b>Готово к публикации</b>
+              {% if sc.short_title %}<div class="muted">«{{ sc.short_title }}»</div>{% endif %}
+            </div>
+            <div class="row mt" style="align-items:flex-start">
+              <video controls preload="none" src="/media/{{ sc.short_path }}"
+                     style="width:120px;aspect-ratio:9/16;object-fit:cover"></video>
+              {% if sc.thumb_path %}
+              <img src="/media/{{ sc.thumb_path }}" alt="обложка"
+                   style="width:120px;aspect-ratio:9/16;object-fit:cover;border-radius:6px">
+              {% endif %}
+            </div>
+            <div class="row mt">
+              <a class="btn btn-sm" href="/media/{{ sc.short_path }}?download=1">⬇ Шортс</a>
+              {% if sc.thumb_path %}
+              <a class="btn btn-sm" href="/media/{{ sc.thumb_path }}?download=1">⬇ Обложка</a>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          <details class="mt">
+            <summary class="small">🎬 {% if sc.short_path %}Пересобрать шортс{% else %}Собрать шортс для публикации{% endif %}</summary>
+            <p class="small muted">Вертикальный файл с заголовком в кадре, субтитрами и музыкой
+              плюс обложка с тем же заголовком. Кадры заново не генерируются — берётся
+              уже готовый кусок, поэтому кредиты не тратятся.</p>
+            <label class="small">Заголовок в кадре и на обложке
+              <input name="short_title" form="short-{{ sc.id }}"
+                     value="{{ sc.short_title or sc.heading }}" maxlength="200"></label>
+            <button class="btn btn-sm mt" form="short-{{ sc.id }}" type="submit">Собрать шортс</button>
+          </details>
           {% if sc.error and sc.status == 'regen_failed' %}
           <div class="small mt" style="color:var(--err)">{{ sc.error }}</div>
           {% endif %}
@@ -200,6 +233,13 @@
                 переозвучить принудительно</label>
             </div>
 
+            <label class="small row mt" style="margin:0">
+              <input type="checkbox" name="make_short" form="regen-{{ sc.id }}" style="width:auto" checked>
+              сразу собрать шортс с заголовком и обложкой</label>
+            <label class="small">Заголовок шортса
+              <input name="short_title" form="regen-{{ sc.id }}"
+                     value="{{ sc.short_title or sc.heading }}" maxlength="200"></label>
+
             <button class="btn btn-sm btn-primary mt" form="regen-{{ sc.id }}"
                     type="submit">Сгенерировать заново</button>
             {% endif %}
@@ -224,6 +264,7 @@
      вложенные формы недопустимы, поэтому поля связаны с формой атрибутом form=. #}
   {% for sc in pieces %}
   <form id="regen-{{ sc.id }}" method="post" action="/scenes/{{ sc.id }}/regenerate" hidden></form>
+  <form id="short-{{ sc.id }}" method="post" action="/scenes/{{ sc.id }}/short" hidden></form>
   {% endfor %}
 </div>
 {% endif %}

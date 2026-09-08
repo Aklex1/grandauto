@@ -600,6 +600,25 @@ def footage_update(footage_id: int, session: Session = Depends(get_session),
     return RedirectResponse(target, status_code=303)
 
 
+@app.post("/scenes/{scene_id}/short")
+def scene_make_short(scene_id: int, session: Session = Depends(get_session),
+                     _user: str = Depends(require_user), short_title: str = Form("")):
+    """Собрать публикуемый шортс из уже готового куска — без новой генерации кадров."""
+    scene = session.get(Scene, scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="Сцена не найдена")
+    if not scene.piece_path:
+        raise HTTPException(status_code=400, detail="Сцена ещё не собрана")
+    queue.enqueue(session, "regen_scene", video_id=scene.video_id,
+                  payload={"scene_id": scene.id,
+                           "options": {"only_short": True,
+                                       "short_title": short_title.strip()[:200]}})
+    session.add(Event(video_id=scene.video_id, level="info", stage="regen",
+                      message=f"Сцена {scene.idx + 1}: сборка шортса поставлена в очередь"))
+    session.commit()
+    return RedirectResponse(f"/videos/{scene.video_id}#scene-{scene.id}", status_code=303)
+
+
 @app.get("/videos/{video_id}", response_class=HTMLResponse)
 def video_page(video_id: int, request: Request, session: Session = Depends(get_session),
                _user: str = Depends(require_user)):
@@ -639,7 +658,8 @@ def scene_regenerate(scene_id: int, session: Session = Depends(get_session),
                      visual_prompt: str = Form(""), narration: str = Form(""),
                      video_model: str = Form(""), tts_model: str = Form(""),
                      voice_id: str = Form(""), clips: int = Form(0),
-                     redo_voice: str = Form("")):
+                     redo_voice: str = Form(""), make_short: str = Form(""),
+                     short_title: str = Form("")):
     """Пересборка одной сцены: свой промпт, своя модель, полный кусок на выходе."""
     scene = session.get(Scene, scene_id)
     if scene is None:
@@ -656,6 +676,8 @@ def scene_regenerate(scene_id: int, session: Session = Depends(get_session),
         "voice_id": voice_id.strip(),
         "clips": max(0, min(16, clips)),
         "redo_voice": bool(redo_voice),
+        "make_short": bool(make_short),
+        "short_title": short_title.strip()[:200],
     }
     queue.enqueue(session, "regen_scene", video_id=video.id,
                   payload={"scene_id": scene.id, "options": options})
