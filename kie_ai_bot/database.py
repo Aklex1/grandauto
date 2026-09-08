@@ -1522,6 +1522,13 @@ def deduct_balance(telegram_id: int, tokens: float) -> bool:
 
 def create_partner_tables():
     """Создание таблиц для партнерской программы"""
+    try:
+        from partner_tiers import create_partner_tier_table
+
+        create_partner_tier_table()
+    except Exception as e:
+        print(f"⚠️ [ПАРТНЕР] Таблица тарифов не создана: {e}")
+
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -1641,9 +1648,16 @@ def add_referral(partner_telegram_id: int, partner_username: str, referral_teleg
         conn.close()
         return False
     
-    # Для vlad_myrsin устанавливаем стандартную комиссию 10%, 
-    # но первый платеж будет обработан с 15% в update_partner_commission
-    commission_rate = 10.00
+    # Ставка зависит от тарифа партнёра: у вебмастеров она выше.
+    # В записи храним ставку для повторных покупок; с первого депозита
+    # процент считается отдельно в update_partner_commission.
+    try:
+        from partner_tiers import get_tier
+
+        commission_rate = get_tier(partner_telegram_id)["revshare_rate"]
+    except Exception as e:
+        print(f"⚠️ [РЕФЕРАЛ] Тариф партнёра не прочитан ({e}), берём стандартный")
+        commission_rate = 10.00
     
     cursor.execute("""
         INSERT INTO partner_program (partner_telegram_id, partner_username, referral_telegram_id, referral_username, commission_rate)
@@ -1742,13 +1756,27 @@ def update_partner_commission(partner_telegram_id: int, purchase_amount: float):
         
         print(f"✅ [ПАРТНЕР] Найден партнер: ID={partner_id}, username={partner_username}, first_payment={first_payment_received}")
         
-        # Определяем комиссию: 15% для первого платежа vlad_myrsin, иначе стандартная
-        if partner_username == 'vlad_myrsin' and not first_payment_received:
-            commission_rate = 15.00
-            print(f"⭐ [ПАРТНЕР] vlad_myrsin - первый платеж, повышенная комиссия 15%")
-        else:
-            commission_rate = partner_info["commission_rate"]
-            print(f"📊 [ПАРТНЕР] Стандартная комиссия: {commission_rate}%")
+        # Ставка зависит от тарифа партнёра и от того, первая ли это покупка
+        commission_rate = None
+        try:
+            from partner_tiers import commission_rate as tier_rate, get_tier
+
+            tier = get_tier(partner_id)
+            if tier["tier"] != "standard":
+                commission_rate = tier_rate(tier, not first_payment_received)
+                print(f"⭐ [ПАРТНЕР] Тариф {tier['tier']}: "
+                      f"{'первый депозит' if not first_payment_received else 'повторная покупка'}, "
+                      f"комиссия {commission_rate}%")
+        except Exception as e:
+            print(f"⚠️ [ПАРТНЕР] Тариф не прочитан ({e}), берём ставку из записи")
+
+        if commission_rate is None:
+            if partner_username == 'vlad_myrsin' and not first_payment_received:
+                commission_rate = 15.00
+                print(f"⭐ [ПАРТНЕР] vlad_myrsin - первый платеж, повышенная комиссия 15%")
+            else:
+                commission_rate = partner_info["commission_rate"]
+                print(f"📊 [ПАРТНЕР] Стандартная комиссия: {commission_rate}%")
             
         commission_amount = purchase_amount * (commission_rate / 100)
         print(f"💰 [ПАРТНЕР] Расчет: {purchase_amount}₽ × {commission_rate}% = {commission_amount}₽")

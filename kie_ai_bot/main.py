@@ -6847,6 +6847,22 @@ async def start_handler(message: Message, state: FSMContext):
             if await start_with_prompt(message, state, param, NanoBananaStates):
                 return
 
+        # Ссылка для вебмастеров: закрепляем повышенный тариф партнёрки
+        if param:
+            from partner_tiers import describe, get_tier, parse_webmaster_payload, set_tier
+
+            source = parse_webmaster_payload(param)
+            if source:
+                set_tier(user_id, username, tier="webmaster", source=source)
+                tier = get_tier(user_id)
+                await message.answer(
+                    "🤝 <b>Вы подключены к партнёрской программе для вебмастеров</b>\n\n"
+                    f"Ваши условия: <b>{describe(tier)}</b>\n\n"
+                    "Ссылка для привлечения — в разделе «Профиль». Комиссия начисляется "
+                    "автоматически, вывод от 500₽ в течение суток.",
+                    parse_mode="HTML",
+                )
+
         # Проверка админа через функцию из config
         is_admin = check_admin(user_id, username)
         
