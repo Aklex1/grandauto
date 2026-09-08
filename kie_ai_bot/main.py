@@ -50,6 +50,7 @@ from config import TELEGRAM_BOT_TOKEN, CALLBACK_BASE_URL, is_admin as check_admi
 from autopost import setup_autopost, setup_autopost_routes, autopost_worker
 from telethon_source import telethon_worker
 from autopost_test import setup_autopost_test
+from autopost_fix import setup_autopost_fix
 from database import (
     create_tables,
     add_user,
@@ -9191,6 +9192,7 @@ async def main():
     setup_autopost(dp, bot)
     setup_autopost_routes(app, bot)
     setup_autopost_test(dp, bot)
+    setup_autopost_fix(dp, bot)
 
     await asyncio.gather(
         start_bot(),
