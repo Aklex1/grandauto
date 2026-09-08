@@ -17,6 +17,7 @@ Bot API не отдаёт содержимое каналов, где бот н�
 import asyncio
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -44,6 +45,70 @@ MAX_LOOKBACK = _env_int("TELETHON_MAX_LOOKBACK", 60)
 # Комментарий короче этого считается болтовнёй, а не промптом
 MIN_PROMPT_LEN = _env_int("TELETHON_MIN_PROMPT_LEN", 40)
 COMMENTS_LIMIT = _env_int("TELETHON_COMMENTS_LIMIT", 30)
+
+# Слова, после которых идёт сам промпт: «Промпт: ...», «промт — ...», «prompt»
+PROMPT_MARKERS = [
+    w.strip() for w in os.getenv("AUTOPOST_PROMPT_MARKERS", "промпт,промт,prompt").split(",")
+    if w.strip()
+]
+# Обороты, с которых промпт обычно начинается — текст берётся вместе с ними
+PROMPT_START_HINTS = [
+    w.strip() for w in os.getenv(
+        "AUTOPOST_PROMPT_HINTS",
+        "сохрани внешность,создай изображение,создай фото,фотореалистич,фотореализм",
+    ).split(",") if w.strip()
+]
+# Подпись без маркера считается промптом только начиная с такой длины
+CAPTION_MIN_LEN = _env_int("AUTOPOST_CAPTION_MIN_LEN", 200)
+
+_MARKER_RE = re.compile(
+    r"(?:" + "|".join(re.escape(w) + r"\w*" for w in PROMPT_MARKERS) + r")\s*[:\-—–>»]*\s*",
+    re.IGNORECASE,
+) if PROMPT_MARKERS else None
+
+_HINT_RE = re.compile(
+    "|".join(re.escape(w) for w in PROMPT_START_HINTS), re.IGNORECASE
+) if PROMPT_START_HINTS else None
+
+
+def _trim_lead_in(text: str) -> str:
+    """Убирает подводку перед промптом: «для вас 👇», стрелки, пустые строки."""
+    text = text.strip(" \n\t:—–->»👇⤵️✨🔥")
+    # Если сразу за подводкой идёт типичное начало промпта — режем по нему
+    if _HINT_RE:
+        m = _HINT_RE.search(text[:120])
+        if m and m.start() > 0:
+            return text[m.start():].strip()
+    return text
+
+
+def extract_prompt(text: str) -> str:
+    """Достаёт промпт из текста.
+
+    Сначала ищет слово-маркер («промпт», «промт», «prompt») и берёт всё, что
+    идёт после него. Если маркера нет — ищет типичное начало промпта
+    («Сохрани внешность...») и берёт текст с этого места."""
+    text = (text or "").strip()
+    if not text:
+        return ""
+
+    if _MARKER_RE:
+        best = ""
+        for m in _MARKER_RE.finditer(text):
+            tail = text[m.end():].strip()
+            if len(tail) > len(best):
+                best = tail
+        if len(best) >= MIN_PROMPT_LEN:
+            return _trim_lead_in(best)
+
+    if _HINT_RE:
+        m = _HINT_RE.search(text)
+        if m:
+            tail = text[m.start():].strip()
+            if len(tail) >= MIN_PROMPT_LEN:
+                return tail
+
+    return ""
 
 
 _client = None
@@ -104,22 +169,41 @@ async def make_client():
 
 
 async def pick_prompt(client, channel, message) -> str:
-    """Промпт из комментариев к посту. Пустая строка — комментариев нет."""
-    candidates = []
+    """Промпт к посту: сначала из комментариев, затем из подписи самого поста.
+
+    В обоих местах сперва ищется текст после слова-маркера («Промпт: ...»),
+    и только если маркера нигде нет, берётся самый длинный осмысленный
+    комментарий или достаточно длинная подпись."""
+    comments = []
     try:
         async for comment in client.iter_messages(channel, reply_to=message.id, limit=COMMENTS_LIMIT):
             text = (comment.message or "").strip()
             if text:
-                candidates.append(text)
+                comments.append(text)
     except Exception as e:
         # У поста может не быть обсуждения вовсе — это не ошибка
         logger.debug("[telethon] пост %s: комментарии недоступны: %s", message.id, e)
-        return ""
 
-    long_ones = [t for t in candidates if len(t) >= MIN_PROMPT_LEN]
-    if long_ones:
-        return max(long_ones, key=len)
-    return max(candidates, key=len) if candidates else ""
+    caption = (message.message or "").strip()
+
+    # 1. Явный маркер — сначала в комментариях, потом в подписи
+    for source, texts in (("комментарий", comments), ("подпись", [caption] if caption else [])):
+        for text in texts:
+            found = extract_prompt(text)
+            if found:
+                logger.debug("[telethon] пост %s: промпт найден по маркеру (%s)", message.id, source)
+                return found
+
+    # 2. Маркера нет — самый длинный осмысленный комментарий
+    long_comments = [t for t in comments if len(t) >= MIN_PROMPT_LEN]
+    if long_comments:
+        return max(long_comments, key=len)
+
+    # 3. Ни того ни другого — подпись, если она достаточно длинная для промпта
+    if len(caption) >= CAPTION_MIN_LEN:
+        return caption
+
+    return max(comments, key=len) if comments else ""
 
 
 async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: bool = True) -> list:
