@@ -538,10 +538,24 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
     header = build_caption(row["source_caption"])
     caption = header
 
+    # Кнопка «Повторить это фото»: открывает бота с уже подставленным промптом
+    keyboard = None
+    if prompt:
+        try:
+            from channel_deeplink import build_keyboard
+
+            keyboard = await build_keyboard(bot, row_id)
+        except Exception as e:
+            logger.warning("[autopost] кнопку под постом собрать не вышло: %s", e)
+
     async def _send(photo):
         return await with_retries(
             lambda: bot.send_photo(
-                chat_id=TARGET_CHAT_ID, photo=photo, caption=caption, parse_mode="HTML"
+                chat_id=TARGET_CHAT_ID,
+                photo=photo,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=keyboard,
             ),
             what="публикация поста",
         )

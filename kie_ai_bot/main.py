@@ -4381,6 +4381,10 @@ async def get_nano_image(message: Message, state: FSMContext):
             )
             await message.answer("Выберите коэффициент увеличения:", reply_markup=keyboard)
             await state.set_state(NanoBananaStates.choose_upscale_factor)
+        elif user_data.get("preset_prompt"):
+            # Промпт пришёл из канала — спрашивать описание не нужно
+            await state.set_state(NanoBananaStates.input_prompt)
+            await input_nano_prompt_handler(message, state)
         else:  # edit
             await message.answer(
                 "Введите описание изменений, которые хотите внести в изображение:",
@@ -4501,7 +4505,8 @@ async def input_nano_prompt_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
     username = message.from_user.username or "user"
     first_name = message.from_user.first_name or "Пользователь"
-    prompt = message.text
+    # Промпт мог прийти из канала по кнопке «Повторить это фото»
+    prompt = user_data.get("preset_prompt") or message.text
     
     mode = user_data.get("nano_mode")
     
@@ -6834,6 +6839,14 @@ async def start_handler(message: Message, state: FSMContext):
             add_user(user_id, username)
             user_tag = get_user_tag(user_id)
         
+        # Переход из канала по кнопке «Повторить это фото»: промпт уже готов,
+        # обычное приветствие показывать не нужно
+        if param:
+            from channel_deeplink import start_with_prompt
+
+            if await start_with_prompt(message, state, param, NanoBananaStates):
+                return
+
         # Проверка админа через функцию из config
         is_admin = check_admin(user_id, username)
         
