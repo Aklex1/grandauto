@@ -18,6 +18,7 @@ import asyncio
 import logging
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -60,6 +61,24 @@ PROMPT_START_HINTS = [
 ]
 # Подпись без маркера считается промптом только начиная с такой длины
 CAPTION_MIN_LEN = _env_int("AUTOPOST_CAPTION_MIN_LEN", 200)
+
+# Слова, по которым пост считается рекламным и в работу не берётся
+AD_STOP_WORDS = [
+    w.strip().lower() for w in os.getenv(
+        "AUTOPOST_AD_STOP_WORDS",
+        "курс,курсы,обучени,обуча,наставнич,вебинар,марафон,интенсив,мастер-класс,"
+        "мастеркласс,воркшоп,тренинг,запишись,записывайся,запись на,мест осталось,"
+        "успей купить,купить,покупк,оплати,оплата,стоимость,скидк,промокод,тариф,"
+        "рассрочк,реклама,ученик,ученики,разбор за,приходи учиться,продаю,продажа,"
+        "бесплатный вебинар,бесплатный урок,гайд за,подписка за",
+    ).split(",") if w.strip()
+]
+# Пропускать посты, если на исходном фото есть текст (обычно это реклама)
+SKIP_IMAGES_WITH_TEXT = os.getenv(
+    "AUTOPOST_SKIP_IMAGES_WITH_TEXT", "1"
+).strip().lower() in ("1", "true", "yes", "on")
+# Сколько букв на картинке считается текстом
+IMAGE_TEXT_MIN_CHARS = _env_int("AUTOPOST_IMAGE_TEXT_MIN_CHARS", 12)
 
 _MARKER_RE = re.compile(
     r"(?:" + "|".join(re.escape(w) + r"\w*" for w in PROMPT_MARKERS) + r")\s*[:\-—–>»]*\s*",
@@ -198,6 +217,59 @@ async def make_client():
     return client
 
 
+def looks_like_ad(*texts) -> str:
+    """Возвращает найденное стоп-слово, если пост рекламный, иначе пустую строку.
+
+    Отсеиваются призывы купить курс, записаться на обучение и подобное —
+    такие посты в работу не берутся."""
+    haystack = " ".join(t.lower() for t in texts if t)
+    for word in AD_STOP_WORDS:
+        if word and word in haystack:
+            return word
+    return ""
+
+
+async def image_has_text(client, message) -> bool:
+    """Есть ли на картинке заметный текст. Надписи поверх фото почти всегда
+    означают рекламный креатив, а не пример работы промпта.
+
+    Требует tesseract и pytesseract; без них проверка молча пропускается."""
+    if not SKIP_IMAGES_WITH_TEXT:
+        return False
+    try:
+        import pytesseract
+        from PIL import Image
+    except ImportError:
+        logger.debug("[telethon] pytesseract не установлен — текст на фото не проверяется")
+        return False
+
+    tmp_dir = Path(tempfile.gettempdir())
+    path = None
+    try:
+        path = await message.download_media(file=str(tmp_dir / f"ocr_{message.id}.jpg"))
+        if not path:
+            return False
+        with Image.open(path) as image:
+            text = pytesseract.image_to_string(image, lang="rus+eng")
+        letters = re.sub(r"[^0-9A-Za-zА-Яа-яЁё]", "", text or "")
+        if len(letters) >= IMAGE_TEXT_MIN_CHARS:
+            logger.info(
+                "[telethon] пост %s: на фото текст (%s символов) — пропускаем",
+                message.id, len(letters),
+            )
+            return True
+        return False
+    except Exception as e:
+        logger.debug("[telethon] пост %s: распознать текст на фото не вышло: %s", message.id, e)
+        return False
+    finally:
+        if path:
+            try:
+                Path(path).unlink()
+            except OSError:
+                pass
+
+
 async def pick_prompt(client, channel, message) -> str:
     """Промпт к посту: сначала из комментариев, затем из подписи самого поста.
 
@@ -267,6 +339,17 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
                 "[telethon] канал %s, пост %s: промпта в комментариях нет — пропускаем",
                 source_chat_id, message.id,
             )
+            continue
+
+        ad_word = looks_like_ad(message.message, prompt)
+        if ad_word:
+            logger.info(
+                "[telethon] канал %s, пост %s: рекламный («%s») — пропускаем",
+                source_chat_id, message.id, ad_word,
+            )
+            continue
+
+        if await image_has_text(client, message):
             continue
 
         # Само фото поста не скачиваем: в Kie AI уходит только референсное фото

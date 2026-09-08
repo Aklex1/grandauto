@@ -22,7 +22,9 @@ die()  { printf '\033[1;31m[x] %s\033[0m\n' "$*" >&2; exit 1; }
 log "1/8 Системные пакеты"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip redis-server ufw curl ca-certificates
+# tesseract нужен, чтобы отсеивать посты с текстом на картинке (реклама)
+apt-get install -y -qq python3 python3-venv python3-pip redis-server ufw curl ca-certificates \
+    tesseract-ocr tesseract-ocr-rus
 
 log "2/8 Redis"
 systemctl enable --now redis-server
