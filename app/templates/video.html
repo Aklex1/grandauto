@@ -172,15 +172,23 @@
               {{ pick('tts_model', 'tts', channel.tts_model, 'regen-' ~ sc.id) }}</label>
 
             <label class="small">Голос
-              <select name="voice_id" form="regen-{{ sc.id }}">
+              <select name="voice_id" form="regen-{{ sc.id }}"
+                      id="voice-select-{{ sc.id }}"
+                      data-voice-preview="voice-demo-{{ sc.id }}">
                 {% set ids = voices | map(attribute='voice_id') | list %}
                 {% if channel.voice_id and channel.voice_id not in ids %}
                 <option value="{{ channel.voice_id }}" selected>{{ channel.voice_name or channel.voice_id }}</option>
                 {% endif %}
                 {% for v in voices %}
-                <option value="{{ v.voice_id }}" {% if v.voice_id == channel.voice_id %}selected{% endif %}>{{ v.name }}</option>
+                <option value="{{ v.voice_id }}" data-preview="{{ v.preview_url }}"
+                        {% if v.voice_id == channel.voice_id %}selected{% endif %}>{{ v.name }}{% if v.gender %} · {{ v.gender }}{% endif %}</option>
                 {% endfor %}
               </select></label>
+            <div class="row" style="margin-top:4px">
+              <button type="button" class="btn btn-sm" data-voice-play="voice-select-{{ sc.id }}">▶ Прослушать</button>
+              <audio id="voice-demo-{{ sc.id }}" controls preload="none" style="flex:1;min-width:0"></audio>
+            </div>
+            <div class="small muted" data-voice-note="voice-select-{{ sc.id }}"></div>
 
             <div class="row mt">
               <label class="small" style="margin:0" title="0 — конвейер посчитает сам по длине озвучки и настройкам канала">

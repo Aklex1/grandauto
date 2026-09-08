@@ -434,7 +434,7 @@
     <div class="card">
       <fieldset><legend>Голос</legend>
         <label>Голос диктора
-          <select name="voice_id" data-voice-preview>
+          <select name="voice_id" id="voice-select-channel" data-voice-preview="voice-preview">
             {% for v in voices %}
               <option value="{{ v.voice_id }}" data-preview="{{ v.preview_url }}"
                       {% if v.voice_id == channel.voice_id %}selected{% endif %}>
@@ -442,7 +442,11 @@
               </option>
             {% endfor %}
           </select></label>
-        <audio id="voice-preview" controls style="width:100%"></audio>
+        <div class="row">
+          <button type="button" class="btn btn-sm" data-voice-play="voice-select-channel">▶ Прослушать</button>
+          <audio id="voice-preview" controls preload="none" style="flex:1;min-width:0"></audio>
+        </div>
+        <div class="small muted" data-voice-note="voice-select-channel"></div>
         <label class="mt">Подпись голоса<input name="voice_name" value="{{ channel.voice_name }}"></label>
         <div class="grid cols-3">
           <label>Стабильность<input name="voice_stability" type="number" step="0.05" min="0" max="1" value="{{ channel.voice_stability }}"></label>

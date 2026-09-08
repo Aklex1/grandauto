@@ -53,12 +53,42 @@
     refresh();
   });
 
+  // Демо голоса. Плеер берём по имени из data-voice-preview, а если имени нет —
+  // общий плеер страницы: так один обработчик обслуживает и настройки канала,
+  // и блоки пересборки, где плеер свой у каждой сцены.
+  function voicePlayerFor(sel) {
+    const name = sel.getAttribute('data-voice-preview');
+    return document.getElementById(name || 'voice-preview');
+  }
+
+  function playVoiceDemo(sel, autoplay) {
+    const player = voicePlayerFor(sel);
+    if (!player) return;
+    const opt = sel.options[sel.selectedIndex];
+    const url = opt ? opt.getAttribute('data-preview') : '';
+    const note = document.querySelector(`[data-voice-note="${sel.id}"]`);
+    if (!url) {
+      player.removeAttribute('src');
+      player.load();
+      if (note) note.textContent = 'У этого голоса нет демо в каталоге KIE';
+      return;
+    }
+    if (note) note.textContent = '';
+    player.src = url;
+    if (autoplay) player.play().catch(() => {});
+  }
+
   document.querySelectorAll('[data-voice-preview]').forEach(sel => {
-    sel.addEventListener('change', () => {
-      const opt = sel.options[sel.selectedIndex];
-      const url = opt.getAttribute('data-preview');
-      const player = document.getElementById('voice-preview');
-      if (url && player) { player.src = url; player.play().catch(() => {}); }
+    sel.addEventListener('change', () => playVoiceDemo(sel, true));
+    playVoiceDemo(sel, false);   // подставляем демо текущего голоса, не проигрывая
+  });
+
+  // Кнопка «прослушать» — чтобы переслушать голос, не меняя выбор.
+  document.querySelectorAll('[data-voice-play]').forEach(btn => {
+    btn.addEventListener('click', ev => {
+      ev.preventDefault();
+      const sel = document.getElementById(btn.getAttribute('data-voice-play'));
+      if (sel) playVoiceDemo(sel, true);
     });
   });
 })();
