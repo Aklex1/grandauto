@@ -522,7 +522,15 @@ async def _comment_with_prompt(bot: Bot, channel_msg_id: int, prompt: str) -> bo
         logger.info("[autopost] промпт добавлен комментарием к посту %s", channel_msg_id)
         return True
     except Exception as e:
-        logger.error("[autopost] не удалось отправить комментарий: %s", e)
+        text = str(e).lower()
+        if "not a member" in text or "chat not found" in text or "not enough rights" in text:
+            logger.error(
+                "[autopost] комментарий отклонён: бот не в группе обсуждений %s или "
+                "не имеет права там писать. Добавьте его в группу администратором. (%s)",
+                discussion_chat, e,
+            )
+        else:
+            logger.error("[autopost] не удалось отправить комментарий: %s", e)
         return False
 
 
@@ -692,6 +700,39 @@ async def _retry_missing_comments(bot: Bot) -> None:
             )
 
 
+async def check_discussion_access(bot: Bot) -> bool:
+    """Проверяет, может ли бот писать в группу обсуждений целевого канала.
+
+    Без членства в ней комментарий с промптом отправить нельзя — Telegram
+    отвечает отказом, сколько ни повторяй."""
+    discussion_chat = await _resolve_discussion_chat(bot)
+    if not discussion_chat:
+        return False
+
+    try:
+        me = await with_retries(bot.get_me, what="запрос профиля бота")
+        member = await with_retries(
+            lambda: bot.get_chat_member(discussion_chat, me.id),
+            what="проверка доступа к группе обсуждений",
+        )
+    except Exception as e:
+        logger.warning("[autopost] проверить доступ к группе обсуждений не вышло: %s", e)
+        return False
+
+    status = getattr(member, "status", "")
+    if status in ("left", "kicked"):
+        logger.error(
+            "[autopost] БОТ НЕ СОСТОИТ В ГРУППЕ ОБСУЖДЕНИЙ %s (статус %s). "
+            "Промпты в комментарии отправляться НЕ БУДУТ. Добавьте @%s в эту группу, "
+            "лучше администратором.",
+            discussion_chat, status, getattr(me, "username", "бота"),
+        )
+        return False
+
+    logger.info("[autopost] доступ к группе обсуждений есть (статус %s)", status)
+    return True
+
+
 async def autopost_worker(bot: Bot) -> None:
     if not ENABLED:
         logger.info("[autopost] выключен (AUTOPOST_ENABLED=0)")
@@ -708,7 +749,7 @@ async def autopost_worker(bot: Bot) -> None:
         publish_interval() / 60 if SPREAD_OVER_DAY else 0,
         TARGET_CHAT_ID, REFERENCE_IMAGE,
     )
-    await _resolve_discussion_chat(bot)
+    await check_discussion_access(bot)
 
     while True:
         try:

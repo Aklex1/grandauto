@@ -48,6 +48,24 @@ except Exception as e:
 
 try:
     import config
+    # Без членства в группе обсуждений промпты в комментарии не уйдут
+    try:
+        import json, urllib.request, autopost, config as _c
+        chat = autopost.DISCUSSION_CHAT_ID
+        if chat:
+            url = (f"https://api.telegram.org/bot{_c.TELEGRAM_BOT_TOKEN}/getChatMember"
+                   f"?chat_id={chat}&user_id={_c.TELEGRAM_BOT_TOKEN.split(':')[0]}")
+            with urllib.request.urlopen(url, timeout=15) as r:
+                status = json.load(r)["result"]["status"]
+            if status in ("left", "kicked"):
+                print(f"  NO   Бот НЕ в группе обсуждений {chat} — промпты в комментарии не уйдут")
+            else:
+                print(f"  OK   Бот в группе обсуждений ({status})")
+        else:
+            print("  ..   AUTOPOST_DISCUSSION_CHAT_ID не задан")
+    except Exception as e:
+        print(f"  ..   Группа обсуждений: проверить не вышло ({e})")
+
     print(f"  ..   CALLBACK_BASE_URL = {config.CALLBACK_BASE_URL}")
     print(f"  ..   APP_API_BASE_URL  = {config.APP_API_BASE_URL}")
 except Exception as e:
