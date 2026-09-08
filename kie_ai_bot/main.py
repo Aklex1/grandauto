@@ -1691,6 +1691,10 @@ class KlingMotionControlStates(StatesGroup):
     input_prompt = State()          # Ввод промпта
 
 # --- FSM для партнерской программы ---
+class SpeechToTextStates(StatesGroup):
+    SEND_AUDIO = State()     # Ожидание аудио или ссылки для распознавания
+
+
 class PartnerStates(StatesGroup):
     withdrawal_amount = State()     # Ввод суммы для вывода
     withdrawal_payment = State()    # Ввод реквизитов для вывода
@@ -9226,19 +9230,25 @@ async def main():
     setup_autopost_fix(dp, bot)
     setup_admin_links(dp, bot)
 
+    # Каждая задача изолирована: если упадёт фоновая, бот продолжит отвечать,
+    # а ошибка попадёт в лог. Раньше падение любой из них останавливало всё.
+    async def guarded(coro, name: str):
+        try:
+            await coro
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logging.error("Задача %s остановлена с ошибкой: %s", name, e, exc_info=True)
+
     await asyncio.gather(
-        start_bot(),
-        start_api(),
-        start_task_monitor(),  # Запуск мониторинга pending задач
-        autopost_worker(bot),  # Очередь автопостинга и суточный лимит
-        telethon_worker(),     # Чтение чужого канала-источника
+        guarded(start_bot(), "бот"),
+        guarded(start_api(), "API"),
+        guarded(start_task_monitor(), "мониторинг задач"),
+        guarded(autopost_worker(bot), "автопостинг"),
+        guarded(telethon_worker(), "чтение каналов"),
     )
 
     
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
-
 # --- Добавить обработчик заглушку для speech_to_text_start ---
 @dp.callback_query(F.data == "speech_to_text_start")
 async def speech_to_text_start_callback(callback: CallbackQuery, state: FSMContext):
@@ -9394,3 +9404,9 @@ async def handle_speech_to_text_audio(message: Message, state: FSMContext):
         logging.error(f"[S2T] Критическая ошибка: {e}", exc_info=True)
         await message.answer(f"❌ Критическая ошибка в обработке аудио: {e}")
     # В случае любой ошибки state не очищаем — пользователь может попробовать снова
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(main())
