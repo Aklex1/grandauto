@@ -1,23 +1,20 @@
 """
-Автопостинг: канал-источник -> KIE AI -> целевая группа.
+Автопостинг: каналы-источники -> Kie AI -> целевой канал.
 
 Схема работы
 ------------
-1. В канале-источнике появляется пост с фотографией.
-2. В комментариях к этому посту (связанная группа обсуждений) лежит промпт.
-3. Модуль берёт фото поста + референсное фото девушки (локальный файл) и отправляет
-   их вместе с промптом в KIE AI (nano-banana-edit).
-4. Готовое изображение публикуется в целевую группу вместе с текстом промпта.
+1. В канале-источнике берётся пост с фотографией (первое фото, если это альбом).
+2. Промпт берётся из комментариев к посту. Комментария нет — пост пропускается.
+3. Фото поста и референсное фото девушки уходят в Kie AI (nano-banana-edit)
+   вместе с промптом.
+4. Результат публикуется в целевой канал в оформлении канала, а текст промпта
+   отправляется комментарием под этим постом (в связанную группу обсуждений).
 
-За сутки обрабатывается не больше AUTOPOST_DAILY_LIMIT постов (по умолчанию 3),
-остальные ждут в очереди и уходят на следующий день.
+За сутки обрабатывается не больше AUTOPOST_DAILY_LIMIT постов, остальные ждут
+в очереди и уходят на следующий день.
 
-Требования
-----------
-* Бот должен быть администратором в канале-источнике (иначе не увидит посты)
-  и в связанной группе обсуждений (иначе не увидит комментарии).
-* CALLBACK_BASE_URL должен быть доступен из интернета: по нему KIE забирает
-  исходные картинки и присылает результат.
+Источники читает telethon_source.py (чужие каналы Bot API не отдаёт), либо,
+если бот администратор в канале-источнике, посты ловятся в реальном времени.
 """
 
 import asyncio
@@ -50,49 +47,75 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_flag(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _parse_chat_ids(raw: str) -> list:
+    """Список ID каналов через запятую, пробел или перевод строки."""
+    ids = []
+    for chunk in re.split(r"[,\s]+", raw or ""):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        try:
+            ids.append(int(chunk))
+        except ValueError:
+            logger.warning("[autopost] не похоже на ID канала: %r", chunk)
+    return ids
+
+
 # --- Настройки ---------------------------------------------------------------
 
-ENABLED = os.getenv("AUTOPOST_ENABLED", "0").strip() in ("1", "true", "yes", "on")
-SOURCE_CHAT_ID = _env_int("AUTOPOST_SOURCE_CHAT_ID", 0)
+ENABLED = _env_flag("AUTOPOST_ENABLED")
+
+# Каналы-источники: список в AUTOPOST_SOURCE_CHAT_IDS, старое имя тоже понимается
+SOURCE_CHAT_IDS = _parse_chat_ids(
+    os.getenv("AUTOPOST_SOURCE_CHAT_IDS") or os.getenv("AUTOPOST_SOURCE_CHAT_ID", "")
+)
 TARGET_CHAT_ID = _env_int("AUTOPOST_TARGET_CHAT_ID", 0)
-# Группа обсуждений источника. 0 — принимать комментарии из любой связанной группы.
+# Группа обсуждений целевого канала; 0 — определить автоматически при старте
 DISCUSSION_CHAT_ID = _env_int("AUTOPOST_DISCUSSION_CHAT_ID", 0)
 
 REFERENCE_IMAGE = Path(os.getenv("AUTOPOST_REFERENCE_IMAGE", "/opt/refer/refer.jpg"))
 MEDIA_DIR = Path(os.getenv("AUTOPOST_MEDIA_DIR", "/opt/kie_ai_bot/autopost_media"))
 DB_PATH = Path(os.getenv("AUTOPOST_DB", "/opt/kie_ai_bot/autopost.db"))
 
-DAILY_LIMIT = _env_int("AUTOPOST_DAILY_LIMIT", 3)
-# Как часто разгребается очередь (секунды)
+# Сколько новых постов брать с каждого канала за сутки
+PER_CHANNEL_DAILY = _env_int("AUTOPOST_PER_CHANNEL_DAILY", 2)
+# Суточный потолок публикаций. По умолчанию — по PER_CHANNEL_DAILY с каждого канала
+DAILY_LIMIT = _env_int("AUTOPOST_DAILY_LIMIT", PER_CHANNEL_DAILY * max(1, len(SOURCE_CHAT_IDS)))
+# Растягивать публикации равномерно по суткам, а не выкладывать пачкой
+SPREAD_OVER_DAY = _env_flag("AUTOPOST_SPREAD_OVER_DAY", "1")
 WORKER_INTERVAL = _env_int("AUTOPOST_WORKER_INTERVAL", 120)
-# Сколько ждать промпт в комментариях, прежде чем считать пост брошенным (часы)
-PROMPT_WAIT_HOURS = _env_int("AUTOPOST_PROMPT_WAIT_HOURS", 48)
-# Соотношение сторон результата: auto / 1:1 / 9:16 / 16:9 ...
 IMAGE_SIZE = os.getenv("AUTOPOST_IMAGE_SIZE", "auto")
 OUTPUT_FORMAT = os.getenv("AUTOPOST_OUTPUT_FORMAT", "png")
-# Публиковать ли текст промпта вместе с картинкой
-PUBLISH_PROMPT = os.getenv("AUTOPOST_PUBLISH_PROMPT", "1").strip() in ("1", "true", "yes", "on")
 
 # --- Оформление поста (как в целевом канале) ---
 BOT_URL = os.getenv("AUTOPOST_BOT_URL", "https://t.me/Neuro_HubAI_bot?start=Sv_lana0707")
 SITE_URL = os.getenv("AUTOPOST_SITE_URL", "https://genius-bot.ru/neurohub/?ref=sv07")
 MAX_URL = os.getenv("AUTOPOST_MAX_URL", "")
-# Хештег по умолчанию, если в исходном посте своих нет
 DEFAULT_HASHTAGS = os.getenv("AUTOPOST_HASHTAGS", "#Женский")
 FOOTER = os.getenv("AUTOPOST_FOOTER", "⚜️⚜️⚜️⚜️⚜️⚜️⚜️⚜️")
 
 CAPTION_LIMIT = 1024
+MESSAGE_LIMIT = 4096
+# Сколько ждать, пока пост долетит до группы обсуждений, секунд
+DISCUSSION_WAIT = _env_int("AUTOPOST_DISCUSSION_WAIT", 20)
 
 # Как отдавать картинки в Kie AI:
-# 1 — загружать в файловое хранилище Kie (не требует публичного адреса у бота),
-# 0 — отдавать ссылками на собственный FastAPI (нужен доступный снаружи CALLBACK_BASE_URL).
-UPLOAD_VIA_KIE = os.getenv("AUTOPOST_UPLOAD_VIA_KIE", "1").strip() in ("1", "true", "yes", "on")
+# 1 — загружать в файловое хранилище Kie (публичный адрес боту не нужен),
+# 0 — отдавать ссылками на собственный FastAPI (нужен доступный CALLBACK_BASE_URL).
+UPLOAD_VIA_KIE = _env_flag("AUTOPOST_UPLOAD_VIA_KIE", "1")
 KIE_UPLOAD_URL = os.getenv("KIE_UPLOAD_URL", "https://kieai.redpandaai.co/api/file-base64-upload")
-# Если callback от Kie не пришёл за столько минут — узнаём результат опросом
 POLL_AFTER_MINUTES = _env_int("AUTOPOST_POLL_AFTER_MINUTES", 5)
 KIE_RECORD_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
 
 CALLBACK_PATH = "/autopost-callback"
+
+# Соответствие «пост в канале -> его сообщение в группе обсуждений».
+# Заполняется обработчиком автопересылок, нужно чтобы отвечать комментарием.
+_discussion_map: dict = {}
 
 
 # --- Хранилище (отдельный SQLite, схему основной БД не трогаем) ---------------
@@ -106,28 +129,36 @@ def _connect() -> sqlite3.Connection:
 
 def init_db() -> None:
     with closing(_connect()) as conn:
+        # Схема до появления нескольких источников: ключом был только id поста
+        existing = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='autopost_posts'"
+        ).fetchone()
+        if existing:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(autopost_posts)")}
+            if "source_chat_id" not in cols:
+                conn.execute("ALTER TABLE autopost_posts RENAME TO autopost_posts_v1")
+                logger.info("[autopost] старая таблица сохранена как autopost_posts_v1")
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS autopost_posts (
-                source_msg_id   INTEGER PRIMARY KEY,
-                photo_file_id   TEXT,
-                source_caption  TEXT,
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_chat_id  INTEGER NOT NULL,
+                source_msg_id   INTEGER NOT NULL,
                 photo_path      TEXT,
                 prompt          TEXT,
+                source_caption  TEXT,
                 task_id         TEXT,
                 result_url      TEXT,
-                status          TEXT NOT NULL DEFAULT 'waiting_prompt',
+                status          TEXT NOT NULL DEFAULT 'ready',
                 error           TEXT,
                 created_at      TEXT NOT NULL,
                 sent_at         TEXT,
-                published_at    TEXT
+                published_at    TEXT,
+                UNIQUE(source_chat_id, source_msg_id)
             )
             """
         )
-        # Миграция для баз, созданных до появления колонки
-        cols = {r["name"] for r in conn.execute("PRAGMA table_info(autopost_posts)")}
-        if "source_caption" not in cols:
-            conn.execute("ALTER TABLE autopost_posts ADD COLUMN source_caption TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_autopost_status ON autopost_posts(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_autopost_task ON autopost_posts(task_id)")
         conn.commit()
@@ -137,58 +168,141 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _update(source_msg_id: int, **fields) -> None:
+def _update(row_id: int, **fields) -> None:
     if not fields:
         return
     sets = ", ".join(f"{k} = ?" for k in fields)
     with closing(_connect()) as conn:
-        conn.execute(
-            f"UPDATE autopost_posts SET {sets} WHERE source_msg_id = ?",
-            (*fields.values(), source_msg_id),
-        )
+        conn.execute(f"UPDATE autopost_posts SET {sets} WHERE id = ?", (*fields.values(), row_id))
         conn.commit()
 
 
-def _get(source_msg_id: int) -> Optional[sqlite3.Row]:
+def get_post(source_chat_id: int, source_msg_id: int) -> Optional[sqlite3.Row]:
     with closing(_connect()) as conn:
-        cur = conn.execute("SELECT * FROM autopost_posts WHERE source_msg_id = ?", (source_msg_id,))
-        return cur.fetchone()
+        return conn.execute(
+            "SELECT * FROM autopost_posts WHERE source_chat_id = ? AND source_msg_id = ?",
+            (source_chat_id, source_msg_id),
+        ).fetchone()
+
+
+def add_post(source_chat_id: int, source_msg_id: int, photo_path: str,
+             prompt: str, source_caption: str = "", status: str = "ready") -> Optional[int]:
+    """Кладёт пост в очередь. Возвращает id записи или None, если уже был."""
+    with closing(_connect()) as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO autopost_posts "
+            "(source_chat_id, source_msg_id, photo_path, prompt, source_caption, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (source_chat_id, source_msg_id, photo_path, prompt, source_caption, status, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid if cur.rowcount else None
+
+
+def known_msg_ids(source_chat_id: int) -> set:
+    with closing(_connect()) as conn:
+        return {
+            r["source_msg_id"]
+            for r in conn.execute(
+                "SELECT source_msg_id FROM autopost_posts WHERE source_chat_id = ?",
+                (source_chat_id,),
+            )
+        }
 
 
 def _get_by_task(task_id: str) -> Optional[sqlite3.Row]:
     with closing(_connect()) as conn:
-        cur = conn.execute("SELECT * FROM autopost_posts WHERE task_id = ?", (task_id,))
-        return cur.fetchone()
+        return conn.execute(
+            "SELECT * FROM autopost_posts WHERE task_id = ?", (task_id,)
+        ).fetchone()
 
 
-def _published_today() -> int:
-    """Сколько постов уже отправлено в генерацию за текущие сутки (UTC)."""
+def _sent_today() -> int:
+    """Сколько постов уже ушло в генерацию за текущие сутки (UTC)."""
     today = datetime.now(timezone.utc).date().isoformat()
     with closing(_connect()) as conn:
-        cur = conn.execute(
+        return int(conn.execute(
             "SELECT COUNT(*) AS n FROM autopost_posts WHERE sent_at IS NOT NULL AND sent_at >= ?",
             (today,),
-        )
-        return int(cur.fetchone()["n"])
+        ).fetchone()["n"])
 
 
-# --- Работа с картинками ------------------------------------------------------
-
-def _public_url(path: str) -> str:
-    return f"{CALLBACK_BASE_URL}{path}"
-
-
-async def _download_photo(bot: Bot, file_id: str, source_msg_id: int) -> Path:
-    """Скачивает фото поста на диск, чтобы отдать KIE ссылку без токена бота."""
-    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    tg_file = await bot.get_file(file_id)
-    suffix = Path(tg_file.file_path or "photo.jpg").suffix or ".jpg"
-    dest = MEDIA_DIR / f"post_{source_msg_id}{suffix}"
-    await bot.download_file(tg_file.file_path, destination=str(dest))
-    return dest
+def free_slots() -> int:
+    """Сколько постов ещё можно взять в работу сегодня."""
+    with closing(_connect()) as conn:
+        ready = int(conn.execute(
+            "SELECT COUNT(*) AS n FROM autopost_posts WHERE status = 'ready'"
+        ).fetchone()["n"])
+    return max(0, DAILY_LIMIT - _sent_today() - ready)
 
 
-# --- Отправка задачи в KIE ----------------------------------------------------
+def taken_today(source_chat_id: int) -> int:
+    """Сколько постов уже взято из этого канала за текущие сутки."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    with closing(_connect()) as conn:
+        return int(conn.execute(
+            "SELECT COUNT(*) AS n FROM autopost_posts "
+            "WHERE source_chat_id = ? AND created_at >= ?",
+            (source_chat_id, today),
+        ).fetchone()["n"])
+
+
+def channel_quota(source_chat_id: int) -> int:
+    """Сколько ещё постов можно взять из этого канала сегодня."""
+    return max(0, PER_CHANNEL_DAILY - taken_today(source_chat_id))
+
+
+def _seconds_since_last_send() -> Optional[float]:
+    """Сколько секунд прошло с последней отправки в генерацию."""
+    with closing(_connect()) as conn:
+        row = conn.execute(
+            "SELECT MAX(sent_at) AS last FROM autopost_posts WHERE sent_at IS NOT NULL"
+        ).fetchone()
+    if not row or not row["last"]:
+        return None
+    try:
+        last = datetime.fromisoformat(row["last"])
+    except ValueError:
+        return None
+    return (datetime.now(timezone.utc) - last).total_seconds()
+
+
+def publish_interval() -> float:
+    """Пауза между публикациями, чтобы растянуть суточный лимит на сутки."""
+    return 86400.0 / max(1, DAILY_LIMIT)
+
+
+# --- Оформление поста --------------------------------------------------------
+
+def _hashtags_from(source_caption: Optional[str]) -> str:
+    """Забирает хештеги из исходного поста, иначе берёт значение по умолчанию."""
+    tags = re.findall(r"#[^\s#]+", source_caption or "")
+    return " ".join(tags) if tags else DEFAULT_HASHTAGS
+
+
+def build_caption(source_caption: Optional[str] = None) -> str:
+    """Подпись к фото — в том же виде, что и остальные посты канала."""
+    lines = [_hashtags_from(source_caption)]
+    if BOT_URL:
+        lines.append(f'<a href="{BOT_URL}">БОТ</a> через который можно сделать фото. ')
+    if SITE_URL:
+        lines.append(f'<a href="{SITE_URL}">САЙТ</a> через который можно сделать фото. ')
+    if MAX_URL:
+        lines.append(f'<a href="{MAX_URL}">Канал с промтами в MAX</a> 📱')
+    if FOOTER:
+        lines.append(FOOTER)
+    return "\n".join(lines)
+
+
+def build_comment(prompt: str) -> str:
+    """Комментарий с промптом — цитатой моноширинным шрифтом, копируется по тапу."""
+    text = prompt.strip()
+    if len(text) > MESSAGE_LIMIT - 100:
+        text = text[: MESSAGE_LIMIT - 103] + "..."
+    return f"<blockquote><code>{html.escape(text)}</code></blockquote>"
+
+
+# --- Загрузка картинок в Kie AI ----------------------------------------------
 
 async def _upload_to_kie(path: Path) -> Optional[str]:
     """Кладёт файл в файловое хранилище Kie AI и возвращает публичную ссылку."""
@@ -219,34 +333,34 @@ async def _upload_to_kie(path: Path) -> Optional[str]:
         return None
 
 
+def _public_url(path: str) -> str:
+    return f"{CALLBACK_BASE_URL}{path}"
 
-async def _submit_to_kie(bot: Bot, row: sqlite3.Row) -> bool:
+
+# --- Отправка задачи в Kie AI -------------------------------------------------
+
+async def submit_to_kie(row: sqlite3.Row) -> bool:
     from kie_api import create_nano_banana_task
 
-    source_msg_id = row["source_msg_id"]
+    row_id = row["id"]
     prompt = (row["prompt"] or "").strip()
 
     if not REFERENCE_IMAGE.exists():
         msg = f"нет референсного фото {REFERENCE_IMAGE}"
-        logger.error("[autopost] пост %s: %s", source_msg_id, msg)
-        _update(source_msg_id, status="error", error=msg)
+        logger.error("[autopost] запись %s: %s", row_id, msg)
+        _update(row_id, status="error", error=msg)
         return False
 
     photo_path = row["photo_path"]
     if not photo_path or not Path(photo_path).exists():
-        try:
-            photo_path = str(await _download_photo(bot, row["photo_file_id"], source_msg_id))
-            _update(source_msg_id, photo_path=photo_path)
-        except Exception as e:
-            logger.error("[autopost] пост %s: не удалось скачать фото: %s", source_msg_id, e)
-            _update(source_msg_id, status="error", error=f"скачивание фото: {e}")
-            return False
+        _update(row_id, status="error", error="файл фото не найден")
+        return False
 
     if UPLOAD_VIA_KIE:
         post_url = await _upload_to_kie(Path(photo_path))
         ref_url = await _upload_to_kie(REFERENCE_IMAGE)
         if not post_url or not ref_url:
-            _update(source_msg_id, status="error", error="не удалось загрузить картинки в Kie AI")
+            _update(row_id, status="error", error="не удалось загрузить картинки в Kie AI")
             return False
         image_urls = [post_url, ref_url]
     else:
@@ -255,7 +369,7 @@ async def _submit_to_kie(bot: Bot, row: sqlite3.Row) -> bool:
             _public_url("/autopost/reference.jpg"),
         ]
 
-    logger.info("[autopost] пост %s -> KIE, промпт: %.80s", source_msg_id, prompt)
+    logger.info("[autopost] запись %s -> Kie AI, промпт: %.80s", row_id, prompt)
     try:
         response = await create_nano_banana_task(
             mode="edit",
@@ -266,119 +380,109 @@ async def _submit_to_kie(bot: Bot, row: sqlite3.Row) -> bool:
             callback_url=_public_url(CALLBACK_PATH),
         )
     except Exception as e:
-        logger.error("[autopost] пост %s: ошибка запроса к KIE: %s", source_msg_id, e)
-        _update(source_msg_id, status="error", error=f"запрос к KIE: {e}")
+        logger.error("[autopost] запись %s: ошибка запроса к Kie: %s", row_id, e)
+        _update(row_id, status="error", error=f"запрос к Kie: {e}")
         return False
 
-    data = response.get("data") or {}
-    task_id = data.get("taskId") or data.get("task_id")
+    task_id = (response.get("data") or {}).get("taskId") or (response.get("data") or {}).get("task_id")
     if not task_id:
-        logger.error("[autopost] пост %s: KIE не вернул taskId: %s", source_msg_id, response)
-        _update(source_msg_id, status="error", error=f"KIE не вернул taskId: {response}")
+        logger.error("[autopost] запись %s: Kie не вернул taskId: %s", row_id, response)
+        _update(row_id, status="error", error=f"Kie не вернул taskId: {response}")
         return False
 
-    _update(source_msg_id, status="generating", task_id=str(task_id), sent_at=_now(), error=None)
-    logger.info("[autopost] пост %s: задача %s создана", source_msg_id, task_id)
+    _update(row_id, status="generating", task_id=str(task_id), sent_at=_now(), error=None)
+    logger.info("[autopost] запись %s: задача %s создана", row_id, task_id)
     return True
-
-
-# --- Оформление поста -------------------------------------------------------
-
-def _hashtags_from(source_caption: Optional[str]) -> str:
-    """Забирает хештеги из исходного поста, иначе берёт значение по умолчанию."""
-    tags = re.findall(r"#[^\s#]+", source_caption or "")
-    return " ".join(tags) if tags else DEFAULT_HASHTAGS
-
-
-def build_caption(prompt: str, source_caption: Optional[str] = None) -> str:
-    """Подпись в том же виде, что и остальные посты канала."""
-    lines = [_hashtags_from(source_caption)]
-    if BOT_URL:
-        lines.append(f'<a href="{BOT_URL}">БОТ</a> через который можно сделать фото. ')
-    if SITE_URL:
-        lines.append(f'<a href="{SITE_URL}">САЙТ</a> через который можно сделать фото. ')
-    if MAX_URL:
-        lines.append(f'<a href="{MAX_URL}">Канал с промтами в MAX</a> 📱')
-    header = "\n".join(lines)
-
-    body = f"<blockquote><code>{html.escape(prompt.strip())}</code></blockquote>" if prompt.strip() else ""
-    parts = [header]
-    if body:
-        parts.append(body)
-    if FOOTER:
-        parts.append(FOOTER)
-    return "\n".join(parts)
-
-
-def _visible_len(caption_html: str) -> int:
-    """Telegram считает лимит подписи по видимому тексту, а не по HTML-разметке."""
-    return len(html.unescape(re.sub(r"<[^>]+>", "", caption_html)))
-
-
-def build_header_only() -> str:
-    """Шапка без промпта — если промпт не влезает в подпись к фото."""
-    return build_caption("")
 
 
 # --- Публикация результата ----------------------------------------------------
 
-async def _publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
-    source_msg_id = row["source_msg_id"]
-    prompt = (row["prompt"] or "").strip()
-    source_caption = row["source_caption"] if "source_caption" in row.keys() else None
+async def _resolve_discussion_chat(bot: Bot) -> int:
+    """Группа обсуждений целевого канала — туда уходят комментарии."""
+    global DISCUSSION_CHAT_ID
+    if DISCUSSION_CHAT_ID:
+        return DISCUSSION_CHAT_ID
+    try:
+        chat = await bot.get_chat(TARGET_CHAT_ID)
+        DISCUSSION_CHAT_ID = getattr(chat, "linked_chat_id", None) or 0
+        if DISCUSSION_CHAT_ID:
+            logger.info("[autopost] группа обсуждений целевого канала: %s", DISCUSSION_CHAT_ID)
+        else:
+            logger.warning("[autopost] у целевого канала нет группы обсуждений — промпт пойдёт в подпись")
+    except Exception as e:
+        logger.error("[autopost] не удалось определить группу обсуждений: %s", e)
+    return DISCUSSION_CHAT_ID
 
-    caption = build_caption(prompt, source_caption) if PUBLISH_PROMPT else build_header_only()
-    # Промпты бывают длиннее лимита подписи — тогда шапка идёт с фото,
-    # а промпт отдельным сообщением следом.
-    prompt_as_separate_message = None
-    if _visible_len(caption) > CAPTION_LIMIT:
-        caption = build_header_only()
-        prompt_as_separate_message = f"<blockquote><code>{html.escape(prompt)}</code></blockquote>"
-        logger.info("[autopost] пост %s: промпт длинный, уйдёт отдельным сообщением", source_msg_id)
+
+async def _comment_with_prompt(bot: Bot, channel_msg_id: int, prompt: str) -> bool:
+    """Отправляет промпт комментарием под опубликованным постом."""
+    discussion_chat = await _resolve_discussion_chat(bot)
+    if not discussion_chat:
+        return False
+
+    # Пост долетает до группы обсуждений не мгновенно
+    deadline = time.time() + DISCUSSION_WAIT
+    while time.time() < deadline:
+        discussion_msg_id = _discussion_map.get(channel_msg_id)
+        if discussion_msg_id:
+            try:
+                await bot.send_message(
+                    chat_id=discussion_chat,
+                    text=build_comment(prompt),
+                    parse_mode="HTML",
+                    reply_to_message_id=discussion_msg_id,
+                )
+                logger.info("[autopost] промпт добавлен комментарием к посту %s", channel_msg_id)
+                return True
+            except Exception as e:
+                logger.error("[autopost] не удалось отправить комментарий: %s", e)
+                return False
+        await asyncio.sleep(1)
+
+    logger.warning(
+        "[autopost] пост %s не появился в группе обсуждений за %s с — комментарий не отправлен",
+        channel_msg_id, DISCUSSION_WAIT,
+    )
+    return False
+
+
+async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
+    row_id = row["id"]
+    prompt = (row["prompt"] or "").strip()
+    caption = build_caption(row["source_caption"])
 
     async def _send(photo):
         return await bot.send_photo(
-            chat_id=TARGET_CHAT_ID,
-            photo=photo,
-            caption=caption,
-            parse_mode="HTML",
+            chat_id=TARGET_CHAT_ID, photo=photo, caption=caption, parse_mode="HTML"
         )
 
     try:
         sent = await _send(URLInputFile(result_url))
     except Exception as e:
         # Резервный путь: телеграм иногда не может забрать картинку по ссылке
-        logger.warning("[autopost] пост %s: send_photo по URL не прошёл (%s), пробуем файлом", source_msg_id, e)
+        logger.warning("[autopost] запись %s: send_photo по URL не прошёл (%s), пробуем файлом", row_id, e)
         try:
             MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-            dest = MEDIA_DIR / f"result_{source_msg_id}.png"
-            async with httpx.AsyncClient(timeout=120) as client:
+            dest = MEDIA_DIR / f"result_{row_id}.png"
+            async with httpx.AsyncClient(timeout=180) as client:
                 resp = await client.get(result_url)
                 resp.raise_for_status()
                 dest.write_bytes(resp.content)
             sent = await _send(FSInputFile(str(dest)))
         except Exception as e2:
-            logger.error("[autopost] пост %s: публикация не удалась: %s", source_msg_id, e2)
-            _update(source_msg_id, status="error", error=f"публикация: {e2}")
+            logger.error("[autopost] запись %s: публикация не удалась: %s", row_id, e2)
+            _update(row_id, status="error", error=f"публикация: {e2}")
             return
 
-    if prompt_as_separate_message:
-        try:
-            await bot.send_message(
-                chat_id=TARGET_CHAT_ID,
-                text=prompt_as_separate_message,
-                parse_mode="HTML",
-                reply_to_message_id=sent.message_id,
-            )
-        except Exception as e:
-            logger.error("[autopost] пост %s: промпт отдельным сообщением не ушёл: %s", source_msg_id, e)
+    _update(row_id, status="published", result_url=result_url, published_at=_now(), error=None)
+    logger.info("[autopost] запись %s опубликована в %s", row_id, TARGET_CHAT_ID)
 
-    _update(source_msg_id, status="published", result_url=result_url, published_at=_now(), error=None)
-    logger.info("[autopost] пост %s опубликован в %s", source_msg_id, TARGET_CHAT_ID)
+    if prompt:
+        await _comment_with_prompt(bot, sent.message_id, prompt)
 
 
 def _extract_result_url(task_data: dict) -> Optional[str]:
-    """Достаёт ссылку на готовое изображение из тела callback-а KIE."""
+    """Достаёт ссылку на готовое изображение из ответа Kie AI."""
     import json
 
     result_json = task_data.get("resultJson")
@@ -401,11 +505,9 @@ def _extract_result_url(task_data: dict) -> Optional[str]:
     return None
 
 
-# --- Резервный путь: узнаём результат опросом, если callback не пришёл ---------
+# --- Резервный путь: результат опросом, если callback не пришёл ----------------
 
 async def _poll_stuck_tasks(bot: Bot) -> None:
-    """Kie присылает callback на CALLBACK_BASE_URL; если он недоступен снаружи,
-    результат всё равно заберётся опросом recordInfo."""
     from config import KIE_API_KEY
 
     deadline = time.time() - POLL_AFTER_MINUTES * 60
@@ -431,21 +533,21 @@ async def _poll_stuck_tasks(bot: Bot) -> None:
                 )
             task_data = (resp.json() or {}).get("data") or {}
         except Exception as e:
-            logger.error("[autopost] пост %s: опрос статуса не удался: %s", row["source_msg_id"], e)
+            logger.error("[autopost] запись %s: опрос статуса не удался: %s", row["id"], e)
             continue
 
         state = (task_data.get("state") or task_data.get("status") or "").lower()
         if state in ("success", "succeeded", "completed"):
             result_url = _extract_result_url(task_data)
             if result_url:
-                logger.info("[autopost] пост %s: результат получен опросом", row["source_msg_id"])
-                await _publish(bot, row, result_url)
+                logger.info("[autopost] запись %s: результат получен опросом", row["id"])
+                await publish(bot, row, result_url)
             else:
-                _update(row["source_msg_id"], status="error", error="Kie вернул успех без ссылки")
+                _update(row["id"], status="error", error="Kie вернул успех без ссылки")
         elif state in ("fail", "failed", "error"):
-            _update(row["source_msg_id"], status="error",
+            _update(row["id"], status="error",
                     error=task_data.get("failMsg") or task_data.get("msg") or "генерация не удалась")
-            logger.error("[autopost] пост %s: генерация не удалась", row["source_msg_id"])
+            logger.error("[autopost] запись %s: генерация не удалась", row["id"])
 
 
 # --- Фоновый воркер: очередь и суточный лимит ---------------------------------
@@ -454,45 +556,46 @@ async def autopost_worker(bot: Bot) -> None:
     if not ENABLED:
         logger.info("[autopost] выключен (AUTOPOST_ENABLED=0)")
         return
-    if not SOURCE_CHAT_ID or not TARGET_CHAT_ID:
-        logger.error("[autopost] не задан AUTOPOST_SOURCE_CHAT_ID / AUTOPOST_TARGET_CHAT_ID — модуль не работает")
+    if not SOURCE_CHAT_IDS or not TARGET_CHAT_ID:
+        logger.error("[autopost] не заданы каналы-источники или целевой канал — модуль не работает")
         return
 
     init_db()
     logger.info(
-        "[autopost] запущен: источник=%s, цель=%s, лимит=%s постов/сутки, референс=%s",
-        SOURCE_CHAT_ID, TARGET_CHAT_ID, DAILY_LIMIT, REFERENCE_IMAGE,
+        "[autopost] запущен: источников=%s, по %s поста с канала, лимит %s постов/сутки "
+        "(публикация раз в %.0f мин), цель=%s, референс=%s",
+        len(SOURCE_CHAT_IDS), PER_CHANNEL_DAILY, DAILY_LIMIT,
+        publish_interval() / 60 if SPREAD_OVER_DAY else 0,
+        TARGET_CHAT_ID, REFERENCE_IMAGE,
     )
+    await _resolve_discussion_chat(bot)
 
     while True:
         try:
-            free_slots = DAILY_LIMIT - _published_today()
-            if free_slots > 0:
-                with closing(_connect()) as conn:
-                    rows = conn.execute(
-                        "SELECT * FROM autopost_posts WHERE status = 'ready' "
-                        "ORDER BY source_msg_id LIMIT ?",
-                        (free_slots,),
-                    ).fetchall()
-                for row in rows:
-                    await _submit_to_kie(bot, row)
+            available = DAILY_LIMIT - _sent_today()
+            if available > 0:
+                # Равномерная выдача: не чаще одной публикации за publish_interval
+                batch = available
+                if SPREAD_OVER_DAY:
+                    elapsed = _seconds_since_last_send()
+                    interval = publish_interval()
+                    batch = 1 if elapsed is None or elapsed >= interval else 0
+                    if batch == 0:
+                        logger.debug(
+                            "[autopost] до следующей публикации %.0f мин",
+                            (interval - elapsed) / 60,
+                        )
+
+                if batch:
+                    with closing(_connect()) as conn:
+                        rows = conn.execute(
+                            "SELECT * FROM autopost_posts WHERE status = 'ready' ORDER BY id LIMIT ?",
+                            (batch,),
+                        ).fetchall()
+                    for row in rows:
+                        await submit_to_kie(row)
 
             await _poll_stuck_tasks(bot)
-
-            # Посты, которые слишком долго ждут промпт в комментариях
-            deadline = time.time() - PROMPT_WAIT_HOURS * 3600
-            with closing(_connect()) as conn:
-                stale = conn.execute(
-                    "SELECT source_msg_id, created_at FROM autopost_posts WHERE status = 'waiting_prompt'"
-                ).fetchall()
-            for row in stale:
-                try:
-                    created = datetime.fromisoformat(row["created_at"]).timestamp()
-                except Exception:
-                    continue
-                if created < deadline:
-                    _update(row["source_msg_id"], status="expired", error="промпт в комментариях не появился")
-                    logger.info("[autopost] пост %s снят: промпт так и не появился", row["source_msg_id"])
         except Exception as e:
             logger.error("[autopost] ошибка воркера: %s", e, exc_info=True)
 
@@ -502,62 +605,43 @@ async def autopost_worker(bot: Bot) -> None:
 # --- Обработчики Telegram -----------------------------------------------------
 
 def setup_autopost(dp: Dispatcher, bot: Bot) -> None:
-    """Регистрирует обработчики канала-источника и комментариев."""
+    """Регистрирует обработчики: автопересылки в группе обсуждений и, если бот
+    администратор в канале-источнике, посты этого канала в реальном времени."""
     if not ENABLED:
         return
-    if not SOURCE_CHAT_ID or not TARGET_CHAT_ID:
+    if not SOURCE_CHAT_IDS or not TARGET_CHAT_ID:
         logger.error("[autopost] не заданы ID чатов — обработчики не зарегистрированы")
         return
 
     init_db()
 
-    @dp.channel_post(F.chat.id == SOURCE_CHAT_ID, F.photo)
+    @dp.message(F.is_automatic_forward.is_(True))
+    async def on_auto_forward(message: Message):
+        """Пост целевого канала долетел до группы обсуждений — запоминаем id,
+        чтобы ответить на него комментарием с промптом."""
+        origin = message.forward_from_chat
+        if not origin or origin.id != TARGET_CHAT_ID:
+            return
+        if message.forward_from_message_id:
+            _discussion_map[message.forward_from_message_id] = message.message_id
+
+    @dp.channel_post(F.chat.id.in_(set(SOURCE_CHAT_IDS)), F.photo)
     async def on_source_post(message: Message):
-        """Новый пост с фото в канале-источнике."""
-        if _get(message.message_id):
+        """Новый пост в канале-источнике, где бот администратор.
+        Промпт придёт комментарием — пост подхватит telethon_source или
+        обработчик комментариев ниже."""
+        if get_post(message.chat.id, message.message_id):
             return
-        photo = message.photo[-1]  # самое большое разрешение
-        with closing(_connect()) as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO autopost_posts "
-                "(source_msg_id, photo_file_id, source_caption, status, created_at) "
-                "VALUES (?, ?, ?, 'waiting_prompt', ?)",
-                (message.message_id, photo.file_id, message.caption or "", _now()),
-            )
-            conn.commit()
-        logger.info("[autopost] новый пост %s, ждём промпт в комментариях", message.message_id)
+        logger.info(
+            "[autopost] новый пост %s в канале %s, ждём промпт в комментариях",
+            message.message_id, message.chat.id,
+        )
 
-    @dp.message(F.reply_to_message)
-    async def on_discussion_comment(message: Message):
-        """Комментарий в группе обсуждений — источник промпта."""
-        reply = message.reply_to_message
-        origin_chat = reply.forward_from_chat or getattr(reply, "sender_chat", None)
-        if not origin_chat or origin_chat.id != SOURCE_CHAT_ID:
-            return
-        if DISCUSSION_CHAT_ID and message.chat.id != DISCUSSION_CHAT_ID:
-            return
-
-        source_msg_id = reply.forward_from_message_id
-        if not source_msg_id:
-            return
-
-        prompt = (message.text or message.caption or "").strip()
-        if not prompt:
-            return
-
-        row = _get(source_msg_id)
-        if not row:
-            logger.info("[autopost] комментарий к неизвестному посту %s — пропуск", source_msg_id)
-            return
-        if row["status"] not in ("waiting_prompt",):
-            return  # промпт уже взят, повторные комментарии игнорируем
-
-        _update(source_msg_id, prompt=prompt, status="ready")
-        logger.info("[autopost] пост %s: промпт получен (%s символов)", source_msg_id, len(prompt))
+    logger.info("[autopost] обработчики зарегистрированы, источников: %s", len(SOURCE_CHAT_IDS))
 
 
 def setup_autopost_routes(app, bot: Bot) -> None:
-    """Регистрирует HTTP-маршруты: отдача картинок для KIE и приём результата."""
+    """HTTP-маршруты: отдача картинок для Kie AI и приём результата."""
     if not ENABLED:
         return
 
@@ -569,9 +653,7 @@ def setup_autopost_routes(app, bot: Bot) -> None:
 
     @app.get("/autopost/media/{filename}")
     async def autopost_media(filename: str):
-        # только имя файла, без выхода за пределы каталога
-        safe = Path(filename).name
-        path = MEDIA_DIR / safe
+        path = MEDIA_DIR / Path(filename).name  # только имя файла, без выхода из каталога
         if not path.exists():
             return JSONResponse({"error": "not found"}, status_code=404)
         return FileResponse(str(path))
@@ -579,7 +661,7 @@ def setup_autopost_routes(app, bot: Bot) -> None:
     @app.post(CALLBACK_PATH)
     async def autopost_callback(request: Request):
         data = await request.json()
-        logger.info("[autopost] callback: %s", data)
+        logger.info("[autopost] callback: %s", str(data)[:300])
 
         task_data = data.get("data") or {}
         task_id = task_data.get("taskId") or task_data.get("task_id")
@@ -587,19 +669,17 @@ def setup_autopost_routes(app, bot: Bot) -> None:
             return {"status": "received"}
 
         row = _get_by_task(str(task_id))
-        if not row:
+        if not row or row["status"] == "published":
             return {"status": "received"}
 
-        code = data.get("code")
         state = (task_data.get("state") or "").lower()
-
-        if code == 200 and state in ("success", ""):
+        if data.get("code") == 200 and state in ("success", ""):
             result_url = _extract_result_url(task_data)
             if result_url:
-                await _publish(bot, row, result_url)
+                await publish(bot, row, result_url)
                 return {"status": "received"}
 
         error = data.get("msg") or f"state={state}"
-        logger.error("[autopost] пост %s: генерация не удалась: %s", row["source_msg_id"], error)
-        _update(row["source_msg_id"], status="error", error=str(error))
+        logger.error("[autopost] запись %s: генерация не удалась: %s", row["id"], error)
+        _update(row["id"], status="error", error=str(error))
         return {"status": "received"}
