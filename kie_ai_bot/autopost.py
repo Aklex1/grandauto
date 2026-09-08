@@ -211,6 +211,32 @@ def known_msg_ids(source_chat_id: int) -> set:
         }
 
 
+def claim_for_generation(row_id: int) -> bool:
+    """Переводит запись из очереди в работу. Возвращает False, если её уже
+    забрал кто-то другой — так фоновый воркер и пробный прогон не отправляют
+    один и тот же пост в Kie дважды."""
+    with closing(_connect()) as conn:
+        cur = conn.execute(
+            "UPDATE autopost_posts SET status = 'generating', sent_at = ? "
+            "WHERE id = ? AND status = 'ready'",
+            (_now(), row_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def claim_for_publishing(row_id: int) -> bool:
+    """Не даёт опубликовать одну и ту же запись дважды."""
+    with closing(_connect()) as conn:
+        cur = conn.execute(
+            "UPDATE autopost_posts SET status = 'publishing' "
+            "WHERE id = ? AND status NOT IN ('publishing', 'published')",
+            (row_id,),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def _get_by_task(task_id: str) -> Optional[sqlite3.Row]:
     with closing(_connect()) as conn:
         return conn.execute(
@@ -298,14 +324,6 @@ def build_caption(source_caption: Optional[str] = None) -> str:
 def _visible_len(caption_html: str) -> int:
     """Telegram считает лимит подписи по видимому тексту, а не по разметке."""
     return len(html.unescape(re.sub(r"<[^>]+>", "", caption_html)))
-
-
-def build_caption_with_prompt(header: str, prompt: str) -> str:
-    """Подпись вместе с промптом, если он туда влезает."""
-    if not prompt:
-        return header
-    full = f"{header}\n{build_comment(prompt)}"
-    return full if _visible_len(full) <= CAPTION_LIMIT else header
 
 
 def build_comment(prompt: str) -> str:
@@ -397,7 +415,7 @@ async def submit_to_kie(row: sqlite3.Row) -> bool:
         _update(row_id, status="error", error=f"Kie не вернул taskId: {response}")
         return False
 
-    _update(row_id, status="generating", task_id=str(task_id), sent_at=_now(), error=None)
+    _update(row_id, task_id=str(task_id), error=None)
     logger.info("[autopost] запись %s: задача %s создана", row_id, task_id)
     return True
 
@@ -471,14 +489,16 @@ async def _comment_with_prompt(bot: Bot, channel_msg_id: int, prompt: str) -> bo
 
 
 async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
-    """Публикует картинку вместе с промптом: в подписи, если он туда влезает,
-    иначе комментарием под постом. На два поста публикация не разбивается."""
+    """Публикует картинку в целевой канал, а промпт — комментарием к этому же
+    посту. Отдельным постом промпт не выкладывается никогда."""
     row_id = row["id"]
+    if not claim_for_publishing(row_id):
+        logger.info("[autopost] запись %s уже опубликована — пропускаем", row_id)
+        return
+
     prompt = (row["prompt"] or "").strip()
     header = build_caption(row["source_caption"])
-
-    caption = build_caption_with_prompt(header, prompt)
-    prompt_in_caption = caption != header
+    caption = header
 
     async def _send(photo):
         return await bot.send_photo(
@@ -506,11 +526,11 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
     _update(row_id, status="published", result_url=result_url, published_at=_now(), error=None)
     logger.info("[autopost] запись %s опубликована в %s", row_id, TARGET_CHAT_ID)
 
-    if prompt and not prompt_in_caption:
+    if prompt:
         posted = await _comment_with_prompt(bot, sent.message_id, prompt)
         if not posted:
-            # Комментарий не ушёл — промпт всё равно должен быть виден,
-            # поэтому дописываем его в подпись, обрезав до лимита.
+            # Комментарий не ушёл — чтобы промпт не пропал совсем,
+            # дописываем его в подпись, обрезав до лимита Telegram.
             await _append_prompt_to_caption(bot, sent.message_id, header, prompt)
 
 
@@ -644,7 +664,8 @@ async def autopost_worker(bot: Bot) -> None:
                             (batch,),
                         ).fetchall()
                     for row in rows:
-                        await submit_to_kie(row)
+                        if claim_for_generation(row["id"]):
+                            await submit_to_kie(row)
 
             await _poll_stuck_tasks(bot)
         except Exception as e:

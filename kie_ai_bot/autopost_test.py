@@ -78,6 +78,14 @@ async def _process_one(bot: Bot, post: dict) -> dict:
     if not row_id:
         return {**entry, "status": "error", "detail": "не удалось поставить в очередь"}
 
+    # Запись могла уже уйти в работу к фоновому воркеру — тогда не трогаем её,
+    # иначе тот же пост опубликуется дважды
+    if not autopost.claim_for_generation(row_id):
+        current = _row(row_id)
+        state = current["status"] if current else "?"
+        return {**entry, "status": "skipped",
+                "detail": f"пост уже в работе (статус {state})"}
+
     row = _row(row_id)
     if not await autopost.submit_to_kie(row):
         fresh = _row(row_id)
