@@ -127,9 +127,49 @@ def generate_script(session: Session, client: KieClient, video: Video, channel: 
             visual_prompt=(scene.get("visual_prompt") or "").strip(),
         ))
     session.commit()
+
+    # Вторая сеть на случай, если модель закрыла JSON, но текст оборвала: сцена,
+    # не заканчивающаяся знаком конца предложения, почти наверняка обрезана.
+    cut = [i + 1 for i, sc in enumerate(scenes)
+           if not _looks_complete((sc.get("narration") or "").strip())]
+    if cut:
+        log_event(session, video.id,
+                  f"Текст обрывается на полуслове в сценах: {', '.join(map(str, cut))}. "
+                  f"Поправьте текст в карточке сцены и пересоберите её",
+                  stage="script", level="warn")
+
     log_event(session, video.id, f"Сценарий готов: {len(scenes)} сцен, "
                                  f"{len(video.script)} символов", stage="script")
     return credits
+
+
+SENTENCE_END = ".!?…\"»)"
+
+
+def _looks_complete(text: str) -> bool:
+    """Закончен ли текст сцены. Обрыв по лимиту модели виден по последнему символу."""
+    text = (text or "").strip()
+    if len(text) < 8:          # ниже этого сцены не бывает — считаем пустой
+        return False
+    return text[-1] in SENTENCE_END
+
+
+# Русская речь диктора — примерно 15 символов в секунду. Точность тут не нужна:
+# порог служит только для того, чтобы заметить обрыв, а не измерить темп.
+CHARS_PER_SECOND = 15.0
+
+
+def _check_audio_length(session: Session, video: Video, scene_idx: int, text: str,
+                        duration: float) -> None:
+    """Предупреждаем, если озвучка заметно короче текста — значит её обрезало."""
+    expected = len((text or "").strip()) / CHARS_PER_SECOND
+    if expected < 3 or duration <= 0:
+        return
+    if duration < expected * 0.7:
+        log_event(session, video.id,
+                  f"Сцена {scene_idx + 1}: озвучка {duration:.0f} с при тексте на "
+                  f"~{expected:.0f} с — часть текста не озвучена, субтитры разъедутся",
+                  stage="voice", level="warn")
 
 
 def voice_scenes(session: Session, client: KieClient, video: Video, channel: Channel,
@@ -178,6 +218,8 @@ def voice_scenes(session: Session, client: KieClient, video: Video, channel: Cha
                 scene.error = ""
                 credits += result.credits
                 done += 1
+                _check_audio_length(session, video, scene.idx, scene.narration,
+                                    result.duration)
             session.commit()
 
     if done == 0:
@@ -1360,6 +1402,7 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
                 scene.audio_path = storage.rel(result.path)
                 scene.audio_sec = result.duration
                 credits += result.credits
+                _check_audio_length(session, video, scene.idx, narration, result.duration)
                 session.commit()
 
             coverage = max(6, int(getattr(channel, "clip_coverage_sec", 20) or 20))

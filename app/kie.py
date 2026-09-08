@@ -153,8 +153,15 @@ class KieClient:
         choices = data.get("choices") or []
         if not choices:
             raise KieError(f"chat({model}): пустой ответ {json.dumps(data)[:300]}")
-        log.debug("chat(%s): finish_reason=%s", model, choices[0].get("finish_reason"))
+        finish = choices[0].get("finish_reason")
         text = (choices[0].get("message") or {}).get("content") or ""
+        if finish == "length":
+            # Модель упёрлась в лимит вывода: JSON обрывается на полуслове. Раньше это
+            # только писалось в отладочный лог, и обрезанный сценарий молча уходил в
+            # производство — сцена заканчивалась посреди фразы.
+            raise KieError(
+                f"chat({model}): ответ обрезан по лимиту длины "
+                f"({len(text)} символов) — сценарий получился бы неполным")
         return text, float(data.get("credits_consumed") or 0)
 
     def chat_json(self, model: str, messages: list[dict], *, temperature: float | None = None,

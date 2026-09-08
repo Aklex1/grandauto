@@ -236,15 +236,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 # жирный текст без плашки, толстая обводка с тенью, короткие реплики и подсветка
 # слова, которое звучит прямо сейчас. «Классический» — прежняя плашка под текстом.
 SUBTITLE_STYLES = {
-    "shorts": "Шортсы — крупный текст, подсветка слова жёлтым",
-    "shorts_green": "Шортсы — подсветка салатовым",
-    "shorts_plain": "Шортсы — без подсветки слова",
+    "shorts": "Шортсы — чистый текст с мягкой тенью, подсветка жёлтым",
+    "shorts_green": "Шортсы — чистый текст, подсветка салатовым",
+    "shorts_plain": "Шортсы — чистый текст без подсветки слова",
+    "shorts_outline": "Шортсы с обводкой — для пёстрого фона",
     "classic": "Классический — полупрозрачная плашка под текстом",
 }
 ACCENTS = {
     "shorts": "&H0000E6FF&",       # ASS хранит цвет как BGR: это насыщенный жёлтый
     "shorts_green": "&H0080FF80&",
+    "shorts_outline": "&H0000E6FF&",
 }
+# Стили без чёрного контура вокруг букв: читаемость держится на мягкой тени.
+NO_OUTLINE = ("shorts", "shorts_green", "shorts_plain")
 WHITE = "&H00FFFFFF&"
 
 
@@ -279,17 +283,20 @@ def _style_params(size: tuple[int, int], vertical: bool, font: str,
     title_size = int(font_size * (1.15 if vertical else 1.0))
 
     if shorts:
+        # Без обводки буквы читаются за счёт тени: она даёт отрыв от фона, но не
+        # обводит текст чёрным контуром.
+        clean = style in NO_OUTLINE
         params = {
-            "border": 1,                                  # обводка + тень, без плашки
-            "outline": max(4, int(font_size * 0.14)),
-            "shadow": max(2, int(font_size * 0.06)),
-            "back": "&H90000000",                         # цвет тени
+            "border": 1,                                  # обводка/тень, без плашки
+            "outline": 0 if clean else max(4, int(font_size * 0.14)),
+            "shadow": max(3, int(font_size * (0.10 if clean else 0.06))),
+            "back": "&H70000000" if clean else "&H90000000",   # цвет тени
             "spacing": 0,
             # подписи стоят в нижней трети, а не у самого края кадра
             "margin_v": int(h * (0.28 if vertical else 0.12)),
-            "title_outline": max(5, int(title_size * 0.16)),
-            "title_shadow": max(2, int(title_size * 0.07)),
-            "title_back": "&H90000000",
+            "title_outline": 0 if clean else max(5, int(title_size * 0.16)),
+            "title_shadow": max(3, int(title_size * (0.11 if clean else 0.07))),
+            "title_back": "&H70000000" if clean else "&H90000000",
             "title_margin": int(h * (0.06 if vertical else 0.05)),
         }
     else:
