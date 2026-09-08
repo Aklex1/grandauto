@@ -101,42 +101,41 @@ async def _process_one(bot: Bot, post: dict) -> dict:
 
 async def run_test(bot: Bot, per_channel: int = 1, progress=None) -> list:
     """Прогоняет по per_channel постов с каждого канала. Возвращает отчёт."""
-    client = await telethon_source.make_client()
+    # Общий клиент на весь процесс: второй доступ к файлу сессии даёт
+    # «database is locked», а отключать его нельзя — им пользуется воркер.
+    client = await telethon_source.get_client()
     if not client:
         return [{"channel": None, "status": "error",
                  "detail": "Telethon не настроен: нет файла сессии или ключей"}]
 
     autopost.init_db()
     report = []
-    try:
-        for source_chat_id in autopost.SOURCE_CHAT_IDS:
-            logger.info("[autopost-test] канал %s", source_chat_id)
+    for source_chat_id in autopost.SOURCE_CHAT_IDS:
+        logger.info("[autopost-test] канал %s", source_chat_id)
+        try:
+            posts = await telethon_source.find_posts(
+                client, source_chat_id, needed=per_channel
+            )
+        except Exception as e:
+            report.append({"channel": source_chat_id, "status": "error",
+                           "detail": f"канал недоступен: {e}"})
+            continue
+
+        if not posts:
+            report.append({"channel": source_chat_id, "status": "skipped",
+                           "detail": "нет постов с промптом в комментариях"})
+            continue
+
+        for post in posts:
             try:
-                posts = await telethon_source.find_posts(
-                    client, source_chat_id, needed=per_channel
-                )
+                entry = await _process_one(bot, post)
             except Exception as e:
-                report.append({"channel": source_chat_id, "status": "error",
-                               "detail": f"канал недоступен: {e}"})
-                continue
-
-            if not posts:
-                report.append({"channel": source_chat_id, "status": "skipped",
-                               "detail": "нет постов с промптом в комментариях"})
-                continue
-
-            for post in posts:
-                try:
-                    entry = await _process_one(bot, post)
-                except Exception as e:
-                    logger.error("[autopost-test] пост %s: %s", post["source_msg_id"], e, exc_info=True)
-                    entry = {"channel": source_chat_id, "post": post["source_msg_id"],
-                             "status": "error", "detail": str(e)}
-                report.append(entry)
-                if progress:
-                    await progress(entry)
-    finally:
-        await client.disconnect()
+                logger.error("[autopost-test] пост %s: %s", post["source_msg_id"], e, exc_info=True)
+                entry = {"channel": source_chat_id, "post": post["source_msg_id"],
+                         "status": "error", "detail": str(e)}
+            report.append(entry)
+            if progress:
+                await progress(entry)
 
     return report
 

@@ -116,11 +116,26 @@ _client_lock = asyncio.Lock()
 
 
 async def get_client():
-    """Общий клиент на весь процесс: файл сессии нельзя открывать дважды."""
+    """Общий клиент на весь процесс: файл сессии нельзя открывать дважды,
+    иначе SQLite отвечает «database is locked»."""
     global _client
     async with _client_lock:
-        if _client is not None and _client.is_connected():
-            return _client
+        if _client is not None:
+            if _client.is_connected():
+                return _client
+            # Клиент уже создан, но связь оборвалась — переподключаем его,
+            # а не создаём второй поверх того же файла сессии
+            try:
+                await _client.connect()
+                return _client
+            except Exception as e:
+                logger.warning("[telethon] переподключение не удалось: %s", e)
+                try:
+                    await _client.disconnect()
+                except Exception:
+                    pass
+                _client = None
+
         _client = await make_client()
         return _client
 
