@@ -51,6 +51,7 @@ from autopost import setup_autopost, setup_autopost_routes, autopost_worker
 from telethon_source import telethon_worker
 from autopost_test import setup_autopost_test
 from autopost_fix import setup_autopost_fix
+from admin_links import setup_admin_links
 from database import (
     create_tables,
     add_user,
@@ -486,6 +487,7 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="💰 Статистика платежей", callback_data="admin_payments_stats")],
             [InlineKeyboardButton(text="💲 Текущие цены", callback_data="admin_pricing")],
             [InlineKeyboardButton(text="🎯 Теги кампаний", callback_data="admin_campaign_tags")],
+            [InlineKeyboardButton(text="🔗 Ссылки", callback_data="links_menu")],
             [InlineKeyboardButton(text="📁 Папки с каналами", callback_data="admin_folders")],
             [InlineKeyboardButton(text="📢 Сделать рассылку", callback_data="admin_broadcast")],
             [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")],
@@ -9222,6 +9224,7 @@ async def main():
     setup_autopost_routes(app, bot)
     setup_autopost_test(dp, bot)
     setup_autopost_fix(dp, bot)
+    setup_admin_links(dp, bot)
 
     await asyncio.gather(
         start_bot(),
