@@ -474,34 +474,38 @@ async def _resolve_discussion_chat(bot: Bot) -> int:
     return DISCUSSION_CHAT_ID
 
 
-async def _comment_with_prompt(bot: Bot, channel_msg_id: int, prompt: str) -> bool:
-    """Отправляет промпт комментарием под опубликованным постом.
+async def _find_discussion_message(bot: Bot, channel_msg_id: int):
+    """id поста внутри группы обсуждений — на него бот отвечает комментарием.
 
-    Чтобы ответить в группу обсуждений, нужен id поста уже внутри неё.
-    Bot API такого соответствия не отдаёт, поэтому спрашиваем у Telethon;
-    если он недоступен, ждём автопересылку, которую ловит обработчик."""
+    Сначала ждём автопересылку: её id приходит от самого Bot API, поэтому
+    подходит для reply без оговорок. Telethon оставлен запасным вариантом —
+    он отдаёт id из своего пространства, который Bot API порой не принимает."""
+    deadline = time.time() + DISCUSSION_WAIT
+    while time.time() < deadline:
+        found = _discussion_map.get(channel_msg_id)
+        if found:
+            return found
+        await asyncio.sleep(1)
+
+    try:
+        import telethon_source
+
+        found = await telethon_source.get_discussion_message_id(TARGET_CHAT_ID, channel_msg_id)
+        if found:
+            logger.info("[autopost] id обсуждения подсказал Telethon: %s", found)
+        return found
+    except Exception as e:
+        logger.warning("[autopost] Telethon не подсказал id обсуждения: %s", e)
+        return None
+
+
+async def _comment_with_prompt(bot: Bot, channel_msg_id: int, prompt: str) -> bool:
+    """Отправляет промпт комментарием под опубликованным постом."""
     discussion_chat = await _resolve_discussion_chat(bot)
     if not discussion_chat:
         return False
 
-    discussion_msg_id = None
-    try:
-        import telethon_source
-
-        discussion_msg_id = await telethon_source.get_discussion_message_id(
-            TARGET_CHAT_ID, channel_msg_id
-        )
-    except Exception as e:
-        logger.warning("[autopost] Telethon не подсказал id обсуждения: %s", e)
-
-    if not discussion_msg_id:
-        # Пост долетает до группы обсуждений не мгновенно
-        deadline = time.time() + DISCUSSION_WAIT
-        while time.time() < deadline and not discussion_msg_id:
-            discussion_msg_id = _discussion_map.get(channel_msg_id)
-            if not discussion_msg_id:
-                await asyncio.sleep(1)
-
+    discussion_msg_id = await _find_discussion_message(bot, channel_msg_id)
     if not discussion_msg_id:
         logger.warning(
             "[autopost] пост %s не найден в группе обсуждений — комментарий не отправлен",
@@ -509,29 +513,42 @@ async def _comment_with_prompt(bot: Bot, channel_msg_id: int, prompt: str) -> bo
         )
         return False
 
-    try:
-        await with_retries(
-            lambda: bot.send_message(
-                chat_id=discussion_chat,
-                text=build_comment(prompt),
-                parse_mode="HTML",
-                reply_to_message_id=discussion_msg_id,
-            ),
-            what="отправка комментария",
+    text = build_comment(prompt)
+
+    async def send(**kwargs):
+        return await bot.send_message(
+            chat_id=discussion_chat, text=text, parse_mode="HTML", **kwargs
         )
-        logger.info("[autopost] промпт добавлен комментарием к посту %s", channel_msg_id)
-        return True
-    except Exception as e:
-        text = str(e).lower()
-        if "not a member" in text or "chat not found" in text or "not enough rights" in text:
-            logger.error(
-                "[autopost] комментарий отклонён: бот не в группе обсуждений %s или "
-                "не имеет права там писать. Добавьте его в группу администратором. (%s)",
-                discussion_chat, e,
+
+    # Telegram принимает комментарий двумя способами; какой сработает, зависит
+    # от того, откуда взялся id, поэтому пробуем оба
+    attempts = (
+        ("ответом на пост", {"reply_to_message_id": discussion_msg_id}),
+        ("в тему обсуждения", {"message_thread_id": discussion_msg_id}),
+    )
+
+    last_error = None
+    for how, kwargs in attempts:
+        try:
+            await send(**kwargs)
+            logger.info(
+                "[autopost] промпт добавлен комментарием к посту %s (%s)", channel_msg_id, how
             )
-        else:
-            logger.error("[autopost] не удалось отправить комментарий: %s", e)
-        return False
+            return True
+        except Exception as e:
+            last_error = e
+            reason = str(e).lower()
+            if "not a member" in reason or "not enough rights" in reason:
+                logger.error(
+                    "[autopost] комментарий отклонён: бот не в группе обсуждений %s "
+                    "или не имеет права там писать. (%s)", discussion_chat, e,
+                )
+                return False
+            logger.warning("[autopost] отправка %s не прошла: %s", how, e)
+
+    logger.error("[autopost] не удалось отправить комментарий к посту %s: %s",
+                 channel_msg_id, last_error)
+    return False
 
 
 async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
@@ -720,12 +737,25 @@ async def check_discussion_access(bot: Bot) -> bool:
         return False
 
     status = getattr(member, "status", "")
+    username = getattr(me, "username", "бота")
+
     if status in ("left", "kicked"):
         logger.error(
             "[autopost] БОТ НЕ СОСТОИТ В ГРУППЕ ОБСУЖДЕНИЙ %s (статус %s). "
-            "Промпты в комментарии отправляться НЕ БУДУТ. Добавьте @%s в эту группу, "
-            "лучше администратором.",
-            discussion_chat, status, getattr(me, "username", "бота"),
+            "Промпты в комментарии отправляться НЕ БУДУТ. Добавьте @%s в эту группу "
+            "и назначьте администратором.",
+            discussion_chat, status, username,
+        )
+        return False
+
+    # У ограниченного участника право писать снято отдельным флагом:
+    # без него Telegram отклоняет комментарий, причём с невнятной ошибкой
+    if status == "restricted" and getattr(member, "can_send_messages", False) is False:
+        logger.error(
+            "[autopost] БОТУ ЗАПРЕЩЕНО ПИСАТЬ В ГРУППЕ ОБСУЖДЕНИЙ %s (статус restricted). "
+            "Промпты в комментарии отправляться НЕ БУДУТ. Снимите ограничение с @%s "
+            "или назначьте его администратором группы.",
+            discussion_chat, username,
         )
         return False
 
@@ -807,6 +837,10 @@ def setup_autopost(dp: Dispatcher, bot: Bot) -> None:
             return
         if message.forward_from_message_id:
             _discussion_map[message.forward_from_message_id] = message.message_id
+            logger.info(
+                "[autopost] пост %s появился в группе обсуждений как сообщение %s",
+                message.forward_from_message_id, message.message_id,
+            )
 
     @dp.channel_post(F.chat.id.in_(set(SOURCE_CHAT_IDS)), F.photo)
     async def on_source_post(message: Message):
