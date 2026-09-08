@@ -102,8 +102,8 @@ CAPTION_LIMIT = 1024
 MESSAGE_LIMIT = 4096
 # Сколько ждать, пока пост долетит до группы обсуждений, секунд
 DISCUSSION_WAIT = _env_int("AUTOPOST_DISCUSSION_WAIT", 20)
-# Сколько раз пробовать добавить комментарий, прежде чем дописать промпт в подпись
-COMMENT_MAX_TRIES = _env_int("AUTOPOST_COMMENT_MAX_TRIES", 5)
+# Сколько раз повторять попытку отправить комментарий с промптом
+COMMENT_MAX_TRIES = _env_int("AUTOPOST_COMMENT_MAX_TRIES", 20)
 
 # Как отдавать картинки в Kie AI:
 # 1 — загружать в файловое хранилище Kie (публичный адрес боту не нужен),
@@ -334,11 +334,6 @@ def build_caption(source_caption: Optional[str] = None) -> str:
     if FOOTER:
         lines.append(FOOTER)
     return "\n".join(lines)
-
-
-def _visible_len(caption_html: str) -> int:
-    """Telegram считает лимит подписи по видимому тексту, а не по разметке."""
-    return len(html.unescape(re.sub(r"<[^>]+>", "", caption_html)))
 
 
 def build_comment(prompt: str) -> str:
@@ -585,24 +580,6 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
             )
 
 
-async def _append_prompt_to_caption(bot: Bot, message_id: int, header: str, prompt: str) -> None:
-    room = CAPTION_LIMIT - _visible_len(header) - 20
-    if room < 100:
-        logger.error("[autopost] промпт не поместился в подпись и комментарий не ушёл")
-        return
-    text = prompt if len(prompt) <= room else prompt[: room - 3] + "..."
-    try:
-        await bot.edit_message_caption(
-            chat_id=TARGET_CHAT_ID,
-            message_id=message_id,
-            caption=f"{header}\n{build_comment(text)}",
-            parse_mode="HTML",
-        )
-        logger.info("[autopost] промпт добавлен в подпись поста %s", message_id)
-    except Exception as e:
-        logger.error("[autopost] не удалось дописать промпт в подпись: %s", e)
-
-
 def _extract_result_url(task_data: dict) -> Optional[str]:
     """Достаёт ссылку на готовое изображение из ответа Kie AI."""
     import json
@@ -695,11 +672,9 @@ async def _retry_missing_comments(bot: Bot) -> None:
             logger.info("[autopost] запись %s: промпт добавлен со %s попытки", row["id"], tries)
         elif tries >= COMMENT_MAX_TRIES:
             logger.error(
-                "[autopost] запись %s: промпт не удалось добавить за %s попыток — "
-                "дописываю его в подпись поста", row["id"], tries,
-            )
-            await _append_prompt_to_caption(
-                bot, row["channel_msg_id"], build_caption(row["source_caption"]), row["prompt"]
+                "[autopost] запись %s: промпт не удалось добавить комментарием за %s попыток. "
+                "Проверьте, что бот админ в группе обсуждений, а аккаунт Telethon в ней состоит",
+                row["id"], tries,
             )
 
 
