@@ -12,6 +12,24 @@
   </form>
 </div>
 
+{% macro model_select(label, field, kind, current) %}
+{#  Текущее значение подставляем отдельным пунктом ТОЛЬКО если его нет в справочнике,
+    иначе оно дублируется и последний пункт перебивает выбранный. #}
+{% set options = models | selectattr('kind', 'equalto', kind) | map(attribute='path') | list %}
+<label>{{ label }}
+  <select name="{{ field }}">
+    {% if current and current not in options %}
+    <option value="{{ current }}" selected>{{ current }} — нет в справочнике</option>
+    {% endif %}
+    {% for path in options %}
+    <option value="{{ path }}" {% if path == current %}selected{% endif %}>{{ path }}</option>
+    {% endfor %}
+    {% if not options and not current %}
+    <option value="">справочник пуст — обновите список моделей в «Настройках»</option>
+    {% endif %}
+  </select></label>
+{% endmacro %}
+
 {% macro library_log() %}
 {% if lib_jobs or lib_events %}
 <div class="card">
@@ -403,34 +421,13 @@
       </fieldset>
 
       <fieldset><legend>Модели генерации (KIE)</legend>
-        <label>Текстовая модель (сценарии, план, метаданные)
-          <select name="chat_model">
-            {% for m in models if m.kind == 'chat' %}
-              <option value="{{ m.path }}" {% if m.path == channel.chat_model %}selected{% endif %}>{{ m.path }}</option>
-            {% endfor %}
-            <option value="{{ channel.chat_model }}" selected>{{ channel.chat_model }}</option>
-          </select></label>
-        <label>Модель видео
-          <select name="video_model">
-            {% for m in models if m.kind == 'video' %}
-              <option value="{{ m.path }}" {% if m.path == channel.video_model %}selected{% endif %}>{{ m.path }}</option>
-            {% endfor %}
-            <option value="{{ channel.video_model }}" selected>{{ channel.video_model }}</option>
-          </select></label>
-        <label>Модель обложек
-          <select name="image_model">
-            {% for m in models if m.kind == 'image' %}
-              <option value="{{ m.path }}" {% if m.path == channel.image_model %}selected{% endif %}>{{ m.path }}</option>
-            {% endfor %}
-            <option value="{{ channel.image_model }}" selected>{{ channel.image_model }}</option>
-          </select></label>
-        <label>Модель озвучки
-          <select name="tts_model">
-            {% for m in models if m.kind == 'tts' %}
-              <option value="{{ m.path }}" {% if m.path == channel.tts_model %}selected{% endif %}>{{ m.path }}</option>
-            {% endfor %}
-            <option value="{{ channel.tts_model }}" selected>{{ channel.tts_model }}</option>
-          </select></label>
+        {{ model_select('Текстовая модель (сценарии, план, метаданные)', 'chat_model', 'chat', channel.chat_model) }}
+        {{ model_select('Модель видео', 'video_model', 'video', channel.video_model) }}
+        {{ model_select('Модель обложек', 'image_model', 'image', channel.image_model) }}
+        {{ model_select('Модель озвучки', 'tts_model', 'tts', channel.tts_model) }}
+        <p class="small muted">Список тянется из KIE. Справочник обновлён:
+          {{ settings.models_updated_at[:16].replace('T', ' ') or 'ни разу' }} —
+          всего {{ models|length }} моделей.</p>
       </fieldset>
     </div>
 
@@ -479,13 +476,21 @@
               {% for r in ['480p','720p','1080p'] %}<option {% if channel.resolution == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
             </select></label>
           <label>Клип, сек<input name="clip_duration" type="number" min="4" max="15" value="{{ channel.clip_duration }}"></label>
-          <label title="Сколько секунд ролика закрывает один сгенерированный клип (зацикливанием). Меньше — разнообразнее и дороже."
+          <label title="Сколько секунд озвучки закрывает один сгенерированный клип. Меньше — разнообразнее и дороже."
             >Секунд на клип<input name="clip_coverage_sec" type="number" min="6" max="90" value="{{ channel.clip_coverage_sec }}"></label>
+          <label title="Потолок числа разных кадров на одну сцену. Если кадров не хватает на всю озвучку, недостаток добирается вариациями прохода — зеркало, наезд, панорама, — а не отмоткой назад."
+            >Кадров на сцену<input name="max_clips_per_scene" type="number" min="1" max="16" value="{{ channel.max_clips_per_scene }}"></label>
           <label>Длительность, мин<input name="target_minutes" type="number" step="0.5" min="1" max="30" value="{{ channel.target_minutes }}"></label>
           <label>Сцен<input name="scene_count" type="number" min="3" max="30" value="{{ channel.scene_count }}"></label>
           <label>Шортсов<input name="shorts_count" type="number" min="0" max="10" value="{{ channel.shorts_count }}"></label>
         </div>
         <label><input type="checkbox" name="burn_subtitles" style="width:auto" {% if channel.burn_subtitles %}checked{% endif %}> Вшивать субтитры в видео</label>
+        <label>Оформление субтитров
+          <select name="subtitle_style">
+            {% for key, label in subtitle_styles.items() %}
+            <option value="{{ key }}" {% if channel.subtitle_style == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select></label>
         <label><input type="checkbox" name="background_music" style="width:auto" {% if channel.background_music %}checked{% endif %}> Фоновая музыка (Suno через KIE)</label>
         <div class="grid cols-2">
           <label>Стиль музыки (английский; пусто — подберётся по тематике)

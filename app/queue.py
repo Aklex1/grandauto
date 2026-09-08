@@ -74,6 +74,19 @@ def _run_job(job_id: int) -> None:
                         job.finished_at = utcnow()
                         session.commit()
                 return
+        elif kind == "regen_scene":
+            try:
+                pipeline.regen_scene_job(payload.get("scene_id"), payload.get("options"))
+            except pipeline.AlreadyBuilding as exc:
+                log.info("Задача %s пропущена: %s", job_id, exc)
+                with session_scope() as session:
+                    job = session.get(Job, job_id)
+                    if job is not None:
+                        job.status = "skipped"
+                        job.error = str(exc)
+                        job.finished_at = utcnow()
+                        session.commit()
+                return
         elif kind == "make_shorts":
             pipeline.build_shorts_job(video_id)
         elif kind == "assemble_final":

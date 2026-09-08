@@ -17,12 +17,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import (bootstrap, config, estimate, footage, planner, prompts, queue, scheduler,
-               stock, storage, sync, webutil)
+               stock, storage, subtitles, sync, webutil)
 from . import settings_store as st
 from .db import get_session, session_scope
 from .kie import KieClient
 from .models import (Channel, Event, Footage, Job, ModelPath, PlanItem, PriceItem,
-                     ScheduleRule, Short, Video, Voice, utcnow)
+                     ScheduleRule, Scene, Short, Video, Voice, utcnow)
 from .security import make_session, read_session, verify_password
 
 logging.basicConfig(
@@ -51,6 +51,7 @@ STATUS_LABELS = {
     "voiced": "озвучена", "voice_failed": "нет озвучки", "piece_ready": "сцена готова",
     "scenes_ready": "сцены готовы",
     "clip_failed": "нет видеоряда",
+    "regenerating": "пересборка", "regen_failed": "пересборка не удалась",
 }
 
 
@@ -236,7 +237,8 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         plan_left=sum(1 for p in plan if p.status == "planned"),
         clips=clips, lib_bytes=lib_bytes, lib_sec=lib_sec, lib_stats=lib_stats,
         lib_events=lib_events, lib_jobs=lib_jobs,
-        cleanup_modes=footage.CLEANUP_MODES, **stock_ctx,
+        cleanup_modes=footage.CLEANUP_MODES,
+        subtitle_styles=subtitles.SUBTITLE_STYLES, **stock_ctx,
         **estimate.channel_estimate_context(session, channel)))
 
 
@@ -288,13 +290,14 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
                      voice_stability: float = Form(0.45), voice_similarity: float = Form(0.8),
                      voice_speed: float = Form(1.0), aspect_ratio: str = Form("16:9"),
                      resolution: str = Form("720p"), clip_duration: int = Form(5),
-                     clip_coverage_sec: int = Form(20),
+                     clip_coverage_sec: int = Form(20), max_clips_per_scene: int = Form(8),
                      visual_source: str = Form("generate"), library_share: int = Form(50),
                      background_music: str = Form(""), music_style: str = Form(""),
                      music_volume_db: float = Form(-24.0),
                      target_minutes: float = Form(8.0), scene_count: int = Form(8),
                      visual_style: str = Form(""), script_style: str = Form(""),
                      thumb_style: str = Form(""), burn_subtitles: str = Form(""),
+                     subtitle_style: str = Form("shorts"),
                      make_shorts: str = Form(""), shorts_count: int = Form(3),
                      is_active: str = Form("")):
     channel = _channel_or_404(session, channel_id)
@@ -314,6 +317,7 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
     channel.resolution = resolution
     channel.clip_duration = max(4, min(15, clip_duration))
     channel.clip_coverage_sec = max(6, min(90, clip_coverage_sec))
+    channel.max_clips_per_scene = max(1, min(16, max_clips_per_scene))
     channel.visual_source = visual_source if visual_source in ("generate", "library", "mix") else "generate"
     channel.library_share = max(0, min(100, library_share))
     channel.background_music = bool(background_music)
@@ -325,6 +329,7 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
     channel.script_style = script_style
     channel.thumb_style = thumb_style
     channel.burn_subtitles = bool(burn_subtitles)
+    channel.subtitle_style = subtitles.normalize_style(subtitle_style)
     channel.make_shorts = bool(make_shorts)
     channel.shorts_count = max(0, min(10, shorts_count))
     channel.is_active = bool(is_active)
@@ -614,9 +619,50 @@ def video_page(video_id: int, request: Request, session: Session = Depends(get_s
         candidate = storage.abspath(video.video_path).parent / "video_clean.mp4"
         if candidate.exists():
             clean_path = storage.rel(candidate)
+    models = session.execute(select(ModelPath).order_by(ModelPath.path)).scalars().all()
+    voices = session.execute(select(Voice).order_by(Voice.provider, Voice.name)).scalars().all()
+    regen_jobs = session.execute(
+        select(Job).where(Job.kind == "regen_scene",
+                          Job.status.in_(("pending", "running", "failed", "skipped")))
+        .order_by(Job.id.desc()).limit(10)).scalars().all()
+    busy_scenes = {json.loads(j.payload or "{}").get("scene_id")
+                   for j in regen_jobs if j.status in ("pending", "running")}
     return templates.TemplateResponse("video.html", base_context(
         request, session, video=video, channel=channel, events=events, variants=variants,
-        clean_path=clean_path))
+        clean_path=clean_path, models=models, voices=voices,
+        regen_jobs=regen_jobs, busy_scenes=busy_scenes))
+
+
+@app.post("/scenes/{scene_id}/regenerate")
+def scene_regenerate(scene_id: int, session: Session = Depends(get_session),
+                     _user: str = Depends(require_user),
+                     visual_prompt: str = Form(""), narration: str = Form(""),
+                     video_model: str = Form(""), tts_model: str = Form(""),
+                     voice_id: str = Form(""), clips: int = Form(0),
+                     redo_voice: str = Form("")):
+    """Пересборка одной сцены: свой промпт, своя модель, полный кусок на выходе."""
+    scene = session.get(Scene, scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="Сцена не найдена")
+    video = session.get(Video, scene.video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Ролик не найден")
+
+    options = {
+        "visual_prompt": visual_prompt.strip(),
+        "narration": narration.strip(),
+        "video_model": video_model.strip(),
+        "tts_model": tts_model.strip(),
+        "voice_id": voice_id.strip(),
+        "clips": max(0, min(16, clips)),
+        "redo_voice": bool(redo_voice),
+    }
+    queue.enqueue(session, "regen_scene", video_id=video.id,
+                  payload={"scene_id": scene.id, "options": options})
+    session.add(Event(video_id=video.id, level="info", stage="regen",
+                      message=f"Сцена {scene.idx + 1}: пересборка поставлена в очередь"))
+    session.commit()
+    return RedirectResponse(f"/videos/{video.id}#scene-{scene.id}", status_code=303)
 
 
 @app.get("/library", response_class=HTMLResponse)

@@ -71,6 +71,8 @@ class Channel(Base):
     resolution: Mapped[str] = mapped_column(String(16), default="720p")
     clip_duration: Mapped[int] = mapped_column(Integer, default=5)
     clip_coverage_sec: Mapped[int] = mapped_column(Integer, default=20)
+    # потолок числа разных кадров на одну сцену: больше — разнообразнее и дороже
+    max_clips_per_scene: Mapped[int] = mapped_column(Integer, default=8)
     # generate — только генерация, library — только загруженные футажи, mix — смешанный
     visual_source: Mapped[str] = mapped_column(String(16), default="generate")
     library_share: Mapped[int] = mapped_column(Integer, default=50)
@@ -82,6 +84,8 @@ class Channel(Base):
     thumb_style: Mapped[str] = mapped_column(Text, default="")
 
     burn_subtitles: Mapped[bool] = mapped_column(Boolean, default=True)
+    # оформление субтитров: shorts | shorts_green | shorts_plain | classic
+    subtitle_style: Mapped[str] = mapped_column(String(20), default="shorts")
     make_shorts: Mapped[bool] = mapped_column(Boolean, default=True)
     shorts_count: Mapped[int] = mapped_column(Integer, default=3)
     background_music: Mapped[bool] = mapped_column(Boolean, default=False)

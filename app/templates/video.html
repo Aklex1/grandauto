@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 {% block title %}{{ video.title or video.book_title }} — Контент-завод{% endblock %}
 {% block content %}
+{% macro pick(field, kind, current, form_id) %}
+{% set options = models | selectattr('kind', 'equalto', kind) | map(attribute='path') | list %}
+<select name="{{ field }}" form="{{ form_id }}">
+  {% if current and current not in options %}
+  <option value="{{ current }}" selected>{{ current }}</option>
+  {% endif %}
+  {% for path in options %}
+  <option value="{{ path }}" {% if path == current %}selected{% endif %}>{{ path }}</option>
+  {% endfor %}
+</select>
+{% endmacro %}
+
 <div class="row between mb">
   <div>
     <h1>{{ video.title or video.book_title }}</h1>
@@ -130,7 +142,60 @@
           <div class="row mt">
             <a class="btn btn-sm" href="/media/{{ sc.piece_music_path or sc.piece_path }}?download=1">⬇ Скачать сцену</a>
             {% if sc.piece_music_path %}<span class="badge">с музыкой</span>{% endif %}
+            {% if sc.status == 'regen_failed' %}<span class="badge err">пересборка не удалась</span>{% endif %}
           </div>
+          {% if sc.error and sc.status == 'regen_failed' %}
+          <div class="small mt" style="color:var(--err)">{{ sc.error }}</div>
+          {% endif %}
+
+          <details class="mt" id="scene-{{ sc.id }}">
+            <summary class="small">⟳ Сгенерировать заново</summary>
+            {% if sc.id in busy_scenes %}
+            <p class="small">Пересборка уже идёт — обновите страницу через пару минут.</p>
+            {% else %}
+            <p class="small muted">Сцена собирается заново целиком: новый видеоряд под озвучку,
+              субтитры и копия с фоновой музыкой. Озвучка переделывается, только если вы
+              изменили текст, голос или модель речи — иначе она берётся прежняя.</p>
+
+            <label class="small">Промпт видеоряда
+              <textarea name="visual_prompt" form="regen-{{ sc.id }}" rows="3"
+                >{{ sc.visual_prompt }}</textarea></label>
+
+            <label class="small">Текст озвучки
+              <textarea name="narration" form="regen-{{ sc.id }}" rows="4"
+                >{{ sc.narration }}</textarea></label>
+
+            <label class="small">Модель видео
+              {{ pick('video_model', 'video', channel.video_model, 'regen-' ~ sc.id) }}</label>
+
+            <label class="small">Модель озвучки
+              {{ pick('tts_model', 'tts', channel.tts_model, 'regen-' ~ sc.id) }}</label>
+
+            <label class="small">Голос
+              <select name="voice_id" form="regen-{{ sc.id }}">
+                {% set ids = voices | map(attribute='voice_id') | list %}
+                {% if channel.voice_id and channel.voice_id not in ids %}
+                <option value="{{ channel.voice_id }}" selected>{{ channel.voice_name or channel.voice_id }}</option>
+                {% endif %}
+                {% for v in voices %}
+                <option value="{{ v.voice_id }}" {% if v.voice_id == channel.voice_id %}selected{% endif %}>{{ v.name }}</option>
+                {% endfor %}
+              </select></label>
+
+            <div class="row mt">
+              <label class="small" style="margin:0" title="0 — конвейер посчитает сам по длине озвучки и настройкам канала">
+                Кадров
+                <input type="number" name="clips" form="regen-{{ sc.id }}" min="0" max="16"
+                       value="0" style="width:70px"></label>
+              <label class="small row" style="margin:0">
+                <input type="checkbox" name="redo_voice" form="regen-{{ sc.id }}" style="width:auto">
+                переозвучить принудительно</label>
+            </div>
+
+            <button class="btn btn-sm btn-primary mt" form="regen-{{ sc.id }}"
+                    type="submit">Сгенерировать заново</button>
+            {% endif %}
+          </details>
         </div>
       </div>
       {% endfor %}
@@ -146,6 +211,27 @@
       сам напишет и озвучит короткий переход и подставит под него видеоряд, чтобы стык
       не был рваным. Пересборка заменит текущий готовый ролик.</div>
   </form>
+
+  {# Формы пересборки объявлены здесь, а их поля живут в карточках сцен выше:
+     вложенные формы недопустимы, поэтому поля связаны с формой атрибутом form=. #}
+  {% for sc in pieces %}
+  <form id="regen-{{ sc.id }}" method="post" action="/scenes/{{ sc.id }}/regenerate" hidden></form>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if regen_jobs %}
+<div class="card">
+  <h2>Пересборка сцен</h2>
+  {% for j in regen_jobs %}
+  <p class="small {% if j.status in ('pending', 'running') %}{% else %}muted{% endif %}">
+    {% if j.status == 'running' %}<span class="badge">идёт</span>
+    {% elif j.status == 'pending' %}<span class="badge">в очереди</span>
+    {% elif j.status == 'skipped' %}<span class="badge warn">отложена</span>
+    {% else %}<span class="badge err">сбой</span>{% endif %}
+    задача #{{ j.id }}{% if j.error %} — {{ j.error }}{% endif %}
+  </p>
+  {% endfor %}
 </div>
 {% endif %}
 

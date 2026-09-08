@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import math
-import shutil
 from pathlib import Path
 
 from . import config, storage
@@ -32,23 +31,6 @@ def _ff(args: list[str], timeout: float = 3600.0) -> None:
     storage.run_ff([config.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *args], timeout=timeout)
 
 
-def ping_pong(src: Path, dst: Path) -> Path:
-    """Клип вперёд + назад — чтобы зацикливание не резало глаз стыком."""
-    try:
-        _ff([
-            "-i", str(src),
-            "-filter_complex",
-            "[0:v]split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1:a=0[out]",
-            "-map", "[out]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-pix_fmt", "yuv420p", str(dst),
-        ], timeout=900)
-        return dst
-    except RuntimeError as exc:  # длинный клип может не влезть в память — не критично
-        log.warning("ping-pong не удался (%s), используем исходный клип", exc)
-        shutil.copyfile(src, dst)
-        return dst
-
-
 def normalize_clip(src: Path, dst: Path, size: tuple[int, int]) -> Path:
     w, h = size
     _ff([
@@ -75,9 +57,72 @@ def still_to_clip(image: Path, dst: Path, size: tuple[int, int], duration: float
     return dst
 
 
+# Проходы, которыми добираем длительность, если сгенерированных кадров не хватило.
+# Реверса здесь намеренно нет: отмотка назад читается зрителем как брак.
+VARIANTS = ("mirror", "zoom_in", "pan_right", "zoom_out", "mirror_zoom", "pan_left")
+MAX_SEGMENTS = 24
+
+
+def variant_pass(src: Path, dst: Path, size: tuple[int, int], variant: str,
+                 duration: float) -> Path:
+    """Ещё один проход по тому же кадру, но визуально другой.
+
+    Нужен, когда озвучка длиннее суммы клипов. Зеркало, наезд, отъезд и панорама
+    дают новое движение в кадре — в отличие от реверса, который выглядит как
+    перемотка назад и сразу выдаёт машинную сборку.
+    """
+    w, h = size
+    span = max(duration, 0.1)
+
+    # zoompan на видеовходе врёт с длительностью (проверено: 5 с превращались в 6 и
+    # даже в 2560), поэтому наезд и отъезд делаем кропом с переменным размером окна —
+    # он даёт кадр в кадр ту же длину, что и исходник.
+    def _zoom(expr: str) -> str:
+        return (f"crop=w='trunc(iw/({expr})/2)*2':h='trunc(ih/({expr})/2)*2':"
+                f"x='(iw-ow)/2':y='(ih-oh)/2',scale={w}:{h}")
+
+    zoom_in = _zoom(f"1+0.18*min(t/{span:.3f},1)")
+    zoom_out = _zoom(f"1.18-0.18*min(t/{span:.3f},1)")
+    over_w, over_h = int(w * 1.18) // 2 * 2, int(h * 1.18) // 2 * 2
+    pan_right = (f"scale={over_w}:{over_h},"
+                 f"crop={w}:{h}:x='(in_w-out_w)*min(t/{span:.3f},1)':y='(in_h-out_h)/2'")
+    pan_left = (f"scale={over_w}:{over_h},"
+                f"crop={w}:{h}:x='(in_w-out_w)*(1-min(t/{span:.3f},1))':y='(in_h-out_h)/2'")
+    chains = {
+        "mirror": "hflip",
+        "zoom_in": zoom_in,
+        "zoom_out": zoom_out,
+        "pan_right": pan_right,
+        "pan_left": pan_left,
+        "mirror_zoom": f"hflip,{zoom_in}",
+    }
+    chain = chains.get(variant, "hflip")
+    try:
+        _ff([
+            "-i", str(src),
+            "-vf", f"{chain},scale={w}:{h},fps={FPS},format=yuv420p",
+            "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(dst),
+        ], timeout=1200)
+        return dst
+    except RuntimeError as exc:
+        # zoompan/crop с выражениями капризны на нестандартных входах — не роняем сцену
+        log.warning("Вариация «%s» не удалась (%s), беру зеркало", variant, exc)
+        _ff([
+            "-i", str(src), "-vf", f"hflip,scale={w}:{h},fps={FPS},format=yuv420p",
+            "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(dst),
+        ], timeout=1200)
+        return dst
+
+
 def build_scene(clips: list[Path], audio: Path, dst: Path, size: tuple[int, int],
                 duration: float, workdir: Path) -> Path:
-    """Собираем сцену: видеоряд растягиваем/зацикливаем ровно под длину озвучки."""
+    """Собираем сцену: закрываем длительность озвучки разными кадрами.
+
+    Сначала идут все сгенерированные и нарезанные клипы, каждый ровно один раз.
+    Если их суммарной длины не хватает, недостаток добирается ВАРИАЦИЯМИ прохода
+    (зеркало, наезд, отъезд, панорама), а не отмоткой назад и не зацикливанием
+    одного и того же куска.
+    """
     workdir.mkdir(parents=True, exist_ok=True)
     if not clips:
         raise RuntimeError("нет ни одного клипа для сцены")
@@ -86,20 +131,38 @@ def build_scene(clips: list[Path], audio: Path, dst: Path, size: tuple[int, int]
     for i, clip in enumerate(clips):
         norm = workdir / f"norm_{i}.mp4"
         normalize_clip(clip, norm, size)
-        loopable = workdir / f"pp_{i}.mp4"
-        ping_pong(norm, loopable)
-        prepared.append(loopable)
+        prepared.append(norm)
 
-    if len(prepared) == 1:
-        base = prepared[0]
+    segments = list(prepared)
+    covered = sum(storage.media_duration(p) for p in prepared)
+
+    variant_no = 0
+    while covered < duration - 0.2 and len(segments) < MAX_SEGMENTS:
+        source = prepared[variant_no % len(prepared)]
+        variant = VARIANTS[variant_no % len(VARIANTS)]
+        seg = workdir / f"var_{variant_no:02d}.mp4"
+        variant_pass(source, seg, size, variant, storage.media_duration(source))
+        segments.append(seg)
+        covered += storage.media_duration(seg)
+        variant_no += 1
+
+    if variant_no:
+        log.info("Сцена: %s клипов на %.1f с озвучки, добрано %s вариаций прохода",
+                 len(prepared), duration, variant_no)
+
+    if len(segments) == 1:
+        base = segments[0]
     else:
         listing = workdir / "list.txt"
-        listing.write_text("".join(f"file '{p}'\n" for p in prepared), encoding="utf-8")
+        listing.write_text("".join(f"file '{p}'\n" for p in segments), encoding="utf-8")
         base = workdir / "base.mp4"
         _ff(["-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(base)])
 
+    # -stream_loop остаётся страховкой на случай, когда вариаций не хватило
+    # (очень длинная озвучка при единственном коротком клипе) — сцена не должна падать.
+    loop_args = [] if covered >= duration - 0.2 else ["-stream_loop", "-1"]
     _ff([
-        "-stream_loop", "-1", "-i", str(base),
+        *loop_args, "-i", str(base),
         "-i", str(audio),
         "-map", "0:v:0", "-map", "1:a:0",
         "-t", f"{duration:.3f}",
@@ -263,7 +326,7 @@ def cut_short(video: Path, dst: Path, start: float, end: float, ass: Path | None
     return dst
 
 
-def clips_needed(audio_sec: float, coverage_sec: float) -> int:
+def clips_needed(audio_sec: float, coverage_sec: float, max_clips: int = 8) -> int:
     """Сколько уникальных клипов нужно, чтобы закрыть сцену без явного повтора."""
     coverage = max(4.0, coverage_sec)
-    return max(1, min(6, math.ceil(audio_sec / coverage)))
+    return max(1, min(max(1, max_clips), math.ceil(audio_sec / coverage)))

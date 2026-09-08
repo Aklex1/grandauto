@@ -221,7 +221,8 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
     tasks: list[tuple[int, int, str, str]] = []
     for scene in scenes:
         base_prompt = scene.visual_prompt or scene.heading or video.title
-        count = media.clips_needed(scene.audio_sec or coverage, coverage)
+        count = media.clips_needed(scene.audio_sec or coverage, coverage,
+                                   int(getattr(channel, "max_clips_per_scene", 8) or 8))
         plan = footage.plan_sources(count, source_mode, share, bool(library))
         for part in range(count):
             prompt = base_prompt if part == 0 else f"{base_prompt}. Alternative angle {part + 1}"
@@ -397,58 +398,74 @@ def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir
     for scene in scenes:
         if not scene.audio_path:
             continue
-        piece = pieces_dir / f"scene_{scene.idx:02d}.mp4"
         if scene.piece_path and storage.abspath(scene.piece_path).exists():
             ready += 1
             continue
-
-        audio = storage.abspath(scene.audio_path)
-        clips = [storage.abspath(p) for p in _scene_clips(scene)]
-        clips = [c for c in clips if c.exists()]
-        if not clips:
-            fallback = _fallback_clip_for(scene, scenes)
-            if fallback is None or not Path(fallback).exists():
-                log_event(session, video.id, f"Сцена {scene.idx + 1}: нет видеоряда, пропускаю",
-                          stage="assemble", level="warn")
-                continue
-            clips = [Path(fallback)]
-
-        raw = workdir / f"scene_{scene.idx:02d}_raw.mp4"
-        media.build_scene(clips, audio, raw, size, duration=scene.audio_sec,
-                          workdir=workdir / f"w{scene.idx:02d}")
-        # Чистую сцену храним отдельно: из неё собирается мастер для нарезки шортсов,
-        # иначе горизонтальные субтитры поедут при кропе в вертикаль.
-        clean_piece = pieces_dir / f"scene_{scene.idx:02d}_clean.mp4"
-
-        # Субтитры сцены: текст берём из сценария, тайминг — из распознавания этой сцены.
-        cues = _scene_cues(session, video, channel, scene, audio)
-        if cues and channel.burn_subtitles:
-            ass = workdir / f"scene_{scene.idx:02d}.ass"
-            subtitles.write_ass(cues, ass, size=size,
-                                vertical=channel.aspect_ratio == "9:16")
-            try:
-                media.burn_subtitles(raw, ass, piece)
-                shutil.copyfile(raw, clean_piece)
-            except RuntimeError as exc:
-                log_event(session, video.id, f"Сцена {scene.idx + 1}: субтитры не вшиты ({exc})",
-                          stage="assemble", level="warn")
-                shutil.copyfile(raw, piece)
-                clean_piece.unlink(missing_ok=True)
-        else:
-            shutil.copyfile(raw, piece)
-            clean_piece.unlink(missing_ok=True)
-
-        scene.piece_path = storage.rel(piece)
-        scene.piece_music_path = _add_music_copy(session, video, channel, piece, track_path)
-        scene.piece_sec = storage.media_duration(piece)
-        scene.status = "piece_ready"
-        session.commit()
-        ready += 1
+        if assemble_scene_piece(session, video, channel, scene, workdir, pieces_dir,
+                                track_path, size, fallback_from=scenes):
+            ready += 1
 
     if ready == 0:
         raise RuntimeError("не удалось собрать ни одной сцены")
     log_event(session, video.id, f"Сцены собраны: {ready} из {len(scenes)}", stage="assemble")
     return ready
+
+
+def assemble_scene_piece(session: Session, video: Video, channel: Channel, scene: Scene,
+                         workdir: Path, pieces_dir: Path, track_path: Optional[Path],
+                         size: tuple[int, int],
+                         fallback_from: Optional[list[Scene]] = None) -> bool:
+    """Один законченный кусок: видеоряд под озвучку, субтитры, копия с музыкой.
+
+    Общая для первой сборки и для пересборки отдельной сцены, чтобы кусок после
+    ручной перегенерации был устроен ровно так же, как после конвейера.
+    """
+    audio = storage.abspath(scene.audio_path)
+    piece = pieces_dir / f"scene_{scene.idx:02d}.mp4"
+    clean_piece = pieces_dir / f"scene_{scene.idx:02d}_clean.mp4"
+
+    clips = [storage.abspath(p) for p in _scene_clips(scene)]
+    clips = [c for c in clips if c.exists()]
+    if not clips:
+        fallback = _fallback_clip_for(scene, fallback_from or list(video.scenes))
+        if fallback is None or not Path(fallback).exists():
+            log_event(session, video.id, f"Сцена {scene.idx + 1}: нет видеоряда, пропускаю",
+                      stage="assemble", level="warn")
+            return False
+        clips = [Path(fallback)]
+
+    workdir.mkdir(parents=True, exist_ok=True)
+    raw = workdir / f"scene_{scene.idx:02d}_raw.mp4"
+    media.build_scene(clips, audio, raw, size, duration=scene.audio_sec,
+                      workdir=workdir / f"w{scene.idx:02d}")
+
+    # Субтитры сцены: текст берём из сценария, тайминг — из распознавания этой сцены.
+    cues = _scene_cues(session, video, channel, scene, audio)
+    if cues and channel.burn_subtitles:
+        ass = workdir / f"scene_{scene.idx:02d}.ass"
+        subtitles.write_ass(cues, ass, size=size,
+                            vertical=channel.aspect_ratio == "9:16",
+                            style=_subtitle_style(channel))
+        try:
+            media.burn_subtitles(raw, ass, piece)
+            # Чистую сцену храним отдельно: из неё собирается мастер для нарезки
+            # шортсов, иначе горизонтальные субтитры поедут при кропе в вертикаль.
+            shutil.copyfile(raw, clean_piece)
+        except RuntimeError as exc:
+            log_event(session, video.id, f"Сцена {scene.idx + 1}: субтитры не вшиты ({exc})",
+                      stage="assemble", level="warn")
+            shutil.copyfile(raw, piece)
+            clean_piece.unlink(missing_ok=True)
+    else:
+        shutil.copyfile(raw, piece)
+        clean_piece.unlink(missing_ok=True)
+
+    scene.piece_path = storage.rel(piece)
+    scene.piece_music_path = _add_music_copy(session, video, channel, piece, track_path)
+    scene.piece_sec = storage.media_duration(piece)
+    scene.status = "piece_ready"
+    session.commit()
+    return True
 
 
 def _add_music_copy(session: Session, video: Video, channel: Channel, piece: Path,
@@ -470,6 +487,10 @@ def _add_music_copy(session: Session, video: Video, channel: Channel, piece: Pat
                   stage="assemble", level="warn")
         dest.unlink(missing_ok=True)
         return ""
+
+
+def _subtitle_style(channel: Channel) -> str:
+    return subtitles.normalize_style(getattr(channel, "subtitle_style", "shorts") or "shorts")
 
 
 def _scene_cues(session: Session, video: Video, channel: Channel, scene: Scene,
@@ -551,7 +572,8 @@ def ensure_bridge(session: Session, client: KieClient, video: Video, channel: Ch
         if cues and channel.burn_subtitles:
             ass = workdir / f"bridge_{bridge.id:03d}.ass"
             subtitles.write_ass(cues, ass, size=size,
-                                vertical=channel.aspect_ratio == "9:16")
+                                vertical=channel.aspect_ratio == "9:16",
+                                style=_subtitle_style(channel))
             media.burn_subtitles(raw, ass, piece)
             shutil.copyfile(raw, clean)
         else:
@@ -903,7 +925,8 @@ def make_shorts(session: Session, client: KieClient, video: Video, channel: Chan
             if piece_cues or short.title:
                 ass = out_dir / f"short_{idx:02d}.ass"
                 subtitles.write_ass(piece_cues, ass, size=media.VERTICAL, vertical=True,
-                                    title=short.title, title_seconds=head_seconds)
+                                    title=short.title, title_seconds=head_seconds,
+                                    style=_subtitle_style(channel))
             dst = out_dir / f"short_{idx:02d}.mp4"
             media.cut_short(source, dst, start, end, ass=ass)
             short.path = storage.rel(dst)
@@ -1078,3 +1101,208 @@ def build_shorts_job(video_id: int) -> None:
         channel = session.get(Channel, video.channel_id)
         client = client_for(session)
         make_shorts(session, client, video, channel)
+
+
+def _regen_clips(session: Session, client: KieClient, video: Video, channel: Channel,
+                 scene: Scene, prompt: str, count: int, model: str,
+                 clips_dir: Path) -> tuple[list[Path], float, list[str]]:
+    """Генерируем видеоряд одной сцены выбранной моделью.
+
+    Каждый кадр получает свой вариант промпта: одинаковый запрос даёт похожие
+    планы, а сцену нужно закрыть разными кадрами, а не одним и тем же.
+    """
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    resolution = channel.resolution if channel.resolution in ("480p", "720p") else "720p"
+    concurrency = max(1, st.get_int(session, "scene_concurrency", 3))
+    stamp = int(utcnow().timestamp())
+
+    def work(part: int) -> tuple[int, Optional[Path], float, str]:
+        text = prompt if part == 0 else f"{prompt}. Alternative angle {part + 1}"
+        payload = {
+            "prompt": text,
+            "aspect_ratio": channel.aspect_ratio,
+            "resolution": resolution,
+            "duration": int(channel.clip_duration),
+            "generate_audio": False,
+        }
+        try:
+            result = client.run_task(model, payload, timeout=1800, poll=6)
+            urls = extract_urls(result)
+            url = next((u for u in urls if u.split("?")[0].lower().endswith(
+                (".mp4", ".mov", ".webm"))), None) or (urls[0] if urls else None)
+            if not url:
+                raise KieError("в ответе нет ссылки на видео")
+            dest = clips_dir / (f"scene_{scene.id:04d}_r{stamp}_{part:02d}"
+                                f"{storage.guess_ext(url, '.mp4')}")
+            storage.download(url, dest)
+            return part, dest, float(result.get("_credits") or 0), ""
+        except Exception as exc:  # noqa: BLE001 — один кадр не должен ронять пересборку
+            log.warning("Пересборка сцены %s: кадр %s не сгенерирован: %s", scene.id, part, exc)
+            return part, None, 0.0, str(exc)[:300]
+
+    by_part: dict[int, Path] = {}
+    credits = 0.0
+    errors: list[str] = []
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        for part, path, cost, error in pool.map(work, range(count)):
+            credits += cost
+            if path is not None:
+                by_part[part] = path
+            elif error:
+                errors.append(error)
+    # порядок кадров — по номеру части, а не по тому, кто первым ответил
+    return [by_part[p] for p in sorted(by_part)], credits, errors
+
+
+def regen_scene_job(scene_id: int, options: Optional[dict] = None) -> None:
+    """Фоновая задача: пересобрать одну сцену со своим промптом и своей моделью."""
+    options = options or {}
+    with session_scope() as session:
+        scene = session.get(Scene, scene_id)
+        if scene is None:
+            raise RuntimeError(f"сцена {scene_id} не найдена")
+        video_id = scene.video_id
+
+    lock = _video_lock(video_id)
+    if not lock.acquire(blocking=False):
+        raise AlreadyBuilding(
+            f"ролик {video_id} сейчас собирается — дождитесь окончания и повторите")
+    try:
+        _regen_scene_locked(scene_id, options)
+    finally:
+        lock.release()
+
+
+def _regen_scene_locked(scene_id: int, options: dict) -> None:
+    with session_scope() as session:
+        scene = session.get(Scene, scene_id)
+        video = session.get(Video, scene.video_id)
+        channel = session.get(Channel, video.channel_id)
+        client = client_for(session)
+        out_dir = storage.video_dir(channel.slug, video.id)
+        workdir = config.TMP_DIR / f"regen_{scene.id}"
+        shutil.rmtree(workdir, ignore_errors=True)
+        workdir.mkdir(parents=True, exist_ok=True)
+
+        prompt = (options.get("visual_prompt") or scene.visual_prompt or "").strip()
+        narration = (options.get("narration") or scene.narration or "").strip()
+        video_model = (options.get("video_model") or channel.video_model or "").strip()
+        tts_model = (options.get("tts_model") or channel.tts_model or "").strip()
+        voice_id = (options.get("voice_id") or channel.voice_id or "").strip()
+
+        # Озвучку трогаем, только если изменился текст, голос или модель речи —
+        # иначе это лишние деньги и лишнее ожидание.
+        redo_voice = bool(options.get("redo_voice"))
+        if narration != (scene.narration or ""):
+            redo_voice = True
+        if tts_model != (channel.tts_model or "") or voice_id != (channel.voice_id or ""):
+            redo_voice = True
+        if not _scene_audio_ok(scene):
+            redo_voice = True
+
+        scene.visual_prompt = prompt
+        scene.narration = narration
+        scene.status = "regenerating"
+        scene.error = ""
+        session.commit()
+
+        label = f"Сцена {scene.idx + 1}"
+        log_event(session, video.id,
+                  f"{label}: пересборка запущена, модель видео {video_model}"
+                  + (f", озвучка заново ({tts_model})" if redo_voice else ", озвучка прежняя"),
+                  stage="regen")
+
+        credits = 0.0
+        try:
+            if redo_voice:
+                audio_dir = out_dir / "audio"
+                audio_dir.mkdir(parents=True, exist_ok=True)
+                result = tts.synthesize(
+                    client, narration, audio_dir / f"scene_{scene.idx:02d}_r{scene.id}",
+                    model=tts_model, voice_id=voice_id,
+                    stability=channel.voice_stability, similarity=channel.voice_similarity,
+                    speed=channel.voice_speed,
+                    fallback_model=st.get(session, "tts_fallback_model",
+                                          "google/gemini-3-1-flash-tts"),
+                    fallback_voice=st.get(session, "tts_fallback_voice", "Charon"),
+                    allow_fallback=st.get_bool(session, "tts_allow_fallback", True),
+                )
+                _drop_file(scene.audio_path)
+                scene.audio_path = storage.rel(result.path)
+                scene.audio_sec = result.duration
+                credits += result.credits
+                session.commit()
+
+            coverage = max(6, int(getattr(channel, "clip_coverage_sec", 20) or 20))
+            cap = int(getattr(channel, "max_clips_per_scene", 8) or 8)
+            count = int(options.get("clips") or 0) or media.clips_needed(
+                scene.audio_sec or coverage, coverage, cap)
+            count = max(1, min(16, count))
+
+            clips, clip_credits, errors = _regen_clips(
+                session, client, video, channel, scene, prompt, count, video_model,
+                out_dir / "clips")
+            credits += clip_credits
+            if not clips:
+                raise RuntimeError("не удалось сгенерировать ни одного кадра: "
+                                   + ("; ".join(errors[:2]) or "модель не вернула видео"))
+            if errors:
+                log_event(session, video.id,
+                          f"{label}: часть кадров не сгенерировалась ({len(errors)} из {count})",
+                          stage="regen", level="warn")
+
+            for old in _scene_clips(scene):
+                _drop_file(old)
+            scene.clip_paths = json.dumps([storage.rel(c) for c in clips], ensure_ascii=False)
+            scene.clip_sources = json.dumps(["generated"] * len(clips), ensure_ascii=False)
+            scene.clip_path = storage.rel(clips[0])
+            scene.clip_sec = storage.media_duration(clips[0])
+            session.commit()
+
+            # старый кусок удаляем, иначе сборка увидит готовый файл и ничего не сделает
+            _drop_file(scene.piece_path)
+            _drop_file(scene.piece_music_path)
+            scene.piece_path = ""
+            scene.piece_music_path = ""
+            session.commit()
+
+            track_path = None
+            if channel.background_music:
+                track = _background_track(session, video, channel)
+                if track is not None and track.path:
+                    candidate = storage.abspath(track.path)
+                    track_path = candidate if candidate.exists() else None
+
+            size = media.target_size(channel.resolution, channel.aspect_ratio)
+            pieces_dir = out_dir / "scenes"
+            pieces_dir.mkdir(parents=True, exist_ok=True)
+            ok = assemble_scene_piece(session, video, channel, scene, workdir, pieces_dir,
+                                      track_path, size)
+            if not ok:
+                raise RuntimeError("кусок сцены не собрался")
+
+            video.cost_credits = (video.cost_credits or 0) + credits
+            session.commit()
+            log_event(session, video.id,
+                      f"{label}: пересобрана — {scene.piece_sec:.0f} с, кадров {len(clips)}, "
+                      f"{credits:.1f} кредитов",
+                      stage="regen")
+        except Exception as exc:  # noqa: BLE001
+            scene.status = "regen_failed"
+            scene.error = str(exc)[:500]
+            session.commit()
+            log_event(session, video.id, f"{label}: пересборка не удалась — {exc}",
+                      stage="regen", level="error")
+            raise
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _drop_file(rel_path: str) -> None:
+    """Удаляем файл прошлой версии, чтобы на диске не копились неиспользуемые дубли."""
+    if not rel_path:
+        return
+    try:
+        storage.abspath(rel_path).unlink(missing_ok=True)
+    except OSError as exc:
+        log.warning("Не удалось удалить %s: %s", rel_path, exc)

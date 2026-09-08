@@ -225,49 +225,145 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Main,{font},{size},&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,100,100,{spacing},0,3,{outline},0,2,{margin_h},{margin_h},{margin_v},1
-Style: Title,{font},{title_size},&H00FFFFFF,&H000000FF,&H00101010,&HB4000000,-1,0,0,0,100,100,0,0,3,{title_outline},0,8,{margin_h},{margin_h},{title_margin},1
+Style: Main,{font},{size},&H00FFFFFF,&H000000FF,&H00000000,{back},-1,0,0,0,100,100,{spacing},0,{border},{outline},{shadow},2,{margin_h},{margin_h},{margin_v},1
+Style: Title,{font},{title_size},&H00FFFFFF,&H000000FF,&H00000000,{title_back},-1,0,0,0,100,100,0,0,{border},{title_outline},{title_shadow},8,{margin_h},{margin_h},{title_margin},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
+# Оформление субтитров. «Шортсы» — как в популярных вертикальных роликах: крупный
+# жирный текст без плашки, толстая обводка с тенью, короткие реплики и подсветка
+# слова, которое звучит прямо сейчас. «Классический» — прежняя плашка под текстом.
+SUBTITLE_STYLES = {
+    "shorts": "Шортсы — крупный текст, подсветка слова жёлтым",
+    "shorts_green": "Шортсы — подсветка салатовым",
+    "shorts_plain": "Шортсы — без подсветки слова",
+    "classic": "Классический — полупрозрачная плашка под текстом",
+}
+ACCENTS = {
+    "shorts": "&H0000E6FF&",       # ASS хранит цвет как BGR: это насыщенный жёлтый
+    "shorts_green": "&H0080FF80&",
+}
+WHITE = "&H00FFFFFF&"
+
+
+def normalize_style(style: str) -> str:
+    return style if style in SUBTITLE_STYLES else "shorts"
+
+
 # Средняя ширина символа DejaVu Sans относительно кегля — по ней подбираем размер шрифта.
 CHAR_WIDTH_RATIO = 0.55
 
 
-def _style_params(size: tuple[int, int], vertical: bool, font: str) -> tuple[dict, int]:
-    """Единые параметры оформления для всех роликов: кегль от ширины кадра, подложка."""
+def _style_params(size: tuple[int, int], vertical: bool, font: str,
+                  style: str = "shorts") -> tuple[dict, int]:
+    """Параметры оформления. Кегль считается от ШИРИНЫ кадра и числа символов в строке,
+    иначе в вертикальном формате текст вылезает за края."""
     w, h = size
-    chars_per_line = 26 if vertical else 42
+    shorts = style != "classic"
+
+    if shorts:
+        # Короткие реплики и крупный кегль — так подписи читаются с телефона
+        # и не закрывают половину кадра.
+        chars_per_line = 16 if vertical else 30
+        max_share = 0.075 if vertical else 0.085
+    else:
+        chars_per_line = 26 if vertical else 42
+        max_share = 0.06
+
     margin_h = int(w * 0.06)
     usable = w - 2 * margin_h
     font_size = int(usable / (chars_per_line * CHAR_WIDTH_RATIO))
-    font_size = max(20, min(font_size, int(h * 0.06)))
+    font_size = max(20, min(font_size, int(h * max_share)))
     title_size = int(font_size * (1.15 if vertical else 1.0))
-    params = {
-        "w": w, "h": h, "font": font, "size": font_size,
-        "outline": max(6, int(font_size * 0.28)),   # BorderStyle 3 — это ширина подложки
-        "spacing": 0,
-        "margin_h": margin_h,
-        "margin_v": int(h * (0.09 if not vertical else 0.20)),
-        "title_size": title_size,
-        "title_outline": max(8, int(title_size * 0.32)),
-        "title_margin": int(h * (0.05 if not vertical else 0.08)),
-    }
+
+    if shorts:
+        params = {
+            "border": 1,                                  # обводка + тень, без плашки
+            "outline": max(4, int(font_size * 0.14)),
+            "shadow": max(2, int(font_size * 0.06)),
+            "back": "&H90000000",                         # цвет тени
+            "spacing": 0,
+            # подписи стоят в нижней трети, а не у самого края кадра
+            "margin_v": int(h * (0.28 if vertical else 0.12)),
+            "title_outline": max(5, int(title_size * 0.16)),
+            "title_shadow": max(2, int(title_size * 0.07)),
+            "title_back": "&H90000000",
+            "title_margin": int(h * (0.06 if vertical else 0.05)),
+        }
+    else:
+        params = {
+            "border": 3,                                  # BorderStyle 3 — плашка
+            "outline": max(6, int(font_size * 0.28)),
+            "shadow": 0,
+            "back": "&HA0000000",
+            "spacing": 0,
+            "margin_v": int(h * (0.20 if vertical else 0.09)),
+            "title_outline": max(8, int(title_size * 0.32)),
+            "title_shadow": 0,
+            "title_back": "&HB4000000",
+            "title_margin": int(h * (0.08 if vertical else 0.05)),
+        }
+
+    params.update({"w": w, "h": h, "font": font, "size": font_size,
+                   "margin_h": margin_h, "title_size": title_size})
     return params, chars_per_line
+
+
+def word_windows(cue: Cue) -> list[tuple[float, float, int]]:
+    """Раздаём время реплики по словам пропорционально их длине.
+
+    Точных таймингов слов у нас нет — распознавание даёт границы реплик, а слова
+    подставляются из сценария. Пропорция по длине попадает достаточно близко, чтобы
+    подсветка шла в такт речи, и не требует второго прохода Whisper.
+    """
+    words = (cue.text or "").split()
+    if not words:
+        return []
+    span = max(0.15, cue.end - cue.start)
+    weights = [len(word) + 2 for word in words]
+    total = sum(weights) or 1
+    out: list[tuple[float, float, int]] = []
+    cursor = cue.start
+    for i, weight in enumerate(weights):
+        end = cue.end if i == len(words) - 1 else cursor + span * weight / total
+        out.append((cursor, max(end, cursor + 0.05), i))
+        cursor = end
+    return out
+
+
+def _wrap_tokens(plain: list[str], decorated: list[str], width: int,
+                 max_lines: int = 2) -> str:
+    """Перенос по словам с учётом ТОЛЬКО видимой длины — теги оформления не считаем."""
+    lines: list[str] = []
+    cur_plain, cur_dec = "", []
+    for word, token in zip(plain, decorated):
+        if cur_plain and len(cur_plain) + 1 + len(word) > width:
+            lines.append(" ".join(cur_dec))
+            cur_plain, cur_dec = word, [token]
+        else:
+            cur_plain = f"{cur_plain} {word}".strip()
+            cur_dec.append(token)
+    if cur_dec:
+        lines.append(" ".join(cur_dec))
+    return "\\N".join(lines[:max_lines])
 
 
 def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720),
               vertical: bool = False, font: str = "DejaVu Sans",
-              title: str = "", title_seconds: float = 0.0) -> Path:
+              title: str = "", title_seconds: float = 0.0,
+              style: str = "shorts") -> Path:
     """ASS-субтитры для вшивания.
 
-    Кегль считается от ШИРИНЫ кадра и числа символов в строке, иначе в вертикальном
-    формате текст вылезает за края. Под текстом рисуется полупрозрачная подложка
-    (BorderStyle 3), чтобы буквы читались на любом фоне.
+    В стиле «шортсы» каждое слово получает свой кадр показа: реплика висит целиком,
+    а звучащее слово подсвечивается акцентным цветом — так подписи читаются в такт
+    речи, как в популярных вертикальных роликах. В классическом стиле реплика
+    показывается целиком на полупрозрачной плашке.
     """
-    params, chars_per_line = _style_params(size, vertical, font)
+    style = normalize_style(style)
+    params, chars_per_line = _style_params(size, vertical, font, style)
+    accent = ACCENTS.get(style, "")
     lines = [ASS_HEADER.format(**params)]
 
     if title:
@@ -280,12 +376,30 @@ def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720)
     # Реплика длиннее двух строк не влезает в кадр — режем её на несколько,
     # распределяя время пропорционально длине кусков.
     for cue in split_cues_to_fit(cues, chars_per_line * 2):
-        text = wrap_lines(cue.text, chars_per_line, max_lines=2)
-        if not text:
+        words = (cue.text or "").split()
+        if not words:
             continue
-        lines.append(
-            f"Dialogue: 0,{_fmt_ass_ts(cue.start)},{_fmt_ass_ts(cue.end)},Main,,0,0,0,,{text}"
-        )
+
+        if not accent:
+            text = wrap_lines(cue.text, chars_per_line, max_lines=2)
+            if text:
+                lines.append(f"Dialogue: 0,{_fmt_ass_ts(cue.start)},"
+                             f"{_fmt_ass_ts(cue.end)},Main,,0,0,0,,{text}")
+            continue
+
+        for start, end, active in word_windows(cue):
+            decorated = [
+                f"{{\\c{accent}}}{word}{{\\c{WHITE}}}" if i == active else word
+                for i, word in enumerate(words)
+            ]
+            text = _wrap_tokens(words, decorated, chars_per_line, max_lines=2)
+            if not text:
+                continue
+            # мягкое появление только на первом слове реплики, иначе текст мигал бы
+            prefix = "{\\fad(90,0)}" if active == 0 else ""
+            lines.append(f"Dialogue: 0,{_fmt_ass_ts(start)},{_fmt_ass_ts(end)},"
+                         f"Main,,0,0,0,,{prefix}{text}")
+
     dst.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return dst
 
