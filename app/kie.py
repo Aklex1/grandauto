@@ -194,6 +194,51 @@ class KieClient:
         return url
 
 
+# Разные видеомодели KIE ждут РАЗНЫЕ наборы полей, и схему API не публикует.
+# Ниже — то, что установлено проверкой обязательных полей на живом API.
+PIXVERSE_QUALITY = ("360p", "540p", "720p", "1080p")
+# Документация pixverse называет 5 и 8 секунд, но проверка на живом API показала,
+# что проходит и 3 — значит длительность не из фиксированного набора. Поэтому не
+# округляем к ближайшему из двух значений (это молча ломало бы настройку канала),
+# а только не даём выйти за верхнюю границу.
+PIXVERSE_MAX_DURATION = 8
+
+
+def _pixverse_quality(resolution: str) -> str:
+    """У нас разрешения 480p/720p/1080p, у pixverse — 360p/540p/720p/1080p."""
+    if resolution in PIXVERSE_QUALITY:
+        return resolution
+    return {"480p": "540p"}.get(resolution, "720p")
+
+
+def video_input(model: str, *, prompt: str, aspect_ratio: str, resolution: str,
+                duration: int) -> dict:
+    """Поля запроса на генерацию видео под конкретное семейство моделей.
+
+    seedance принимает resolution и generate_audio, а pixverse вместо них требует
+    quality и не знает про звук; общий набор полей давал у него «This field is
+    required» и сцена падала целиком.
+    """
+    low = (model or "").lower()
+
+    if "pixverse" in low:
+        return {
+            "prompt": prompt,
+            "aspect_ratio": aspect_ratio,
+            "duration": max(1, min(PIXVERSE_MAX_DURATION, int(duration))),
+            "quality": _pixverse_quality(resolution),
+        }
+
+    # seedance и совместимые с ним — набор, проверенный в работе
+    return {
+        "prompt": prompt,
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+        "duration": int(duration),
+        "generate_audio": False,
+    }
+
+
 def parse_json_block(text: str):
     """Достаём JSON из ответа модели, даже если он в ```-блоке или с мусором вокруг."""
     if text is None:

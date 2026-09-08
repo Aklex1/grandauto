@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import config, footage, media, music, prompts, storage, subtitles, tts
 from .db import session_scope
-from .kie import KieClient, KieError, extract_urls
+from .kie import KieClient, KieError, extract_urls, video_input
 from .models import (Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
                      Scene, Short, Video, utcnow)
 from . import settings_store as st
@@ -259,13 +259,9 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
         ready = library_clips.get((scene_id, part))
         if ready is not None:
             return scene_id, part, ready, 0.0, "", "library"
-        payload = {
-            "prompt": prompt,
-            "aspect_ratio": channel.aspect_ratio,
-            "resolution": resolution,
-            "duration": int(channel.clip_duration),
-            "generate_audio": False,
-        }
+        payload = video_input(channel.video_model, prompt=prompt,
+                              aspect_ratio=channel.aspect_ratio, resolution=resolution,
+                              duration=int(channel.clip_duration))
         try:
             result = client.run_task(channel.video_model, payload, timeout=1800, poll=6)
             urls = extract_urls(result)
@@ -744,13 +740,12 @@ def _bridge_clip(session: Session, client: KieClient, video: Video, channel: Cha
             except Exception as exc:  # noqa: BLE001
                 log.warning("Фрагмент библиотеки для связки не вырезан: %s", exc)
 
-    payload = {
-        "prompt": bridge.visual_prompt or bridge.narration[:200],
-        "aspect_ratio": channel.aspect_ratio,
-        "resolution": channel.resolution if channel.resolution in ("480p", "720p") else "720p",
-        "duration": int(channel.clip_duration),
-        "generate_audio": False,
-    }
+    payload = video_input(
+        channel.video_model,
+        prompt=bridge.visual_prompt or bridge.narration[:200],
+        aspect_ratio=channel.aspect_ratio,
+        resolution=channel.resolution if channel.resolution in ("480p", "720p") else "720p",
+        duration=int(channel.clip_duration))
     try:
         result = client.run_task(channel.video_model, payload, timeout=1800, poll=6)
         urls = extract_urls(result)
@@ -1238,13 +1233,8 @@ def _regen_clips(session: Session, client: KieClient, video: Video, channel: Cha
 
     def work(part: int) -> tuple[int, Optional[Path], float, str]:
         text = prompt if part == 0 else f"{prompt}. Alternative angle {part + 1}"
-        payload = {
-            "prompt": text,
-            "aspect_ratio": channel.aspect_ratio,
-            "resolution": resolution,
-            "duration": int(channel.clip_duration),
-            "generate_audio": False,
-        }
+        payload = video_input(model, prompt=text, aspect_ratio=channel.aspect_ratio,
+                              resolution=resolution, duration=int(channel.clip_duration))
         try:
             result = client.run_task(model, payload, timeout=1800, poll=6)
             urls = extract_urls(result)
