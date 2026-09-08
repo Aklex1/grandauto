@@ -19,13 +19,28 @@ IMAGE_HINTS = ("image", "banana", "seedream", "flux", "imagen", "ideogram", "qwe
 TTS_HINTS = ("tts", "text-to-speech", "speech", "elevenlabs", "audio")
 CHAT_HINTS = ("gpt", "claude", "gemini", "chat", "grok-4", "codex", "deepseek", "qwen3-max")
 
+# Модели, которым на вход нужна готовая картинка или видео. Конвейер генерирует
+# видеоряд из текста, подавать им нечего — они всегда отвечают «This field is
+# required», поэтому в списке выбора видеомодели им не место.
+NEEDS_INPUT_MEDIA = (
+    "image-to-video", "img2video", "i2v", "video-to-video", "reference-to-video",
+    "speech-to-video", "motion-control", "transformation", "extend", "upscal",
+    "avatar", "lip", "-edit", "edit-", "flf", "animate",
+)
+
+
+def needs_input_media(path: str) -> bool:
+    low = (path or "").lower()
+    return any(marker in low for marker in NEEDS_INPUT_MEDIA)
+
 
 def classify(path: str) -> str:
     low = path.lower()
     if any(h in low for h in TTS_HINTS):
         return "tts"
     if any(h in low for h in VIDEO_HINTS):
-        return "video"
+        # выделяем отдельным типом, чтобы не предлагать их для генерации из текста
+        return "video_input" if needs_input_media(path) else "video"
     if any(h in low for h in IMAGE_HINTS):
         return "image"
     if any(h in low for h in CHAT_HINTS):
@@ -83,6 +98,25 @@ def sync_models() -> int:
         session.commit()
         log.info("Список моделей KIE обновлён: %s", len(paths))
         return len(paths)
+
+
+def reclassify_models() -> int:
+    """Пересчитываем тип у сохранённых моделей.
+
+    Нужно после обновления правил разбора: иначе в выпадающем списке остались бы
+    модели, выбор которых гарантированно роняет сборку. Запросов к KIE не делает.
+    """
+    with session_scope() as session:
+        changed = 0
+        for row in session.execute(select(ModelPath)).scalars():
+            kind = classify(row.path)
+            if row.kind != kind:
+                row.kind = kind
+                changed += 1
+        if changed:
+            session.commit()
+            log.info("Типы моделей пересчитаны: изменено %s", changed)
+        return changed
 
 
 def sync_credits() -> float:

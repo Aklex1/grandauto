@@ -62,6 +62,12 @@ def on_startup() -> None:
     info = bootstrap.run()
     if info.get("admin_password"):
         log.warning("СГЕНЕРИРОВАН ПАРОЛЬ АДМИНИСТРАТОРА: %s", info["admin_password"])
+    # правила разбора моделей меняются вместе с кодом — пересчитываем типы у
+    # сохранённых записей, иначе в списке останутся модели, которые не заработают
+    try:
+        sync.reclassify_models()
+    except Exception:  # noqa: BLE001 — справочник не должен мешать старту
+        log.exception("Не удалось пересчитать типы моделей")
     queue.recover_stuck_jobs()
     queue.start_workers()
     scheduler.start()

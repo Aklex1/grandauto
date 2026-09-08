@@ -425,6 +425,10 @@
         {{ model_select('Модель видео', 'video_model', 'video', channel.video_model) }}
         {{ model_select('Модель обложек', 'image_model', 'image', channel.image_model) }}
         {{ model_select('Модель озвучки', 'tts_model', 'tts', channel.tts_model) }}
+        <p class="small muted">В списке видеомоделей только те, что генерируют из текста.
+          Модели вида image-to-video, reference-to-video, avatar и upscale скрыты: им нужна
+          готовая картинка или видео на входе, а конвейер строит кадр по описанию — выбор
+          такой модели гарантированно ронял сборку.</p>
         <p class="small muted">Список тянется из KIE. Справочник обновлён:
           {{ settings.models_updated_at[:16].replace('T', ' ') or 'ни разу' }} —
           всего {{ models|length }} моделей.</p>
