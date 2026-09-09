@@ -116,29 +116,62 @@ def thumbnail(channel_name: str, video_title: str, book_title: str, thumb_style:
     )
 
 
+# Планы обложек. Раньше промпт жёстко требовал «expressive human face» и
+# «dramatic close-up», поэтому на всех обложках стоял мужчина в похожем ракурсе.
+# Здесь плана двенадцать, и сцена берёт свой по номеру — в одном ролике
+# композиции не повторяются.
+COVER_SHOTS = (
+    "tight portrait of a face, eyes toward the camera, shallow depth of field",
+    "wide landscape at golden hour with one small lone figure far away",
+    "close macro detail of an object that carries the idea — a worn tool, a book, a key",
+    "silhouette of a figure against a bright window or open sky, backlit",
+    "overhead top-down view of a desk or table arranged for the theme",
+    "wide interior with hard side light and long shadows, figure small in the frame",
+    "hands in action, close crop, no face visible",
+    "empty street or path leading away into distance, early morning light",
+    "figure seen from behind, shoulders and head, looking out at something",
+    "still life of textures — stone, paper, metal, fabric — arranged simply",
+    "wide shot of nature that matches the mood: sea, mountains, forest, storm",
+    "low angle looking up at architecture or a figure against the sky",
+)
+
+# Палитры — чтобы обложки одного канала не сливались в одно цветовое пятно.
+COVER_PALETTES = (
+    "muted teal and warm sand",
+    "deep blue with a single amber accent",
+    "warm earth tones, ochre and rust",
+    "cool grey-green with soft white light",
+    "dusty rose and charcoal",
+    "olive and cream with low contrast",
+)
+
+
 def short_cover(channel_name: str, topic: str, heading: str, narration: str,
-                thumb_style: str = "") -> str:
+                thumb_style: str = "", variant: int = 0) -> str:
     """Промпт обложки вертикального шортса.
 
     Текст модели не заказываем: кириллицу генераторы изображений рисуют плохо,
     заголовок накладывается своим шрифтом поверх. Зато просим оставить СВЕРХУ
     место под него и держать композицию в нижних двух третях кадра — заголовок
     на обложке идёт по верху.
+
+    variant задаёт план и палитру. Без него все обложки канала выходили
+    портретом мужчины в помещении: план был зашит в промпт одной строкой.
     """
-    # Стиль канала здесь намеренно НЕ используется как есть: у этих каналов он
-    # тёмный и кинематографичный, а обложке нужна яркость, иначе в ленте её не
-    # видно. Стиль канала идёт добавкой к яркой основе, а не вместо неё.
-    style = ("bold high-contrast mobile thumbnail, vivid saturated colors, bright key light, "
-             "punchy and eye-catching, dramatic close-up") + (f", {thumb_style}" if thumb_style else "")
+    shot = COVER_SHOTS[variant % len(COVER_SHOTS)]
+    palette = COVER_PALETTES[(variant // len(COVER_SHOTS) + variant) % len(COVER_PALETTES)]
     hook = (narration or "").strip().replace("\n", " ")[:180]
+    extra = f" {thumb_style}." if thumb_style else ""
     return (
         f"Vertical 9:16 cover image for a short video. "
         f"Topic: {heading} (channel: {channel_name}, subject: {topic}). "
-        f"Scene mood: {hook}. {style}. "
-        f"The image must be BRIGHT and colorful — not dark, not moody, not desaturated. "
-        f"Strong contrast, expressive human face, "
-        f"sharp focus, shallow depth of field, dramatic rim light, "
-        f"subject centered in the lower two thirds, clean uncluttered top third "
+        f"Scene mood: {hook}. "
+        f"Composition: {shot}. "
+        f"Color palette: {palette}. "
+        f"Clear and readable on a small screen: good contrast between subject and "
+        f"background, natural rich colors — NOT neon, NOT oversaturated, NOT washed out. "
+        f"Soft directional light, filmic and restrained.{extra} "
+        f"Main subject in the lower two thirds, clean uncluttered top third "
         f"left empty for a headline. "
         f"No text, no letters, no words, no captions, no watermark, no logo, no borders."
     )

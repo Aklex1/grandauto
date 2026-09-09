@@ -626,8 +626,11 @@ def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
     raw: Optional[Path] = None
     try:
         client = client_for(session)
+        # Номер сцены задаёт план и палитру: у соседних шортсов ролика обложки
+        # заметно разные, а не двенадцать портретов подряд.
         prompt = prompts.short_cover(channel.name, channel.topic, scene.heading,
-                                     scene.narration, channel.thumb_style)
+                                     scene.narration, channel.thumb_style,
+                                     variant=scene.idx)
         result = client.run_task(channel.image_model, {
             "prompt": prompt,
             "aspect_ratio": "9:16",
@@ -868,18 +871,20 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
                 workdir, signature=channel.name)
         else:
             still = workdir / f"still_{scene.idx:02d}.mp4"
-            # Полоса под титрами в верхней трети: и на сгенерированном кадре, и на
-            # лупе фон непредсказуем, а поверх ровной заливки текст читается всегда.
-            band = dict(band_top=0.06, band_height=0.30)
             loop = loops.for_format(session, fmt)
             if loop is not None:
                 # Есть настоящий зацикленный клип — берём его вместо дорисованного
                 # движения: вода в нём действительно течёт, а не имитируется кропом.
+                # Полосу под титры здесь НЕ рисуем: на живом видео чёрный
+                # прямоугольник в треть экрана закрывает то, за что и платили.
                 media.build_loop_scene(storage.abspath(loop.path), audio, still,
-                                       media.VERTICAL, duration, workdir, **band)
+                                       media.VERTICAL, duration, workdir)
             else:
+                # На сгенерированном кадре фон непредсказуем, поэтому под титрами
+                # оставляем ровную заливку — иначе текст теряется на светлых пятнах.
                 media.build_still_scene(background, audio, still, media.VERTICAL,
-                                        duration, workdir, motion=fmt, **band)
+                                        duration, workdir, motion=fmt,
+                                        band_top=0.06, band_height=0.30)
             ass = workdir / f"short_{scene.idx:02d}.ass"
             head_seconds = min(4.5, max(2.5, duration * 0.18))
             subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
