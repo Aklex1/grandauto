@@ -208,6 +208,9 @@ class Scene(Base):
     clip_paths: Mapped[str] = mapped_column(Text, default="")
     clip_sources: Mapped[str] = mapped_column(Text, default="")  # generated | library
     audio_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    # Сколько раз сцену переозвучивали из-за обрыва на полуслове. Ограничитель:
+    # если и переозвучка вышла резкой, повторять бесконечно нельзя — это деньги.
+    voice_retries: Mapped[int] = mapped_column(Integer, default=0)
     clip_sec: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String(24), default="pending")
     error: Mapped[str] = mapped_column(Text, default="")

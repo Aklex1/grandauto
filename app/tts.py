@@ -159,6 +159,44 @@ def trim_to_sentence(text: str) -> str:
     return text[:cut + 1].strip()
 
 
+# Файл озвучки, обрезанный провайдером, кончается прямо на звуке: последнее слово
+# рубится посреди гласной. Нормальная фраза затухает и оставляет тишину. Поэтому
+# обрыв ловится не по длительности (недоговорённые полтора слова в минутной сцене
+# в неё укладываются), а по громкости самого хвоста файла.
+# Окно намеренно короткое: на 160 мс под него попадает и нормальное затухание
+# фразы, и получается ложная тревога. На 40 мс разделение чистое — измерено на
+# обрыве (-21 дБ), затухании за 120 мс (-35 дБ) и тишине (-91 дБ).
+ABRUPT_WINDOW = 0.04
+ABRUPT_DB = -30.0         # громче этого хвост быть не должен
+
+
+def _parse_mean_db(text: str) -> float:
+    for line in (text or "").splitlines():
+        if "mean_volume" in line:
+            try:
+                return float(line.split(":")[-1].replace("dB", "").strip())
+            except ValueError:
+                return -999.0
+    return -999.0
+
+
+def ends_abruptly(path: Path) -> bool:
+    """Обрывается ли озвучка на полуслове."""
+    import subprocess
+
+    duration = storage.media_duration(path)
+    if duration <= ABRUPT_WINDOW * 2:
+        return False
+    proc = subprocess.run([config.FFMPEG, "-hide_banner", "-nostats",
+                           "-ss", f"{duration - ABRUPT_WINDOW:.3f}", "-i", str(path),
+                           "-af", "volumedetect", "-f", "null", "-"],
+                          capture_output=True, text=True, timeout=180)
+    tail = _parse_mean_db(proc.stderr)
+    if tail <= -900:
+        return False
+    return tail > ABRUPT_DB
+
+
 def expected_seconds(text: str, speed: float = 1.0) -> float:
     return len((text or "").strip()) / (CHARS_PER_SECOND * max(speed, 0.5))
 
@@ -259,6 +297,11 @@ def _synthesize_one(client: KieClient, text: str, dest: Path, *, model: str, voi
                 path.unlink(missing_ok=True)
                 raise TTSError(f"{tts_model}: озвучка {duration:.0f} с при тексте на "
                                f"~{want:.0f} с — текст озвучен не полностью")
+            # Недоговорённые полтора слова в длину не заметны, поэтому смотрим ещё
+            # и на сам хвост файла: обрезанная фраза кончается на полной громкости.
+            if ends_abruptly(path):
+                path.unlink(missing_ok=True)
+                raise TTSError(f"{tts_model}: озвучка обрывается на полуслове")
             _breaker_ok(tts_model)
             return TTSResult(path=path, duration=duration,
                              credits=float(result.get("_credits") or 0), provider=provider)

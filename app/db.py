@@ -72,6 +72,10 @@ def ensure_columns() -> list[str]:
     """Простая миграция: добавляет колонки, появившиеся в моделях после создания таблиц."""
     from sqlalchemy import inspect, text
 
+    # Без импорта моделей Base.metadata пуст, и функция молча ничего не мигрирует.
+    # init_db импортирует их сам, но вызывать ensure_columns можно и отдельно.
+    from . import models  # noqa: F401
+
     inspector = inspect(engine)
     added: list[str] = []
     existing_tables = set(inspector.get_table_names())

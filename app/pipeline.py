@@ -187,6 +187,34 @@ def _voice_text(session: Session, video: Video, scene_idx: int, text: str) -> st
     return text
 
 
+def _audio_broken(session: Session, video: Video, scene: Scene) -> bool:
+    """Обрывается ли готовая озвучка сцены на полуслове.
+
+    Ловим именно хвост файла: недоговорённые полтора слова в минутной сцене в
+    длительность укладываются, и проверкой на «озвучка короче текста» такое не
+    поймать — а на слух обрыв слышен сразу.
+    """
+    path = storage.abspath(scene.audio_path)
+    try:
+        if not tts.ends_abruptly(path):
+            return False
+    except Exception as exc:  # noqa: BLE001 — не смогли измерить, значит не трогаем
+        log.warning("Сцена %s: озвучку не проверить: %s", scene.idx, exc)
+        return False
+    if (scene.voice_retries or 0) >= MAX_VOICE_RETRIES:
+        # Повтор уже был и тоже вышел резким. Возможно, дело не в провайдере, а в
+        # самой фразе — переозвучивать по кругу значит жечь деньги впустую.
+        log_event(session, video.id,
+                  f"Сцена {scene.idx + 1}: озвучка снова обрывается на полуслове. "
+                  f"Переозвучку больше не повторяю — проверьте текст сцены",
+                  stage="voice", level="warn")
+        return False
+    log_event(session, video.id,
+              f"Сцена {scene.idx + 1}: озвучка обрывается на полуслове — переозвучиваю",
+              stage="voice", level="warn")
+    return True
+
+
 def _check_audio_length(session: Session, video: Video, scene_idx: int, text: str,
                         duration: float) -> None:
     """Предупреждаем, если озвучка заметно короче текста — значит её обрезало."""
@@ -207,6 +235,17 @@ def voice_scenes(session: Session, client: KieClient, video: Video, channel: Cha
     fallback_model = st.get(session, "tts_fallback_model", "google/gemini-3-1-flash-tts")
     fallback_voice = st.get(session, "tts_fallback_voice", "Charon")
     concurrency = max(1, st.get_int(session, "scene_concurrency", 3))
+
+    # Уже записанная озвучка проверяется на обрыв. Иначе файл, обрезанный
+    # провайдером ещё до появления нарезки по предложениям, живёт вечно: годность
+    # озвучки определялась наличием файла на диске, и переозвучить её было нечем.
+    for scene in video.scenes:
+        if _scene_audio_ok(scene) and _audio_broken(session, video, scene):
+            _drop_file(scene.audio_path)
+            scene.audio_path = ""
+            scene.audio_sec = 0.0
+            scene.voice_retries = (scene.voice_retries or 0) + 1
+    session.commit()
 
     # Подрезанный текст записываем в саму сцену, а не только отправляем в синтез:
     # из scene.narration потом строятся субтитры, и разойдись они с озвучкой —
@@ -643,6 +682,11 @@ STILL_FORMATS = {
 # Хвост в конце шортса. Раньше ролик кончался ровно на последнем слове, и обрыв
 # резал слух. Теперь после речи ещё несколько секунд идёт видеоряд с фоновой
 # музыкой, которая за это же время уводится в тишину.
+# Сколько раз переозвучивать сцену из-за обрыва. Детектор может ошибиться, а
+# каждая переозвучка стоит денег, поэтому повтор ровно один: если и он вышел
+# резким, дальше только предупреждаем.
+MAX_VOICE_RETRIES = 1
+
 SHORT_OUTRO_SECONDS = 4.0
 # Небольшой запас поверх хвоста, чтобы последнее слово не упиралось в стык.
 SHORT_TAIL_SECONDS = 0.45
@@ -762,6 +806,16 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     fmt = normalize_format(scene.short_format or "full")
     audio = storage.abspath(scene.audio_path) if scene.audio_path else None
     outro = _outro_seconds(session, channel)
+
+    if audio and audio.exists():
+        try:
+            if tts.ends_abruptly(audio):
+                log_event(session, video.id,
+                          f"Сцена {scene.idx + 1}: озвучка обрывается на полуслове — "
+                          f"пересоберите сцену с переозвучкой",
+                          stage="assemble", level="warn")
+        except Exception:  # noqa: BLE001 — предупреждение вторично
+            pass
 
     if fmt != "full" and audio and audio.exists():
         # Форматы из одного кадра строятся ПОВЕРХ озвучки, поэтому длительность
@@ -1618,6 +1672,11 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
             redo_voice = True
         if not _scene_audio_ok(scene):
             redo_voice = True
+        elif not redo_voice and _audio_broken(session, video, scene):
+            # Обрезанную озвучку пересобирать поверх бессмысленно: шортс снова
+            # выйдет с оборванным словом в конце.
+            redo_voice = True
+            scene.voice_retries = (scene.voice_retries or 0) + 1
 
         if options.get("only_short"):
             scene.short_title = short_title
