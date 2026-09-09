@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import storage
+from . import config, storage
 from .kie import KieClient, KieError, extract_urls
 
 log = logging.getLogger("cf.tts")
@@ -80,6 +80,89 @@ GEMINI_STYLES = ["Empathetic", "Newscaster", "Vocal Smile", "Deadpan", "Promo/Hy
 GEMINI_PACES = ["Natural", "Rapid Fire", "The Drift", "Staccato"]
 
 
+# Провайдеры молча обрезают длинный текст по своему внутреннему лимиту: ответ
+# приходит успешный, аудио целое, но фраза заканчивается на полуслове. Поэтому
+# длинный текст режем сами по границам предложений и склеиваем — так обрезать
+# нечего. Лимит взят заметно ниже известных провайдерских.
+CHUNK_CHARS = 600
+
+# Русская речь диктора — примерно 15 знаков в секунду. Точность не нужна: порог
+# служит только для того, чтобы заметить обрыв, а не измерить темп.
+CHARS_PER_SECOND = 15.0
+
+# Ниже этой доли ожидаемой длительности считаем озвучку оборванной. Запас
+# большой: быстрый голос на speed=1.2 законно укладывается в 0.75 ожидаемого.
+SHORT_AUDIO_RATIO = 0.6
+
+SENTENCE_END = ".!?…"
+
+# Пауза между склеенными кусками, чтобы стык не звучал скороговоркой.
+CHUNK_GAP = 0.28
+
+
+def split_for_tts(text: str, limit: int = CHUNK_CHARS) -> list[str]:
+    """Режем текст на куски по границам предложений, не разрывая слова."""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return [text] if text else []
+
+    # Сначала предложения, затем — если предложение само длиннее лимита — слова.
+    sentences: list[str] = []
+    current = ""
+    for word in text.split():
+        current = f"{current} {word}".strip()
+        if word[-1] in SENTENCE_END:
+            sentences.append(current)
+            current = ""
+    if current:
+        sentences.append(current)
+
+    chunks: list[str] = []
+    buf = ""
+    for sentence in sentences:
+        while len(sentence) > limit:
+            # Предложение без точек длиннее лимита — отрезаем по последнему пробелу.
+            cut = sentence.rfind(" ", 0, limit)
+            if cut <= 0:
+                cut = limit
+            head, sentence = sentence[:cut].strip(), sentence[cut:].strip()
+            if buf:
+                chunks.append(buf)
+                buf = ""
+            chunks.append(head)
+        if not sentence:
+            continue
+        if buf and len(buf) + 1 + len(sentence) > limit:
+            chunks.append(buf)
+            buf = sentence
+        else:
+            buf = f"{buf} {sentence}".strip()
+    if buf:
+        chunks.append(buf)
+    return [c for c in chunks if c]
+
+
+def trim_to_sentence(text: str) -> str:
+    """Обрезаем хвост, оборванный на полуслове, до последнего целого предложения.
+
+    Модель, упёршаяся в лимит ответа, отдаёт сцену без конца фразы. Озвучить
+    такой текст — значит выпустить шортс, где голос обрывается ни на чём.
+    Лучше закончить на предыдущем предложении, чем на середине слова.
+    """
+    text = (text or "").strip()
+    if not text or text[-1] in SENTENCE_END:
+        return text
+    cut = max(text.rfind(ch) for ch in SENTENCE_END)
+    # Если целых предложений почти не остаётся, обрезать нечего — вернём как есть.
+    if cut <= 0 or cut < len(text) * 0.6:
+        return text
+    return text[:cut + 1].strip()
+
+
+def expected_seconds(text: str, speed: float = 1.0) -> float:
+    return len((text or "").strip()) / (CHARS_PER_SECOND * max(speed, 0.5))
+
+
 @dataclass
 class TTSResult:
     path: Path
@@ -127,17 +210,11 @@ def _gemini_payload(text: str, voice_name: str, *, style: str, pace: str, profil
     }
 
 
-def synthesize(client: KieClient, text: str, dest: Path, *, model: str, voice_id: str,
-               stability: float = 0.45, similarity: float = 0.8, speed: float = 1.0,
-               fallback_model: str = "google/gemini-3-1-flash-tts",
-               fallback_voice: str = "Charon",
-               voice_profile: str = "Спокойный уверенный голос рассказчика, русский язык",
-               allow_fallback: bool = True) -> TTSResult:
-    """Озвучивает текст. При ошибке основного провайдера переключается на запасной."""
-    text = (text or "").strip()
-    if not text:
-        raise TTSError("пустой текст для озвучки")
-
+def _synthesize_one(client: KieClient, text: str, dest: Path, *, model: str, voice_id: str,
+                    stability: float, similarity: float, speed: float,
+                    fallback_model: str, fallback_voice: str,
+                    voice_profile: str, allow_fallback: bool) -> TTSResult:
+    """Один кусок текста. При ошибке основного провайдера переключается на запасной."""
     attempts: list[tuple[str, dict, str]] = []
     if model in ELEVEN_MODELS:
         attempts.append((model, _eleven_payload(text, voice_id, stability=stability,
@@ -174,6 +251,14 @@ def synthesize(client: KieClient, text: str, dest: Path, *, model: str, voice_id
             duration = storage.media_duration(path)
             if duration <= 0:
                 raise TTSError(f"{tts_model}: скачан пустой аудиофайл")
+            # Провайдер мог отдать успешный ответ, озвучив только начало текста.
+            # Считаем это отказом: пусть отработает запасной, а не выйдет шортс
+            # с голосом, оборванным на полуслове.
+            want = expected_seconds(text, speed)
+            if want >= 3 and duration < want * SHORT_AUDIO_RATIO:
+                path.unlink(missing_ok=True)
+                raise TTSError(f"{tts_model}: озвучка {duration:.0f} с при тексте на "
+                               f"~{want:.0f} с — текст озвучен не полностью")
             _breaker_ok(tts_model)
             return TTSResult(path=path, duration=duration,
                              credits=float(result.get("_credits") or 0), provider=provider)
@@ -183,3 +268,81 @@ def synthesize(client: KieClient, text: str, dest: Path, *, model: str, voice_id
             errors.append(f"{tts_model}: {exc}")
 
     raise TTSError("Озвучка не удалась. " + " | ".join(errors))
+
+
+def _concat_audio(parts: list[Path], dest: Path) -> Path:
+    """Склейка кусков озвучки с короткой паузой на стыках."""
+    if not parts:
+        raise TTSError("нечего склеивать")
+
+    args: list[str] = []
+    for part in parts:
+        args += ["-i", str(part)]
+    # Тишина для каждого стыка отдельным входом: один и тот же поток фильтр
+    # потребить дважды не может.
+    for _ in range(len(parts) - 1):
+        args += ["-f", "lavfi", "-t", f"{CHUNK_GAP}", "-i", "anullsrc=r=44100:cl=mono"]
+
+    fmt = "aformat=sample_rates=44100:channel_layouts=mono"
+    chain = "".join(f"[{i}:a]{fmt}[a{i}];" for i in range(len(parts)))
+    chain += "".join(f"[{len(parts) + i}:a]{fmt}[g{i}];" for i in range(len(parts) - 1))
+
+    order = ""
+    for i in range(len(parts)):
+        if i:
+            order += f"[g{i - 1}]"
+        order += f"[a{i}]"
+    inputs = len(parts) * 2 - 1
+    chain += f"{order}concat=n={inputs}:v=0:a=1[out]"
+
+    storage.run_ff([config.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *args,
+                    "-filter_complex", chain, "-map", "[out]",
+                    "-c:a", "libmp3lame", "-q:a", "2", str(dest)], timeout=900)
+    return dest
+
+
+def synthesize(client: KieClient, text: str, dest: Path, *, model: str, voice_id: str,
+               stability: float = 0.45, similarity: float = 0.8, speed: float = 1.0,
+               fallback_model: str = "google/gemini-3-1-flash-tts",
+               fallback_voice: str = "Charon",
+               voice_profile: str = "Спокойный уверенный голос рассказчика, русский язык",
+               allow_fallback: bool = True) -> TTSResult:
+    """Озвучивает текст целиком.
+
+    Длинный текст режется по предложениям и озвучивается кусками: провайдеры
+    молча обрезают всё, что длиннее их внутреннего лимита, и до этого голос
+    обрывался на полуслове в середине сцены.
+    """
+    text = (text or "").strip()
+    if not text:
+        raise TTSError("пустой текст для озвучки")
+
+    common = dict(model=model, voice_id=voice_id, stability=stability, similarity=similarity,
+                  speed=speed, fallback_model=fallback_model, fallback_voice=fallback_voice,
+                  voice_profile=voice_profile, allow_fallback=allow_fallback)
+
+    chunks = split_for_tts(text)
+    if len(chunks) <= 1:
+        return _synthesize_one(client, text, dest, **common)
+
+    log.info("Текст на %d знаков озвучиваем %d кусками", len(text), len(chunks))
+    parts: list[Path] = []
+    duration = credits = 0.0
+    provider = ""
+    try:
+        for i, chunk in enumerate(chunks):
+            piece = _synthesize_one(client, chunk, dest.with_name(f"{dest.stem}_p{i:02d}"),
+                                    **common)
+            parts.append(piece.path)
+            duration += piece.duration
+            credits += piece.credits
+            provider = provider or piece.provider
+        final = dest.with_suffix(".mp3")
+        _concat_audio(parts, final)
+        total = storage.media_duration(final)
+        if total <= 0:
+            raise TTSError("склейка кусков озвучки дала пустой файл")
+        return TTSResult(path=final, duration=total, credits=credits, provider=provider)
+    finally:
+        for part in parts:
+            part.unlink(missing_ok=True)

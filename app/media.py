@@ -5,7 +5,7 @@ import logging
 import math
 from pathlib import Path
 
-from . import config, storage
+from . import config, fonts, storage
 
 log = logging.getLogger("cf.media")
 
@@ -281,10 +281,6 @@ def wrap_headline(text: str, width: int = 18, max_lines: int = 3) -> list[str]:
     return lines[:max_lines]
 
 
-# Средняя ширина прописной буквы жирного шрифта относительно кегля. Взята с запасом:
-# у кириллических прописных DejaVu Sans Bold широкие Ж, Ш, Щ, М доходят до 0.87 em,
-# и заниженная оценка выносила заголовок за края кадра.
-CAPS_WIDTH_RATIO = 0.80
 HEADLINE_CHARS = 14
 
 
@@ -303,12 +299,16 @@ def make_thumbnail(src: Path, dst: Path, size: tuple[int, int] = (1280, 720),
                           max_lines=3) if headline else []
     if lines and font:
         usable = w * 0.90
-        font_size = int(usable / (HEADLINE_CHARS * CAPS_WIDTH_RATIO))
-        font_size = max(24, min(font_size, int(h * 0.13)))
+        # Кегль подбираем по реальным ширинам глифов: раньше он считался по
+        # средней доле кегля на знак, и заголовок из широких Ж, Ш, М вылезал.
+        # Ширина строки линейна по кеглю, поэтому хватает одного измерения.
+        per_unit = max(fonts.text_width(line, font, 100) for line in lines) / 100 or 1.0
+        font_size = max(24, min(int(usable / per_unit), int(h * 0.13)))
         line_gap = int(font_size * 1.14)
         block_h = line_gap * len(lines)
-        bottom_pad = int(h * 0.07)
-        top = h - bottom_pad - block_h
+        # Заголовок ставим сверху: в ленте у превью обрезается низ, да и палец
+        # зрителя на телефоне закрывает именно нижнюю часть обложки.
+        top = int(h * 0.06)
 
         # Затемняем подложку ровно под текстовым блоком, а не фиксированную треть:
         # в вертикальном кадре треть — это половина экрана.
@@ -371,15 +371,29 @@ def wrap_plain(text: str, width: int) -> list[str]:
     return lines
 
 
-def paragraph_lines(cues, chars_per_line: int) -> list[tuple[str, float]]:
+def paragraph_font_size(width: int) -> int:
+    """Кегль текста в формате «абзац»."""
+    return max(18, int(width * 0.034))
+
+
+def paragraph_margin(width: int) -> int:
+    """Боковое поле: за него строка выходить не должна."""
+    return int(width * 0.09)
+
+
+def paragraph_lines(cues, font_file, size_px: float, max_px: float) -> list[tuple[str, float]]:
     """Реплики -> физические строки с временем появления.
 
     Длинная реплика разбивается на несколько строк, и все они проявляются
     одновременно: дробить время внутри фразы незачем, читается она целиком.
+
+    Перенос считается по реальным ширинам глифов, а не по числу знаков: строка
+    из «Ш» и «М» втрое шире строки из «і», и по счёту символов часть строк
+    вылезала за правый край кадра.
     """
     out: list[tuple[str, float]] = []
     for cue in cues:
-        for line in wrap_plain(cue.text, chars_per_line):
+        for line in fonts.wrap_to_width(cue.text, font_file, size_px, max_px):
             out.append((line, cue.start))
     return out
 
@@ -390,9 +404,13 @@ def build_paragraph_scene(background: Path, audio: Path, dst: Path, size: tuple[
                           lines_per_block: int = 7, dim: float = 0.55) -> Path:
     """Формат «абзац»: текст проявляется построчно на затемнённом фоне.
 
-    Появившиеся строки остаются до конца блока, затем экран очищается и идёт
-    следующий блок. Видео не генерируется вовсе — только один статичный кадр,
-    поэтому такой шортс стоит одну картинку вместо десятка клипов.
+    Появившиеся строки остаются до конца блока, затем блок плавно гаснет и идёт
+    следующий. Видео не генерируется вовсе — только один статичный кадр, поэтому
+    такой шортс стоит одну картинку вместо десятка клипов.
+
+    Строка не просто включается: она всплывает снизу с замедлением и так же
+    уходит вверх, когда блок сменяется. Резкое включение и мгновенное исчезание
+    выдавали автоматическую сборку.
     """
     w, h = size
     workdir.mkdir(parents=True, exist_ok=True)
@@ -400,10 +418,15 @@ def build_paragraph_scene(background: Path, audio: Path, dst: Path, size: tuple[
         raise RuntimeError("нет текста для формата «абзац»")
 
     font_arg = font.replace(":", r"\:") if font else ""
-    chars = max(18, int(w / 26))
-    size_main = max(20, int(w * 0.040))
+    size_main = paragraph_font_size(w)
     step = int(size_main * 1.62)
-    margin = int(w * 0.09)
+    margin = paragraph_margin(w)
+
+    # Плавность появления и ухода: подобрано так, чтобы глаз успевал за строкой,
+    # но текст не отставал от голоса.
+    fade_in, fade_out = 0.50, 0.55
+    slide = int(size_main * 0.55)      # на столько строка всплывает снизу
+    rise = int(size_main * 0.45)       # и на столько уходит вверх, когда гаснет
 
     # Блоки: строки копятся, пока не наберётся lines_per_block, потом экран чистится.
     blocks: list[list[tuple[str, float]]] = []
@@ -415,15 +438,25 @@ def build_paragraph_scene(background: Path, audio: Path, dst: Path, size: tuple[
              f"eq=brightness=-{dim:.2f}", f"fps={FPS}"]
 
     for bi, block in enumerate(blocks):
-        # блок держится до появления первой строки следующего блока
-        block_end = blocks[bi + 1][0][1] if bi + 1 < len(blocks) else duration + 1
+        # блок держится до появления первой строки следующего; последний гаснет
+        # на самом конце ролика, а не обрывается вместе с кадром
+        block_end = blocks[bi + 1][0][1] if bi + 1 < len(blocks) else duration
         for li, (text, start) in enumerate(block):
+            start = min(start, max(0.0, block_end - 0.2))
             y = block_top + li * step
+            # На коротком блоке длинные фазы не помещаются — ужимаем их.
+            span = max(block_end - start, 0.2)
+            fi = max(0.12, min(fade_in, span * 0.35))
+            fo = max(0.12, min(fade_out, span * 0.35))
+            # Появление с замедлением (ease-out), уход по сглаженной ступеньке.
+            ein = f"(1-pow(1-clip((t-{start:.2f})/{fi:.2f},0,1),3))"
+            pout = f"clip(({block_end:.2f}-t)/{fo:.2f},0,1)"
+            eout = f"({pout}*{pout}*(3-2*{pout}))"
             parts.append(
                 f"drawtext=fontfile='{font_arg}':text='{_escape_drawtext(text)}'"
                 f":fontcolor=white:fontsize={size_main}"
-                f":x={margin}:y={y}"
-                f":alpha='min(1,(t-{start:.2f})/0.35)'"
+                f":x={margin}:y='{y}+{slide}*(1-{ein})-{rise}*(1-{eout})'"
+                f":alpha='min({ein},{eout})'"
                 f":enable='between(t,{start:.2f},{block_end:.2f})'"
             )
 
@@ -450,34 +483,115 @@ def build_paragraph_scene(background: Path, audio: Path, dst: Path, size: tuple[
     return dst
 
 
-def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int, int],
-                      duration: float, workdir: Path, zoom: float = 1.22,
-                      haze: float = 0.34, band_top: float = 0.0,
-                      band_height: float = 0.0, band_color: str = "0x0b0d10") -> Path:
-    """Формат «бюст»: оживляем один кадр без генерации видео.
+# Пресеты «живого кадра»: одна сгенерированная картинка + процедурное движение
+# средствами ffmpeg. Генерация видео не нужна вовсе, поэтому такой шортс стоит
+# ровно одну картинку. Формат — это данные, а не отдельная ветка кода.
+#
+# ВАЖНО про периоды. Они заданы в ДОЛЯХ длительности ролика, а не в секундах:
+# период 1.0 — один полный цикл на весь шортс. Абсолютные секунды здесь не
+# работают — на восьмисекундном ролике качание с периодом 20 с незаметно, и
+# формат выглядит стоп-кадром. Ровно на это жаловались в «бюсте».
+#
+#   zoom        во сколько раз кадр наезжает за ролик (1.0 — без наезда)
+#   base_over   запас базового слоя сверх кадра: без запаса некуда панорамировать
+#   pan_x/pan_y амплитуда качания базы, доля запаса (0.5 — весь запас)
+#   period_*    период качания базы, в долях длительности ролика
+#   blur        размытие второго слоя (из него делается дымка, блики, облака)
+#   bright/sat  осветление и насыщенность второго слоя
+#   opacity     насколько сильно второй слой подмешан
+#   blend       режим наложения второго слоя
+#   drift_*     периоды дрейфа второго слоя, в долях длительности ролика
+#   shimmer     амплитуда мерцания яркости базы (огонь, блики на воде)
+MOTION_PRESETS: dict[str, dict] = {
+    # Бюст: медленный наезд и дрейфующий пар — движение держится на наезде.
+    "bust":   dict(zoom=1.22, base_over=1.00, pan_x=0.0,  pan_y=0.0,
+                   period_x=1.2, period_y=1.6, blur=40, bright=0.10, sat=0.2,
+                   opacity=0.34, blend="screen", drift_x=0.55, drift_y=0.85, shimmer=0.0),
+    # Море: длинный горизонтальный ход и короткая зыбь по вертикали, сверху блики.
+    "sea":    dict(zoom=1.08, base_over=1.18, pan_x=0.45, pan_y=0.10,
+                   period_x=1.3, period_y=0.30, blur=28, bright=0.14, sat=0.5,
+                   opacity=0.30, blend="screen", drift_x=0.70, drift_y=0.32, shimmer=0.020),
+    # Небо: облака ползут, кадр медленно идёт вбок.
+    "sky":    dict(zoom=1.10, base_over=1.20, pan_x=0.40, pan_y=0.18,
+                   period_x=1.6, period_y=1.1, blur=46, bright=0.16, sat=0.3,
+                   opacity=0.36, blend="screen", drift_x=0.90, drift_y=0.55, shimmer=0.0),
+    # Полёт: непрерывный ход вперёд плюс лёгкое покачивание, как за птицей.
+    "flight": dict(zoom=1.55, base_over=1.14, pan_x=0.22, pan_y=0.14,
+                   period_x=0.65, period_y=0.45, blur=34, bright=0.10, sat=0.4,
+                   opacity=0.24, blend="screen", drift_x=0.60, drift_y=0.90, shimmer=0.012),
+    # Огонь: мерцание яркости и всплывающее свечение — самый «дёрганый» пресет.
+    "fire":   dict(zoom=1.14, base_over=1.10, pan_x=0.12, pan_y=0.10,
+                   period_x=0.9, period_y=0.6, blur=52, bright=0.20, sat=0.7,
+                   opacity=0.40, blend="screen", drift_x=0.28, drift_y=0.22, shimmer=0.045),
+    # Дождь по стеклу: размытый слой сползает вниз, кадр почти неподвижен.
+    "rain":   dict(zoom=1.06, base_over=1.12, pan_x=0.10, pan_y=0.35,
+                   period_x=1.4, period_y=0.55, blur=36, bright=0.06, sat=0.3,
+                   opacity=0.28, blend="screen", drift_x=0.95, drift_y=0.26, shimmer=0.018),
+}
 
-    Медленный наезд плюс дрейфующая дымка, собранная из размытой копии самого
-    кадра и наложенная режимом «экран». Выглядит как лёгкое движение пара, при
-    этом стоит ноль: генерируется только исходная картинка.
+# Границы периода в секундах: короче — дёрганье, длиннее — стоп-кадр.
+MOTION_PERIOD_MIN = 1.3
+MOTION_PERIOD_MAX = 40.0
+
+
+def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int, int],
+                      duration: float, workdir: Path, motion: str = "bust",
+                      band_top: float = 0.0, band_height: float = 0.0,
+                      band_color: str = "0x0b0d10") -> Path:
+    """«Живой кадр»: оживляем одну картинку без генерации видео.
+
+    Базовый слой едет и наезжает, поверх него режимом «экран» ложится сильно
+    размытая копия той же картинки с собственным дрейфом — получается движение
+    пара, бликов, облаков или огня, смотря какой пресет. Стоит это ноль:
+    генерируется только исходная картинка.
     """
     w, h = size
     workdir.mkdir(parents=True, exist_ok=True)
     span = max(duration, 0.1)
-    over_w, over_h = int(w * 1.35) // 2 * 2, int(h * 1.35) // 2 * 2
+    cfg = MOTION_PRESETS.get(motion) or MOTION_PRESETS["bust"]
 
-    graph = (
-        # основа: кадр нужного размера с медленным наездом
-        f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
-        f"crop=w='trunc(iw/(1+{zoom - 1:.3f}*min(t/{span:.3f},1))/2)*2':"
-        f"h='trunc(ih/(1+{zoom - 1:.3f}*min(t/{span:.3f},1))/2)*2':"
-        f"x='(iw-ow)/2':y='(ih-oh)/2',scale={w}:{h},fps={FPS}[base];"
-        # дымка: сильно размытая и осветлённая копия, шире кадра — есть куда ехать
-        f"[1:v]scale={over_w}:{over_h}:force_original_aspect_ratio=increase,"
-        f"crop={over_w}:{over_h},boxblur=40:2,eq=brightness=0.10:saturation=0.2,"
-        f"crop={w}:{h}:x='(in_w-out_w)*(0.5+0.5*sin(t/3.5))':"
-        f"y='(in_h-out_h)*(0.5+0.5*sin(t/5.5))',fps={FPS}[haze];"
-        f"[base][haze]blend=all_mode=screen:all_opacity={haze:.2f}[mix]"
-    )
+    def even(value: float) -> int:
+        return int(value) // 2 * 2
+
+    base_w, base_h = even(w * cfg["base_over"]), even(h * cfg["base_over"])
+    over_w, over_h = even(w * 1.35), even(h * 1.35)
+    tau = 6.28318
+
+    # Наезд: к концу ролика кадр увеличен в zoom раз.
+    grow = cfg["zoom"] - 1
+    zoom_expr = f"(1+{grow:.3f}*min(t/{span:.3f},1))" if grow > 0.001 else "1"
+
+    def period(share: float) -> float:
+        """Период из доли ролика — чтобы движение было видно на любой длине."""
+        return max(MOTION_PERIOD_MIN, min(MOTION_PERIOD_MAX, span * share))
+
+    # Панорама: доля запаса, который база проходит туда-обратно.
+    px = f"(0.5+{cfg['pan_x']:.3f}*sin({tau}*t/{period(cfg['period_x']):.2f}))"
+    py = f"(0.5+{cfg['pan_y']:.3f}*sin({tau}*t/{period(cfg['period_y']):.2f}))"
+
+    base = (f"[0:v]scale={base_w}:{base_h}:force_original_aspect_ratio=increase,"
+            f"crop={base_w}:{base_h},"
+            f"crop=w='trunc(iw/{zoom_expr}/2)*2':h='trunc(ih/{zoom_expr}/2)*2'"
+            f":x='(iw-ow)*{px}':y='(ih-oh)*{py}',scale={w}:{h}")
+    if cfg["shimmer"] > 0:
+        # Мерцание яркости — для огня и бликов на воде. eval=frame, иначе
+        # выражение посчитается один раз и движения не будет.
+        base += (f",eq=eval=frame:brightness='{cfg['shimmer']:.3f}"
+                 f"*sin({tau}*t/1.7)+{cfg['shimmer'] * 0.6:.3f}*sin({tau}*t/0.9)'")
+    base += f",fps={FPS}[base];"
+
+    layer = (f"[1:v]scale={over_w}:{over_h}:force_original_aspect_ratio=increase,"
+             f"crop={over_w}:{over_h},boxblur={cfg['blur']}:2,"
+             f"eq=brightness={cfg['bright']:.2f}:saturation={cfg['sat']:.2f},"
+             f"crop={w}:{h}:"
+             f"x='(in_w-out_w)*(0.5+0.5*sin({tau}*t/{period(cfg['drift_x']):.2f}))':"
+             f"y='(in_h-out_h)*(0.5+0.5*sin({tau}*t/{period(cfg['drift_y']):.2f}))',"
+             f"fps={FPS}[layer];")
+
+    graph = (base + layer +
+             f"[base][layer]blend=all_mode={cfg['blend']}:"
+             f"all_opacity={cfg['opacity']:.2f}[mix]")
+
     if band_height > 0:
         # Однотонная полоса под титры: на сгенерированном кадре фон непредсказуем,
         # а поверх ровной заливки текст читается всегда.

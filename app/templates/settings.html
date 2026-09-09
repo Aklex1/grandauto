@@ -45,6 +45,12 @@
         {% if settings.auto_run_schedule == '1' %}checked{% endif %}> Автозапуск по расписанию каналов</label>
       <label>Параллельных запросов на сцену
         <input name="scene_concurrency" type="number" min="1" max="8" value="{{ settings.scene_concurrency }}"></label>
+      <label>Разных фоновых треков на канал
+        <input name="music_library_target" type="number" min="1" max="20"
+               value="{{ settings.music_library_target or 6 }}"></label>
+      <p class="small muted">Шортсы берут музыку по кругу, чтобы не звучать одинаково.
+        Пока треков меньше указанного числа, каждый новый шортс заказывает свежий
+        трек в Suno — это разовые траты, дальше библиотека только крутится.</p>
     </fieldset>
 
     <fieldset><legend>Стоки видео <span class="badge">beta</span></legend>

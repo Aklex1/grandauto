@@ -160,15 +160,36 @@ def _looks_complete(text: str) -> bool:
     return text[-1] in SENTENCE_END
 
 
-# Русская речь диктора — примерно 15 символов в секунду. Точность тут не нужна:
-# порог служит только для того, чтобы заметить обрыв, а не измерить темп.
-CHARS_PER_SECOND = 15.0
+def _voice_text(session: Session, video: Video, scene_idx: int, text: str) -> str:
+    """Текст, который реально уходит в озвучку.
+
+    Если модель оборвала сцену на полуслове, озвучивать хвост нельзя: голос в
+    шортсе закончится ни на чём. Отрезаем до последнего целого предложения — но
+    только если после обрезки остаётся большая часть сцены.
+    """
+    text = (text or "").strip()
+    if _looks_complete(text):
+        return text
+    trimmed = tts.trim_to_sentence(text)
+    if trimmed and trimmed != text:
+        log_event(session, video.id,
+                  f"Сцена {scene_idx + 1}: текст обрывался на полуслове — "
+                  f"озвучиваю до последнего целого предложения "
+                  f"({len(text)} -> {len(trimmed)} знаков)",
+                  stage="voice", level="warn")
+        return trimmed
+    if text and not _looks_complete(text):
+        log_event(session, video.id,
+                  f"Сцена {scene_idx + 1}: текст обрывается на полуслове и целых "
+                  f"предложений в нём нет — допишите концовку в карточке сцены",
+                  stage="voice", level="warn")
+    return text
 
 
 def _check_audio_length(session: Session, video: Video, scene_idx: int, text: str,
                         duration: float) -> None:
     """Предупреждаем, если озвучка заметно короче текста — значит её обрезало."""
-    expected = len((text or "").strip()) / CHARS_PER_SECOND
+    expected = tts.expected_seconds(text)
     if expected < 3 or duration <= 0:
         return
     if duration < expected * 0.7:
@@ -185,6 +206,17 @@ def voice_scenes(session: Session, client: KieClient, video: Video, channel: Cha
     fallback_model = st.get(session, "tts_fallback_model", "google/gemini-3-1-flash-tts")
     fallback_voice = st.get(session, "tts_fallback_voice", "Charon")
     concurrency = max(1, st.get_int(session, "scene_concurrency", 3))
+
+    # Подрезанный текст записываем в саму сцену, а не только отправляем в синтез:
+    # из scene.narration потом строятся субтитры, и разойдись они с озвучкой —
+    # на экране висел бы текст, которого не слышно.
+    for scene in video.scenes:
+        if _scene_audio_ok(scene):
+            continue
+        fixed = _voice_text(session, video, scene.idx, scene.narration)
+        if fixed != (scene.narration or ""):
+            scene.narration = fixed
+    session.commit()
 
     # В потоки отдаём только простые данные: ORM-сессия не потокобезопасна.
     todo = [(s.id, s.idx, s.narration) for s in video.scenes if not _scene_audio_ok(s)]
@@ -431,20 +463,15 @@ def build_scene_pieces(session: Session, video: Video, channel: Channel, workdir
     scenes = list(video.scenes)
     ready = 0
 
-    # Трек нужен уже здесь: версия сцены с музыкой кладётся рядом с чистой.
-    track_path = None
-    if channel.background_music:
-        track = _background_track(session, video, channel)
-        if track is not None and track.path:
-            candidate = storage.abspath(track.path)
-            track_path = candidate if candidate.exists() else None
-
     for scene in scenes:
         if not scene.audio_path:
             continue
         if scene.piece_path and storage.abspath(scene.piece_path).exists():
             ready += 1
             continue
+        # Трек берём на каждую сцену свой: длинный ролик всё равно сводится с
+        # одним сквозным треком, а эти копии уходят в шортсы и в карточку сцены.
+        track_path = _track_file(session, video, channel)
         ok, _cues = assemble_scene_piece(session, video, channel, scene, workdir,
                                          pieces_dir, track_path, size, fallback_from=scenes)
         if ok:
@@ -515,9 +542,28 @@ def assemble_scene_piece(session: Session, video: Video, channel: Channel, scene
 
 
 def _track_file(session: Session, video: Video, channel: Channel) -> Optional[Path]:
+    """Фоновый трек для ОДНОГО шортса — каждый раз другой.
+
+    Длинный ролик берёт один сквозной трек (_background_track), а шортсы так
+    делать нельзя: с одинаковым фоном они сливаются в ленте. Здесь музыка
+    выдаётся по кругу, а пока библиотека канала не набрана — генерируется новая.
+    """
     if not channel.background_music:
         return None
-    track = _background_track(session, video, channel)
+    # Без ключа KIE новый трек не заказать, но уже скачанные использовать можно,
+    # поэтому отсутствие клиента — не отказ от музыки.
+    try:
+        client = client_for(session)
+    except Exception:  # noqa: BLE001
+        client = None
+    try:
+        target = st.get_int(session, "music_library_target", music.LIBRARY_TARGET)
+        track = music.pick_track(session, client, channel.id, channel.topic,
+                                 channel.music_style, target=target)
+    except Exception as exc:  # noqa: BLE001 — без музыки шортс всё равно собирается
+        log_event(session, video.id, f"Фоновая музыка недоступна: {exc}",
+                  stage="assemble", level="warn")
+        return None
     if track is None or not track.path:
         return None
     candidate = storage.abspath(track.path)
@@ -532,8 +578,11 @@ def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
     Если генератор не ответил, берём кадр из самой сцены — обложка нужна всегда,
     а ролик из-за неё падать не должен.
     """
-    # Форматы «бюст» и «абзац» уже сгенерировали кадр — рисуем заголовок поверх
-    # него, вместо того чтобы платить за вторую картинку с тем же смыслом.
+    # У формата «бюст» кадр самодостаточный — рисуем заголовок поверх него, вместо
+    # того чтобы платить за вторую картинку с тем же смыслом. У «абзаца» фон
+    # намеренно почти чёрный (чтобы читались титры), и обложкой он быть не может:
+    # чёрный прямоугольник с заголовком не цепляет, такому шортсу нужна своя
+    # яркая картинка от генератора.
     if ready_image is not None and ready_image.exists():
         media.make_thumbnail(ready_image, thumb, size=media.VERTICAL, headline=title)
         return
@@ -571,13 +620,28 @@ def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
     raw.unlink(missing_ok=True)
 
 
-# Порядок чередования: на три сцены приходится один полный видеоряд.
-FORMAT_CYCLE = ("full", "bust", "paragraph")
+# Форматы «живого кадра»: одна картинка от генератора плюс движение средствами
+# ffmpeg. Ключ совпадает с пресетом движения в media.MOTION_PRESETS и с сюжетом
+# в prompts.STILL_SCENES.
+STILL_FORMATS = {
+    "bust":   "Бюст — античная скульптура в дыму, медленный наезд",
+    "sea":    "Море — открытый океан, длинная зыбь и блики",
+    "sky":    "Небо — облака сверху, кадр медленно идёт вбок",
+    "flight": "Полёт — орёл со спины, камера идёт вперёд за ним",
+    "fire":   "Огонь — угли и искры в темноте, живое мерцание",
+    "rain":   "Дождь — капли по стеклу ночью, холодное боке",
+}
+
+# Порядок чередования: полный видеоряд ровно на каждой третьей сцене, между ними
+# по очереди идут дешёвые форматы. Так генерация клипов остаётся 33% от шортсов.
+FORMAT_CYCLE = ("full", "bust", "paragraph",
+                "full", "sea", "flight",
+                "full", "sky", "fire")
 
 SHORT_FORMATS = {
     "full": "Полный видеоряд — генерация клипов, дороже всего",
-    "bust": "Бюст — один кадр с дымкой, титры крупным шрифтом",
     "paragraph": "Абзац — текст построчно на тёмном фоне, дешевле всего",
+    **STILL_FORMATS,
 }
 
 
@@ -588,8 +652,9 @@ def normalize_format(value: str) -> str:
 def _scene_background(session: Session, video: Video, channel: Channel, scene: Scene,
                       fmt: str, workdir: Path) -> Optional[Path]:
     """Фоновый кадр для форматов «бюст» и «абзац» — одна картинка на весь шортс."""
-    if fmt == "bust":
-        prompt = prompts.bust_background(channel.topic, scene.heading, channel.thumb_style)
+    if fmt in STILL_FORMATS:
+        prompt = prompts.still_background(fmt, channel.topic, scene.heading,
+                                          channel.thumb_style)
     else:
         prompt = prompts.paragraph_background(channel.topic, scene.heading)
     try:
@@ -683,7 +748,7 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     audio = storage.abspath(scene.audio_path) if scene.audio_path else None
 
     background: Optional[Path] = None
-    if fmt in ("bust", "paragraph") and audio and audio.exists():
+    if (fmt in STILL_FORMATS or fmt == "paragraph") and audio and audio.exists():
         background = _scene_background(session, video, channel, scene, fmt, workdir)
         if background is None:
             log_event(session, video.id,
@@ -692,17 +757,23 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
             fmt = "full"
         elif fmt == "paragraph":
             # Текст вшивается прямо в кадр построчно, ASS-субтитры здесь не нужны.
-            chars = max(18, int(media.VERTICAL[0] / 26))
+            # Перенос считаем по метрикам выбранного шрифта: по числу знаков
+            # длинные строки вылезали за правое поле.
+            font_file = fonts.font_path(channel.title_font) or ""
+            width = media.VERTICAL[0]
+            size_px = media.paragraph_font_size(width)
+            usable = width - 2 * media.paragraph_margin(width)
             media.build_paragraph_scene(
                 background, audio, raw, media.VERTICAL, duration,
-                media.paragraph_lines(cues, chars), fonts.font_path(channel.title_font) or "",
+                media.paragraph_lines(cues, font_file, size_px, usable), font_file,
                 workdir, signature=channel.name)
         else:
             still = workdir / f"still_{scene.idx:02d}.mp4"
             # Полоса под титрами в верхней трети: на сгенерированном кадре фон
             # непредсказуем, а поверх ровной заливки текст читается всегда.
             media.build_still_scene(background, audio, still, media.VERTICAL, duration,
-                                    workdir, band_top=0.06, band_height=0.30)
+                                    workdir, motion=fmt,
+                                    band_top=0.06, band_height=0.30)
             ass = workdir / f"short_{scene.idx:02d}.ass"
             head_seconds = min(4.5, max(2.5, duration * 0.18))
             subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
@@ -740,7 +811,7 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     thumb = pieces_dir / f"scene_{scene.idx:02d}_thumb.jpg"
     try:
         _scene_cover(session, video, channel, scene, title, source, workdir, thumb,
-                     ready_image=background)
+                     ready_image=background if fmt in STILL_FORMATS else None)
         scene.thumb_path = storage.rel(thumb)
     except Exception as exc:  # noqa: BLE001 — шортс важнее обложки
         log_event(session, video.id, f"Сцена {scene.idx + 1}: обложка не сделана ({exc})",
@@ -1470,6 +1541,8 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
 
         prompt = (options.get("visual_prompt") or scene.visual_prompt or "").strip()
         narration = (options.get("narration") or scene.narration or "").strip()
+        # Подрезаем до того, как текст разойдётся по озвучке и субтитрам.
+        narration = _voice_text(session, video, scene.idx, narration)
         video_model = (options.get("video_model") or channel.video_model or "").strip()
         tts_model = (options.get("tts_model") or channel.tts_model or "").strip()
         voice_id = (options.get("voice_id") or channel.voice_id or "").strip()
@@ -1554,10 +1627,10 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
                 _check_audio_length(session, video, scene.idx, narration, result.duration)
                 session.commit()
 
-            # Форматам «бюст» и «абзац» видеоряд не нужен: они строятся из одного
-            # кадра поверх готовой озвучки. Генерировать для них клипы и пересобирать
-            # кусок сцены — выбрасывать деньги, поэтому идём коротким путём.
-            if fmt in ("bust", "paragraph"):
+            # Форматам «живого кадра» и «абзацу» видеоряд не нужен: они строятся из
+            # одной картинки поверх готовой озвучки. Генерировать для них клипы и
+            # пересобирать кусок сцены — выбрасывать деньги, идём коротким путём.
+            if fmt in STILL_FORMATS or fmt == "paragraph":
                 scene.short_format = fmt
                 scene.short_title = short_title
                 scene.status = "piece_ready"

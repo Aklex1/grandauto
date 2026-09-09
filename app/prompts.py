@@ -121,8 +121,9 @@ def short_cover(channel_name: str, topic: str, heading: str, narration: str,
     """Промпт обложки вертикального шортса.
 
     Текст модели не заказываем: кириллицу генераторы изображений рисуют плохо,
-    заголовок накладывается своим шрифтом поверх. Зато просим оставить внизу
-    место под него и держать композицию в верхних двух третях кадра.
+    заголовок накладывается своим шрифтом поверх. Зато просим оставить СВЕРХУ
+    место под него и держать композицию в нижних двух третях кадра — заголовок
+    на обложке идёт по верху.
     """
     style = thumb_style or ("bold high-contrast mobile thumbnail, cinematic lighting, "
                             "dramatic close-up portrait, vivid saturated accent colors")
@@ -133,7 +134,7 @@ def short_cover(channel_name: str, topic: str, heading: str, narration: str,
         f"Scene mood: {hook}. {style}. "
         f"Bright, eye-catching, punchy colors, strong contrast, expressive human face, "
         f"sharp focus, shallow depth of field, dramatic rim light, "
-        f"subject centered in the upper two thirds, clean uncluttered bottom third "
+        f"subject centered in the lower two thirds, clean uncluttered top third "
         f"left empty for a headline. "
         f"No text, no letters, no words, no captions, no watermark, no logo, no borders."
     )
@@ -173,13 +174,54 @@ def short_metadata(channel_name: str, topic: str, video_title: str, book_title: 
 
 def bust_background(topic: str, heading: str, thumb_style: str = "") -> str:
     """Кадр для формата «бюст»: античная скульптура в дыму на тёмном фоне."""
+    return still_background("bust", topic, heading, thumb_style)
+
+
+# Сюжеты «живого кадра». Общее у всех одно: движение потом дорисует ffmpeg, а от
+# генератора нужен кадр с запасом воздуха сверху под заголовок и с фактурой,
+# которую есть смысл шевелить — дым, вода, облака, огонь, капли.
+STILL_SCENES: dict[str, str] = {
+    "bust": (
+        "Marble bust of an ancient philosopher in profile, weathered stone texture, "
+        "draped toga, looking upward. Very dark charcoal background, low drifting smoke "
+        "and clouds around the base and top. Monochrome, desaturated, high contrast"
+    ),
+    "sea": (
+        "Vast open ocean at dusk, long slow swells catching the last light, dark teal water, "
+        "distant horizon line low in the frame, heavy moody sky above, spray and haze over "
+        "the waves. No boats, no people, no land"
+    ),
+    "sky": (
+        "Towering cloudscape seen from above, endless layers of cumulus lit from the side, "
+        "deep blue upper sky, golden light raking across the cloud tops, vast empty space. "
+        "No aircraft, no people, no ground"
+    ),
+    "flight": (
+        "Eagle in flight seen from directly behind and slightly above, wings spread wide, "
+        "flying away from the camera over a vast mountain valley far below, clouds and haze "
+        "in the distance, strong sense of forward motion and depth. No people"
+    ),
+    "fire": (
+        "Close view of glowing embers and low flames in deep darkness, orange and red coals, "
+        "sparks rising, smoke drifting above, everything else black. No people, no fireplace "
+        "details, no logs in focus"
+    ),
+    "rain": (
+        "Rain running down a dark window at night, large out-of-focus water droplets and "
+        "streaks on the glass, cold blue city bokeh far behind, almost black overall. "
+        "No people, no text on signs"
+    ),
+}
+
+
+def still_background(motion: str, topic: str, heading: str, thumb_style: str = "") -> str:
+    """Кадр для форматов «живого кадра» — движение к нему добавит ffmpeg."""
+    scene = STILL_SCENES.get(motion) or STILL_SCENES["bust"]
     style = thumb_style or "cinematic, dramatic side light, deep shadows, film grain"
     return (
-        f"Vertical 9:16 cinematic still. Marble bust of an ancient philosopher in profile, "
-        f"weathered stone texture, draped toga, looking upward. Very dark charcoal background, "
-        f"low drifting smoke and clouds around the base and top. Monochrome, desaturated, "
-        f"high contrast. Subject centered in the lower two thirds, empty dark sky in the upper "
-        f"third for a headline. Theme: {heading} ({topic}). {style}. "
+        f"Vertical 9:16 cinematic still. {scene}. "
+        f"Composition kept in the lower two thirds, calm empty space in the upper third "
+        f"for a headline. Theme: {heading} ({topic}). {style}. "
         f"No text, no letters, no words, no watermark, no logo."
     )
 
