@@ -380,6 +380,34 @@ class MusicTrack(Base):
     channel: Mapped[Optional[Channel]] = relationship()
 
 
+class LoopClip(Base):
+    """Зацикленный видеофон для формата шортса.
+
+    Один клип на формат: генерируется однажды через pixverse и дальше
+    переиспользуется во всех шортсах этого формата. Это дешевле процедурной
+    анимации по качеству движения и дешевле генерации видеоряда по деньгам —
+    платим один раз, а не за каждую сцену.
+    """
+
+    __tablename__ = "loop_clips"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fmt: Mapped[str] = mapped_column(String(40), index=True, default="")
+    title: Mapped[str] = mapped_column(String(200), default="")
+    path: Mapped[str] = mapped_column(String(500), default="")
+    poster_path: Mapped[str] = mapped_column(String(500), default="")
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    image_prompt: Mapped[str] = mapped_column(Text, default="")
+    model: Mapped[str] = mapped_column(String(120), default="")
+    source_url: Mapped[str] = mapped_column(String(600), default="")
+    duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    credits: Mapped[float] = mapped_column(Float, default=0.0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Voice(Base):
     """Каталог голосов озвучки."""
 

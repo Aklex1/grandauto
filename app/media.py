@@ -502,6 +502,7 @@ def build_paragraph_scene(background: Path, audio: Path, dst: Path, size: tuple[
 #   blend       режим наложения второго слоя
 #   drift_*     периоды дрейфа второго слоя, в долях длительности ролика
 #   shimmer     амплитуда мерцания яркости базы (огонь, блики на воде)
+#   rotate      поворот кадра за весь ролик, градусы (по умолчанию 0)
 MOTION_PRESETS: dict[str, dict] = {
     # Бюст: медленный наезд и дрейфующий пар — движение держится на наезде.
     "bust":   dict(zoom=1.22, base_over=1.00, pan_x=0.0,  pan_y=0.0,
@@ -527,6 +528,32 @@ MOTION_PRESETS: dict[str, dict] = {
     "rain":   dict(zoom=1.06, base_over=1.12, pan_x=0.10, pan_y=0.35,
                    period_x=1.4, period_y=0.55, blur=36, bright=0.06, sat=0.3,
                    opacity=0.28, blend="screen", drift_x=0.95, drift_y=0.26, shimmer=0.018),
+    # Звёздное небо: единственный пресет с поворотом — небо вращается вокруг полюса.
+    # Запас базового слоя больше обычного, иначе поворот обнажит углы кадра.
+    "stars":  dict(zoom=1.05, base_over=1.45, pan_x=0.06, pan_y=0.06,
+                   period_x=1.7, period_y=1.3, blur=30, bright=0.12, sat=0.4,
+                   opacity=0.26, blend="screen", drift_x=1.1, drift_y=0.8,
+                   shimmer=0.022, rotate=5.0),
+    # Ночная дорога: непрерывный ход вперёд, как у полёта, но без покачивания вбок.
+    "road":   dict(zoom=1.60, base_over=1.10, pan_x=0.08, pan_y=0.06,
+                   period_x=1.1, period_y=0.7, blur=38, bright=0.12, sat=0.5,
+                   opacity=0.30, blend="screen", drift_x=0.5, drift_y=0.9, shimmer=0.016),
+    # Свеча: кадр почти стоит, живёт только пламя — сильное мерцание, малый дрейф.
+    "candle": dict(zoom=1.10, base_over=1.06, pan_x=0.05, pan_y=0.05,
+                   period_x=1.3, period_y=0.9, blur=48, bright=0.18, sat=0.6,
+                   opacity=0.38, blend="screen", drift_x=0.22, drift_y=0.18, shimmer=0.050),
+    # Снегопад: слой сползает вниз быстрее дождя, кадр слегка ведёт вбок.
+    "snow":   dict(zoom=1.08, base_over=1.16, pan_x=0.22, pan_y=0.30,
+                   period_x=1.5, period_y=0.45, blur=32, bright=0.14, sat=0.2,
+                   opacity=0.34, blend="screen", drift_x=0.75, drift_y=0.20, shimmer=0.0),
+    # Поле на ветру: длинная волна вбок и короткая рябь — как ход травы.
+    "field":  dict(zoom=1.12, base_over=1.20, pan_x=0.38, pan_y=0.12,
+                   period_x=1.2, period_y=0.28, blur=26, bright=0.10, sat=0.6,
+                   opacity=0.26, blend="screen", drift_x=0.55, drift_y=0.30, shimmer=0.014),
+    # Глубина океана: медленный подъём и столбы света, качающиеся сверху.
+    "deep":   dict(zoom=1.16, base_over=1.22, pan_x=0.14, pan_y=0.34,
+                   period_x=1.6, period_y=1.0, blur=44, bright=0.16, sat=0.4,
+                   opacity=0.34, blend="screen", drift_x=0.85, drift_y=0.40, shimmer=0.024),
 }
 
 # Границы периода в секундах: короче — дёрганье, длиннее — стоп-кадр.
@@ -570,9 +597,14 @@ def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int,
     py = f"(0.5+{cfg['pan_y']:.3f}*sin({tau}*t/{period(cfg['period_y']):.2f}))"
 
     base = (f"[0:v]scale={base_w}:{base_h}:force_original_aspect_ratio=increase,"
-            f"crop={base_w}:{base_h},"
-            f"crop=w='trunc(iw/{zoom_expr}/2)*2':h='trunc(ih/{zoom_expr}/2)*2'"
-            f":x='(iw-ow)*{px}':y='(ih-oh)*{py}',scale={w}:{h}")
+            f"crop={base_w}:{base_h}")
+    if abs(cfg.get("rotate", 0.0)) > 0.01:
+        # Поворот делаем ДО кропа: он вращает весь кадр, и обнажённые углы должны
+        # остаться за границей вырезаемой области, иначе они попадут в шортс.
+        turn = math.radians(cfg["rotate"])
+        base += f",rotate=a='{turn:.5f}*t/{span:.3f}':c=black@0:ow=iw:oh=ih"
+    base += (f",crop=w='trunc(iw/{zoom_expr}/2)*2':h='trunc(ih/{zoom_expr}/2)*2'"
+             f":x='(iw-ow)*{px}':y='(ih-oh)*{py}',scale={w}:{h}")
     if cfg["shimmer"] > 0:
         # Мерцание яркости — для огня и бликов на воде. eval=frame, иначе
         # выражение посчитается один раз и движения не будет.
@@ -610,6 +642,36 @@ def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int,
         "-i", str(audio),
         "-filter_complex_script", str(script),
         "-map", "[v]", "-map", "2:a:0", "-t", f"{duration:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(dst),
+    ], timeout=2400)
+    return dst
+
+
+def build_loop_scene(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
+                     duration: float, workdir: Path, band_top: float = 0.0,
+                     band_height: float = 0.0, band_color: str = "0x0b0d10") -> Path:
+    """Сцена поверх готового зацикленного клипа.
+
+    Клип короче озвучки, поэтому крутим его по кругу через -stream_loop. Это не
+    то отматывание назад, от которого мы избавлялись в видеоряде: клип для того
+    и генерировался, чтобы конец сходился с началом, и шов не виден.
+    """
+    w, h = size
+    workdir.mkdir(parents=True, exist_ok=True)
+    chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+             f"fps={FPS}")
+    if band_height > 0:
+        y, bh = int(h * band_top), int(h * band_height)
+        chain += f",drawbox=x=0:y={y}:w={w}:h={bh}:color={band_color}@0.92:t=fill"
+    chain += ",format=yuv420p"
+
+    _ff([
+        "-stream_loop", "-1", "-i", str(loop),
+        "-i", str(audio),
+        "-vf", chain,
+        "-map", "0:v:0", "-map", "1:a:0", "-t", f"{duration:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", str(dst),

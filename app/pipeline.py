@@ -13,7 +13,8 @@ from typing import Callable, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import config, fonts, footage, media, music, prompts, storage, subtitles, tts
+from . import (config, fonts, footage, loops, media, music, prompts, storage,
+               subtitles, tts)
 from .db import session_scope
 from .kie import KieClient, KieError, extract_urls, video_input
 from .models import (Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
@@ -578,15 +579,11 @@ def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
     Если генератор не ответил, берём кадр из самой сцены — обложка нужна всегда,
     а ролик из-за неё падать не должен.
     """
-    # У формата «бюст» кадр самодостаточный — рисуем заголовок поверх него, вместо
-    # того чтобы платить за вторую картинку с тем же смыслом. У «абзаца» фон
-    # намеренно почти чёрный (чтобы читались титры), и обложкой он быть не может:
-    # чёрный прямоугольник с заголовком не цепляет, такому шортсу нужна своя
-    # яркая картинка от генератора.
-    if ready_image is not None and ready_image.exists():
-        media.make_thumbnail(ready_image, thumb, size=media.VERTICAL, headline=title)
-        return
-
+    # Фон сцены обложкой НЕ становится ни в одном формате. Все фоны намеренно
+    # тёмные: у «абзаца» почти чёрный, чтобы читались титры, у «живого кадра» —
+    # приглушённый кинематографичный. В ленте такая обложка не цепляет. Обложку
+    # всегда рисуем отдельной яркой картинкой, а готовый фон держим только на
+    # случай, если генератор не ответит.
     raw: Optional[Path] = None
     try:
         client = client_for(session)
@@ -610,6 +607,11 @@ def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
         raw = None
 
     if raw is None or not raw.exists():
+        if ready_image is not None and ready_image.exists():
+            # Запасной вариант для форматов из одного кадра: видеоряда у них нет,
+            # брать кадр неоткуда, и тусклая обложка лучше отсутствующей.
+            media.make_thumbnail(ready_image, thumb, size=media.VERTICAL, headline=title)
+            return
         raw = workdir / f"cover_{scene.idx:02d}.jpg"
         # Кадр берём из ЧИСТОГО источника, а не из готового шортса: там заголовок
         # и субтитры уже вшиты, и поверх них лёг бы второй заголовок.
@@ -630,13 +632,26 @@ STILL_FORMATS = {
     "flight": "Полёт — орёл со спины, камера идёт вперёд за ним",
     "fire":   "Огонь — угли и искры в темноте, живое мерцание",
     "rain":   "Дождь — капли по стеклу ночью, холодное боке",
+    "stars":  "Звёзды — Млечный Путь, небо медленно поворачивается",
+    "road":   "Дорога — ночная трасса, бесконечный ход вперёд",
+    "candle": "Свеча — пламя в темноте, всё остальное неподвижно",
+    "snow":   "Снегопад — крупные хлопья в ночи",
+    "field":  "Поле — трава на ветру, длинная волна",
+    "deep":   "Глубина — столбы света под водой",
 }
+
+# Запас в конце шортса: без него последнее слово озвучки упиралось ровно в конец
+# ролика и на слух обрывалось.
+SHORT_TAIL_SECONDS = 0.45
 
 # Порядок чередования: полный видеоряд ровно на каждой третьей сцене, между ними
 # по очереди идут дешёвые форматы. Так генерация клипов остаётся 33% от шортсов.
 FORMAT_CYCLE = ("full", "bust", "paragraph",
                 "full", "sea", "flight",
-                "full", "sky", "fire")
+                "full", "sky", "fire",
+                "full", "stars", "road",
+                "full", "field", "deep",
+                "full", "snow", "candle")
 
 SHORT_FORMATS = {
     "full": "Полный видеоряд — генерация клипов, дороже всего",
@@ -734,8 +749,20 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     if normalize_format(scene.short_format or "full") == "full" and not source.exists():
         raise RuntimeError("нет исходного куска сцены")
 
-    duration = scene.piece_sec or (
-        storage.media_duration(source) if source.exists() else scene.audio_sec)
+    fmt = normalize_format(scene.short_format or "full")
+    audio = storage.abspath(scene.audio_path) if scene.audio_path else None
+
+    if fmt != "full" and audio and audio.exists():
+        # Форматы из одного кадра строятся ПОВЕРХ озвучки, поэтому длительность
+        # берём из самого аудиофайла. piece_sec здесь брать нельзя: он остаётся от
+        # прошлой сборки (возможно, в другом формате и другой длины), и если новая
+        # озвучка длиннее — ролик обрывался на последнем предложении.
+        duration = storage.media_duration(audio) or scene.audio_sec
+        # Хвост, чтобы последнее слово не срезалось ровно по стыку.
+        duration += SHORT_TAIL_SECONDS
+    else:
+        duration = scene.piece_sec or (
+            storage.media_duration(source) if source.exists() else scene.audio_sec)
     title = (scene.short_title or scene.heading or video.title or "").strip()
 
     if cues is None and scene.audio_path:
@@ -743,14 +770,21 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     cues = cues or []
 
     workdir.mkdir(parents=True, exist_ok=True)
-    fmt = normalize_format(scene.short_format or "full")
     raw = workdir / f"short_{scene.idx:02d}_raw.mp4"
-    audio = storage.abspath(scene.audio_path) if scene.audio_path else None
 
     background: Optional[Path] = None
     if (fmt in STILL_FORMATS or fmt == "paragraph") and audio and audio.exists():
-        background = _scene_background(session, video, channel, scene, fmt, workdir)
-        if background is None:
+        # Готовый луп заменяет фоновую картинку целиком, поэтому и заказывать её
+        # не надо: это была бы плата за кадр, который никто не увидит.
+        ready_loop = loops.for_format(session, fmt) if fmt in STILL_FORMATS else None
+        if ready_loop is not None:
+            background = storage.abspath(ready_loop.poster_path) \
+                if ready_loop.poster_path else None
+            if background is not None and not background.exists():
+                background = None
+        else:
+            background = _scene_background(session, video, channel, scene, fmt, workdir)
+        if background is None and ready_loop is None:
             log_event(session, video.id,
                       f"Сцена {scene.idx + 1}: формат «{fmt}» без фона — собираю обычным",
                       stage="assemble", level="warn")
@@ -769,11 +803,18 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
                 workdir, signature=channel.name)
         else:
             still = workdir / f"still_{scene.idx:02d}.mp4"
-            # Полоса под титрами в верхней трети: на сгенерированном кадре фон
-            # непредсказуем, а поверх ровной заливки текст читается всегда.
-            media.build_still_scene(background, audio, still, media.VERTICAL, duration,
-                                    workdir, motion=fmt,
-                                    band_top=0.06, band_height=0.30)
+            # Полоса под титрами в верхней трети: и на сгенерированном кадре, и на
+            # лупе фон непредсказуем, а поверх ровной заливки текст читается всегда.
+            band = dict(band_top=0.06, band_height=0.30)
+            loop = loops.for_format(session, fmt)
+            if loop is not None:
+                # Есть настоящий зацикленный клип — берём его вместо дорисованного
+                # движения: вода в нём действительно течёт, а не имитируется кропом.
+                media.build_loop_scene(storage.abspath(loop.path), audio, still,
+                                       media.VERTICAL, duration, workdir, **band)
+            else:
+                media.build_still_scene(background, audio, still, media.VERTICAL,
+                                        duration, workdir, motion=fmt, **band)
             ass = workdir / f"short_{scene.idx:02d}.ass"
             head_seconds = min(4.5, max(2.5, duration * 0.18))
             subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
@@ -811,7 +852,7 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     thumb = pieces_dir / f"scene_{scene.idx:02d}_thumb.jpg"
     try:
         _scene_cover(session, video, channel, scene, title, source, workdir, thumb,
-                     ready_image=background if fmt in STILL_FORMATS else None)
+                     ready_image=background)
         scene.thumb_path = storage.rel(thumb)
     except Exception as exc:  # noqa: BLE001 — шортс важнее обложки
         log_event(session, video.id, f"Сцена {scene.idx + 1}: обложка не сделана ({exc})",

@@ -125,14 +125,18 @@ def short_cover(channel_name: str, topic: str, heading: str, narration: str,
     место под него и держать композицию в нижних двух третях кадра — заголовок
     на обложке идёт по верху.
     """
-    style = thumb_style or ("bold high-contrast mobile thumbnail, cinematic lighting, "
-                            "dramatic close-up portrait, vivid saturated accent colors")
+    # Стиль канала здесь намеренно НЕ используется как есть: у этих каналов он
+    # тёмный и кинематографичный, а обложке нужна яркость, иначе в ленте её не
+    # видно. Стиль канала идёт добавкой к яркой основе, а не вместо неё.
+    style = ("bold high-contrast mobile thumbnail, vivid saturated colors, bright key light, "
+             "punchy and eye-catching, dramatic close-up") + (f", {thumb_style}" if thumb_style else "")
     hook = (narration or "").strip().replace("\n", " ")[:180]
     return (
         f"Vertical 9:16 cover image for a short video. "
         f"Topic: {heading} (channel: {channel_name}, subject: {topic}). "
         f"Scene mood: {hook}. {style}. "
-        f"Bright, eye-catching, punchy colors, strong contrast, expressive human face, "
+        f"The image must be BRIGHT and colorful — not dark, not moody, not desaturated. "
+        f"Strong contrast, expressive human face, "
         f"sharp focus, shallow depth of field, dramatic rim light, "
         f"subject centered in the lower two thirds, clean uncluttered top third "
         f"left empty for a headline. "
@@ -210,6 +214,35 @@ STILL_SCENES: dict[str, str] = {
         "Rain running down a dark window at night, large out-of-focus water droplets and "
         "streaks on the glass, cold blue city bokeh far behind, almost black overall. "
         "No people, no text on signs"
+    ),
+    "stars": (
+        "Night sky dense with stars and the Milky Way arching overhead, deep blue and "
+        "violet, a dark silhouetted ridge low along the bottom edge, no light pollution. "
+        "No people, no buildings, no aircraft trails"
+    ),
+    "road": (
+        "Empty night road seen from the middle of the lane, headlights raking the asphalt, "
+        "wet reflective surface, dark trees closing in on both sides, deep darkness ahead. "
+        "No cars, no people, no road signs with text"
+    ),
+    "candle": (
+        "Single candle flame in total darkness, warm amber glow falling off fast, soft wax "
+        "and faint smoke above the flame, everything else black. "
+        "No people, no hands, no background objects"
+    ),
+    "snow": (
+        "Heavy snowfall at night against near-black darkness, large soft out-of-focus "
+        "flakes catching a cold light, faint dark treeline barely visible behind. "
+        "No people, no houses, no lights in frame"
+    ),
+    "field": (
+        "Endless field of tall grass or wheat bending under wind, low golden side light, "
+        "wide horizon, heavy sky above. No people, no buildings, no roads"
+    ),
+    "deep": (
+        "Underwater view looking up from the deep, shafts of light cutting down through "
+        "dark blue-green water, suspended particles drifting, surface far above. "
+        "No divers, no fish, no boats"
     ),
 }
 

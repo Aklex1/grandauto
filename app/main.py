@@ -730,6 +730,53 @@ def library(request: Request, channel_id: int = 0, session: Session = Depends(ge
         request, session, videos=videos, selected_channel=channel_id))
 
 
+@app.get("/loops", response_class=HTMLResponse)
+def loops_page(request: Request, session: Session = Depends(get_session),
+               _user: str = Depends(require_user)):
+    from . import loops as loops_mod
+
+    rows = {row.fmt: row for row in loops_mod.library(session) if row.is_active}
+    channels = session.execute(select(Channel).order_by(Channel.id)).scalars().all()
+    return templates.TemplateResponse("loops.html", base_context(
+        request, session, loop_rows=rows, still_formats=pipeline.STILL_FORMATS,
+        loop_channels=channels, loop_seconds=loops_mod.LOOP_SECONDS,
+        loop_quality=loops_mod.LOOP_QUALITY,
+        loop_motion=loops_mod.LOOP_MOTION))
+
+
+@app.post("/loops/build")
+def loops_build(session: Session = Depends(get_session), _user: str = Depends(require_user),
+                channel_id: int = Form(...), formats: list[str] = Form(default=[]),
+                seconds: int = Form(8), quality: str = Form("720p"),
+                skip_existing: str = Form("")):
+    from . import loops as loops_mod
+
+    wanted = [f for f in formats if f in pipeline.STILL_FORMATS]
+    if not wanted:
+        return RedirectResponse("/loops?error=no-formats", status_code=303)
+    queue.enqueue(session, "build_loops", payload={
+        "channel_id": channel_id, "formats": wanted,
+        "seconds": max(1, min(15, seconds)),
+        "quality": quality if quality in ("360p", "540p", "720p", "1080p") else "720p",
+        "skip_existing": bool(skip_existing),
+    })
+    return RedirectResponse(f"/loops?queued={len(wanted)}", status_code=303)
+
+
+@app.post("/loops/{loop_id}/drop")
+def loops_drop(loop_id: int, session: Session = Depends(get_session),
+               _user: str = Depends(require_user)):
+    from .models import LoopClip
+
+    row = session.get(LoopClip, loop_id)
+    if row is not None:
+        # Файл оставляем на диске: запись убираем из выдачи, а чистка хранилища —
+        # отдельная операция со своим подтверждением.
+        row.is_active = False
+        session.commit()
+    return RedirectResponse("/loops", status_code=303)
+
+
 @app.post("/videos/{video_id}/action")
 def video_action(video_id: int, session: Session = Depends(get_session),
                  _user: str = Depends(require_user), action: str = Form(...)):

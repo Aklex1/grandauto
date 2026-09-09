@@ -113,6 +113,45 @@ def _run_job(job_id: int) -> None:
                 session.add(Event(level="warn" if problems else "info",
                                   stage="библиотека", message=message[:4000]))
                 session.commit()
+        elif kind == "build_loops":
+            from . import loops, pipeline
+            from .models import Channel, Event
+
+            wanted = payload.get("formats") or list(pipeline.STILL_FORMATS)
+            done, failed = [], []
+            for fmt in wanted:
+                # Каждый формат — своя транзакция: сорвавшийся клип не должен
+                # отменять уже сгенерированные и оплаченные.
+                with session_scope() as session:
+                    if payload.get("skip_existing") and loops.for_format(session, fmt):
+                        continue
+                    channel = session.get(Channel, payload.get("channel_id"))
+                    if channel is None:
+                        raise RuntimeError("канал для генерации лупов не найден")
+                    try:
+                        row = loops.generate(
+                            session, pipeline.client_for(session), fmt,
+                            topic=channel.topic, heading=payload.get("heading") or channel.name,
+                            image_model=channel.image_model,
+                            video_model=payload.get("video_model") or channel.video_model,
+                            thumb_style=channel.thumb_style,
+                            seconds=int(payload.get("seconds") or loops.LOOP_SECONDS),
+                            quality=payload.get("quality") or loops.LOOP_QUALITY)
+                        done.append(f"{fmt} ({row.duration_sec:.0f} с)")
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("Луп %s не сделан: %s", fmt, exc)
+                        failed.append(f"{fmt}: {exc}")
+            with session_scope() as session:
+                message = f"Лупы: готово {len(done)}"
+                if done:
+                    message += " — " + ", ".join(done)
+                if failed:
+                    message += ". Не удалось: " + "; ".join(failed[:5])
+                session.add(Event(level="warn" if failed else "info", stage="библиотека",
+                                  message=message[:4000]))
+                session.commit()
+            if failed and not done:
+                raise RuntimeError("; ".join(failed[:3]))
         elif kind == "plan_day":
             from . import planner
 

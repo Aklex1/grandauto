@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Лупы форматов</h1>
+<p class="small muted">
+  Зацикленный видеофон генерируется один раз на формат и дальше используется во всех
+  шортсах этого формата. Пока лупа нет, формат оживляет одну картинку средствами ffmpeg —
+  бесплатно, но движение нарисованное. С лупом вода действительно течёт, а огонь горит.
+  Когда луп есть, фоновая картинка для сцены больше не заказывается.
+</p>
+
+{% if request.query_params.get('queued') %}
+  <p class="badge">Поставлено в очередь: {{ request.query_params.get('queued') }} форматов.
+    Ход — на вкладке «Очередь».</p>
+{% endif %}
+{% if request.query_params.get('error') == 'no-formats' %}
+  <p class="badge" style="background:#5b2222">Ни один формат не отмечен.</p>
+{% endif %}
+
+<form method="post" action="/loops/build">
+  <fieldset><legend>Сгенерировать лупы</legend>
+    <p class="small muted">
+      Каждый формат — это одна картинка плюс одно видео на {{ loop_seconds }} с.
+      Деньги списываются за каждый отмеченный формат, поэтому начните с одного и
+      посмотрите результат.
+    </p>
+    <label>Канал (от него берутся тематика, стиль и модели)
+      <select name="channel_id" required>
+        {% for ch in loop_channels %}
+        <option value="{{ ch.id }}">{{ ch.name }} — {{ ch.topic }}</option>
+        {% endfor %}
+      </select></label>
+
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <label style="flex:1;min-width:160px">Длина клипа, с
+        <input name="seconds" type="number" min="1" max="15" value="{{ loop_seconds }}"></label>
+      <label style="flex:1;min-width:160px">Качество
+        <select name="quality">
+          {% for q in ["360p", "540p", "720p", "1080p"] %}
+          <option value="{{ q }}" {% if q == loop_quality %}selected{% endif %}>{{ q }}</option>
+          {% endfor %}
+        </select></label>
+    </div>
+    <label><input type="checkbox" name="skip_existing" value="1" checked style="width:auto">
+      Пропускать форматы, у которых луп уже есть</label>
+
+    <table class="table">
+      <thead><tr><th></th><th>Формат</th><th>Что должно двигаться</th><th>Сейчас</th></tr></thead>
+      <tbody>
+      {% for key, label in still_formats.items() %}
+        {% set row = loop_rows.get(key) %}
+        <tr>
+          <td><input type="checkbox" name="formats" value="{{ key }}" style="width:auto"></td>
+          <td><b>{{ key }}</b><div class="small muted">{{ label }}</div></td>
+          <td class="small muted">{{ loop_motion.get(key, '') }}</td>
+          <td class="small">
+            {% if row %}
+              <span class="badge">есть</span>
+              {{ '%.0f'|format(row.duration_sec) }} с, {{ row.width }}×{{ row.height }}
+            {% else %}
+              <span class="muted">нет — рисуется через ffmpeg</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <button class="btn" type="submit">Сгенерировать отмеченные</button>
+  </fieldset>
+</form>
+
+<h2>Библиотека</h2>
+{% if not loop_rows %}
+  <p class="muted">Пока пусто. Ни один формат ещё не имеет зацикленного фона.</p>
+{% else %}
+<div style="display:flex;gap:16px;flex-wrap:wrap">
+  {% for key, row in loop_rows.items() %}
+  <div class="card" style="width:280px">
+    <b>{{ key }}</b>
+    <div class="small muted">{{ still_formats.get(key, '') }}</div>
+    <video controls preload="none" loop style="width:100%;margin:8px 0"
+      {% if row.poster_path %}poster="/media/{{ row.poster_path }}"{% endif %}
+      src="/media/{{ row.path }}"></video>
+    <div class="small">
+      {{ '%.1f'|format(row.duration_sec) }} с · {{ row.width }}×{{ row.height }}
+      · {{ (row.file_size / 1048576)|round(1) }} МБ
+      {% if row.credits %}· {{ '%.0f'|format(row.credits) }} кредитов{% endif %}
+    </div>
+    <div class="small muted">{{ row.model }}</div>
+    <form method="post" action="/loops/{{ row.id }}/drop"
+          onsubmit="return confirm('Убрать луп «{{ key }}» из выдачи? Файл останется на диске.')">
+      <button class="btn btn-sm btn-ghost" type="submit">Убрать из выдачи</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

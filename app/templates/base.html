@@ -16,6 +16,7 @@
       <a href="/channels/{{ ch.id }}" class="{% if request.url.path == '/channels/' ~ ch.id %}active{% endif %}">{{ ch.name }}</a>
     {% endfor %}
     <a href="/library" class="{% if request.url.path == '/library' %}active{% endif %}">Готовые видео</a>
+    <a href="/loops" class="{% if request.url.path == '/loops' %}active{% endif %}">Лупы</a>
     <a href="/prices" class="{% if request.url.path == '/prices' %}active{% endif %}">Цены KIE</a>
     <a href="/queue" class="{% if request.url.path == '/queue' %}active{% endif %}">Очередь</a>
     <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">Настройки</a>

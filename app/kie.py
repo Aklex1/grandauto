@@ -208,7 +208,10 @@ PIXVERSE_QUALITY = ("360p", "540p", "720p", "1080p")
 # что проходит и 3 — значит длительность не из фиксированного набора. Поэтому не
 # округляем к ближайшему из двух значений (это молча ломало бы настройку канала),
 # а только не даём выйти за верхнюю границу.
-PIXVERSE_MAX_DURATION = 8
+# Документация pixverse-v6 указывает диапазон 1-15 секунд и для text-to-video, и
+# для image-to-video. Раньше здесь стояло 8 — из-за этого настройка канала в 15
+# секунд молча урезалась вдвое, и клипы повторялись чаще, чем нужно.
+PIXVERSE_MAX_DURATION = 15
 
 
 def _pixverse_quality(resolution: str) -> str:
@@ -240,6 +243,33 @@ def video_input(model: str, *, prompt: str, aspect_ratio: str, resolution: str,
     return {
         "prompt": prompt,
         "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+        "duration": int(duration),
+        "generate_audio": False,
+    }
+
+
+def image_to_video_input(model: str, *, prompt: str, image_urls: list[str],
+                         resolution: str, duration: int) -> dict:
+    """Поля запроса на оживление картинки.
+
+    У pixverse-v6/image-to-video обязательны prompt, image_urls, quality и
+    duration, а aspect_ratio он не принимает вовсе — пропорции берутся из самой
+    картинки. Именно отсутствие image_urls давало «This field is required».
+    """
+    low = (model or "").lower()
+    if "pixverse" in low:
+        return {
+            "prompt": prompt,
+            "image_urls": list(image_urls),
+            "duration": max(1, min(PIXVERSE_MAX_DURATION, int(duration))),
+            "quality": _pixverse_quality(resolution),
+            "generate_audio_switch": False,
+        }
+    # Прочие семейства: общий набор, ближайший к тому, что принимает seedance.
+    return {
+        "prompt": prompt,
+        "image_urls": list(image_urls),
         "resolution": resolution,
         "duration": int(duration),
         "generate_audio": False,
