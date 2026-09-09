@@ -737,10 +737,19 @@ def loops_page(request: Request, session: Session = Depends(get_session),
 
     rows = {row.fmt: row for row in loops_mod.library(session) if row.is_active}
     channels = session.execute(select(Channel).order_by(Channel.id)).scalars().all()
+    # Лупу нужна модель, оживляющая картинку: у канала для сцен стоит генератор
+    # из текста, и его набор полей для этой задачи не подходит.
+    video_models = [m.path for m in session.execute(
+        select(ModelPath).where(ModelPath.kind == "video_input")
+        .order_by(ModelPath.path)).scalars()
+        if loops_mod.is_image_model(m.path)]
+    if loops_mod.DEFAULT_VIDEO_MODEL not in video_models:
+        video_models.insert(0, loops_mod.DEFAULT_VIDEO_MODEL)
     return templates.TemplateResponse("loops.html", base_context(
         request, session, loop_rows=rows, still_formats=pipeline.STILL_FORMATS,
         loop_channels=channels, loop_seconds=loops_mod.LOOP_SECONDS,
-        loop_quality=loops_mod.LOOP_QUALITY,
+        loop_quality=loops_mod.LOOP_QUALITY, loop_models=video_models,
+        loop_default_model=loops_mod.DEFAULT_VIDEO_MODEL,
         loop_motion=loops_mod.LOOP_MOTION))
 
 
@@ -748,7 +757,7 @@ def loops_page(request: Request, session: Session = Depends(get_session),
 def loops_build(session: Session = Depends(get_session), _user: str = Depends(require_user),
                 channel_id: int = Form(...), formats: list[str] = Form(default=[]),
                 seconds: int = Form(8), quality: str = Form("720p"),
-                skip_existing: str = Form("")):
+                video_model: str = Form(""), skip_existing: str = Form("")):
     from . import loops as loops_mod
 
     wanted = [f for f in formats if f in pipeline.STILL_FORMATS]
@@ -758,6 +767,7 @@ def loops_build(session: Session = Depends(get_session), _user: str = Depends(re
         "channel_id": channel_id, "formats": wanted,
         "seconds": max(1, min(15, seconds)),
         "quality": quality if quality in ("360p", "540p", "720p", "1080p") else "720p",
+        "video_model": loops_mod.to_image_model(video_model),
         "skip_existing": bool(skip_existing),
     })
     return RedirectResponse(f"/loops?queued={len(wanted)}", status_code=303)

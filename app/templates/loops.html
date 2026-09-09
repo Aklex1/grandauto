@@ -21,7 +21,9 @@
     <p class="small muted">
       Каждый формат — это одна картинка плюс одно видео на {{ loop_seconds }} с.
       Деньги списываются за каждый отмеченный формат, поэтому начните с одного и
-      посмотрите результат.
+      посмотрите результат. Модель здесь нужна именно <b>image-to-video</b>:
+      генератор видео из текста, который стоит у канала для сцен, картинку не
+      принимает — набор полей у них разный.
     </p>
     <label>Канал (от него берутся тематика, стиль и модели)
       <select name="channel_id" required>
@@ -33,6 +35,12 @@
     <div style="display:flex;gap:16px;flex-wrap:wrap">
       <label style="flex:1;min-width:160px">Длина клипа, с
         <input name="seconds" type="number" min="1" max="15" value="{{ loop_seconds }}"></label>
+      <label style="flex:1;min-width:220px">Модель оживления картинки
+        <select name="video_model">
+          {% for m in loop_models %}
+          <option value="{{ m }}" {% if m == loop_default_model %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select></label>
       <label style="flex:1;min-width:160px">Качество
         <select name="quality">
           {% for q in ["360p", "540p", "720p", "1080p"] %}

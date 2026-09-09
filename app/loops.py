@@ -53,6 +53,43 @@ LOOP_RULES = ("Seamless loop: the last frame must match the first so the clip ca
               "changes, no people entering the frame. No text, no letters, no watermark.")
 
 
+# Модель канала — это генератор видео ИЗ ТЕКСТА (pixverse-v6/text-to-video), а лупу
+# нужна модель, оживляющая картинку. Их наборы полей несовместимы: text-to-video
+# требует aspect_ratio и не знает image_urls, поэтому запрос с картинкой падал
+# с «This field is required». Приводим модель к парному варианту сами.
+T2V_TO_I2V = (
+    ("/text-to-video", "/image-to-video"),
+    ("/text2video", "/image2video"),
+    ("-text-to-video", "-image-to-video"),
+    ("/t2v", "/i2v"),
+)
+
+
+def to_image_model(model: str) -> str:
+    """Парная image-to-video модель для той, что выбрана у канала."""
+    low = (model or "").strip()
+    if not low:
+        return DEFAULT_VIDEO_MODEL
+    if is_image_model(low):
+        return low
+    for t2v, i2v in T2V_TO_I2V:
+        if t2v in low.lower():
+            # Замена по позиции: имя модели может отличаться регистром.
+            at = low.lower().index(t2v)
+            return low[:at] + i2v + low[at + len(t2v):]
+    # Пары не нашлось — берём проверенный вариант, иначе луп гарантированно упадёт.
+    log.warning("Для модели %s нет парной image-to-video, беру %s", model, DEFAULT_VIDEO_MODEL)
+    return DEFAULT_VIDEO_MODEL
+
+
+def is_image_model(model: str) -> bool:
+    low = (model or "").lower()
+    return any(m in low for m in ("image-to-video", "image2video", "img2video", "/i2v"))
+
+
+DEFAULT_VIDEO_MODEL = "pixverse-v6/image-to-video"
+
+
 def library_dir() -> Path:
     path = config.MEDIA_DIR / "_loops"
     path.mkdir(parents=True, exist_ok=True)
@@ -89,6 +126,9 @@ def generate(session: Session, client: KieClient, fmt: str, *, topic: str, headi
     image_urls по HTTP, и своего публичного хостинга для этого не нужно — это
     важно, потому что панель может стоять за туннелем и наружу не смотреть.
     """
+    # Модель приводим к image-to-video ДО генерации кадра: если делать это после,
+    # неподходящая модель обнаружится уже после оплаченной картинки.
+    video_model = to_image_model(video_model)
     image_prompt = prompts.still_background(fmt, topic, heading, thumb_style)
     result = client.run_task(image_model, {
         "prompt": image_prompt, "aspect_ratio": "9:16",
