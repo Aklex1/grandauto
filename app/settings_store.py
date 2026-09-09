@@ -12,7 +12,7 @@ from .models import Setting
 DEFAULTS: dict[str, Any] = {
     "kie_api_key": "",
     "default_chat_model": "gemini-3-8-flash-openai",
-    "default_video_model": "bytedance/seedance-1.5-pro",
+    "default_video_model": "pixverse-v6/text-to-video",
     "default_image_model": "nano-banana-2",
     "default_tts_model": "elevenlabs/text-to-speech-multilingual-v2",
     "tts_fallback_model": "google/gemini-3-1-flash-tts",
