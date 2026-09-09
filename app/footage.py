@@ -6,6 +6,8 @@ import logging
 import random
 import shutil
 import subprocess
+import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Iterable, Optional
@@ -342,8 +344,34 @@ def stats(session: Session, channel_id: Optional[int]) -> dict:
     }
 
 
+_ORPHAN_TTL = 60.0
+_orphan_cache: dict[str, tuple[float, dict]] = {}
+_orphan_lock = threading.Lock()
+
+
 def orphan_stats(session: Session) -> dict:
-    """Файлы, лежащие в библиотеке на диске, но потерявшие запись в базе."""
+    """Файлы, лежащие в библиотеке на диске, но потерявшие запись в базе.
+
+    Полный обход библиотеки на каждый заход в карточку канала делал страницу тем
+    медленнее, чем больше футажей загружено, — держим результат минуту.
+    """
+    now = time.monotonic()
+    with _orphan_lock:
+        hit = _orphan_cache.get("all")
+        if hit and now - hit[0] < _ORPHAN_TTL:
+            return dict(hit[1])
+    value = _scan_orphans(session)
+    with _orphan_lock:
+        _orphan_cache["all"] = (now, dict(value))
+    return value
+
+
+def invalidate_orphan_cache() -> None:
+    with _orphan_lock:
+        _orphan_cache.clear()
+
+
+def _scan_orphans(session: Session) -> dict:
     known = {r.path for r in session.execute(select(Footage)).scalars() if r.path}
     count, size = 0, 0
     root = config.MEDIA_DIR / LIBRARY_DIRNAME
@@ -387,6 +415,8 @@ def cleanup(session: Session, mode: str, channel_id: Optional[int] = None) -> tu
                 removed += 1
         log.info("Очистка «%s»: удалено %s файлов, освобождено %s",
                  CLEANUP_MODES[mode], removed, storage.human_size(freed))
+        invalidate_orphan_cache()
+        storage.invalidate_size_cache()
         return removed, freed
 
     query = select(Footage)
@@ -416,6 +446,8 @@ def cleanup(session: Session, mode: str, channel_id: Optional[int] = None) -> tu
     session.commit()
     log.info("Очистка «%s»: удалено %s футажей, освобождено %s",
              CLEANUP_MODES[mode], removed, storage.human_size(freed))
+    invalidate_orphan_cache()
+    storage.invalidate_size_cache()
     return removed, freed
 
 

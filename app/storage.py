@@ -5,6 +5,8 @@ import mimetypes
 import os
 import re
 import shutil
+import threading
+import time
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -82,13 +84,40 @@ def dir_size(path: Path) -> int:
     return total
 
 
+# Обход всех файлов архива стоит дорого и растёт вместе с архивом, а страницы
+# панели просили его на КАЖДЫЙ запрос. Держим результат недолго в памяти:
+# «занято на диске» — справочная величина, секундная давность на ней незаметна.
+_SIZE_TTL = 60.0
+_size_cache: dict[str, tuple[float, int]] = {}
+_size_lock = threading.Lock()
+
+
+def dir_size_cached(path: Path, ttl: float = _SIZE_TTL) -> int:
+    key = str(path)
+    now = time.monotonic()
+    with _size_lock:
+        hit = _size_cache.get(key)
+        if hit and now - hit[0] < ttl:
+            return hit[1]
+    value = dir_size(path)
+    with _size_lock:
+        _size_cache[key] = (now, value)
+    return value
+
+
+def invalidate_size_cache() -> None:
+    """После очистки хранилища показывать старый размер нельзя."""
+    with _size_lock:
+        _size_cache.clear()
+
+
 def disk_usage() -> dict:
     usage = shutil.disk_usage(config.DATA_DIR)
     return {
         "total": usage.total,
         "used": usage.used,
         "free": usage.free,
-        "media": dir_size(config.MEDIA_DIR),
+        "media": dir_size_cached(config.MEDIA_DIR),
     }
 
 
