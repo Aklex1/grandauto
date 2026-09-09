@@ -906,7 +906,7 @@ def settings_save(session: Session = Depends(get_session), _user: str = Depends(
                   default_tts_model: str = Form(""), tts_fallback_model: str = Form(""),
                   tts_fallback_voice: str = Form(""), tts_allow_fallback: str = Form(""),
                   auto_run_schedule: str = Form(""), scene_concurrency: int = Form(3),
-                  music_library_target: int = Form(6),
+                  music_library_target: int = Form(6), short_outro_sec: float = Form(4.0),
                   usd_per_credit: float = Form(0.005), new_password: str = Form(""),
                   pexels_api_key: str = Form(""), pixabay_api_key: str = Form(""),
                   stock_min_duration: float = Form(6.0), stock_per_page: int = Form(24),
@@ -925,6 +925,7 @@ def settings_save(session: Session = Depends(get_session), _user: str = Depends(
     st.set_value(session, "auto_run_schedule", "1" if auto_run_schedule else "0")
     st.set_value(session, "scene_concurrency", max(1, min(8, scene_concurrency)))
     st.set_value(session, "music_library_target", max(1, min(20, music_library_target)))
+    st.set_value(session, "short_outro_sec", max(0.0, min(15.0, short_outro_sec)))
     st.set_value(session, "usd_per_credit", usd_per_credit)
     # ключи стоков: пустое поле не затирает сохранённый ключ, слово "-" очищает
     for key, value in (("pexels_api_key", pexels_api_key), ("pixabay_api_key", pixabay_api_key)):

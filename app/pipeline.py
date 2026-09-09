@@ -640,9 +640,19 @@ STILL_FORMATS = {
     "deep":   "Глубина — столбы света под водой",
 }
 
-# Запас в конце шортса: без него последнее слово озвучки упиралось ровно в конец
-# ролика и на слух обрывалось.
+# Хвост в конце шортса. Раньше ролик кончался ровно на последнем слове, и обрыв
+# резал слух. Теперь после речи ещё несколько секунд идёт видеоряд с фоновой
+# музыкой, которая за это же время уводится в тишину.
+SHORT_OUTRO_SECONDS = 4.0
+# Небольшой запас поверх хвоста, чтобы последнее слово не упиралось в стык.
 SHORT_TAIL_SECONDS = 0.45
+
+
+def _outro_seconds(session: Session, channel: Channel) -> float:
+    """Длина хвоста. Без фоновой музыки хвост был бы просто тишиной под картинку."""
+    if not channel.background_music:
+        return 0.0
+    return max(0.0, min(15.0, st.get_float(session, "short_outro_sec", SHORT_OUTRO_SECONDS)))
 
 # Порядок чередования: полный видеоряд ровно на каждой третьей сцене, между ними
 # по очереди идут дешёвые форматы. Так генерация клипов остаётся 33% от шортсов.
@@ -751,6 +761,7 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
 
     fmt = normalize_format(scene.short_format or "full")
     audio = storage.abspath(scene.audio_path) if scene.audio_path else None
+    outro = _outro_seconds(session, channel)
 
     if fmt != "full" and audio and audio.exists():
         # Форматы из одного кадра строятся ПОВЕРХ озвучки, поэтому длительность
@@ -758,8 +769,8 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
         # прошлой сборки (возможно, в другом формате и другой длины), и если новая
         # озвучка длиннее — ролик обрывался на последнем предложении.
         duration = storage.media_duration(audio) or scene.audio_sec
-        # Хвост, чтобы последнее слово не срезалось ровно по стыку.
-        duration += SHORT_TAIL_SECONDS
+        # Запас, чтобы последнее слово не срезалось по стыку, плюс хвост под музыку.
+        duration += SHORT_TAIL_SECONDS + outro
     else:
         duration = scene.piece_sec or (
             storage.media_duration(source) if source.exists() else scene.audio_sec)
@@ -833,13 +844,15 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
             subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
                                 title=title, title_seconds=head_seconds,
                                 style=_subtitle_style(channel))
-        media.cut_short(source, raw, 0.0, duration, ass=ass)
+        media.cut_short(source, raw, 0.0, duration, ass=ass,
+                        tail=outro + SHORT_TAIL_SECONDS)
 
     dest = pieces_dir / f"scene_{scene.idx:02d}_short.mp4"
     if track_path is not None:
         try:
             media.mix_background_music(raw, track_path, dest,
-                                       music_db=channel.music_volume_db or -20.0)
+                                       music_db=channel.music_volume_db or -20.0,
+                                       fade_out=outro)
         except RuntimeError as exc:
             log_event(session, video.id,
                       f"Сцена {scene.idx + 1}: музыка в шортс не легла ({exc})",

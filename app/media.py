@@ -204,21 +204,36 @@ def concat_scenes(scenes: list[Path], dst: Path, workdir: Path) -> Path:
     return dst
 
 
-def mix_background_music(video: Path, music: Path, dst: Path, music_db: float = -24.0) -> Path:
+def mix_background_music(video: Path, music: Path, dst: Path, music_db: float = -24.0,
+                         fade_out: float = 0.0) -> Path:
     """Подмешиваем фон под голос.
 
     amix по умолчанию нормализует входы и приглушает речь, поэтому normalize=0:
     голос сохраняет исходный уровень, а музыка добавляется ровно на заданной громкости.
     Лёгкий sidechain-компрессор дополнительно притапливает фон, когда звучит голос.
+
+    fade_out — длина хвоста после речи. Первую четверть его музыка звучит ровно,
+    остальное уходит в тишину. На хвосте голоса уже нет, поэтому гаснет ровно
+    музыка: ролик заканчивается спадом, а не обрывом.
     """
+    chain = (f"[1:a]volume={music_db}dB,aformat=sample_fmts=fltp:sample_rates=48000:"
+             f"channel_layouts=stereo[bg];"
+             f"[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+             f"asplit[voice][key];"
+             f"[bg][key]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=350[duck];"
+             f"[voice][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0")
+    total = storage.media_duration(video) if fade_out > 0 else 0.0
+    if fade_out > 0 and total > fade_out:
+        # Гасим не весь хвост: первую четверть музыка держится ровно, и только
+        # потом уходит. Если начинать спад сразу после последнего слова, музыка
+        # не успевает прозвучать и хвост воспринимается как затянутый обрыв.
+        hold = fade_out * 0.25
+        span = fade_out - hold
+        chain += f",afade=t=out:st={total - span:.3f}:d={span:.3f}"
+    chain += "[a]"
     _ff([
         "-i", str(video), "-stream_loop", "-1", "-i", str(music),
-        "-filter_complex",
-        (f"[1:a]volume={music_db}dB,aformat=sample_fmts=fltp:sample_rates=48000:"
-         f"channel_layouts=stereo[bg];"
-         f"[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asplit[voice][key];"
-         f"[bg][key]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=350[duck];"
-         f"[voice][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]"),
+        "-filter_complex", chain,
         "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
         "-ar", "48000", "-ac", "2", "-movflags", "+faststart", str(dst),
     ], timeout=2400)
@@ -335,18 +350,28 @@ def frame_grab(video: Path, dst: Path, at: float = 3.0) -> Path:
 
 
 def cut_short(video: Path, dst: Path, start: float, end: float, ass: Path | None = None,
-              size: tuple[int, int] = VERTICAL) -> Path:
-    """Нарезаем вертикальный шортс: кроп по центру 9:16 + опциональные субтитры."""
+              size: tuple[int, int] = VERTICAL, tail: float = 0.0) -> Path:
+    """Нарезаем вертикальный шортс: кроп по центру 9:16 + опциональные субтитры.
+
+    tail — хвост после конца речи: последний кадр замирает, голос добивается
+    тишиной. Музыку на этот хвост кладёт mix_background_music, она же её и
+    гасит; без хвоста ролик обрывался ровно на последнем слове.
+    """
     w, h = size
     duration = max(1.0, end - start)
     chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={FPS}")
     if ass is not None:
         escaped = str(ass).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
         chain += f",ass='{escaped}'"
+    if tail > 0:
+        # tpad держит последний кадр, apad — тишину той же длины.
+        chain += f",tpad=stop_mode=clone:stop_duration={tail:.3f}"
+        duration += tail
     chain += ",format=yuv420p"
-    _ff([
-        "-ss", f"{start:.3f}", "-i", str(video), "-t", f"{duration:.3f}",
-        "-vf", chain,
+    args = ["-ss", f"{start:.3f}", "-i", str(video), "-t", f"{duration:.3f}", "-vf", chain]
+    if tail > 0:
+        args += ["-af", "apad"]
+    _ff(args + [
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", str(dst),
@@ -475,6 +500,7 @@ def build_paragraph_scene(background: Path, audio: Path, dst: Path, size: tuple[
     _ff([
         "-loop", "1", "-i", str(background), "-i", str(audio),
         "-filter_complex_script", str(graph),
+        "-af", "apad",
         "-map", "[v]", "-map", "1:a:0", "-t", f"{duration:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
@@ -641,6 +667,7 @@ def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int,
         "-loop", "1", "-i", str(background),
         "-i", str(audio),
         "-filter_complex_script", str(script),
+        "-af", "apad",
         "-map", "[v]", "-map", "2:a:0", "-t", f"{duration:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
@@ -670,7 +697,7 @@ def build_loop_scene(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
     _ff([
         "-stream_loop", "-1", "-i", str(loop),
         "-i", str(audio),
-        "-vf", chain,
+        "-vf", chain, "-af", "apad",
         "-map", "0:v:0", "-map", "1:a:0", "-t", f"{duration:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",

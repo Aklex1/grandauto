@@ -45,6 +45,12 @@
         {% if settings.auto_run_schedule == '1' %}checked{% endif %}> Автозапуск по расписанию каналов</label>
       <label>Параллельных запросов на сцену
         <input name="scene_concurrency" type="number" min="1" max="8" value="{{ settings.scene_concurrency }}"></label>
+      <label>Хвост в конце шортса, с
+        <input name="short_outro_sec" type="number" min="0" max="15" step="0.5"
+               value="{{ settings.short_outro_sec or 4 }}"></label>
+      <p class="small muted">После окончания реплики видеоряд идёт ещё столько секунд,
+        а фоновая музыка за это время плавно уходит в тишину. Ноль — обрывать сразу
+        после последнего слова. Работает только когда у канала включена фоновая музыка.</p>
       <label>Разных фоновых треков на канал
         <input name="music_library_target" type="number" min="1" max="20"
                value="{{ settings.music_library_target or 6 }}"></label>
