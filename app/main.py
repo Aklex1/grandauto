@@ -40,6 +40,12 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 app = FastAPI(title="Контент-завод", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+# Проверка владения доменом для Let's Encrypt. Каталог пустой в обычное время;
+# certbot кладёт туда файл на время выпуска. Без авторизации — иначе проверяющий
+# сервер её не пройдёт; отдаются только файлы, положенные самим certbot.
+app.mount("/.well-known/acme-challenge",
+          StaticFiles(directory=str(config.ACME_DIR), check_dir=False),
+          name="acme")
 
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 STATUS_LABELS = {

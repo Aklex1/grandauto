@@ -14,6 +14,10 @@ DATA_DIR = Path(os.environ.get("CF_DATA_DIR", "/var/lib/contentfactory"))
 MEDIA_DIR = DATA_DIR / "media"
 TMP_DIR = DATA_DIR / "tmp"
 LOG_DIR = DATA_DIR / "logs"
+# Каталог для файлов проверки владения доменом (ACME). Приложение отдаёт его
+# по /.well-known/acme-challenge — на порту 80 сидит оно, а не веб-сервер,
+# и без этого certbot получал 404 и не мог выпустить сертификат.
+ACME_DIR = DATA_DIR / "acme"
 
 DB_URL = os.environ.get("CF_DB_URL") or f"sqlite:///{DATA_DIR / 'contentfactory.db'}"
 
@@ -41,5 +45,5 @@ FFPROBE = os.environ.get("CF_FFPROBE", "ffprobe")
 SESSION_COOKIE = "cf_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 14
 
-for _d in (DATA_DIR, MEDIA_DIR, TMP_DIR, LOG_DIR):
+for _d in (DATA_DIR, MEDIA_DIR, TMP_DIR, LOG_DIR, ACME_DIR):
     _d.mkdir(parents=True, exist_ok=True)
