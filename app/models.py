@@ -198,6 +198,9 @@ class Scene(Base):
     # формат шортса: full — сгенерированный видеоряд, bust — оживлённый кадр,
     # paragraph — текст на тёмном фоне
     short_format: Mapped[str] = mapped_column(String(16), default="full")
+    # метаданные публикации: теги и описание конкретно этого шортса
+    short_tags: Mapped[str] = mapped_column(Text, default="")
+    short_description: Mapped[str] = mapped_column(Text, default="")
     short_path: Mapped[str] = mapped_column(String(500), default="")
     thumb_path: Mapped[str] = mapped_column(String(500), default="")
     include: Mapped[bool] = mapped_column(Boolean, default=True)      # войдёт в длинный ролик

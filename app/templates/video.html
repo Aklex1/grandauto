@@ -164,6 +164,24 @@
               <a class="btn btn-sm" href="/media/{{ sc.thumb_path }}?download=1">⬇ Обложка</a>
               {% endif %}
             </div>
+
+            {% if sc.short_description or sc.short_tags %}
+            <details class="mt">
+              <summary class="small">Описание и теги для публикации</summary>
+              {% if sc.short_description %}
+              <label class="small mt">Описание
+                <textarea rows="4" readonly onclick="this.select()"
+                  >{{ sc.short_description }}</textarea></label>
+              {% endif %}
+              {% if sc.short_tags %}
+              <label class="small">Теги ({{ sc.short_tags.split(',')|length }})
+                <textarea rows="4" readonly onclick="this.select()"
+                  >{{ sc.short_tags }}</textarea></label>
+              <div class="small muted">Нажмите на поле — текст выделится целиком,
+                дальше Ctrl+C и вставка в YouTube.</div>
+              {% endif %}
+            </details>
+            {% endif %}
           </div>
           {% endif %}
 

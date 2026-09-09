@@ -611,6 +611,41 @@ def _scene_background(session: Session, video: Video, channel: Channel, scene: S
         return None
 
 
+def _scene_tags(session: Session, video: Video, channel: Channel, scene: Scene) -> None:
+    """Теги и описание для публикации этого шортса.
+
+    В запрос идёт и сценарий ролика целиком, и текст именно этой сцены: теги
+    должны связывать шортс с остальными роликами канала и одновременно приводить
+    зрителя по конкретной мысли куска.
+    """
+    if scene.short_tags:
+        return
+    try:
+        client = client_for(session)
+        messages = prompts.short_metadata(
+            channel.name, channel.topic, video.title, video.book_title,
+            scene.heading, scene.narration, (video.script or "")[:4000])
+        data, credits = client.chat_json(channel.chat_model, messages, temperature=0.7)
+        tags = [str(t).strip().lstrip("#") for t in (data.get("tags") or []) if str(t).strip()]
+        # убираем повторы, сохраняя порядок от точных к общим
+        seen, ordered = set(), []
+        for tag in tags:
+            low = tag.lower()
+            if low not in seen:
+                seen.add(low)
+                ordered.append(tag)
+        scene.short_tags = ", ".join(ordered[:30])
+        scene.short_description = (data.get("description") or "").strip()[:1500]
+        video.cost_credits = (video.cost_credits or 0) + credits
+        session.commit()
+        log_event(session, video.id,
+                  f"Сцена {scene.idx + 1}: подобрано тегов {len(ordered[:30])}",
+                  stage="assemble")
+    except Exception as exc:  # noqa: BLE001 — без тегов шортс всё равно готов
+        log_event(session, video.id, f"Сцена {scene.idx + 1}: теги не подобраны ({exc})",
+                  stage="assemble", level="warn")
+
+
 def build_scene_short(session: Session, video: Video, channel: Channel, scene: Scene,
                       workdir: Path, pieces_dir: Path, track_path: Optional[Path],
                       cues: Optional[list[subtitles.Cue]] = None) -> bool:
@@ -711,6 +746,8 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     scene.short_path = storage.rel(dest)
     scene.short_title = title
     session.commit()
+
+    _scene_tags(session, video, channel, scene)
     log_event(session, video.id,
               f"Сцена {scene.idx + 1}: шортс готов — {duration:.0f} с, заголовок «{title}»",
               stage="assemble")
@@ -1468,6 +1505,10 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
         # клиент нужен только дальше, где идут реальные вызовы KIE
         client = client_for(session)
 
+        if narration != (scene.narration or ""):
+            # текст изменился — прежние теги к нему больше не относятся
+            scene.short_tags = ""
+            scene.short_description = ""
         scene.visual_prompt = prompt
         scene.narration = narration
         scene.status = "regenerating"
