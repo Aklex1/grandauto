@@ -1388,8 +1388,12 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
             if redo_voice:
                 audio_dir = out_dir / "audio"
                 audio_dir.mkdir(parents=True, exist_ok=True)
+                # В имени — метка времени, а не номер сцены: при повторной пересборке
+                # одинаковое имя означало бы, что синтез перезапишет прежний файл,
+                # а следом строка «удалить старую озвучку» снесёт только что созданный.
+                stamp = int(utcnow().timestamp())
                 result = tts.synthesize(
-                    client, narration, audio_dir / f"scene_{scene.idx:02d}_r{scene.id}",
+                    client, narration, audio_dir / f"scene_{scene.idx:02d}_r{stamp}",
                     model=tts_model, voice_id=voice_id,
                     stability=channel.voice_stability, similarity=channel.voice_similarity,
                     speed=channel.voice_speed,
@@ -1398,8 +1402,11 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
                     fallback_voice=st.get(session, "tts_fallback_voice", "Charon"),
                     allow_fallback=st.get_bool(session, "tts_allow_fallback", True),
                 )
-                _drop_file(scene.audio_path)
+                previous_audio = scene.audio_path
                 scene.audio_path = storage.rel(result.path)
+                # страховка на случай совпадения имён: не удаляем то, что сейчас используем
+                if previous_audio and previous_audio != scene.audio_path:
+                    _drop_file(previous_audio)
                 scene.audio_sec = result.duration
                 credits += result.credits
                 _check_audio_length(session, video, scene.idx, narration, result.duration)
@@ -1423,15 +1430,19 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
                           f"{label}: часть кадров не сгенерировалась ({len(errors)} из {count})",
                           stage="regen", level="warn")
 
+            fresh = {storage.rel(c) for c in clips}
             for old in _scene_clips(scene):
-                _drop_file(old)
+                if old not in fresh:
+                    _drop_file(old)
             scene.clip_paths = json.dumps([storage.rel(c) for c in clips], ensure_ascii=False)
             scene.clip_sources = json.dumps(["generated"] * len(clips), ensure_ascii=False)
             scene.clip_path = storage.rel(clips[0])
             scene.clip_sec = storage.media_duration(clips[0])
             session.commit()
 
-            # старый кусок удаляем, иначе сборка увидит готовый файл и ничего не сделает
+            # Старый кусок удаляем, иначе сборка увидит готовый файл и ничего не сделает.
+            # Имя куска от номера сцены и не меняется, поэтому файл будет перезаписан —
+            # удалять его безопасно только ДО сборки, что здесь и происходит.
             _drop_file(scene.piece_path)
             _drop_file(scene.piece_music_path)
             scene.piece_path = ""
