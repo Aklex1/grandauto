@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# Публикует панель по HTTPS на порту 443.
+#
+# Зачем: во многих корпоративных сетях исходящий порт 80 закрыт, и панель просто
+# не открывается (curl показывает "Timed out"). Порт 443 разрешён почти везде.
+# Заодно перестаёт ходить открытым текстом пароль администратора.
+#
+# Приложение продолжает слушать порт 80 на самом сервере, nginx занимает только
+# 443 и проксирует запросы внутрь — трогать службу contentfactory не требуется.
+#
+# Использование:
+#   bash deploy/enable_https.sh                 # самоподписанный сертификат
+#   bash deploy/enable_https.sh panel.example.com   # сертификат Let's Encrypt
+set -euo pipefail
+
+DOMAIN="${1:-}"
+APP_PORT="${APP_PORT:-80}"
+CERT_DIR=/etc/ssl/contentfactory
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Запускать от root" >&2
+  exit 1
+fi
+
+echo "==> Ставлю nginx"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq nginx >/dev/null
+
+if [ -n "$DOMAIN" ]; then
+  echo "==> Домен $DOMAIN: беру сертификат Let's Encrypt"
+  apt-get install -y -qq certbot python3-certbot-nginx >/dev/null
+  SERVER_NAME="$DOMAIN"
+else
+  echo "==> Домена нет: делаю самоподписанный сертификат на 10 лет"
+  mkdir -p "$CERT_DIR"
+  if [ ! -f "$CERT_DIR/panel.crt" ]; then
+    openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+      -keyout "$CERT_DIR/panel.key" -out "$CERT_DIR/panel.crt" \
+      -subj "/CN=contentfactory" >/dev/null 2>&1
+    chmod 600 "$CERT_DIR/panel.key"
+  fi
+  SERVER_NAME="_"
+fi
+
+echo "==> Пишу конфигурацию nginx"
+cat > /etc/nginx/sites-available/contentfactory <<NGINX
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${SERVER_NAME};
+
+    ssl_certificate     ${CERT_DIR}/panel.crt;
+    ssl_certificate_key ${CERT_DIR}/panel.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # Футажи заливают файлами в сотни мегабайт — лимит снят.
+    client_max_body_size 0;
+
+    # Сборка ролика долгая: короткий таймаут рвал бы страницу очереди.
+    proxy_read_timeout    600s;
+    proxy_send_timeout    600s;
+    proxy_connect_timeout 60s;
+
+    location / {
+        proxy_pass http://127.0.0.1:${APP_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host              \$host;
+        proxy_set_header X-Real-IP         \$remote_addr;
+        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        # Перемотка видео в браузере идёт запросами по диапазонам —
+        # буферизация ответа ломала бы её.
+        proxy_buffering off;
+    }
+}
+NGINX
+
+ln -sf /etc/nginx/sites-available/contentfactory /etc/nginx/sites-enabled/contentfactory
+rm -f /etc/nginx/sites-enabled/default
+
+echo "==> Проверяю конфигурацию"
+nginx -t
+
+echo "==> Перезапускаю nginx"
+systemctl enable nginx >/dev/null 2>&1 || true
+systemctl restart nginx
+
+if [ -n "$DOMAIN" ]; then
+  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \
+          --register-unsafely-without-email --redirect || {
+    echo "Certbot не смог выпустить сертификат — остаётся самоподписанный" >&2; }
+fi
+
+# Открываем 443, если брандмауэр включён
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+  ufw allow 443/tcp >/dev/null 2>&1 || true
+fi
+
+echo
+echo "Готово. Панель доступна по адресу:"
+if [ -n "$DOMAIN" ]; then
+  echo "  https://${DOMAIN}/"
+else
+  IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+  echo "  https://${IP:-<адрес сервера>}/"
+  echo
+  echo "Сертификат самоподписанный — при первом заходе браузер покажет"
+  echo "предупреждение. Нажмите «Дополнительно» и «Перейти на сайт»."
+fi
