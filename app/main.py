@@ -9,15 +9,15 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import (bootstrap, config, estimate, footage, planner, prompts, queue, scheduler,
-               stock, storage, subtitles, sync, webutil)
+from . import (bootstrap, config, estimate, fonts, footage, pipeline, planner, prompts,
+               queue, scheduler, stock, storage, subtitles, sync, webutil)
 from . import settings_store as st
 from .db import get_session, session_scope
 from .kie import KieClient
@@ -250,7 +250,8 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         clips=clips, lib_bytes=lib_bytes, lib_sec=lib_sec, lib_stats=lib_stats,
         lib_events=lib_events, lib_jobs=lib_jobs,
         cleanup_modes=footage.CLEANUP_MODES,
-        subtitle_styles=subtitles.SUBTITLE_STYLES, **stock_ctx,
+        subtitle_styles=subtitles.SUBTITLE_STYLES, font_list=fonts.available(),
+        short_formats=pipeline.SHORT_FORMATS, **stock_ctx,
         **estimate.channel_estimate_context(session, channel)))
 
 
@@ -309,7 +310,8 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
                      target_minutes: float = Form(8.0), scene_count: int = Form(8),
                      visual_style: str = Form(""), script_style: str = Form(""),
                      thumb_style: str = Form(""), burn_subtitles: str = Form(""),
-                     subtitle_style: str = Form("shorts"),
+                     subtitle_style: str = Form("shorts"), title_font: str = Form(""),
+                     rotate_formats: str = Form(""),
                      make_shorts: str = Form(""), shorts_count: int = Form(3),
                      is_active: str = Form("")):
     channel = _channel_or_404(session, channel_id)
@@ -342,6 +344,8 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
     channel.thumb_style = thumb_style
     channel.burn_subtitles = bool(burn_subtitles)
     channel.subtitle_style = subtitles.normalize_style(subtitle_style)
+    channel.title_font = fonts.normalize(title_font) or channel.title_font
+    channel.rotate_formats = bool(rotate_formats)
     channel.make_shorts = bool(make_shorts)
     channel.shorts_count = max(0, min(10, shorts_count))
     channel.is_active = bool(is_active)
@@ -612,9 +616,19 @@ def footage_update(footage_id: int, session: Session = Depends(get_session),
     return RedirectResponse(target, status_code=303)
 
 
+@app.get("/font-preview/{key}.png")
+def font_preview(key: str, _user: str = Depends(require_user)):
+    """Картинка-образец шрифта для выбора в интерфейсе."""
+    path = fonts.preview_png(key)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Образец недоступен")
+    return FileResponse(path, media_type="image/png")
+
+
 @app.post("/scenes/{scene_id}/short")
 def scene_make_short(scene_id: int, session: Session = Depends(get_session),
-                     _user: str = Depends(require_user), short_title: str = Form("")):
+                     _user: str = Depends(require_user), short_title: str = Form(""),
+                     short_format: str = Form(""), title_font: str = Form("")):
     """Собрать публикуемый шортс из уже готового куска — без новой генерации кадров."""
     scene = session.get(Scene, scene_id)
     if scene is None:
@@ -624,7 +638,9 @@ def scene_make_short(scene_id: int, session: Session = Depends(get_session),
     queue.enqueue(session, "regen_scene", video_id=scene.video_id,
                   payload={"scene_id": scene.id,
                            "options": {"only_short": True,
-                                       "short_title": short_title.strip()[:200]}})
+                                       "short_title": short_title.strip()[:200],
+                                       "short_format": pipeline.normalize_format(short_format),
+                                       "title_font": fonts.normalize(title_font)}})
     session.add(Event(video_id=scene.video_id, level="info", stage="regen",
                       message=f"Сцена {scene.idx + 1}: сборка шортса поставлена в очередь"))
     session.commit()
@@ -661,7 +677,8 @@ def video_page(video_id: int, request: Request, session: Session = Depends(get_s
     return templates.TemplateResponse("video.html", base_context(
         request, session, video=video, channel=channel, events=events, variants=variants,
         clean_path=clean_path, models=models, voices=voices,
-        regen_jobs=regen_jobs, busy_scenes=busy_scenes))
+        regen_jobs=regen_jobs, busy_scenes=busy_scenes,
+        short_formats=pipeline.SHORT_FORMATS, font_list=fonts.available()))
 
 
 @app.post("/scenes/{scene_id}/regenerate")
@@ -671,7 +688,8 @@ def scene_regenerate(scene_id: int, session: Session = Depends(get_session),
                      video_model: str = Form(""), tts_model: str = Form(""),
                      voice_id: str = Form(""), clips: int = Form(0),
                      redo_voice: str = Form(""), make_short: str = Form(""),
-                     short_title: str = Form("")):
+                     short_title: str = Form(""), short_format: str = Form("full"),
+                     title_font: str = Form("")):
     """Пересборка одной сцены: свой промпт, своя модель, полный кусок на выходе."""
     scene = session.get(Scene, scene_id)
     if scene is None:
@@ -690,6 +708,8 @@ def scene_regenerate(scene_id: int, session: Session = Depends(get_session),
         "redo_voice": bool(redo_voice),
         "make_short": bool(make_short),
         "short_title": short_title.strip()[:200],
+        "short_format": pipeline.normalize_format(short_format),
+        "title_font": fonts.normalize(title_font),
     }
     queue.enqueue(session, "regen_scene", video_id=video.id,
                   payload={"scene_id": scene.id, "options": options})

@@ -139,6 +139,30 @@ def short_cover(channel_name: str, topic: str, heading: str, narration: str,
     )
 
 
+def bust_background(topic: str, heading: str, thumb_style: str = "") -> str:
+    """Кадр для формата «бюст»: античная скульптура в дыму на тёмном фоне."""
+    style = thumb_style or "cinematic, dramatic side light, deep shadows, film grain"
+    return (
+        f"Vertical 9:16 cinematic still. Marble bust of an ancient philosopher in profile, "
+        f"weathered stone texture, draped toga, looking upward. Very dark charcoal background, "
+        f"low drifting smoke and clouds around the base and top. Monochrome, desaturated, "
+        f"high contrast. Subject centered in the lower two thirds, empty dark sky in the upper "
+        f"third for a headline. Theme: {heading} ({topic}). {style}. "
+        f"No text, no letters, no words, no watermark, no logo."
+    )
+
+
+def paragraph_background(topic: str, heading: str) -> str:
+    """Фон для формата «абзац»: почти чёрный кадр с еле различимой фактурой."""
+    return (
+        f"Vertical 9:16 background image, almost entirely deep black. A very faint, subtle "
+        f"texture in the corners — soft smoke or dust, barely visible, no bright areas. "
+        f"Extremely dark, minimalist, cinematic. Mood: {heading} ({topic}). "
+        f"The center must stay plain black so white text stays readable. "
+        f"No text, no letters, no words, no subject, no watermark."
+    )
+
+
 def bridge(channel_name: str, topic: str, prev_heading: str, prev_tail: str,
            next_heading: str, next_head: str) -> list[dict]:
     """Промпт для короткой связки между двумя несмежными сценами."""

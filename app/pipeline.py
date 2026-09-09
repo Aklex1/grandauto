@@ -13,7 +13,7 @@ from typing import Callable, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import config, footage, media, music, prompts, storage, subtitles, tts
+from . import config, fonts, footage, media, music, prompts, storage, subtitles, tts
 from .db import session_scope
 from .kie import KieClient, KieError, extract_urls, video_input
 from .models import (Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
@@ -119,12 +119,18 @@ def generate_script(session: Session, client: KieClient, video: Video, channel: 
         session.delete(scene)
     session.flush()
 
+    # Чередование форматов шортсов: полный видеоряд достаётся каждой третьей сцене,
+    # остальные собираются из одного кадра. Смещение по номеру ролика — чтобы у
+    # соседних роликов канала рисунок чередования не совпадал.
+    rotate = bool(getattr(channel, "rotate_formats", True))
     for idx, scene in enumerate(scenes):
+        fmt = FORMAT_CYCLE[(idx + video.id) % len(FORMAT_CYCLE)] if rotate else "full"
         session.add(Scene(
             video_id=video.id, idx=idx,
             heading=(scene.get("heading") or f"Сцена {idx + 1}")[:300],
             narration=(scene.get("narration") or "").strip(),
             visual_prompt=(scene.get("visual_prompt") or "").strip(),
+            short_format=fmt,
         ))
     session.commit()
 
@@ -519,12 +525,19 @@ def _track_file(session: Session, video: Video, channel: Channel) -> Optional[Pa
 
 
 def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
-                 title: str, source: Path, workdir: Path, thumb: Path) -> None:
+                 title: str, source: Path, workdir: Path, thumb: Path,
+                 ready_image: Optional[Path] = None) -> None:
     """Обложка шортса: картинка от nano banana плюс заголовок своим шрифтом.
 
     Если генератор не ответил, берём кадр из самой сцены — обложка нужна всегда,
     а ролик из-за неё падать не должен.
     """
+    # Форматы «бюст» и «абзац» уже сгенерировали кадр — рисуем заголовок поверх
+    # него, вместо того чтобы платить за вторую картинку с тем же смыслом.
+    if ready_image is not None and ready_image.exists():
+        media.make_thumbnail(ready_image, thumb, size=media.VERTICAL, headline=title)
+        return
+
     raw: Optional[Path] = None
     try:
         client = client_for(session)
@@ -558,6 +571,46 @@ def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
     raw.unlink(missing_ok=True)
 
 
+# Порядок чередования: на три сцены приходится один полный видеоряд.
+FORMAT_CYCLE = ("full", "bust", "paragraph")
+
+SHORT_FORMATS = {
+    "full": "Полный видеоряд — генерация клипов, дороже всего",
+    "bust": "Бюст — один кадр с дымкой, титры крупным шрифтом",
+    "paragraph": "Абзац — текст построчно на тёмном фоне, дешевле всего",
+}
+
+
+def normalize_format(value: str) -> str:
+    return value if value in SHORT_FORMATS else "full"
+
+
+def _scene_background(session: Session, video: Video, channel: Channel, scene: Scene,
+                      fmt: str, workdir: Path) -> Optional[Path]:
+    """Фоновый кадр для форматов «бюст» и «абзац» — одна картинка на весь шортс."""
+    if fmt == "bust":
+        prompt = prompts.bust_background(channel.topic, scene.heading, channel.thumb_style)
+    else:
+        prompt = prompts.paragraph_background(channel.topic, scene.heading)
+    try:
+        client = client_for(session)
+        result = client.run_task(channel.image_model, {
+            "prompt": prompt, "aspect_ratio": "9:16",
+            "resolution": "1K", "output_format": "png",
+        }, timeout=900, poll=5)
+        urls = extract_urls(result)
+        if not urls:
+            raise KieError("в ответе нет ссылки на изображение")
+        dest = workdir / f"bg_{scene.idx:02d}{storage.guess_ext(urls[0], '.png')}"
+        storage.download(urls[0], dest)
+        return dest
+    except Exception as exc:  # noqa: BLE001
+        log_event(session, video.id,
+                  f"Сцена {scene.idx + 1}: фон для формата «{fmt}» не сгенерирован ({exc})",
+                  stage="assemble", level="warn")
+        return None
+
+
 def build_scene_short(session: Session, video: Video, channel: Channel, scene: Scene,
                       workdir: Path, pieces_dir: Path, track_path: Optional[Path],
                       cues: Optional[list[subtitles.Cue]] = None) -> bool:
@@ -568,12 +621,21 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     """
     # Источник — чистый кусок без вшитых субтитров: у горизонтального канала
     # кроп в вертикаль срезал бы subtitles по краям вместе с картинкой.
+    # Функция пишет сюда при любом формате, а на коротком пути каталога может
+    # ещё не быть: сборку куска сцены мы пропустили.
+    pieces_dir.mkdir(parents=True, exist_ok=True)
+
     clean = pieces_dir / f"scene_{scene.idx:02d}_clean.mp4"
-    source = clean if clean.exists() else storage.abspath(scene.piece_path)
-    if not source.exists():
+    source = clean if clean.exists() else (
+        storage.abspath(scene.piece_path) if scene.piece_path else clean)
+
+    # Форматам «бюст» и «абзац» готовый кусок не нужен — они строятся из кадра и
+    # озвучки, поэтому проверяем исходник только там, где он действительно нужен.
+    if normalize_format(scene.short_format or "full") == "full" and not source.exists():
         raise RuntimeError("нет исходного куска сцены")
 
-    duration = scene.piece_sec or storage.media_duration(source)
+    duration = scene.piece_sec or (
+        storage.media_duration(source) if source.exists() else scene.audio_sec)
     title = (scene.short_title or scene.heading or video.title or "").strip()
 
     if cues is None and scene.audio_path:
@@ -581,17 +643,46 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     cues = cues or []
 
     workdir.mkdir(parents=True, exist_ok=True)
-    ass = None
-    if cues or title:
-        ass = workdir / f"short_{scene.idx:02d}.ass"
-        # заголовок висит первые секунды — дальше он мешал бы читать субтитры
-        head_seconds = min(4.5, max(2.5, duration * 0.18))
-        subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
-                            title=title, title_seconds=head_seconds,
-                            style=_subtitle_style(channel))
-
+    fmt = normalize_format(scene.short_format or "full")
     raw = workdir / f"short_{scene.idx:02d}_raw.mp4"
-    media.cut_short(source, raw, 0.0, duration, ass=ass)
+    audio = storage.abspath(scene.audio_path) if scene.audio_path else None
+
+    background: Optional[Path] = None
+    if fmt in ("bust", "paragraph") and audio and audio.exists():
+        background = _scene_background(session, video, channel, scene, fmt, workdir)
+        if background is None:
+            log_event(session, video.id,
+                      f"Сцена {scene.idx + 1}: формат «{fmt}» без фона — собираю обычным",
+                      stage="assemble", level="warn")
+            fmt = "full"
+        elif fmt == "paragraph":
+            # Текст вшивается прямо в кадр построчно, ASS-субтитры здесь не нужны.
+            chars = max(18, int(media.VERTICAL[0] / 26))
+            media.build_paragraph_scene(
+                background, audio, raw, media.VERTICAL, duration,
+                media.paragraph_lines(cues, chars), fonts.font_path(channel.title_font) or "",
+                workdir, signature=channel.name)
+        else:
+            still = workdir / f"still_{scene.idx:02d}.mp4"
+            media.build_still_scene(background, audio, still, media.VERTICAL, duration, workdir)
+            ass = workdir / f"short_{scene.idx:02d}.ass"
+            head_seconds = min(4.5, max(2.5, duration * 0.18))
+            subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
+                                title=title, title_seconds=head_seconds,
+                                style=_subtitle_style(channel),
+                                font=fonts.font_family(channel.title_font))
+            media.burn_subtitles(still, ass, raw, fontsdir=fonts.FONTS_DIR)
+
+    if fmt == "full":
+        ass = None
+        if cues or title:
+            ass = workdir / f"short_{scene.idx:02d}.ass"
+            # заголовок висит первые секунды — дальше он мешал бы читать субтитры
+            head_seconds = min(4.5, max(2.5, duration * 0.18))
+            subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
+                                title=title, title_seconds=head_seconds,
+                                style=_subtitle_style(channel))
+        media.cut_short(source, raw, 0.0, duration, ass=ass)
 
     dest = pieces_dir / f"scene_{scene.idx:02d}_short.mp4"
     if track_path is not None:
@@ -609,7 +700,8 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
     # Обложка с тем же заголовком — чтобы шортс можно было выложить как есть.
     thumb = pieces_dir / f"scene_{scene.idx:02d}_thumb.jpg"
     try:
-        _scene_cover(session, video, channel, scene, title, source, workdir, thumb)
+        _scene_cover(session, video, channel, scene, title, source, workdir, thumb,
+                     ready_image=background)
         scene.thumb_path = storage.rel(thumb)
     except Exception as exc:  # noqa: BLE001 — шортс важнее обложки
         log_event(session, video.id, f"Сцена {scene.idx + 1}: обложка не сделана ({exc})",
@@ -1346,6 +1438,10 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
         make_short = bool(options.get("make_short"))
         short_title = (options.get("short_title") or scene.short_title
                        or scene.heading or "").strip()[:200]
+        fmt = normalize_format(options.get("short_format") or scene.short_format or "full")
+        chosen_font = fonts.normalize(options.get("title_font") or channel.title_font or "")
+        if chosen_font and chosen_font != channel.title_font:
+            channel.title_font = chosen_font
 
         redo_voice = bool(options.get("redo_voice"))
         if narration != (scene.narration or ""):
@@ -1357,6 +1453,7 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
 
         if options.get("only_short"):
             scene.short_title = short_title
+            scene.short_format = fmt
             session.commit()
             log_event(session, video.id,
                       f"Сцена {scene.idx + 1}: собираю шортс из готового куска",
@@ -1412,6 +1509,23 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
                 _check_audio_length(session, video, scene.idx, narration, result.duration)
                 session.commit()
 
+            # Форматам «бюст» и «абзац» видеоряд не нужен: они строятся из одного
+            # кадра поверх готовой озвучки. Генерировать для них клипы и пересобирать
+            # кусок сцены — выбрасывать деньги, поэтому идём коротким путём.
+            if fmt in ("bust", "paragraph"):
+                scene.short_format = fmt
+                scene.short_title = short_title
+                scene.status = "piece_ready"
+                scene.error = ""
+                video.cost_credits = (video.cost_credits or 0) + credits
+                session.commit()
+                log_event(session, video.id,
+                          f"{label}: формат «{fmt}» — клипы не генерирую, "
+                          f"собираю шортс из одного кадра", stage="regen")
+                build_scene_short(session, video, channel, scene, workdir,
+                                  out_dir / "scenes", _track_file(session, video, channel))
+                return
+
             coverage = max(6, int(getattr(channel, "clip_coverage_sec", 20) or 20))
             cap = int(getattr(channel, "max_clips_per_scene", 8) or 8)
             count = int(options.get("clips") or 0) or media.clips_needed(
@@ -1461,6 +1575,7 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
 
             if make_short:
                 scene.short_title = short_title
+                scene.short_format = fmt
                 session.commit()
                 try:
                     build_scene_short(session, video, channel, scene, workdir, pieces_dir,

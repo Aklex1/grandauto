@@ -86,6 +86,10 @@ class Channel(Base):
     burn_subtitles: Mapped[bool] = mapped_column(Boolean, default=True)
     # оформление субтитров: shorts | shorts_green | shorts_plain | classic
     subtitle_style: Mapped[str] = mapped_column(String(20), default="shorts")
+    # шрифт титров в форматах «бюст» и «абзац»
+    title_font: Mapped[str] = mapped_column(String(32), default="playfair")
+    # чередование форматов при работе по расписанию
+    rotate_formats: Mapped[bool] = mapped_column(Boolean, default=True)
     make_shorts: Mapped[bool] = mapped_column(Boolean, default=True)
     shorts_count: Mapped[int] = mapped_column(Integer, default=3)
     background_music: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -191,6 +195,9 @@ class Scene(Base):
     # музыка. Лежит отдельно от piece_path, потому что заголовок в каждой сцене
     # длинного ролика выглядел бы нелепо.
     short_title: Mapped[str] = mapped_column(String(200), default="")
+    # формат шортса: full — сгенерированный видеоряд, bust — оживлённый кадр,
+    # paragraph — текст на тёмном фоне
+    short_format: Mapped[str] = mapped_column(String(16), default="full")
     short_path: Mapped[str] = mapped_column(String(500), default="")
     thumb_path: Mapped[str] = mapped_column(String(500), default="")
     include: Mapped[bool] = mapped_column(Boolean, default=True)      # войдёт в длинный ролик

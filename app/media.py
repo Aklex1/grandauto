@@ -225,11 +225,20 @@ def mix_background_music(video: Path, music: Path, dst: Path, music_db: float = 
     return dst
 
 
-def burn_subtitles(video: Path, ass: Path, dst: Path) -> Path:
-    """Вшиваем субтитры в картинку."""
+def burn_subtitles(video: Path, ass: Path, dst: Path,
+                   fontsdir: Path | None = None) -> Path:
+    """Вшиваем субтитры в картинку.
+
+    fontsdir нужен для скачанных шрифтов: libass ищет их по имени через
+    fontconfig и файлы вне системных каталогов сам не находит.
+    """
     escaped = str(ass).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
+    chain = f"ass='{escaped}'"
+    if fontsdir is not None and Path(fontsdir).exists():
+        safe = str(fontsdir).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
+        chain += f":fontsdir='{safe}'"
     _ff([
-        "-i", str(video), "-vf", f"ass='{escaped}'",
+        "-i", str(video), "-vf", chain,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
         "-c:a", "copy", "-movflags", "+faststart", str(dst),
     ], timeout=3600)
@@ -342,6 +351,145 @@ def cut_short(video: Path, dst: Path, start: float, end: float, ass: Path | None
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", str(dst),
     ], timeout=1800)
+    return dst
+
+
+# --------------------------------------------------------------- текстовые форматы
+
+def wrap_plain(text: str, width: int) -> list[str]:
+    """Перенос по словам без служебных символов — для drawtext."""
+    words = (text or "").split()
+    lines, line = [], ""
+    for word in words:
+        if line and len(line) + 1 + len(word) > width:
+            lines.append(line)
+            line = word
+        else:
+            line = f"{line} {word}".strip()
+    if line:
+        lines.append(line)
+    return lines
+
+
+def paragraph_lines(cues, chars_per_line: int) -> list[tuple[str, float]]:
+    """Реплики -> физические строки с временем появления.
+
+    Длинная реплика разбивается на несколько строк, и все они проявляются
+    одновременно: дробить время внутри фразы незачем, читается она целиком.
+    """
+    out: list[tuple[str, float]] = []
+    for cue in cues:
+        for line in wrap_plain(cue.text, chars_per_line):
+            out.append((line, cue.start))
+    return out
+
+
+def build_paragraph_scene(background: Path, audio: Path, dst: Path, size: tuple[int, int],
+                          duration: float, lines: list[tuple[str, float]], font: str,
+                          workdir: Path, signature: str = "",
+                          lines_per_block: int = 7, dim: float = 0.55) -> Path:
+    """Формат «абзац»: текст проявляется построчно на затемнённом фоне.
+
+    Появившиеся строки остаются до конца блока, затем экран очищается и идёт
+    следующий блок. Видео не генерируется вовсе — только один статичный кадр,
+    поэтому такой шортс стоит одну картинку вместо десятка клипов.
+    """
+    w, h = size
+    workdir.mkdir(parents=True, exist_ok=True)
+    if not lines:
+        raise RuntimeError("нет текста для формата «абзац»")
+
+    font_arg = font.replace(":", r"\:") if font else ""
+    chars = max(18, int(w / 26))
+    size_main = max(20, int(w * 0.040))
+    step = int(size_main * 1.62)
+    margin = int(w * 0.09)
+
+    # Блоки: строки копятся, пока не наберётся lines_per_block, потом экран чистится.
+    blocks: list[list[tuple[str, float]]] = []
+    for i in range(0, len(lines), lines_per_block):
+        blocks.append(lines[i:i + lines_per_block])
+
+    block_top = int(h * 0.30)
+    parts = [f"scale={w}:{h}:force_original_aspect_ratio=increase", f"crop={w}:{h}",
+             f"eq=brightness=-{dim:.2f}", f"fps={FPS}"]
+
+    for bi, block in enumerate(blocks):
+        # блок держится до появления первой строки следующего блока
+        block_end = blocks[bi + 1][0][1] if bi + 1 < len(blocks) else duration + 1
+        for li, (text, start) in enumerate(block):
+            y = block_top + li * step
+            parts.append(
+                f"drawtext=fontfile='{font_arg}':text='{_escape_drawtext(text)}'"
+                f":fontcolor=white:fontsize={size_main}"
+                f":x={margin}:y={y}"
+                f":alpha='min(1,(t-{start:.2f})/0.35)'"
+                f":enable='between(t,{start:.2f},{block_end:.2f})'"
+            )
+
+    if signature:
+        parts.append(
+            f"drawtext=fontfile='{font_arg}':text='{_escape_drawtext(signature)}'"
+            f":fontcolor=white@0.75:fontsize={int(size_main * 0.78)}"
+            f":x=(w-text_w)/2:y=h-{int(h * 0.08)}"
+        )
+    parts.append("format=yuv420p")
+
+    # Фильтров десятки, в командной строке они не помещаются — отдаём файлом.
+    graph = workdir / "paragraph.filter"
+    graph.write_text("[0:v]" + ",".join(parts) + "[v]", encoding="utf-8")
+
+    _ff([
+        "-loop", "1", "-i", str(background), "-i", str(audio),
+        "-filter_complex_script", str(graph),
+        "-map", "[v]", "-map", "1:a:0", "-t", f"{duration:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(dst),
+    ], timeout=2400)
+    return dst
+
+
+def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int, int],
+                      duration: float, workdir: Path, zoom: float = 1.10,
+                      haze: float = 0.22) -> Path:
+    """Формат «бюст»: оживляем один кадр без генерации видео.
+
+    Медленный наезд плюс дрейфующая дымка, собранная из размытой копии самого
+    кадра и наложенная режимом «экран». Выглядит как лёгкое движение пара, при
+    этом стоит ноль: генерируется только исходная картинка.
+    """
+    w, h = size
+    workdir.mkdir(parents=True, exist_ok=True)
+    span = max(duration, 0.1)
+    over_w, over_h = int(w * 1.35) // 2 * 2, int(h * 1.35) // 2 * 2
+
+    graph = (
+        # основа: кадр нужного размера с медленным наездом
+        f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+        f"crop=w='trunc(iw/(1+{zoom - 1:.3f}*min(t/{span:.3f},1))/2)*2':"
+        f"h='trunc(ih/(1+{zoom - 1:.3f}*min(t/{span:.3f},1))/2)*2':"
+        f"x='(iw-ow)/2':y='(ih-oh)/2',scale={w}:{h},fps={FPS}[base];"
+        # дымка: сильно размытая и осветлённая копия, шире кадра — есть куда ехать
+        f"[1:v]scale={over_w}:{over_h}:force_original_aspect_ratio=increase,"
+        f"crop={over_w}:{over_h},boxblur=40:2,eq=brightness=0.10:saturation=0.2,"
+        f"crop={w}:{h}:x='(in_w-out_w)*(0.5+0.5*sin(t/7))':"
+        f"y='(in_h-out_h)*(0.5+0.5*sin(t/11))',fps={FPS}[haze];"
+        f"[base][haze]blend=all_mode=screen:all_opacity={haze:.2f},format=yuv420p[v]"
+    )
+    script = workdir / "still.filter"
+    script.write_text(graph, encoding="utf-8")
+
+    _ff([
+        "-loop", "1", "-i", str(background),
+        "-loop", "1", "-i", str(background),
+        "-i", str(audio),
+        "-filter_complex_script", str(script),
+        "-map", "[v]", "-map", "2:a:0", "-t", f"{duration:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(dst),
+    ], timeout=2400)
     return dst
 
 

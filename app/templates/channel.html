@@ -493,6 +493,17 @@
           <label>Шортсов<input name="shorts_count" type="number" min="0" max="10" value="{{ channel.shorts_count }}"></label>
         </div>
         <label><input type="checkbox" name="burn_subtitles" style="width:auto" {% if channel.burn_subtitles %}checked{% endif %}> Вшивать субтитры в видео</label>
+        <label class="row" style="margin:0"><input type="checkbox" name="rotate_formats"
+          style="width:auto" {% if channel.rotate_formats %}checked{% endif %}>
+          Чередовать форматы шортсов — полный видеоряд каждой третьей сцене</label>
+        {% if font_list %}
+        <label>Шрифт титров в форматах «бюст» и «абзац»
+          <select name="title_font">
+            {% for f in font_list %}
+            <option value="{{ f.key }}" {% if channel.title_font == f.key %}selected{% endif %}>{{ f.title }} — {{ f.note }}</option>
+            {% endfor %}
+          </select></label>
+        {% endif %}
         <label>Оформление субтитров
           <select name="subtitle_style">
             {% for key, label in subtitle_styles.items() %}

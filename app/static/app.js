@@ -83,6 +83,15 @@
     playVoiceDemo(sel, false);   // подставляем демо текущего голоса, не проигрывая
   });
 
+  // Образец начертания: картинка рисуется на сервере тем же ffmpeg, что и титры,
+  // поэтому в списке видно ровно то, что окажется в кадре.
+  document.querySelectorAll('[data-font-preview]').forEach(sel => {
+    const img = document.getElementById(sel.getAttribute('data-font-preview'));
+    const show = () => { if (img && sel.value) img.src = `/font-preview/${sel.value}.png`; };
+    sel.addEventListener('change', show);
+    show();
+  });
+
   // Кнопка «прослушать» — чтобы переслушать голос, не меняя выбор.
   document.querySelectorAll('[data-voice-play]').forEach(btn => {
     btn.addEventListener('click', ev => {

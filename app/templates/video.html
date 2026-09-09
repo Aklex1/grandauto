@@ -175,6 +175,12 @@
             <label class="small">Заголовок в кадре и на обложке
               <input name="short_title" form="short-{{ sc.id }}"
                      value="{{ sc.short_title or sc.heading }}" maxlength="200"></label>
+            <label class="small">Формат
+              <select name="short_format" form="short-{{ sc.id }}">
+                {% for key, label in short_formats.items() %}
+                <option value="{{ key }}" {% if (sc.short_format or 'full') == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select></label>
             <button class="btn btn-sm mt" form="short-{{ sc.id }}" type="submit">Собрать шортс</button>
           </details>
           {% if sc.error and sc.status == 'regen_failed' %}
@@ -232,6 +238,25 @@
                 <input type="checkbox" name="redo_voice" form="regen-{{ sc.id }}" style="width:auto">
                 переозвучить принудительно</label>
             </div>
+
+            <label class="small">Формат шортса
+              <select name="short_format" form="regen-{{ sc.id }}">
+                {% for key, label in short_formats.items() %}
+                <option value="{{ key }}" {% if (sc.short_format or 'full') == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select></label>
+
+            {% if font_list %}
+            <label class="small">Шрифт титров (для «бюста» и «абзаца»)
+              <select name="title_font" form="regen-{{ sc.id }}" id="font-select-{{ sc.id }}"
+                      data-font-preview="font-demo-{{ sc.id }}">
+                {% for f in font_list %}
+                <option value="{{ f.key }}" {% if channel.title_font == f.key %}selected{% endif %}>{{ f.title }} — {{ f.note }}</option>
+                {% endfor %}
+              </select></label>
+            <img id="font-demo-{{ sc.id }}" alt="образец шрифта"
+                 style="max-width:100%;border-radius:6px;margin-top:4px">
+            {% endif %}
 
             <label class="small row mt" style="margin:0">
               <input type="checkbox" name="make_short" form="regen-{{ sc.id }}" style="width:auto" checked>
