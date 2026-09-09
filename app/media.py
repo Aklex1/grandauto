@@ -451,8 +451,9 @@ def build_paragraph_scene(background: Path, audio: Path, dst: Path, size: tuple[
 
 
 def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int, int],
-                      duration: float, workdir: Path, zoom: float = 1.10,
-                      haze: float = 0.22) -> Path:
+                      duration: float, workdir: Path, zoom: float = 1.22,
+                      haze: float = 0.34, band_top: float = 0.0,
+                      band_height: float = 0.0, band_color: str = "0x0b0d10") -> Path:
     """Формат «бюст»: оживляем один кадр без генерации видео.
 
     Медленный наезд плюс дрейфующая дымка, собранная из размытой копии самого
@@ -473,10 +474,19 @@ def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int,
         # дымка: сильно размытая и осветлённая копия, шире кадра — есть куда ехать
         f"[1:v]scale={over_w}:{over_h}:force_original_aspect_ratio=increase,"
         f"crop={over_w}:{over_h},boxblur=40:2,eq=brightness=0.10:saturation=0.2,"
-        f"crop={w}:{h}:x='(in_w-out_w)*(0.5+0.5*sin(t/7))':"
-        f"y='(in_h-out_h)*(0.5+0.5*sin(t/11))',fps={FPS}[haze];"
-        f"[base][haze]blend=all_mode=screen:all_opacity={haze:.2f},format=yuv420p[v]"
+        f"crop={w}:{h}:x='(in_w-out_w)*(0.5+0.5*sin(t/3.5))':"
+        f"y='(in_h-out_h)*(0.5+0.5*sin(t/5.5))',fps={FPS}[haze];"
+        f"[base][haze]blend=all_mode=screen:all_opacity={haze:.2f}[mix]"
     )
+    if band_height > 0:
+        # Однотонная полоса под титры: на сгенерированном кадре фон непредсказуем,
+        # а поверх ровной заливки текст читается всегда.
+        y = int(h * band_top)
+        bh = int(h * band_height)
+        graph += (f";[mix]drawbox=x=0:y={y}:w={w}:h={bh}:"
+                  f"color={band_color}@0.92:t=fill,format=yuv420p[v]")
+    else:
+        graph += ";[mix]format=yuv420p[v]"
     script = workdir / "still.filter"
     script.write_text(graph, encoding="utf-8")
 

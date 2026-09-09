@@ -225,7 +225,7 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Main,{font},{size},&H00FFFFFF,&H000000FF,&H00000000,{back},-1,0,0,0,100,100,{spacing},0,{border},{outline},{shadow},2,{margin_h},{margin_h},{margin_v},1
+Style: Main,{font},{size},&H00FFFFFF,&H000000FF,&H00000000,{back},-1,0,0,0,100,100,{spacing},0,{border},{outline},{shadow},{align},{margin_h},{margin_h},{margin_v},1
 Style: Title,{font},{title_size},&H00FFFFFF,&H000000FF,&H00000000,{title_back},-1,0,0,0,100,100,0,0,{border},{title_outline},{title_shadow},8,{margin_h},{margin_h},{title_margin},1
 
 [Events]
@@ -314,7 +314,7 @@ def _style_params(size: tuple[int, int], vertical: bool, font: str,
         }
 
     params.update({"w": w, "h": h, "font": font, "size": font_size,
-                   "margin_h": margin_h, "title_size": title_size})
+                   "margin_h": margin_h, "title_size": title_size, "align": 2})
     return params, chars_per_line
 
 
@@ -360,7 +360,7 @@ def _wrap_tokens(plain: list[str], decorated: list[str], width: int,
 def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720),
               vertical: bool = False, font: str = "DejaVu Sans",
               title: str = "", title_seconds: float = 0.0,
-              style: str = "shorts") -> Path:
+              style: str = "shorts", position: str = "bottom") -> Path:
     """ASS-субтитры для вшивания.
 
     В стиле «шортсы» каждое слово получает свой кадр показа: реплика висит целиком,
@@ -370,6 +370,13 @@ def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720)
     """
     style = normalize_style(style)
     params, chars_per_line = _style_params(size, vertical, font, style)
+    # Alignment 8 — верх по центру: в формате «бюст» титры идут по верхней трети,
+    # где под ними лежит ровная заливка.
+    if position == "top":
+        params["align"] = 8
+        # Заголовок тоже прижат к верху, поэтому субтитры опускаем ниже —
+        # иначе первая реплика наезжает на него.
+        params["margin_v"] = int(size[1] * 0.17)
     accent = ACCENTS.get(style, "")
     lines = [ASS_HEADER.format(**params)]
 
@@ -415,56 +422,80 @@ def align_script(cues: list[Cue], scenes: list[tuple[str, float]], max_chars: in
     """Текст берём из сценария, тайминг — из распознавания.
 
     Whisper иногда искажает слова, а точный текст у нас уже есть. Поэтому реплики
-    распознавания используются только как временной скелет: они дают, когда речь
-    звучит и где паузы, а слова подставляются из сценария сцены.
+    распознавания используются только как временной скелет.
+
+    Каждый сегмент речи разбирается ОТДЕЛЬНО: сколько символов распознавание
+    услышало в этом окне — столько же текста сценария в него и кладётся. Раньше
+    доля считалась одной пропорцией на всю сцену, и погрешность не сбрасывалась
+    на границах сегментов, а копилась: к концу субтитры заметно обгоняли голос.
     """
     out: list[Cue] = []
     offset = 0.0
     for narration, duration in scenes:
         window_start, window_end = offset, offset + duration
         offset = window_end
-        chunks = split_text(narration, max_chars)
-        if not chunks:
+        words = (narration or "").split()
+        if not words:
             continue
 
         speech = [c for c in cues
                   if window_start <= (c.start + c.end) / 2 < window_end and c.end > c.start]
         if not speech:
             # ASR ничего не нашёл в этом окне — раскладываем равномерно
-            total = sum(len(c) for c in chunks) or 1
-            cursor = window_start
-            for chunk in chunks:
-                share = duration * (len(chunk) / total)
-                out.append(Cue(start=cursor, end=cursor + share, text=chunk))
-                cursor += share
+            for chunk in split_text(narration, max_chars):
+                share = duration * (len(chunk) / (len(narration) or 1))
+                out.append(Cue(start=window_start, end=window_start + share, text=chunk))
+                window_start += share
             continue
 
         speech.sort(key=lambda c: c.start)
-        speech_total = sum(c.end - c.start for c in speech) or 1.0
-        chars_total = sum(len(c) for c in chunks) or 1
+        weights = [max(len(c.text.strip()), 1) for c in speech]
+        total_weight = sum(weights)
 
-        # Идём по «скелету» речи и раздаём каждому куску текста его долю времени.
-        seg_index = 0
-        seg_left = speech[0].end - speech[0].start
-        cursor = speech[0].start
-        for chunk in chunks:
-            need = speech_total * (len(chunk) / chars_total)
-            start = cursor
-            end = cursor
-            while need > 1e-6 and seg_index < len(speech):
-                take = min(need, seg_left)
-                end = cursor + take
-                cursor = end
-                seg_left -= take
-                need -= take
-                if seg_left <= 1e-6:
-                    seg_index += 1
-                    if seg_index < len(speech):
-                        cursor = speech[seg_index].start
-                        seg_left = speech[seg_index].end - speech[seg_index].start
-            if end <= start:
-                end = min(window_end, start + 1.2)
-            out.append(Cue(start=start, end=end, text=chunk))
+        # Раздаём слова сценария по сегментам пропорционально тому, сколько текста
+        # распознавание услышало в каждом. Границы сегментов — якоря: сдвиг в одном
+        # не переносится на следующий.
+        counts: list[int] = []
+        assigned = 0
+        for i, weight in enumerate(weights):
+            if i == len(weights) - 1:
+                counts.append(len(words) - assigned)
+            else:
+                share = round(len(words) * weight / total_weight)
+                share = max(0, min(share, len(words) - assigned))
+                counts.append(share)
+                assigned += share
+
+        cursor = 0
+        for segment, count in zip(speech, counts):
+            if count <= 0:
+                continue
+            chunk_words = words[cursor:cursor + count]
+            cursor += count
+            text = " ".join(chunk_words)
+            if not text:
+                continue
+            seg_start = max(window_start, segment.start)
+            seg_end = min(window_end, max(segment.end, seg_start + 0.3))
+            # Длинный сегмент режем на читаемые куски ВНУТРИ его же окна —
+            # за границы сегмента текст не выходит.
+            pieces = split_text(text, max_chars) or [text]
+            span = seg_end - seg_start
+            chars_total = sum(len(p) for p in pieces) or 1
+            piece_start = seg_start
+            for piece in pieces:
+                piece_span = span * (len(piece) / chars_total)
+                out.append(Cue(start=piece_start,
+                               end=min(seg_end, piece_start + piece_span),
+                               text=piece))
+                piece_start += piece_span
+
+        # Хвост, если округление недодало слов последнему сегменту.
+        if cursor < len(words):
+            tail = " ".join(words[cursor:])
+            last_end = min(window_end, speech[-1].end)
+            out.append(Cue(start=max(window_start, last_end - 1.0), end=last_end, text=tail))
+
     return out
 
 

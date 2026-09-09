@@ -699,13 +699,17 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
                 workdir, signature=channel.name)
         else:
             still = workdir / f"still_{scene.idx:02d}.mp4"
-            media.build_still_scene(background, audio, still, media.VERTICAL, duration, workdir)
+            # Полоса под титрами в верхней трети: на сгенерированном кадре фон
+            # непредсказуем, а поверх ровной заливки текст читается всегда.
+            media.build_still_scene(background, audio, still, media.VERTICAL, duration,
+                                    workdir, band_top=0.06, band_height=0.30)
             ass = workdir / f"short_{scene.idx:02d}.ass"
             head_seconds = min(4.5, max(2.5, duration * 0.18))
             subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
                                 title=title, title_seconds=head_seconds,
                                 style=_subtitle_style(channel),
-                                font=fonts.font_family(channel.title_font))
+                                font=fonts.font_family(channel.title_font),
+                                position="top")
             media.burn_subtitles(still, ass, raw, fontsdir=fonts.FONTS_DIR)
 
     if fmt == "full":
