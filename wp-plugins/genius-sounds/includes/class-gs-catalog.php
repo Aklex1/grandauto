@@ -30,7 +30,30 @@ class GS_Catalog {
 
     /* ---------------------------------------------------------------------
      * Данные
+     *
+     * Хранилище разбито на файлы: лёгкий index.json со списком категорий и
+     * отдельный cats/<slug>.json на каждую. Единый catalog.json вырос до
+     * нескольких мегабайт, и его приходилось декодировать целиком и на каждой
+     * странице каталога, и на каждое обновление категории при импорте.
      * ------------------------------------------------------------------ */
+
+    /** @var array|null Список категорий (slug, title, desc, count). */
+    private static $index = null;
+
+    /** @var array Кэш полных записей категорий в пределах запроса. */
+    private static $cats = array();
+
+    private static function index_path() {
+        return GS_Storage::base_dir() . '/index.json';
+    }
+
+    private static function cats_dir() {
+        return GS_Storage::base_dir() . '/cats';
+    }
+
+    private static function cat_path($slug) {
+        return self::cats_dir() . '/' . $slug . '.json';
+    }
 
     /**
      * Первичное заполнение: берём SEO-тексты из каталога базового плагина,
@@ -39,22 +62,35 @@ class GS_Catalog {
      */
     public static function ensure_seeded() {
         GS_Storage::ensure_dirs();
-        if (file_exists(GS_Storage::catalog_path())) {
+        if (!is_dir(self::cats_dir())) {
+            wp_mkdir_p(self::cats_dir());
+        }
+        if (file_exists(self::index_path())) {
             return;
+        }
+
+        // Переезд с единого catalog.json на файлы по категориям.
+        $legacy_store = GS_Storage::catalog_path();
+        if (file_exists($legacy_store)) {
+            $decoded = json_decode((string) file_get_contents($legacy_store), true);
+            if (is_array($decoded) && !empty($decoded['categories']) && is_array($decoded['categories'])) {
+                self::write_all($decoded['categories']);
+                @rename($legacy_store, GS_Storage::base_dir() . '/catalog-legacy.json');
+                return;
+            }
         }
 
         $categories = array();
         $seed_path = self::legacy_catalog_path();
         if ($seed_path && file_exists($seed_path)) {
-            $raw = file_get_contents($seed_path);
-            $data = json_decode((string) $raw, true);
-            if (is_array($data) && !empty($data['categories']) && is_array($data['categories'])) {
-                foreach ($data['categories'] as $cat) {
+            $decoded = json_decode((string) file_get_contents($seed_path), true);
+            if (is_array($decoded) && !empty($decoded['categories']) && is_array($decoded['categories'])) {
+                foreach ($decoded['categories'] as $cat) {
                     if (!is_array($cat) || empty($cat['slug'])) {
                         continue;
                     }
                     $slug = GS_Storage::sanitize_slug($cat['slug']);
-                    if ($slug === '') {
+                    if ($slug === '' || isset($categories[$slug])) {
                         continue;
                     }
                     $categories[$slug] = array(
@@ -70,10 +106,80 @@ class GS_Catalog {
             }
         }
 
-        self::save(array(
-            'generated_at' => current_time('mysql'),
-            'categories'   => array_values($categories),
-        ));
+        self::write_all(array_values($categories));
+    }
+
+    /**
+     * Записывает набор категорий по файлам и собирает индекс.
+     */
+    private static function write_all($categories) {
+        if (!is_dir(self::cats_dir())) {
+            wp_mkdir_p(self::cats_dir());
+        }
+        $index = array();
+        foreach ($categories as $cat) {
+            if (!is_array($cat) || empty($cat['slug'])) {
+                continue;
+            }
+            $slug = GS_Storage::sanitize_slug($cat['slug']);
+            if ($slug === '') {
+                continue;
+            }
+            $cat['slug'] = $slug;
+            self::write_category($cat);
+            $index[] = self::index_entry($cat);
+        }
+        return self::save_index($index);
+    }
+
+    private static function write_category($category) {
+        return GS_Storage::atomic_put(
+            self::cat_path($category['slug']),
+            wp_json_encode($category, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    /**
+     * Строка индекса: всё, что нужно списку категорий и поиску, без списка звуков.
+     */
+    private static function index_entry($category) {
+        $desc = (string) ($category['description'] ?? '');
+        if (mb_strlen($desc) > 160) {
+            $desc = mb_substr($desc, 0, 160);
+        }
+        return array(
+            'slug'  => (string) $category['slug'],
+            'title' => (string) ($category['title'] ?? $category['slug']),
+            'desc'  => $desc,
+            'count' => self::count_sounds($category),
+        );
+    }
+
+    /**
+     * @return array<int,array{slug:string,title:string,desc:string,count:int}>
+     */
+    public static function load_index() {
+        if (self::$index !== null) {
+            return self::$index;
+        }
+        $items = array();
+        $path = self::index_path();
+        if (file_exists($path)) {
+            $decoded = json_decode((string) file_get_contents($path), true);
+            if (is_array($decoded)) {
+                $items = $decoded;
+            }
+        }
+        self::$index = $items;
+        return $items;
+    }
+
+    private static function save_index($items) {
+        self::$index = $items;
+        return GS_Storage::atomic_put(
+            self::index_path(),
+            wp_json_encode($items, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
     }
 
     /**
@@ -87,34 +193,6 @@ class GS_Catalog {
     }
 
     /**
-     * @return array{generated_at:string,categories:array}
-     */
-    public static function load() {
-        if (self::$cache !== null) {
-            return self::$cache;
-        }
-        $path = GS_Storage::catalog_path();
-        $data = array('generated_at' => '', 'categories' => array());
-        if (file_exists($path)) {
-            $decoded = json_decode((string) file_get_contents($path), true);
-            if (is_array($decoded) && isset($decoded['categories']) && is_array($decoded['categories'])) {
-                $data = $decoded;
-            }
-        }
-        self::$cache = $data;
-        return $data;
-    }
-
-    public static function save($data) {
-        $data['generated_at'] = current_time('mysql');
-        self::$cache = $data;
-        return GS_Storage::atomic_put(
-            GS_Storage::catalog_path(),
-            wp_json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-        );
-    }
-
-    /**
      * @return array|null
      */
     public static function get_category($slug) {
@@ -122,33 +200,34 @@ class GS_Catalog {
         if ($slug === '') {
             return null;
         }
-        foreach (self::load()['categories'] as $cat) {
-            if (isset($cat['slug']) && $cat['slug'] === $slug) {
-                return $cat;
+        if (array_key_exists($slug, self::$cats)) {
+            return self::$cats[$slug];
+        }
+
+        $category = null;
+        $path = self::cat_path($slug);
+        if (file_exists($path)) {
+            $decoded = json_decode((string) file_get_contents($path), true);
+            if (is_array($decoded) && !empty($decoded['slug'])) {
+                $category = $decoded;
             }
         }
-        return null;
+        self::$cats[$slug] = $category;
+        return $category;
     }
 
     /**
-     * Обновляет одну категорию (создаёт, если её не было).
+     * Обновляет одну категорию (создаёт, если её не было) и её строку в индексе.
      */
     public static function update_category($slug, array $patch) {
         $slug = GS_Storage::sanitize_slug($slug);
         if ($slug === '') {
             return false;
         }
-        $data = self::load();
-        $found = false;
-        foreach ($data['categories'] as $i => $cat) {
-            if (isset($cat['slug']) && $cat['slug'] === $slug) {
-                $data['categories'][$i] = array_merge($cat, $patch);
-                $found = true;
-                break;
-            }
-        }
-        if (!$found) {
-            $data['categories'][] = array_merge(array(
+
+        $existing = self::get_category($slug);
+        if (!is_array($existing)) {
+            $existing = array(
                 'slug'          => $slug,
                 'title'         => $slug,
                 'headline'      => '',
@@ -156,9 +235,31 @@ class GS_Catalog {
                 'description_2' => '',
                 'sounds'        => array(),
                 'imported_at'   => '',
-            ), $patch);
+            );
         }
-        return self::save($data);
+
+        $category = array_merge($existing, $patch);
+        $category['slug'] = $slug;
+        self::$cats[$slug] = $category;
+
+        if (!self::write_category($category)) {
+            return false;
+        }
+
+        $index = self::load_index();
+        $entry = self::index_entry($category);
+        $found = false;
+        foreach ($index as $i => $row) {
+            if (isset($row['slug']) && $row['slug'] === $slug) {
+                $index[$i] = $entry;
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            $index[] = $entry;
+        }
+        return self::save_index($index);
     }
 
     public static function count_sounds($category) {
@@ -169,18 +270,18 @@ class GS_Catalog {
      * Сводка по каталогу для админки и хедера страницы.
      */
     public static function stats() {
-        $cats = self::load()['categories'];
         $filled = 0;
         $sounds = 0;
-        foreach ($cats as $cat) {
-            $n = self::count_sounds($cat);
+        $index = self::load_index();
+        foreach ($index as $row) {
+            $n = (int) ($row['count'] ?? 0);
             if ($n > 0) {
                 $filled++;
             }
             $sounds += $n;
         }
         return array(
-            'categories' => count($cats),
+            'categories' => count($index),
             'filled'     => $filled,
             'sounds'     => $sounds,
         );
@@ -282,8 +383,7 @@ class GS_Catalog {
      * Главная каталога: поиск, популярные подборки, сетка категорий с пагинацией.
      */
     private static function render_index() {
-        $data  = self::load();
-        $cats  = $data['categories'];
+        $cats  = self::load_index();
         $stats = self::stats();
 
         $query = isset($_GET['gs_q']) ? sanitize_text_field(wp_unslash((string) $_GET['gs_q'])) : '';
@@ -295,9 +395,9 @@ class GS_Catalog {
             if (!is_array($cat) || empty($cat['slug'])) {
                 continue;
             }
-            $n = self::count_sounds($cat);
+            $n = (int) ($cat['count'] ?? 0);
             if ($query !== '') {
-                $haystack = mb_strtolower(($cat['title'] ?? '') . ' ' . ($cat['description'] ?? '') . ' ' . $cat['slug']);
+                $haystack = mb_strtolower(($cat['title'] ?? '') . ' ' . ($cat['desc'] ?? '') . ' ' . $cat['slug']);
                 if (mb_strpos($haystack, mb_strtolower($query)) === false) {
                     continue;
                 }
@@ -543,13 +643,12 @@ class GS_Catalog {
      * Соседние подборки — простая перелинковка по заполненным категориям.
      */
     private static function render_related($current_slug) {
-        $cats = self::load()['categories'];
         $filled = array();
-        foreach ($cats as $cat) {
+        foreach (self::load_index() as $cat) {
             if (empty($cat['slug']) || $cat['slug'] === $current_slug) {
                 continue;
             }
-            if (self::count_sounds($cat) > 0) {
+            if ((int) ($cat['count'] ?? 0) > 0) {
                 $filled[] = $cat;
             }
         }
@@ -568,7 +667,7 @@ class GS_Catalog {
                     <li>
                         <a class="gs-related__link" href="<?php echo esc_url(self::category_url($cat['slug'])); ?>">
                             <?php echo esc_html(self::short_title($cat['title'])); ?>
-                            <span class="gs-chip gs-chip--ok"><?php echo (int) self::count_sounds($cat); ?></span>
+                            <span class="gs-chip gs-chip--ok"><?php echo (int) ($cat['count'] ?? 0); ?></span>
                         </a>
                     </li>
                 <?php endforeach; ?>

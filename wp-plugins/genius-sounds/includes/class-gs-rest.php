@@ -223,6 +223,9 @@ class GS_Rest {
             if (class_exists('KIE_TTS_DB')) {
                 KIE_TTS_DB::update_generation_status($task_id, 'completed', $url);
             }
+            // Служебная запись о задаче больше не нужна — иначе wp_options
+            // растёт по строке на каждую генерацию.
+            delete_option('gs_sfx_task_' . $task_id);
 
             return rest_ensure_response(array(
                 'success'   => true,
@@ -353,6 +356,7 @@ class GS_Rest {
         if (is_array($meta) && !empty($meta['user_id']) && !empty($meta['cost'])) {
             GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
         }
+        delete_option('gs_sfx_task_' . $task_id);
     }
 
     /* ---------------------------------------------------------------------

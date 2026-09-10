@@ -557,11 +557,11 @@ class GS_Importer {
      */
     public static function pending_slugs($limit = 0) {
         $slugs = array();
-        foreach (GS_Catalog::load()['categories'] as $cat) {
+        foreach (GS_Catalog::load_index() as $cat) {
             if (empty($cat['slug'])) {
                 continue;
             }
-            if (GS_Catalog::count_sounds($cat) === 0) {
+            if ((int) ($cat['count'] ?? 0) === 0) {
                 $slugs[] = $cat['slug'];
             }
         }
