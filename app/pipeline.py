@@ -691,6 +691,11 @@ STILL_FORMATS = {
 MAX_VOICE_RETRIES = 1
 
 SHORT_OUTRO_SECONDS = 4.0
+
+# Концовка с призывом. Запас после речи — чтобы ссылка успела прочитаться.
+OUTRO_PAD = 1.6
+# Если озвучить не вышло, концовка всё равно показывается — просто молча.
+OUTRO_SILENT_SECONDS = 4.0
 # Небольшой запас поверх хвоста, чтобы последнее слово не упиралось в стык.
 SHORT_TAIL_SECONDS = 0.45
 
@@ -783,6 +788,130 @@ def _scene_tags(session: Session, video: Video, channel: Channel, scene: Scene) 
                   stage="assemble", level="warn")
 
 
+# Запасные реплики: если модель не ответила, концовка всё равно должна звучать
+# по-разному. Тон взят с одобренного образца.
+OUTRO_FALLBACK = (
+    "Подписывайся на «{title}» — ссылка на экране. Там AI-коуч разберёт твою "
+    "ситуацию и покажет, почему она повторяется.",
+    "Ссылка на канал на экране. Там разбирают переписку и показывают, где ушёл "
+    "интерес и что писать дальше.",
+    "Заходи по ссылке на экране. AI-коуч потренирует разговор до того, как ты "
+    "его провалишь, и разберёт, где просел.",
+    "Подписывайся — ссылка на экране. Вместо «работай над собой» получишь план "
+    "на семь дней с конкретными шагами.",
+    "Ссылка на экране. Когда не понимаешь, что происходит и что делать, — есть "
+    "с кем разобрать.",
+    "Подписывайся на «{title}». Разберёшь свою ситуацию и поймёшь, почему она "
+    "повторяется из раза в раз.",
+)
+
+
+OUTRO_SOURCES = {
+    "builtin": "Готовый набор — шесть реплик, чередуются, бесплатно",
+    "custom": "Свои реплики — что впишете, то и озвучится",
+    "model": "Составит модель — по описанию продукта, разово платно",
+}
+
+
+def _split_variants(text: str) -> list[str]:
+    """Реплики хранятся абзацами через пустую строку — так их удобно править."""
+    return [chunk.strip() for chunk in (text or "").split("\n\n") if chunk.strip()]
+
+
+def _outro_variants(session: Session, video: Video, channel: Channel) -> list[str]:
+    """Набор реплик для концовки.
+
+    Вариантов несколько, потому что одна и та же концовка в каждом шортсе быстро
+    приедается. Источник выбирается в форме: готовый набор, свои реплики или
+    генерация моделью. Модель — единственный платный путь, и её ответ кэшируется.
+    """
+    title = (channel.outro_title or channel.name or "").strip()
+    source = (channel.outro_source or "builtin").strip()
+
+    if source == "custom":
+        mine = _split_variants(channel.outro_text)
+        if mine:
+            return mine
+        log_event(session, video.id,
+                  "Свои реплики концовки не заданы — беру готовый набор",
+                  stage="assemble", level="warn")
+        return [text.format(title=title) for text in OUTRO_FALLBACK]
+
+    if source != "model":
+        return [text.format(title=title) for text in OUTRO_FALLBACK]
+
+    stored = _split_variants(channel.outro_text)
+    if stored:
+        return stored
+
+    try:
+        client = client_for(session)
+        messages = prompts.outro_pitch(channel.name, channel.topic, title,
+                                       channel.outro_about, sample=OUTRO_FALLBACK[0])
+        data, credits = client.chat_json(channel.chat_model, messages, temperature=0.9)
+        variants = [str(v).strip() for v in (data.get("variants") or []) if str(v).strip()]
+        if not variants:
+            raise KieError("модель не вернула ни одной реплики")
+        channel.outro_text = "\n\n".join(variants)[:4000]
+        video.cost_credits = (video.cost_credits or 0) + credits
+        session.commit()
+        log_event(session, video.id,
+                  f"Реплик для концовки готово: {len(variants)}", stage="assemble")
+        return variants
+    except Exception as exc:  # noqa: BLE001
+        log_event(session, video.id,
+                  f"Реплики для концовки не сгенерированы ({exc}) — беру запасные",
+                  stage="assemble", level="warn")
+        return [text.format(title=title) for text in OUTRO_FALLBACK]
+
+
+def _outro_text(session: Session, video: Video, channel: Channel, variant: int) -> str:
+    """Реплика для этой сцены: соседние шортсы получают разные."""
+    variants = _outro_variants(session, video, channel)
+    return variants[variant % len(variants)]
+
+
+def _build_outro(session: Session, video: Video, channel: Channel, scene: Scene,
+                 workdir: Path, source_frame: Optional[Path]) -> Optional[Path]:
+    """Готовый кусок концовки: озвученный призыв, название канала и ссылка."""
+    link = (channel.outro_url or "").strip()
+    title = (channel.outro_title or channel.name or "").strip()
+    if not link and not title:
+        return None
+
+    # Номер сцены задаёт реплику — в соседних шортсах концовка звучит по-разному.
+    text = _outro_text(session, video, channel, scene.idx)
+    audio_dir = workdir / "outro"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    voice: Optional[Path] = None
+    try:
+        client = client_for(session)
+        result = tts.synthesize(
+            client, text, audio_dir / "pitch",
+            model=channel.tts_model, voice_id=channel.voice_id,
+            stability=channel.voice_stability, similarity=channel.voice_similarity,
+            speed=channel.voice_speed,
+            fallback_model=st.get(session, "tts_fallback_model",
+                                  "google/gemini-3-1-flash-tts"),
+            fallback_voice=st.get(session, "tts_fallback_voice", "Charon"),
+            allow_fallback=st.get_bool(session, "tts_allow_fallback", True))
+        voice = result.path
+        video.cost_credits = (video.cost_credits or 0) + result.credits
+        session.commit()
+        duration = result.duration + OUTRO_PAD
+    except Exception as exc:  # noqa: BLE001 — без озвучки концовка всё равно нужна
+        log_event(session, video.id,
+                  f"Концовка не озвучена ({exc}) — показываю только ссылку",
+                  stage="assemble", level="warn")
+        duration = OUTRO_SILENT_SECONDS
+
+    dst = workdir / f"outro_{scene.idx:02d}.mp4"
+    media.build_outro(dst, media.VERTICAL, duration, voice, title, link,
+                      fonts.font_path(channel.title_font) or "", workdir,
+                      background=source_frame)
+    return dst
+
+
 def build_scene_short(session: Session, video: Video, channel: Channel, scene: Scene,
                       workdir: Path, pieces_dir: Path, track_path: Optional[Path],
                       cues: Optional[list[subtitles.Cue]] = None) -> bool:
@@ -808,7 +937,11 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
 
     fmt = normalize_format(scene.short_format or "full")
     audio = storage.abspath(scene.audio_path) if scene.audio_path else None
-    outro = _outro_seconds(session, channel)
+    # Концовка с призывом сама играет роль хвоста: она идёт после речи, под неё
+    # доигрывает музыка. Оставлять ещё и пустые секунды перед ней незачем.
+    with_outro = bool(channel.outro_enabled) and bool(
+        (channel.outro_url or "").strip() or (channel.outro_title or "").strip())
+    outro = 0.0 if with_outro else _outro_seconds(session, channel)
 
     if audio and audio.exists():
         try:
@@ -906,12 +1039,31 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
         media.cut_short(source, raw, 0.0, duration, ass=ass,
                         tail=outro + SHORT_TAIL_SECONDS)
 
+    if with_outro:
+        try:
+            # Последний кадр ролика уходит фоном концовки, чтобы она не выглядела
+            # приклеенной из другого видео.
+            frame = workdir / f"outro_bg_{scene.idx:02d}.jpg"
+            grab_at = max(0.0, storage.media_duration(raw) - 0.3)
+            media.frame_grab(raw, frame, at=grab_at)
+            tail_clip = _build_outro(session, video, channel, scene, workdir,
+                                     frame if frame.exists() else None)
+            if tail_clip is not None:
+                joined = workdir / f"short_{scene.idx:02d}_joined.mp4"
+                media.concat_scenes([raw, tail_clip], joined, workdir / "join")
+                raw = joined
+        except Exception as exc:  # noqa: BLE001 — шортс важнее концовки
+            log_event(session, video.id,
+                      f"Сцена {scene.idx + 1}: концовка не добавлена ({exc})",
+                      stage="assemble", level="warn")
+
     dest = pieces_dir / f"scene_{scene.idx:02d}_short.mp4"
     if track_path is not None:
         try:
-            media.mix_background_music(raw, track_path, dest,
-                                       music_db=channel.music_volume_db or -20.0,
-                                       fade_out=outro)
+            media.mix_background_music(
+                raw, track_path, dest,
+                music_db=channel.music_volume_db or -20.0,
+                fade_out=OUTRO_PAD if with_outro else outro)
         except RuntimeError as exc:
             log_event(session, video.id,
                       f"Сцена {scene.idx + 1}: музыка в шортс не легла ({exc})",
@@ -1669,6 +1821,23 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
         chosen_font = fonts.normalize(options.get("title_font") or channel.title_font or "")
         if chosen_font and chosen_font != channel.title_font:
             channel.title_font = chosen_font
+
+        # Настройки концовки приходят из формы и сохраняются в канале: следующая
+        # сцена соберётся с теми же ссылкой и названием, повторять их не надо.
+        if "add_outro" in options:
+            channel.outro_enabled = bool(options.get("add_outro"))
+        for key in ("outro_url", "outro_title", "outro_about"):
+            value = (options.get(key) or "").strip()
+            if value:
+                setattr(channel, key, value)
+        source = (options.get("outro_source") or "").strip()
+        if source in OUTRO_SOURCES:
+            channel.outro_source = source
+        new_text = (options.get("outro_text") or "").strip()
+        if new_text != (channel.outro_text or "").strip():
+            # Пустое поле при источнике «модель» — просьба составить набор заново.
+            channel.outro_text = new_text
+        session.commit()
 
         redo_voice = bool(options.get("redo_voice"))
         if narration != (scene.narration or ""):

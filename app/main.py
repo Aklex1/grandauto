@@ -628,7 +628,10 @@ def font_preview(key: str, _user: str = Depends(require_user)):
 @app.post("/scenes/{scene_id}/short")
 def scene_make_short(scene_id: int, session: Session = Depends(get_session),
                      _user: str = Depends(require_user), short_title: str = Form(""),
-                     short_format: str = Form(""), title_font: str = Form("")):
+                     short_format: str = Form(""), title_font: str = Form(""),
+                     add_outro: str = Form(""), outro_url: str = Form(""),
+                     outro_title: str = Form(""), outro_text: str = Form(""),
+                     outro_about: str = Form(""), outro_source: str = Form("")):
     """Собрать публикуемый шортс из уже готового куска — без новой генерации кадров."""
     scene = session.get(Scene, scene_id)
     if scene is None:
@@ -640,7 +643,13 @@ def scene_make_short(scene_id: int, session: Session = Depends(get_session),
                            "options": {"only_short": True,
                                        "short_title": short_title.strip()[:200],
                                        "short_format": pipeline.normalize_format(short_format),
-                                       "title_font": fonts.normalize(title_font)}})
+                                       "title_font": fonts.normalize(title_font),
+                                       "add_outro": bool(add_outro),
+                                       "outro_url": outro_url.strip()[:300],
+                                       "outro_title": outro_title.strip()[:120],
+                                       "outro_text": outro_text.strip()[:1000],
+                                       "outro_about": outro_about.strip()[:2000],
+                                       "outro_source": outro_source.strip()}})
     session.add(Event(video_id=scene.video_id, level="info", stage="regen",
                       message=f"Сцена {scene.idx + 1}: сборка шортса поставлена в очередь"))
     session.commit()
@@ -678,7 +687,9 @@ def video_page(video_id: int, request: Request, session: Session = Depends(get_s
         request, session, video=video, channel=channel, events=events, variants=variants,
         clean_path=clean_path, models=models, voices=voices,
         regen_jobs=regen_jobs, busy_scenes=busy_scenes,
-        short_formats=pipeline.SHORT_FORMATS, font_list=fonts.available()))
+        short_formats=pipeline.SHORT_FORMATS, font_list=fonts.available(),
+        outro_sources=pipeline.OUTRO_SOURCES,
+        outro_builtin=pipeline.OUTRO_FALLBACK))
 
 
 @app.post("/scenes/{scene_id}/regenerate")
@@ -689,7 +700,10 @@ def scene_regenerate(scene_id: int, session: Session = Depends(get_session),
                      voice_id: str = Form(""), clips: int = Form(0),
                      redo_voice: str = Form(""), make_short: str = Form(""),
                      short_title: str = Form(""), short_format: str = Form("full"),
-                     title_font: str = Form("")):
+                     title_font: str = Form(""), add_outro: str = Form(""),
+                     outro_url: str = Form(""), outro_title: str = Form(""),
+                     outro_text: str = Form(""), outro_about: str = Form(""),
+                     outro_source: str = Form("")):
     """Пересборка одной сцены: свой промпт, своя модель, полный кусок на выходе."""
     scene = session.get(Scene, scene_id)
     if scene is None:
@@ -710,6 +724,12 @@ def scene_regenerate(scene_id: int, session: Session = Depends(get_session),
         "short_title": short_title.strip()[:200],
         "short_format": pipeline.normalize_format(short_format),
         "title_font": fonts.normalize(title_font),
+        "add_outro": bool(add_outro),
+        "outro_url": outro_url.strip()[:300],
+        "outro_title": outro_title.strip()[:120],
+        "outro_text": outro_text.strip()[:1000],
+        "outro_about": outro_about.strip()[:2000],
+        "outro_source": outro_source.strip(),
     }
     queue.enqueue(session, "regen_scene", video_id=video.id,
                   payload={"scene_id": scene.id, "options": options})

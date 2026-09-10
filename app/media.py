@@ -706,6 +706,81 @@ def build_loop_scene(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
     return dst
 
 
+def build_outro(dst: Path, size: tuple[int, int], duration: float, audio: Path | None,
+                title: str, link: str, font: str, workdir: Path,
+                background: Path | None = None) -> Path:
+    """Концовка шортса: название канала крупно и ссылка под ним.
+
+    Фоном берём последний кадр ролика, приглушённый и с наездом, — так концовка
+    не выглядит приклеенной из другого ролика. Если кадра нет, рисуем ровный
+    тёмный фон.
+    """
+    w, h = size
+    workdir.mkdir(parents=True, exist_ok=True)
+    span = max(duration, 0.1)
+    font_arg = font.replace(":", r"\:") if font else ""
+
+    title_size = max(28, int(w * 0.085))
+    link_size = max(18, int(w * 0.042))
+    title_y = int(h * 0.40)
+    link_y = title_y + int(title_size * 1.5)
+
+    # Появление с замедлением: резкое включение выдаёт склейку.
+    ease = "(1-pow(1-clip(t/0.6,0,1),3))"
+    link_ease = "(1-pow(1-clip((t-0.45)/0.6,0,1),3))"
+
+    parts = []
+    if background is not None and background.exists():
+        parts += [f"scale={w}:{h}:force_original_aspect_ratio=increase", f"crop={w}:{h}",
+                  # приглушаем, чтобы текст читался поверх любого кадра
+                  "eq=brightness=-0.45:saturation=0.5", "boxblur=12:1",
+                  f"crop=w='trunc(iw/(1+0.08*min(t/{span:.3f},1))/2)*2'"
+                  f":h='trunc(ih/(1+0.08*min(t/{span:.3f},1))/2)*2'"
+                  f":x='(iw-ow)/2':y='(ih-oh)/2'", f"scale={w}:{h}", f"fps={FPS}"]
+    else:
+        parts += [f"fps={FPS}"]
+
+    if title:
+        parts.append(
+            f"drawtext=fontfile='{font_arg}':text='{_escape_drawtext(title.upper())}'"
+            f":fontcolor=white:fontsize={title_size}"
+            f":x=(w-text_w)/2:y='{title_y}+{int(title_size * 0.5)}*(1-{ease})'"
+            f":alpha='{ease}'"
+        )
+    if link:
+        parts.append(
+            f"drawtext=fontfile='{font_arg}':text='{_escape_drawtext(link)}'"
+            f":fontcolor=white@0.92:fontsize={link_size}"
+            f":borderw={max(2, int(link_size * 0.06))}:bordercolor=black@0.55"
+            f":x=(w-text_w)/2:y='{link_y}+{int(link_size * 0.6)}*(1-{link_ease})'"
+            f":alpha='{link_ease}'"
+        )
+    parts.append("format=yuv420p")
+
+    graph = workdir / "outro.filter"
+    graph.write_text("[0:v]" + ",".join(parts) + "[v]", encoding="utf-8")
+
+    args = []
+    if background is not None and background.exists():
+        args += ["-loop", "1", "-i", str(background)]
+    else:
+        args += ["-f", "lavfi", "-i", f"color=0x0b0d10:size={w}x{h}:rate={FPS}"]
+    if audio is not None and audio.exists():
+        args += ["-i", str(audio), "-af", "apad"]
+        maps = ["-map", "[v]", "-map", "1:a:0"]
+    else:
+        args += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+        maps = ["-map", "[v]", "-map", "1:a:0"]
+
+    _ff(args + ["-filter_complex_script", str(graph)] + maps + [
+        "-t", f"{duration:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(dst),
+    ], timeout=1200)
+    return dst
+
+
 def clips_needed(audio_sec: float, coverage_sec: float, max_clips: int = 8) -> int:
     """Сколько уникальных клипов нужно, чтобы закрыть сцену без явного повтора."""
     coverage = max(4.0, coverage_sec)

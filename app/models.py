@@ -90,6 +90,19 @@ class Channel(Base):
     title_font: Mapped[str] = mapped_column(String(32), default="playfair")
     # чередование форматов при работе по расписанию
     rotate_formats: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Концовка шортса: призыв подписаться со ссылкой и названием канала.
+    outro_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    outro_url: Mapped[str] = mapped_column(String(300), default="")
+    outro_title: Mapped[str] = mapped_column(String(120), default="")
+    # Чем именно завлекаем. Из этого текста модель собирает короткий призыв —
+    # пересказывать весь функционал в концовке шортса незачем.
+    outro_about: Mapped[str] = mapped_column(Text, default="")
+    # Откуда брать реплики: "builtin" — готовый набор, "custom" — свои,
+    # "model" — составит чат-модель (это единственный платный вариант).
+    outro_source: Mapped[str] = mapped_column(String(20), default="builtin")
+    # Готовый текст призыва. Кэшируем, чтобы не платить за генерацию на каждый
+    # шортс и чтобы его можно было поправить руками.
+    outro_text: Mapped[str] = mapped_column(Text, default="")
     make_shorts: Mapped[bool] = mapped_column(Boolean, default=True)
     shorts_count: Mapped[int] = mapped_column(Integer, default=3)
     background_music: Mapped[bool] = mapped_column(Boolean, default=False)

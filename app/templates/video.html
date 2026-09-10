@@ -283,6 +283,49 @@
               <input name="short_title" form="regen-{{ sc.id }}"
                      value="{{ sc.short_title or sc.heading }}" maxlength="200"></label>
 
+            <label class="small row mt" style="margin:0">
+              <input type="checkbox" name="add_outro" form="regen-{{ sc.id }}"
+                     style="width:auto" {% if channel.outro_enabled %}checked{% endif %}>
+              концовка: призыв подписаться со ссылкой и названием</label>
+            <div class="small muted">В конце ролика диктор зовёт подписаться, на экране
+              появляются название канала и ссылка. Ролик становится длиннее примерно на
+              10 секунд, озвучка концовки стоит как короткая сцена.</div>
+            <label class="small">Ссылка на канал
+              <input name="outro_url" form="regen-{{ sc.id }}" maxlength="300"
+                     placeholder="t.me/your_channel"
+                     value="{{ channel.outro_url }}"></label>
+            <label class="small">Название на экране
+              <input name="outro_title" form="regen-{{ sc.id }}" maxlength="120"
+                     placeholder="МУЖСКОЙ РАЗБОР"
+                     value="{{ channel.outro_title }}"></label>
+            <label class="small">Что говорит диктор
+              <select name="outro_source" form="regen-{{ sc.id }}">
+                {% for key, label in outro_sources.items() %}
+                <option value="{{ key }}"
+                  {% if (channel.outro_source or 'builtin') == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select></label>
+            <details class="small">
+              <summary>Тексты концовки</summary>
+              <div class="small muted">Готовый набор (используется, когда выбран
+                «Готовый набор»; реплики идут по кругу):</div>
+              <ol class="small muted" style="margin:4px 0 8px 18px">
+                {% for line in outro_builtin %}
+                <li>{{ line.replace('{title}', channel.outro_title or channel.name) }}</li>
+                {% endfor %}
+              </ol>
+              <label class="small">Свои реплики — по одной в абзац, через пустую строку.
+                Работают, когда выбрано «Свои реплики».
+                <textarea name="outro_text" form="regen-{{ sc.id }}" rows="7"
+                          placeholder="Первая реплика.&#10;&#10;Вторая реплика."
+                          >{{ channel.outro_text }}</textarea></label>
+              <label class="small">О чём рассказать — нужно только для варианта
+                «Составит модель»
+                <textarea name="outro_about" form="regen-{{ sc.id }}" rows="4"
+                          placeholder="коротко о продукте: что он умеет и кому нужен"
+                          >{{ channel.outro_about }}</textarea></label>
+            </details>
+
             <button class="btn btn-sm btn-primary mt" form="regen-{{ sc.id }}"
                     type="submit">Сгенерировать заново</button>
             {% endif %}
