@@ -86,13 +86,25 @@ GEMINI_PACES = ["Natural", "Rapid Fire", "The Drift", "Staccato"]
 # нечего. Лимит взят заметно ниже известных провайдерских.
 CHUNK_CHARS = 600
 
+# Провайдеры обрывают текст на разной длине, и заявленные лимиты не помогают:
+# gemini-tts срезал текст на ~330 знаках, хотя в кусок 600 он уложился целиком.
+# Поэтому при неполной озвучке режем мельче и пробуем снова.
+CHUNK_STEPS = (600, 320, 180)
+
+# Сколько раз повторяем у того же провайдера при временной ошибке. 500 Internal
+# Error у синтеза — обычное дело, и со второго раза он чаще всего проходит.
+RETRY_ATTEMPTS = 2
+
 # Русская речь диктора — примерно 15 знаков в секунду. Точность не нужна: порог
 # служит только для того, чтобы заметить обрыв, а не измерить темп.
 CHARS_PER_SECOND = 15.0
 
-# Ниже этой доли ожидаемой длительности считаем озвучку оборванной. Запас
-# большой: быстрый голос на speed=1.2 законно укладывается в 0.75 ожидаемого.
-SHORT_AUDIO_RATIO = 0.6
+# Ниже этой доли ожидаемой длительности считаем озвучку оборванной.
+# 0.6 стоял слишком низко и пропускал явный обрыв: 22 секунды из 36 — это 0.61,
+# то есть треть текста не прозвучала, а проверка молчала. Порог разделяет случаи:
+# быстрый голос (20 знаков в секунду вместо 15) даёт 0.75 и проходит, а обрыв
+# на трети текста — 0.62 и отсекается.
+SHORT_AUDIO_RATIO = 0.7
 
 SENTENCE_END = ".!?…"
 
@@ -248,6 +260,46 @@ def _gemini_payload(text: str, voice_name: str, *, style: str, pace: str, profil
     }
 
 
+def _is_truncation(exc: Exception) -> bool:
+    """Обрыв текста провайдером — в отличие от временного сбоя."""
+    text = str(exc)
+    return "не полностью" in text or "обрывается" in text
+
+
+def _try_provider(client: KieClient, tts_model: str, payload: dict, text: str,
+                  dest: Path, speed: float) -> tuple[Path, float, float]:
+    """Одна попытка у одного провайдера. Возвращает (файл, длительность, кредиты)."""
+    result = client.run_task(tts_model, payload, timeout=900, poll=4)
+    urls = extract_urls(result)
+    audio = next((u for u in urls if u.split("?")[0].lower().endswith(
+        (".mp3", ".wav", ".m4a", ".ogg", ".flac"))), None) or (urls[0] if urls else None)
+    if not audio:
+        raise TTSError(f"{tts_model}: в ответе нет ссылки на аудио")
+
+    path = dest.with_suffix(storage.guess_ext(audio, ".mp3"))
+    storage.download(audio, path)
+    duration = storage.media_duration(path)
+    if duration <= 0:
+        path.unlink(missing_ok=True)
+        raise TTSError(f"{tts_model}: скачан пустой аудиофайл")
+
+    # Провайдер мог отдать успешный ответ, озвучив только начало текста. Считаем
+    # это отказом: лучше отдать работу другому, чем выпустить шортс с голосом,
+    # оборванным на полуслове.
+    want = expected_seconds(text, speed)
+    if want >= 3 and duration < want * SHORT_AUDIO_RATIO:
+        path.unlink(missing_ok=True)
+        raise TTSError(f"{tts_model}: озвучка {duration:.0f} с при тексте на "
+                       f"~{want:.0f} с — текст озвучен не полностью")
+    # Недоговорённые полтора слова в длину не заметны, поэтому смотрим ещё и на
+    # хвост файла: обрезанная фраза кончается на полной громкости.
+    if ends_abruptly(path):
+        path.unlink(missing_ok=True)
+        raise TTSError(f"{tts_model}: озвучка обрывается на полуслове")
+
+    return path, duration, float(result.get("_credits") or 0)
+
+
 def _synthesize_one(client: KieClient, text: str, dest: Path, *, model: str, voice_id: str,
                     stability: float, similarity: float, speed: float,
                     fallback_model: str, fallback_voice: str,
@@ -276,39 +328,23 @@ def _synthesize_one(client: KieClient, text: str, dest: Path, *, model: str, voi
         if index < len(attempts) - 1 and _breaker_open(tts_model):
             errors.append(f"{tts_model}: временно отключён после серии ошибок")
             continue
-        try:
-            result = client.run_task(tts_model, payload, timeout=900, poll=4)
-            urls = extract_urls(result)
-            audio = next((u for u in urls if u.split("?")[0].lower().endswith(
-                (".mp3", ".wav", ".m4a", ".ogg", ".flac"))), None) or (urls[0] if urls else None)
-            if not audio:
-                raise TTSError(f"{tts_model}: в ответе нет ссылки на аудио")
-            ext = storage.guess_ext(audio, ".mp3")
-            path = dest.with_suffix(ext)
-            storage.download(audio, path)
-            duration = storage.media_duration(path)
-            if duration <= 0:
-                raise TTSError(f"{tts_model}: скачан пустой аудиофайл")
-            # Провайдер мог отдать успешный ответ, озвучив только начало текста.
-            # Считаем это отказом: пусть отработает запасной, а не выйдет шортс
-            # с голосом, оборванным на полуслове.
-            want = expected_seconds(text, speed)
-            if want >= 3 and duration < want * SHORT_AUDIO_RATIO:
-                path.unlink(missing_ok=True)
-                raise TTSError(f"{tts_model}: озвучка {duration:.0f} с при тексте на "
-                               f"~{want:.0f} с — текст озвучен не полностью")
-            # Недоговорённые полтора слова в длину не заметны, поэтому смотрим ещё
-            # и на сам хвост файла: обрезанная фраза кончается на полной громкости.
-            if ends_abruptly(path):
-                path.unlink(missing_ok=True)
-                raise TTSError(f"{tts_model}: озвучка обрывается на полуслове")
-            _breaker_ok(tts_model)
-            return TTSResult(path=path, duration=duration,
-                             credits=float(result.get("_credits") or 0), provider=provider)
-        except (KieError, TTSError, OSError) as exc:
-            log.warning("TTS %s не сработал: %s", tts_model, exc)
-            _breaker_fail(tts_model)
-            errors.append(f"{tts_model}: {exc}")
+
+        for retry in range(RETRY_ATTEMPTS):
+            try:
+                result = _try_provider(client, tts_model, payload, text, dest, speed)
+                _breaker_ok(tts_model)
+                return TTSResult(path=result[0], duration=result[1],
+                                 credits=result[2], provider=provider)
+            except (KieError, TTSError, OSError) as exc:
+                log.warning("TTS %s не сработал (попытка %d/%d): %s",
+                            tts_model, retry + 1, RETRY_ATTEMPTS, exc)
+                # Обрыв текста повтором не лечится — там нужен кусок помельче,
+                # этим займётся вызывающая сторона. А вот 500 у провайдера
+                # обычно разовый, и вторая попытка проходит.
+                if _is_truncation(exc) or retry == RETRY_ATTEMPTS - 1:
+                    _breaker_fail(tts_model)
+                    errors.append(f"{tts_model}: {exc}")
+                    break
 
     raise TTSError("Озвучка не удалась. " + " | ".join(errors))
 
@@ -364,11 +400,29 @@ def synthesize(client: KieClient, text: str, dest: Path, *, model: str, voice_id
                   speed=speed, fallback_model=fallback_model, fallback_voice=fallback_voice,
                   voice_profile=voice_profile, allow_fallback=allow_fallback)
 
-    chunks = split_for_tts(text)
+    errors: list[str] = []
+    for limit in CHUNK_STEPS:
+        try:
+            return _synthesize_whole(client, text, dest, limit, common)
+        except TTSError as exc:
+            errors.append(f"куски по {limit}: {exc}")
+            # Мельче резать имеет смысл только если провайдер именно ОБРЫВАЕТ.
+            # Если он вовсе недоступен, дробление ничего не изменит.
+            if "не полностью" not in str(exc) and "обрывается" not in str(exc):
+                raise
+            log.warning("Озвучка кусками по %d не удалась (%s) — режу мельче", limit, exc)
+
+    raise TTSError("Озвучка не удалась даже мелкими кусками. " + " | ".join(errors))
+
+
+def _synthesize_whole(client: KieClient, text: str, dest: Path, limit: int,
+                      common: dict) -> TTSResult:
+    """Озвучка целиком при заданном размере куска."""
+    chunks = split_for_tts(text, limit)
     if len(chunks) <= 1:
         return _synthesize_one(client, text, dest, **common)
 
-    log.info("Текст на %d знаков озвучиваем %d кусками", len(text), len(chunks))
+    log.info("Текст на %d знаков озвучиваем %d кусками по %d", len(text), len(chunks), limit)
     parts: list[Path] = []
     duration = credits = 0.0
     provider = ""
