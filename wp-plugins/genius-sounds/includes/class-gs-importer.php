@@ -19,11 +19,24 @@ class GS_Importer {
     const CRON_HOOK     = 'gs_import_tick';
     const LOCK_KEY      = 'gs_import_lock';
 
-    const MAX_FILE_BYTES = 12582912; // 12 МБ — отсекаем длинные музыкальные треки
+    const OPT_MAX_FILE_MB = 'gs_import_max_file_mb';
+    const DEFAULT_MAX_FILE_MB = 8; // музыкальные категории тянут вверх занимаемое место
     const TICK_BUDGET    = 20;       // секунд на один тик
 
     public static function boot() {
         add_action(self::CRON_HOOK, array(__CLASS__, 'run_tick'));
+    }
+
+    /**
+     * Предельный размер одного файла: длинные музыкальные треки занимают
+     * в разы больше, чем короткие эффекты, и быстро съедают диск.
+     */
+    public static function max_file_bytes() {
+        $mb = (float) get_option(self::OPT_MAX_FILE_MB, self::DEFAULT_MAX_FILE_MB);
+        if ($mb <= 0) {
+            $mb = self::DEFAULT_MAX_FILE_MB;
+        }
+        return (int) round($mb * 1024 * 1024);
     }
 
     /* ---------------------------------------------------------------------
@@ -527,7 +540,7 @@ class GS_Importer {
         if ($len < 1024) {
             return array('ok' => false, 'message' => 'Слишком маленький файл');
         }
-        if ($len > self::MAX_FILE_BYTES) {
+        if ($len > self::max_file_bytes()) {
             return array('ok' => false, 'message' => 'Слишком большой файл');
         }
 

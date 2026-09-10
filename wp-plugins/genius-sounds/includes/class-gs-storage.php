@@ -154,4 +154,13 @@ class GS_Storage {
         }
         return array('bytes' => $total, 'files' => $count);
     }
+
+    /**
+     * Свободное место на диске сервера — импорт может занять единицы гигабайт,
+     * и упереться в квоту хостинга нельзя.
+     */
+    public static function disk_free() {
+        $free = @disk_free_space(self::base_dir());
+        return is_float($free) || is_int($free) ? (float) $free : 0.0;
+    }
 }

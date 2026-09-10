@@ -411,6 +411,7 @@ class GS_Rest {
             'stats'     => GS_Catalog::stats(),
             'queue_len' => count((array) get_option(GS_Importer::OPT_QUEUE, array())),
             'disk'      => GS_Storage::disk_usage(),
+            'disk_free' => GS_Storage::disk_free(),
         ));
     }
 

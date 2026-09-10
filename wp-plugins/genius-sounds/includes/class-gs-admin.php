@@ -29,6 +29,15 @@ class GS_Admin {
     }
 
     public static function register_settings() {
+        register_setting('gs_settings_group', GS_Importer::OPT_MAX_FILE_MB, array(
+            'type'              => 'number',
+            'sanitize_callback' => function ($value) {
+                $value = (float) $value;
+                return $value > 0 ? $value : GS_Importer::DEFAULT_MAX_FILE_MB;
+            },
+            'default'           => GS_Importer::DEFAULT_MAX_FILE_MB,
+        ));
+
         register_setting('gs_settings_group', GS_SFX::OPT_COST, array(
             'type'              => 'number',
             'sanitize_callback' => function ($value) {
@@ -69,6 +78,10 @@ class GS_Admin {
                     <span class="gs-admin-card__label">занято на диске</span>
                 </div>
                 <div class="gs-admin-card">
+                    <span class="gs-admin-card__value"><?php echo esc_html(GS_Storage::format_size(GS_Storage::disk_free())); ?></span>
+                    <span class="gs-admin-card__label">свободно на диске</span>
+                </div>
+                <div class="gs-admin-card">
                     <span class="gs-admin-card__value"><?php echo esc_html(number_format_i18n(count($queue))); ?></span>
                     <span class="gs-admin-card__label">в очереди импорта</span>
                 </div>
@@ -97,6 +110,14 @@ class GS_Admin {
                     <td><input id="gs-import-limit" type="number" value="20" min="1" max="100" class="small-text"></td>
                 </tr>
                 <tr>
+                    <th scope="row"><label for="gs-import-maxmb">Максимальный размер файла, МБ</label></th>
+                    <td>
+                        <input id="gs-import-maxmb" name="<?php echo esc_attr(GS_Importer::OPT_MAX_FILE_MB); ?>" type="number" step="1" min="1"
+                               value="<?php echo esc_attr(get_option(GS_Importer::OPT_MAX_FILE_MB, GS_Importer::DEFAULT_MAX_FILE_MB)); ?>" class="small-text" form="gs-settings-form">
+                        <p class="description">Сохраняется вместе с настройками студии ниже. Длинные музыкальные треки — основной источник роста диска.</p>
+                    </td>
+                </tr>
+                <tr>
                     <th scope="row">Перезаписывать</th>
                     <td><label><input id="gs-import-force" type="checkbox"> обновлять уже заполненные категории</label></td>
                 </tr>
@@ -123,7 +144,7 @@ class GS_Admin {
             <hr>
 
             <h2>Студия генерации</h2>
-            <form method="post" action="options.php">
+            <form method="post" action="options.php" id="gs-settings-form">
                 <?php settings_fields('gs_settings_group'); ?>
                 <table class="form-table" role="presentation">
                     <tr>
