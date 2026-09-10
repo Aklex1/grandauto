@@ -18,6 +18,7 @@ class GS_SFX {
 
     const OPT_COST     = 'gs_sfx_cost';
     const OPT_SHOWCASE = 'gs_sfx_showcase';
+    const OPT_CB_TOKEN = 'gs_sfx_callback_token';
 
     const MODE_SFX     = 'sfx';
     const MODE_AMBIENT = 'ambient';
@@ -39,6 +40,19 @@ class GS_SFX {
     /**
      * Цена одной генерации в рублях (списывается с того же баланса, что и озвучка).
      */
+    /**
+     * Секрет для колбэка. Сам колбэк открыт наружу (иначе провайдер не достучится),
+     * поэтому единственная защита — токен в адресе, который знаем только мы и он.
+     */
+    public static function callback_token() {
+        $token = (string) get_option(self::OPT_CB_TOKEN, '');
+        if ($token === '') {
+            $token = wp_generate_password(32, false, false);
+            update_option(self::OPT_CB_TOKEN, $token, false);
+        }
+        return $token;
+    }
+
     public static function get_cost() {
         $cost = (float) get_option(self::OPT_COST, 15);
         return $cost > 0 ? round($cost, 2) : 15.00;

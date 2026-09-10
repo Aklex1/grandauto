@@ -141,7 +141,7 @@ class GS_Rest {
             'loop'         => $loop,
             'tempo'        => $tempo,
             'key'          => $key,
-            'callback_url' => rest_url(self::NS . '/sfx/callback'),
+            'callback_url' => add_query_arg('token', GS_SFX::callback_token(), rest_url(self::NS . '/sfx/callback')),
         ));
 
         if (empty($created['ok'])) {
@@ -183,14 +183,20 @@ class GS_Rest {
         $user_id = get_current_user_id();
 
         $meta = get_option('gs_sfx_task_' . $task_id, array());
-        if (is_array($meta) && !empty($meta['user_id'])
-            && (int) $meta['user_id'] !== (int) $user_id
-            && !current_user_can('manage_options')) {
+        $stored = self::get_stored_generation($task_id);
+
+        // Служебная запись удаляется по завершении задачи, поэтому владельца
+        // проверяем и по ней, и по строке в истории генераций.
+        $owner = 0;
+        if (is_array($meta) && !empty($meta['user_id'])) {
+            $owner = (int) $meta['user_id'];
+        } elseif (is_array($stored) && isset($stored['user_id'])) {
+            $owner = (int) $stored['user_id'];
+        }
+        if ($owner > 0 && $owner !== (int) $user_id && !current_user_can('manage_options')) {
             return new WP_Error('gs_forbidden', 'Задача принадлежит другому пользователю', array('status' => 403));
         }
 
-        // Готовый результат уже мог быть сохранён колбэком.
-        $stored = self::get_stored_generation($task_id);
         if ($stored && !empty($stored['audio_url']) && $stored['status'] === 'completed') {
             return rest_ensure_response(array(
                 'success'   => true,
@@ -246,6 +252,11 @@ class GS_Rest {
     }
 
     public static function handle_callback($request) {
+        $token = (string) $request->get_param('token');
+        if (!hash_equals(GS_SFX::callback_token(), $token)) {
+            return new WP_Error('gs_bad_token', 'Неверный токен колбэка', array('status' => 403));
+        }
+
         $params = $request->get_json_params();
         if (!is_array($params)) {
             return rest_ensure_response(array('success' => true));
