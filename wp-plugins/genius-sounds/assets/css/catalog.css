@@ -254,25 +254,30 @@ body.gs-studio-page .w-grid {
     transition: transform 0.16s var(--gs-ease), box-shadow 0.18s var(--gs-ease), background 0.18s var(--gs-ease);
 }
 
-.gs-btn--primary {
+/* .gs-wrap a перебивает цвет кнопки-ссылки — поэтому селекторы с той же силой. */
+.gs-wrap .gs-btn--primary,
+.gs-wrap a.gs-btn--primary {
     background: linear-gradient(135deg, var(--gs-primary) 0%, #8b5cf6 100%);
     color: #fff;
     box-shadow: 0 10px 26px rgba(99, 102, 241, 0.34);
 }
 
-.gs-btn--primary:hover {
+.gs-wrap .gs-btn--primary:hover,
+.gs-wrap a.gs-btn--primary:hover {
     color: #fff;
     transform: translateY(-1px);
     box-shadow: 0 14px 32px rgba(99, 102, 241, 0.46);
 }
 
-.gs-btn--ghost {
+.gs-wrap .gs-btn--ghost,
+.gs-wrap a.gs-btn--ghost {
     background: rgba(148, 163, 184, 0.08);
     border-color: var(--gs-border);
     color: var(--gs-text);
 }
 
-.gs-btn--ghost:hover {
+.gs-wrap .gs-btn--ghost:hover,
+.gs-wrap a.gs-btn--ghost:hover {
     background: var(--gs-surface-hover);
     color: #fff;
 }
@@ -346,7 +351,7 @@ body.gs-studio-page .w-grid {
     margin: 0;
 }
 
-.gs-cat-card__link {
+.gs-wrap .gs-cat-card__link {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -360,7 +365,7 @@ body.gs-studio-page .w-grid {
     transition: transform 0.16s var(--gs-ease), border-color 0.18s var(--gs-ease), background 0.18s var(--gs-ease);
 }
 
-.gs-cat-card__link:hover {
+.gs-wrap .gs-cat-card__link:hover {
     transform: translateY(-2px);
     border-color: var(--gs-border-strong);
     background: var(--gs-surface-hover);
@@ -392,7 +397,7 @@ body.gs-studio-page .w-grid {
     font-size: 14px;
 }
 
-.gs-breadcrumbs__current {
+.gs-wrap .gs-breadcrumbs__current {
     color: var(--gs-text);
 }
 
@@ -527,7 +532,7 @@ body.gs-studio-page .w-grid {
     transition: width 0.1s linear;
 }
 
-.gs-sound__download {
+.gs-wrap .gs-sound__download {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -541,7 +546,7 @@ body.gs-studio-page .w-grid {
     font-weight: 600;
 }
 
-.gs-sound__download:hover {
+.gs-wrap .gs-sound__download:hover {
     border-color: var(--gs-border-strong);
     background: var(--gs-surface-hover);
     color: #fff;
@@ -641,8 +646,8 @@ body.gs-studio-page .w-grid {
     margin-top: clamp(24px, 3vw, 34px);
 }
 
-.gs-pager__btn,
-.gs-pager__num {
+.gs-wrap .gs-pager__btn,
+.gs-wrap .gs-pager__num {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -657,8 +662,8 @@ body.gs-studio-page .w-grid {
     font-weight: 600;
 }
 
-.gs-pager__btn:hover,
-.gs-pager__num:hover {
+.gs-wrap .gs-pager__btn:hover,
+.gs-wrap .gs-pager__num:hover {
     border-color: var(--gs-border-strong);
     background: var(--gs-surface-hover);
     color: #fff;
@@ -705,7 +710,7 @@ body.gs-studio-page .w-grid {
     list-style: none;
 }
 
-.gs-related__link {
+.gs-wrap .gs-related__link {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -718,7 +723,7 @@ body.gs-studio-page .w-grid {
     font-weight: 600;
 }
 
-.gs-related__link:hover {
+.gs-wrap .gs-related__link:hover {
     border-color: var(--gs-border-strong);
     background: var(--gs-surface-hover);
     color: #fff;
