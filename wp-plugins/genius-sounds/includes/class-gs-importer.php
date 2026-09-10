@@ -176,29 +176,121 @@ class GS_Importer {
     }
 
     /**
-     * Список треков категории источника.
+     * HTML страницы категории источника.
      *
-     * @return array{ok:bool,message:string,tracks:array}
+     * @return array{ok:bool,message:string,html:string}
      */
-    public static function fetch_tracks($slug) {
+    private static function fetch_category_html($slug) {
         $slug = GS_Storage::sanitize_slug($slug);
         if ($slug === '') {
-            return array('ok' => false, 'message' => 'Пустой слаг', 'tracks' => array());
+            return array('ok' => false, 'message' => 'Пустой слаг', 'html' => '');
         }
 
         $url = self::SOURCE_BASE . '/category/' . rawurlencode($slug) . '/';
         $response = wp_remote_get($url, self::request_args());
 
         if (is_wp_error($response)) {
-            return array('ok' => false, 'message' => 'Ошибка запроса: ' . $response->get_error_message(), 'tracks' => array());
+            return array('ok' => false, 'message' => 'Ошибка запроса: ' . $response->get_error_message(), 'html' => '');
         }
         $code = (int) wp_remote_retrieve_response_code($response);
         if ($code !== 200) {
-            return array('ok' => false, 'message' => 'HTTP ' . $code . ' на ' . $url, 'tracks' => array());
+            return array('ok' => false, 'message' => 'HTTP ' . $code . ' на ' . $url, 'html' => '');
         }
 
-        $html = (string) wp_remote_retrieve_body($response);
-        return array('ok' => true, 'message' => '', 'tracks' => self::parse_tracks($html));
+        return array('ok' => true, 'message' => '', 'html' => (string) wp_remote_retrieve_body($response));
+    }
+
+    /**
+     * Список треков категории источника.
+     *
+     * Крупные разделы (muz, avto, predmetyi…) — витрины подкатегорий, треков на них нет.
+     * Для таких собираем подборку из дочерних категорий, иначе самые посещаемые
+     * страницы каталога остались бы пустыми.
+     *
+     * @return array{ok:bool,message:string,tracks:array}
+     */
+    public static function fetch_tracks($slug, $limit = 15) {
+        $page = self::fetch_category_html($slug);
+        if (empty($page['ok'])) {
+            return array('ok' => false, 'message' => $page['message'], 'tracks' => array());
+        }
+
+        $tracks = self::parse_tracks($page['html']);
+        if (!empty($tracks)) {
+            return array('ok' => true, 'message' => '', 'tracks' => $tracks);
+        }
+
+        $tracks = self::collect_from_subcategories($slug, $page['html'], $limit);
+        return array(
+            'ok'      => true,
+            'message' => empty($tracks) ? 'нет треков и подкатегорий' : '',
+            'tracks'  => $tracks,
+        );
+    }
+
+    /**
+     * Ссылки на дочерние категории со страницы-витрины.
+     *
+     * @return string[]
+     */
+    public static function parse_subcategories($html, $self_slug = '') {
+        $slugs = array();
+        if (!preg_match_all('~href="/category/([a-z0-9-]+)/"~i', (string) $html, $m)) {
+            return $slugs;
+        }
+        foreach ($m[1] as $found) {
+            $found = GS_Storage::sanitize_slug($found);
+            if ($found === '' || $found === $self_slug || in_array($found, $slugs, true)) {
+                continue;
+            }
+            $slugs[] = $found;
+        }
+        return $slugs;
+    }
+
+    /**
+     * Берём понемногу из каждой дочерней категории, пока не наберём лимит.
+     *
+     * @return array
+     */
+    private static function collect_from_subcategories($slug, $html, $limit) {
+        $subs = self::parse_subcategories($html, $slug);
+        if (empty($subs)) {
+            return array();
+        }
+
+        $limit = max(1, (int) $limit);
+        $subs = array_slice($subs, 0, 8);
+        $per_sub = max(2, (int) ceil($limit / max(1, min(count($subs), 8))));
+
+        $tracks = array();
+        $seen = array();
+
+        foreach ($subs as $sub) {
+            if (count($tracks) >= $limit) {
+                break;
+            }
+            $sub_page = self::fetch_category_html($sub);
+            if (empty($sub_page['ok'])) {
+                continue;
+            }
+            $taken = 0;
+            foreach (self::parse_tracks($sub_page['html']) as $track) {
+                if ($taken >= $per_sub || count($tracks) >= $limit) {
+                    break;
+                }
+                $key = $track['source_id'] !== '' ? $track['source_id'] : $track['path'];
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $tracks[] = $track;
+                $taken++;
+            }
+            usleep(150000);
+        }
+
+        return $tracks;
     }
 
     /**
@@ -303,7 +395,7 @@ class GS_Importer {
             return $result;
         }
 
-        $fetched = self::fetch_tracks($slug);
+        $fetched = self::fetch_tracks($slug, $limit);
         if (empty($fetched['ok'])) {
             $result['message'] = $slug . ': ' . $fetched['message'];
             return $result;
@@ -329,6 +421,7 @@ class GS_Importer {
         }
 
         $sounds = array();
+        $seen = array();
         $limit = max(1, min(100, (int) $limit));
         $referer = self::SOURCE_BASE . '/category/' . rawurlencode($slug) . '/';
 
@@ -338,7 +431,14 @@ class GS_Importer {
             }
 
             $filename = self::build_filename($track);
-            $target   = $dir . '/' . $filename;
+
+            // Один и тот же трек попадается на странице дважды (блок «популярное» + общий список).
+            if (isset($seen[$filename])) {
+                continue;
+            }
+            $seen[$filename] = true;
+
+            $target = $dir . '/' . $filename;
 
             if (isset($by_file[$filename]) && file_exists($target)) {
                 $sounds[] = $by_file[$filename];
