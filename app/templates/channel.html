@@ -60,6 +60,7 @@
   <a href="?tab=footage" class="{% if tab == 'footage' %}active{% endif %}">Библиотека видео ({{ clips|length }})</a>
   <a href="?tab=stock" class="{% if tab == 'stock' %}active{% endif %}">Стоки <span class="badge">beta</span></a>
   <a href="?tab=schedule" class="{% if tab == 'schedule' %}active{% endif %}">Расписание</a>
+  <a href="?tab=references" class="{% if tab == 'references' %}active{% endif %}">Референсы ({{ references_list|length }})</a>
   <a href="?tab=settings" class="{% if tab == 'settings' %}active{% endif %}">Настройки канала</a>
 </div>
 
@@ -74,10 +75,7 @@
 <div class="card tight">
   <div class="row between">
     <h2 style="margin:0">Добавить тему</h2>
-    <form method="post" action="/channels/{{ channel.id }}/plan/extend" class="row inline-form">
-      <input type="number" name="count" value="30" min="5" max="60" style="width:80px">
-      <button class="btn btn-sm">Дописать план через AI</button>
-    </form>
+    <a class="btn btn-sm" href="#plan-builder">Создать контент-план</a>
   </div>
   <form method="post" action="/channels/{{ channel.id }}/plan/add" class="grid cols-3 mt">
     <label>Книга<input name="book_title" required placeholder="Атомные привычки"></label>
@@ -85,6 +83,35 @@
     <label>Дата<input name="scheduled_date" type="date"></label>
     <label style="grid-column:1/-1">Угол подачи<input name="angle" placeholder="Система маленьких шагов вместо мотивации"></label>
     <div><button class="btn btn-primary">Добавить в план</button></div>
+  </form>
+</div>
+
+<div class="card tight" id="plan-builder">
+  <h2 style="margin-top:0">Создать контент-план</h2>
+  <p class="small muted">
+    Укажите период и частоту — система посчитает, сколько роликов нужно, и закажет
+    столько тем у модели. Источник берётся из настроек канала:
+    <b>{{ content_sources.get(channel.content_source, channel.content_source) }}</b>.
+    За один заход добавляется не больше {{ plan_max_items }} тем — на длинном списке
+    модель начинает повторяться. Нужно больше — нажмите ещё раз, уже добавленное
+    во второй раз не предложится.
+  </p>
+  <form method="post" action="/channels/{{ channel.id }}/plan/extend" class="grid cols-3">
+    <label>План на
+      <input type="number" name="period" value="1" min="1" max="24"></label>
+    <label>Единица
+      <select name="period_unit">
+        <option value="days">дней</option>
+        <option value="weeks">недель</option>
+        <option value="months" selected>месяцев</option>
+      </select></label>
+    <label>Роликов в день
+      <input type="number" name="posts_per_day" step="0.5" min="0.5" max="10"
+             value="{{ '%.1f'|format(channel.posts_per_day or 1.0) }}"></label>
+    <div style="grid-column:1/-1">
+      <button class="btn btn-primary">Создать план через AI</button>
+      <span class="small muted">Один запрос к текстовой модели, видео не генерируются.</span>
+    </div>
   </form>
 </div>
 
@@ -409,14 +436,86 @@
   </form>
 </div>
 
+{% elif tab == 'references' %}
+<div class="card tight">
+  <h2 style="margin-top:0">Свои референсы</h2>
+  <p class="small muted">
+    Образцы стиля для генераций. Описание («что здесь хорошо») подмешивается в промпты
+    и работает всегда — генератор видит только текст, саму картинку он не «посмотрит».
+    Файл нужен там, где модель принимает изображение входом: например, при оживлении
+    кадра в зацикленный клип.
+  </p>
+  <form method="post" action="/channels/{{ channel.id }}/references"
+        enctype="multipart/form-data" class="grid cols-3">
+    <label>Для чего
+      <select name="kind">
+        {% for key, label in reference_kinds.items() %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select></label>
+    <label style="grid-column:2/-1">Файлы — картинки (jpg, png, webp) или видео (mp4, mov, webm)
+      <input type="file" name="files" multiple accept="image/*,video/*"></label>
+    <label style="grid-column:1/-1">Что здесь хорошо — эта фраза и уйдёт в промпт
+      <input name="note" maxlength="2000"
+             placeholder="приглушённые тона, жёсткий боковой свет, крупный план без лишних деталей"></label>
+    <div><button class="btn btn-primary">Загрузить</button></div>
+  </form>
+</div>
+
+{% if references_list %}
+<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:16px">
+  {% for ref in references_list %}
+  <div class="card" style="width:260px">
+    {% if ref.media_type == 'video' %}
+      <video controls preload="none" style="width:100%;border-radius:6px"
+        {% if ref.thumb_path %}poster="/media/{{ ref.thumb_path }}"{% endif %}
+        src="/media/{{ ref.path }}"></video>
+    {% else %}
+      <img src="/media/{{ ref.path }}" alt="{{ ref.title }}"
+           style="width:100%;border-radius:6px">
+    {% endif %}
+    <div><b>{{ ref.title }}</b></div>
+    <div class="small muted">{{ reference_kinds.get(ref.kind, ref.kind) }}</div>
+    {% if ref.note %}<div class="small">{{ ref.note }}</div>{% endif %}
+    <div class="small muted">
+      {{ ref.width }}×{{ ref.height }} · {{ human_size(ref.file_size) }}</div>
+    <form method="post" action="/channels/{{ channel.id }}/references/{{ ref.id }}/drop"
+          onsubmit="return confirm('Убрать референс «{{ ref.title }}»?')">
+      <label class="small row" style="margin:4px 0">
+        <input type="checkbox" name="delete_file" value="1" style="width:auto">
+        удалить файл с диска</label>
+      <button class="btn btn-sm btn-ghost" type="submit">Убрать</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted" style="margin-top:16px">Референсов пока нет.</p>
+{% endif %}
+
 {% else %}
 <form method="post" action="/channels/{{ channel.id }}/settings">
   <div class="grid cols-2">
     <div class="card">
       <fieldset><legend>Канал</legend>
         <label>Название<input name="name" value="{{ channel.name }}" required></label>
-        <label>Тематика<textarea name="topic">{{ channel.topic }}</textarea></label>
-        <label>Описание<textarea name="description">{{ channel.description }}</textarea></label>
+        <label>Тематика — о чём канал в одну-две строки
+          <textarea name="topic">{{ channel.topic }}</textarea></label>
+        <label>Описание — как подаём, чего избегаем, какой тон. Идёт в промпт плана.
+          <textarea name="description">{{ channel.description }}</textarea></label>
+        <label>Аудитория
+          <input name="audience" maxlength="300" value="{{ channel.audience }}"
+                 placeholder="мужчины 25–45 лет"></label>
+        <label>На основе чего генерировать контент
+          <select name="content_source">
+            {% for key, label in content_sources.items() %}
+            <option value="{{ key }}"
+              {% if (channel.content_source or 'books') == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select></label>
+        <label>Роликов в день — из этого считается длина контент-плана на период
+          <input name="posts_per_day" type="number" step="0.5" min="0.5" max="10"
+                 value="{{ '%.1f'|format(channel.posts_per_day or 1.0) }}"></label>
         <label><input type="checkbox" name="is_active" style="width:auto" {% if channel.is_active %}checked{% endif %}> Канал активен</label>
       </fieldset>
 

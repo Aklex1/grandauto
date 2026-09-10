@@ -13,8 +13,8 @@ from typing import Callable, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import (config, fonts, footage, loops, media, music, prompts, storage,
-               subtitles, tts)
+from . import (config, fonts, footage, loops, media, music, prompts, references,
+               storage, subtitles, tts)
 from .db import session_scope
 from .kie import KieClient, KieError, extract_urls, video_input
 from .models import (Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
@@ -631,9 +631,10 @@ def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
         client = client_for(session)
         # Номер сцены задаёт план и палитру: у соседних шортсов ролика обложки
         # заметно разные, а не двенадцать портретов подряд.
+        hint = references.style_hint(session, channel.id, "cover")
+        style = ", ".join(x for x in (channel.thumb_style.strip(), hint) if x)
         prompt = prompts.short_cover(channel.name, channel.topic, scene.heading,
-                                     scene.narration, channel.thumb_style,
-                                     variant=scene.idx)
+                                     scene.narration, style, variant=scene.idx)
         result = client.run_task(channel.image_model, {
             "prompt": prompt,
             "aspect_ratio": "9:16",
@@ -732,9 +733,12 @@ def normalize_format(value: str) -> str:
 def _scene_background(session: Session, video: Video, channel: Channel, scene: Scene,
                       fmt: str, workdir: Path) -> Optional[Path]:
     """Фоновый кадр для форматов «бюст» и «абзац» — одна картинка на весь шортс."""
+    # Свои образцы канала подмешиваем в стиль: генератор картинку не видит, но
+    # словесное описание из референса работает так же, как ручная правка стиля.
+    hint = references.style_hint(session, channel.id, "background")
+    style = ", ".join(x for x in (channel.thumb_style.strip(), hint) if x)
     if fmt in STILL_FORMATS:
-        prompt = prompts.still_background(fmt, channel.topic, scene.heading,
-                                          channel.thumb_style)
+        prompt = prompts.still_background(fmt, channel.topic, scene.heading, style)
     else:
         prompt = prompts.paragraph_background(channel.topic, scene.heading)
     try:

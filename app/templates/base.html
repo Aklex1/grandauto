@@ -12,6 +12,7 @@
   <a class="brand" href="/">🏭 Контент-завод</a>
   <nav class="nav">
     <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Обзор</a>
+    <a href="/channels" class="{% if request.url.path == '/channels' %}active{% endif %}">Каналы</a>
     {% for ch in channels %}
       <a href="/channels/{{ ch.id }}" class="{% if request.url.path == '/channels/' ~ ch.id %}active{% endif %}">{{ ch.name }}</a>
     {% endfor %}

@@ -100,6 +100,13 @@ class Channel(Base):
     # Откуда брать реплики: "builtin" — готовый набор, "custom" — свои,
     # "model" — составит чат-модель (это единственный платный вариант).
     outro_source: Mapped[str] = mapped_column(String(20), default="builtin")
+
+    # На основе чего строить контент-план: книги, темы, свои материалы, тренды.
+    content_source: Mapped[str] = mapped_column(String(20), default="books")
+    # Кому канал адресован — идёт в промпт плана вместо догадки по названию.
+    audience: Mapped[str] = mapped_column(String(300), default="")
+    # Сколько роликов в день выпускаем: из этого считается длина плана на период.
+    posts_per_day: Mapped[float] = mapped_column(Float, default=1.0)
     # Готовый текст призыва. Кэшируем, чтобы не платить за генерацию на каждый
     # шортс и чтобы его можно было поправить руками.
     outro_text: Mapped[str] = mapped_column(Text, default="")
@@ -394,6 +401,36 @@ class MusicTrack(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
     channel: Mapped[Optional[Channel]] = relationship()
+
+
+class Reference(Base):
+    """Свой референс канала: образец стиля для генераций.
+
+    Генераторы изображений не принимают «сделай как здесь» без самой картинки,
+    поэтому у референса две стороны: файл, который можно отдать модели входом, и
+    словесное описание, которое подмешивается в промпт.
+    """
+
+    __tablename__ = "references"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), index=True)
+    # cover — обложки, background — фоны сцен, loop — исходник для зацикленного
+    # клипа, style — общий стиль канала
+    kind: Mapped[str] = mapped_column(String(20), default="style", index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    # Чем именно этот образец хорош — эта фраза и уходит в промпт.
+    note: Mapped[str] = mapped_column(Text, default="")
+    path: Mapped[str] = mapped_column(String(500), default="")
+    thumb_path: Mapped[str] = mapped_column(String(500), default="")
+    media_type: Mapped[str] = mapped_column(String(20), default="image")
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+    channel: Mapped[Channel] = relationship()
 
 
 class LoopClip(Base):

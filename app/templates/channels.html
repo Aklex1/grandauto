@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Каналы</h1>
+
+{% if request.query_params.get('error') == 'no-name' %}
+  <p class="badge" style="background:#5b2222">Название канала не может быть пустым.</p>
+{% endif %}
+
+{% if not channel_rows %}
+  <p class="muted">Каналов пока нет. Заведите первый — форма ниже.</p>
+{% else %}
+<table class="table">
+  <thead><tr>
+    <th>Канал</th><th>Тематика</th><th>Источник контента</th>
+    <th>План</th><th>Ролики</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for ch in channel_rows %}
+    {% set s = channel_stats.get(ch.id, {}) %}
+    <tr>
+      <td><a href="/channels/{{ ch.id }}"><b>{{ ch.name }}</b></a>
+        <div class="small muted">{{ ch.slug }}{% if not ch.is_active %} · выключен{% endif %}</div></td>
+      <td class="small">{{ ch.topic[:80] }}{% if ch.topic|length > 80 %}…{% endif %}</td>
+      <td class="small muted">{{ content_sources.get(ch.content_source, ch.content_source) }}</td>
+      <td class="small">{{ s.get('plan', 0) }} в очереди</td>
+      <td class="small">{{ s.get('done', 0) }} из {{ s.get('videos', 0) }} готовы</td>
+      <td>
+        <a class="btn btn-sm" href="/channels/{{ ch.id }}?tab=plan">Контент-план</a>
+        <a class="btn btn-sm btn-ghost" href="/channels/{{ ch.id }}?tab=settings">Настройки</a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Новый канал</h2>
+<form method="post" action="/channels/create">
+  <fieldset><legend>Основное</legend>
+    <p class="small muted">Модели, голос и оформление возьмутся из настроек по умолчанию —
+      их можно поменять внутри канала на вкладке «Настройки канала».</p>
+    <label>Название
+      <input name="name" required maxlength="200" placeholder="Мужской разбор"></label>
+    <label>Тематика — о чём канал в одну-две строки
+      <input name="topic" maxlength="500"
+             placeholder="мужская психология, отношения, дисциплина"></label>
+    <label>Описание — подробнее: как подаём, чего избегаем, какой тон
+      <textarea name="description" rows="4"
+                placeholder="Спокойный разбор без морализаторства. Говорим на «ты». Никакой эзотерики."></textarea></label>
+    <label>Аудитория
+      <input name="audience" maxlength="300" placeholder="мужчины 25–45 лет"></label>
+    <label>На основе чего генерировать контент
+      <select name="content_source">
+        {% for key, label in content_sources.items() %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Язык
+      <input name="language" value="ru" maxlength="10" style="max-width:120px"></label>
+    <button class="btn btn-primary" type="submit">Создать канал</button>
+  </fieldset>
+</form>
+{% endblock %}

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from . import (bootstrap, config, estimate, fonts, footage, pipeline, planner, prompts,
                queue, scheduler, stock, storage, subtitles, sync, webutil)
 from . import settings_store as st
+from . import references
 from .db import get_session, session_scope
 from .kie import KieClient
 from .models import (Channel, Event, Footage, Job, ModelPath, PlanItem, PriceItem,
@@ -208,6 +209,104 @@ def dashboard(request: Request, session: Session = Depends(get_session),
 
 # --------------------------------------------------------------------------- каналы
 
+@app.get("/channels", response_class=HTMLResponse)
+def channels_page(request: Request, session: Session = Depends(get_session),
+                  _user: str = Depends(require_user)):
+    """Общая вкладка каналов: что уже есть и как завести новый."""
+    rows = session.execute(select(Channel).order_by(Channel.position, Channel.id)).scalars().all()
+    stats = {}
+    for ch in rows:
+        stats[ch.id] = {
+            "plan": session.execute(select(func.count(PlanItem.id)).where(
+                PlanItem.channel_id == ch.id, PlanItem.status == "planned")).scalar() or 0,
+            "videos": session.execute(select(func.count(Video.id)).where(
+                Video.channel_id == ch.id)).scalar() or 0,
+            "done": session.execute(select(func.count(Video.id)).where(
+                Video.channel_id == ch.id, Video.status == "done")).scalar() or 0,
+        }
+    return templates.TemplateResponse("channels.html", base_context(
+        request, session, channel_rows=rows, channel_stats=stats,
+        content_sources=prompts.CONTENT_SOURCES))
+
+
+@app.post("/channels/create")
+def channel_create(session: Session = Depends(get_session), _user: str = Depends(require_user),
+                   name: str = Form(...), topic: str = Form(""), description: str = Form(""),
+                   audience: str = Form(""), content_source: str = Form("books"),
+                   language: str = Form("ru")):
+    name = name.strip()[:200]
+    if not name:
+        return RedirectResponse("/channels?error=no-name", status_code=303)
+
+    base = storage.slugify(name, 60) or "channel"
+    slug, n = base, 1
+    # Slug уникален в базе: без проверки создание второго канала с похожим именем
+    # падало бы ошибкой уникальности прямо в лицо пользователю.
+    while session.execute(select(Channel).where(Channel.slug == slug)).scalars().first():
+        n += 1
+        slug = f"{base}-{n}"
+
+    position = (session.execute(select(func.max(Channel.position))).scalar() or 0) + 1
+    channel = Channel(
+        name=name, slug=slug, topic=topic.strip(), description=description.strip(),
+        audience=audience.strip()[:300], language=(language or "ru")[:10],
+        content_source=content_source if content_source in prompts.CONTENT_SOURCES else "books",
+        position=position,
+        chat_model=st.get(session, "default_chat_model", "") or Channel.chat_model.default.arg,
+        video_model=st.get(session, "default_video_model", "") or Channel.video_model.default.arg,
+        image_model=st.get(session, "default_image_model", "") or Channel.image_model.default.arg,
+        tts_model=st.get(session, "default_tts_model", "") or Channel.tts_model.default.arg,
+    )
+    session.add(channel)
+    session.commit()
+    session.add(Event(level="info", stage="каналы",
+                      message=f"Создан канал «{channel.name}» ({channel.slug})"))
+    session.commit()
+    return RedirectResponse(f"/channels/{channel.id}?tab=settings", status_code=303)
+
+
+@app.post("/channels/{channel_id}/references")
+async def channel_reference_add(channel_id: int, request: Request,
+                                session: Session = Depends(get_session),
+                                _user: str = Depends(require_user)):
+    """Загрузка своих образцов стиля."""
+    from . import references as refs
+
+    channel = _channel_or_404(session, channel_id)
+    form = await request.form()
+    kind = str(form.get("kind") or "style")
+    note = str(form.get("note") or "")
+    added, skipped = 0, []
+    for upload in form.getlist("files"):
+        if not isinstance(upload, UploadFile) or not upload.filename:
+            continue
+        data = await upload.read()
+        row = refs.add(session, channel.id, channel.slug, upload.filename, data,
+                       kind=kind, note=note)
+        if row is None:
+            skipped.append(upload.filename)
+        else:
+            added += 1
+    message = f"Канал «{channel.name}»: добавлено референсов {added}"
+    if skipped:
+        message += ". Пропущены (неподходящий тип): " + ", ".join(skipped[:5])
+    session.add(Event(level="warn" if skipped else "info", stage="каналы",
+                      message=message[:2000]))
+    session.commit()
+    return RedirectResponse(f"/channels/{channel_id}?tab=references", status_code=303)
+
+
+@app.post("/channels/{channel_id}/references/{ref_id}/drop")
+def channel_reference_drop(channel_id: int, ref_id: int,
+                           session: Session = Depends(get_session),
+                           _user: str = Depends(require_user),
+                           delete_file: str = Form("")):
+    from . import references as refs
+
+    refs.drop(session, ref_id, delete_file=bool(delete_file))
+    return RedirectResponse(f"/channels/{channel_id}?tab=references", status_code=303)
+
+
 @app.get("/channels/{channel_id}", response_class=HTMLResponse)
 def channel_page(channel_id: int, request: Request, tab: str = "plan",
                  q: str = "", provider: str = "", orientation: str = "",
@@ -252,6 +351,10 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         cleanup_modes=footage.CLEANUP_MODES,
         subtitle_styles=subtitles.SUBTITLE_STYLES, font_list=fonts.available(),
         short_formats=pipeline.SHORT_FORMATS, **stock_ctx,
+        content_sources=prompts.CONTENT_SOURCES,
+        reference_kinds=references.KINDS,
+        references_list=references.for_channel(session, channel.id),
+        plan_max_items=PLAN_MAX_ITEMS,
         **estimate.channel_estimate_context(session, channel)))
 
 
@@ -297,6 +400,8 @@ def _stock_context(session: Session, channel: Channel, tab: str, *, q: str, prov
 def channel_settings(channel_id: int, request: Request, session: Session = Depends(get_session),
                      _user: str = Depends(require_user),
                      name: str = Form(...), topic: str = Form(""), description: str = Form(""),
+                     audience: str = Form(""), content_source: str = Form("books"),
+                     posts_per_day: float = Form(1.0),
                      chat_model: str = Form(...), video_model: str = Form(...),
                      image_model: str = Form(...), tts_model: str = Form(...),
                      voice_id: str = Form(...), voice_name: str = Form(""),
@@ -317,6 +422,10 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
     channel = _channel_or_404(session, channel_id)
     channel.name = name.strip()
     channel.topic = topic
+    channel.audience = audience.strip()[:300]
+    channel.content_source = (content_source
+                              if content_source in prompts.CONTENT_SOURCES else 'books')
+    channel.posts_per_day = max(0.1, min(10.0, posts_per_day))
     channel.description = description
     channel.chat_model = chat_model.strip()
     channel.video_model = video_model.strip()
@@ -429,17 +538,44 @@ def plan_generate(item_id: int, session: Session = Depends(get_session),
     return RedirectResponse(f"/videos/{video.id}", status_code=303)
 
 
+# Сколько дней в единице периода — из этого и частоты постинга считается,
+# сколько пунктов плана заказывать у модели.
+PERIOD_DAYS = {"days": 1, "weeks": 7, "months": 30}
+# Потолок за один заход: длинный план модель начинает повторять и разбавлять.
+PLAN_MAX_ITEMS = 60
+
+
 @app.post("/channels/{channel_id}/plan/extend")
 def plan_extend(channel_id: int, session: Session = Depends(get_session),
-                _user: str = Depends(require_user), count: int = Form(30)):
-    """Дописываем контент-план через текстовую модель."""
+                _user: str = Depends(require_user), count: int = Form(0),
+                period: int = Form(0), period_unit: str = Form("days"),
+                posts_per_day: float = Form(0.0)):
+    """Дописываем контент-план через текстовую модель.
+
+    План заказывается либо прямо числом пунктов, либо периодом: «на N месяцев»
+    при заданной частоте постинга превращается в число роликов.
+    """
     channel = _channel_or_404(session, channel_id)
+    if posts_per_day > 0:
+        channel.posts_per_day = max(0.1, min(10.0, posts_per_day))
+        session.commit()
+    if period > 0:
+        days = max(1, period) * PERIOD_DAYS.get(period_unit, 1)
+        rate = channel.posts_per_day or 1.0
+        count = int(round(days * rate))
+    count = max(5, min(PLAN_MAX_ITEMS, count or 30))
+
     existing = [p.book_title for p in session.execute(
         select(PlanItem).where(PlanItem.channel_id == channel.id)).scalars().all()]
     client = KieClient(api_key=st.get(session, "kie_api_key") or None)
-    audience = ("мужчины 25–45 лет" if "муж" in channel.name.lower() else "женщины 25–45 лет")
-    messages = prompts.content_plan(channel.name, channel.topic, max(5, min(60, count)),
-                                    audience, existing)
+    audience = channel.audience.strip() or (
+        "мужчины 25–45 лет" if "муж" in channel.name.lower() else "женщины 25–45 лет")
+    from . import references as refs
+
+    messages = prompts.content_plan(
+        channel.name, channel.topic, count, audience, existing,
+        source=channel.content_source, description=channel.description,
+        style_hint=refs.style_hint(session, channel.id))
     try:
         items, _credits = client.chat_json(channel.chat_model, messages, temperature=0.8)
     except Exception as exc:  # noqa: BLE001
@@ -454,6 +590,10 @@ def plan_extend(channel_id: int, session: Session = Depends(get_session),
             PlanItem.channel_id == channel.id)).scalar()
     cursor = (last_date or dt.date.today())
     for entry in items:
+        # Модель нередко отдаёт больше, чем просили. Лимит применяем и к ответу,
+        # иначе план распухает и расписание уезжает на месяцы вперёд.
+        if added >= count:
+            break
         title = str(entry.get("book_title") or "").strip()
         if not title or title.lower() in known:
             continue
