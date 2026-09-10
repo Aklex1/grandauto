@@ -1023,9 +1023,9 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
                                         duration, workdir, motion=fmt,
                                         band_top=0.06, band_height=0.30)
             ass = workdir / f"short_{scene.idx:02d}.ass"
-            head_seconds = min(4.5, max(2.5, duration * 0.18))
+            # Заголовок в кадр не вшиваем: он живёт на обложке. В самом ролике он
+            # только отбирал место у субтитров в первые секунды.
             subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
-                                title=title, title_seconds=head_seconds,
                                 style=_subtitle_style(channel),
                                 font=fonts.font_family(channel.title_font),
                                 position="top")
@@ -1033,12 +1033,10 @@ def build_scene_short(session: Session, video: Video, channel: Channel, scene: S
 
     if fmt == "full":
         ass = None
-        if cues or title:
+        if cues:
             ass = workdir / f"short_{scene.idx:02d}.ass"
-            # заголовок висит первые секунды — дальше он мешал бы читать субтитры
-            head_seconds = min(4.5, max(2.5, duration * 0.18))
+            # Заголовок остаётся на обложке, в кадре его нет.
             subtitles.write_ass(cues, ass, size=media.VERTICAL, vertical=True,
-                                title=title, title_seconds=head_seconds,
                                 style=_subtitle_style(channel))
         media.cut_short(source, raw, 0.0, duration, ass=ass,
                         tail=outro + SHORT_TAIL_SECONDS)
@@ -1638,13 +1636,10 @@ def make_shorts(session: Session, client: KieClient, video: Video, channel: Chan
         try:
             ass = None
             piece_cues = subtitles.shift_cues(cues, start, end) if burn_own_subs else []
-            # Заголовок держим в кадре первые секунды — он и цепляет зрителя,
-            # и не мешает читать субтитры дальше.
-            head_seconds = min(4.5, max(2.5, (end - start) * 0.18))
-            if piece_cues or short.title:
+            # Заголовок — только на обложке, в кадре его не рисуем.
+            if piece_cues:
                 ass = out_dir / f"short_{idx:02d}.ass"
                 subtitles.write_ass(piece_cues, ass, size=media.VERTICAL, vertical=True,
-                                    title=short.title, title_seconds=head_seconds,
                                     style=_subtitle_style(channel))
             dst = out_dir / f"short_{idx:02d}.mp4"
             media.cut_short(source, dst, start, end, ass=ass)

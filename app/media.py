@@ -360,6 +360,8 @@ def wrap_headline(text: str, width: int = 18, max_lines: int = 3) -> list[str]:
 
 
 HEADLINE_CHARS = 14
+# Отступ заголовка обложки от верхнего края, доля высоты кадра.
+THUMB_TITLE_TOP = 0.12
 
 
 def make_thumbnail(src: Path, dst: Path, size: tuple[int, int] = (1280, 720),
@@ -385,8 +387,9 @@ def make_thumbnail(src: Path, dst: Path, size: tuple[int, int] = (1280, 720),
         line_gap = int(font_size * 1.14)
         block_h = line_gap * len(lines)
         # Заголовок ставим сверху: в ленте у превью обрезается низ, да и палец
-        # зрителя на телефоне закрывает именно нижнюю часть обложки.
-        top = int(h * 0.06)
+        # зрителя на телефоне закрывает именно нижнюю часть обложки. Но не вплотную
+        # к краю — иначе текст выглядит приклеенным к рамке.
+        top = int(h * THUMB_TITLE_TOP)
 
         # Затемняем подложку ровно под текстовым блоком, а не фиксированную треть:
         # в вертикальном кадре треть — это половина экрана.
