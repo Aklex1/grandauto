@@ -173,6 +173,46 @@ def build_scene(clips: list[Path], audio: Path, dst: Path, size: tuple[int, int]
     return dst
 
 
+# Насколько результат склейки может отличаться от суммы кусков.
+CONCAT_TOLERANCE = 0.5
+# И насколько видео может разойтись со звуком внутри готового файла.
+CONCAT_SYNC_TOLERANCE = 0.35
+
+
+def _frame_size(path: Path) -> tuple[int, int] | None:
+    try:
+        out = storage.run_ff([config.FFPROBE, "-v", "error", "-select_streams", "v:0",
+                              "-show_entries", "stream=width,height", "-of", "csv=p=0",
+                              str(path)], timeout=60).strip().split(",")
+        return int(out[0]), int(out[1])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _stream_duration(path: Path, kind: str) -> float:
+    try:
+        out = storage.run_ff([config.FFPROBE, "-v", "error",
+                              "-select_streams", kind, "-show_entries", "stream=duration",
+                              "-of", "csv=p=0", str(path)], timeout=60).strip()
+        return float(out.splitlines()[0])
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def _concat_sane(dst: Path, expected: float) -> bool:
+    """Сошлась ли склейка: и по общей длине, и по расхождению видео со звуком."""
+    total = storage.media_duration(dst)
+    if expected > 0 and abs(total - expected) > CONCAT_TOLERANCE:
+        log.warning("Склейка дала %.2f с вместо %.2f с", total, expected)
+        return False
+    video, audio = _stream_duration(dst, "v:0"), _stream_duration(dst, "a:0")
+    if video > 0 and audio > 0 and abs(video - audio) > CONCAT_SYNC_TOLERANCE:
+        log.warning("В склейке видео %.2f с, звук %.2f с — потоки разъехались",
+                    video, audio)
+        return False
+    return True
+
+
 def concat_scenes(scenes: list[Path], dst: Path, workdir: Path) -> Path:
     """Склейка кусков.
 
@@ -185,18 +225,41 @@ def concat_scenes(scenes: list[Path], dst: Path, workdir: Path) -> Path:
     listing = workdir / "scenes.txt"
     listing.write_text("".join(f"file '{p}'\n" for p in scenes), encoding="utf-8")
 
+    # Сумма длительностей — то, что должно получиться. Сверяем с результатом:
+    # concat с копированием потоков не падает при несовпадении параметров кусков
+    # (разные fps или частота дискретизации), а молча выдаёт растянутое видео и
+    # разъехавшийся с ним звук. Проверки «файл создан и непустой» тут мало.
+    expected = sum(storage.media_duration(p) for p in scenes)
     try:
         _ff([
             "-f", "concat", "-safe", "0", "-i", str(listing),
             "-c", "copy", "-fflags", "+genpts", "-movflags", "+faststart", str(dst),
         ], timeout=900)
-        if dst.exists() and dst.stat().st_size > 0:
+        if dst.exists() and dst.stat().st_size > 0 and _concat_sane(dst, expected):
             return dst
+        log.info("Склейка копированием разъехалась по длительности, перекодирую")
     except RuntimeError as exc:
         log.info("Склейка копированием не прошла (%s), перекодирую", exc)
 
-    _ff([
-        "-f", "concat", "-safe", "0", "-i", str(listing),
+    # Куски подаём отдельными входами и приводим каждый к общим параметрам ДО
+    # склейки. Через concat-демуксер это не лечится: он уже смешал кадры в
+    # timebase первого файла, и никакой fps на выходе исходную длину не вернёт.
+    size = _frame_size(scenes[0]) or VERTICAL
+    w, h = size
+    args: list[str] = []
+    for path in scenes:
+        args += ["-i", str(path)]
+    chain = ""
+    for i in range(len(scenes)):
+        chain += (f"[{i}:v]fps={FPS},scale={w}:{h}:force_original_aspect_ratio=increase,"
+                  f"crop={w}:{h},setsar=1,format=yuv420p[v{i}];"
+                  f"[{i}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                  f"asetpts=N/SR/TB[a{i}];")
+    chain += "".join(f"[v{i}][a{i}]" for i in range(len(scenes)))
+    chain += f"concat=n={len(scenes)}:v=1:a=1[v][a]"
+
+    _ff(args + [
+        "-filter_complex", chain, "-map", "[v]", "-map", "[a]",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", str(dst),
@@ -713,9 +776,15 @@ OUTRO_LINK_RATIO = 0.058
 OUTRO_LINK_MAX_WIDTH = 0.88
 
 
+# Пауза перед призывом. Без неё реклама начинается ровно там, где кончилась
+# мысль ролика: два разных текста склеиваются встык и звучат как один сбивчивый.
+OUTRO_LEAD_IN = 0.8
+
+
 def build_outro(dst: Path, size: tuple[int, int], duration: float, audio: Path | None,
                 title: str, link: str, font: str, workdir: Path,
-                background: Path | None = None, link_font: str | None = None) -> Path:
+                background: Path | None = None, link_font: str | None = None,
+                lead_in: float = OUTRO_LEAD_IN) -> Path:
     """Концовка шортса: название канала крупно и ссылка под ним.
 
     Фоном берём последний кадр ролика, приглушённый и с наездом, — так концовка
@@ -742,8 +811,10 @@ def build_outro(dst: Path, size: tuple[int, int], duration: float, audio: Path |
     link_y = title_y + int(title_size * 1.5)
 
     # Появление с замедлением: резкое включение выдаёт склейку.
-    ease = "(1-pow(1-clip(t/0.6,0,1),3))"
-    link_ease = "(1-pow(1-clip((t-0.45)/0.6,0,1),3))"
+    # Проявление идёт под паузу: к моменту, когда диктор начинает говорить,
+    # название уже на экране.
+    ease = f"(1-pow(1-clip((t-{lead_in * 0.25:.2f})/0.6,0,1),3))"
+    link_ease = f"(1-pow(1-clip((t-{lead_in * 0.25 + 0.45:.2f})/0.6,0,1),3))"
 
     parts = []
     if background is not None and background.exists():
@@ -785,7 +856,10 @@ def build_outro(dst: Path, size: tuple[int, int], duration: float, audio: Path |
     else:
         args += ["-f", "lavfi", "-i", f"color=0x0b0d10:size={w}x{h}:rate={FPS}"]
     if audio is not None and audio.exists():
-        args += ["-i", str(audio), "-af", "apad"]
+        # adelay сдвигает призыв, apad добивает тишиной до конца куска.
+        delay = max(0, int(lead_in * 1000))
+        args += ["-i", str(audio),
+                 "-af", f"adelay={delay}:all=1,apad"]
         maps = ["-map", "[v]", "-map", "1:a:0"]
     else:
         args += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]

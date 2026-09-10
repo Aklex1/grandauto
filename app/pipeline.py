@@ -240,7 +240,10 @@ def voice_scenes(session: Session, client: KieClient, video: Video, channel: Cha
     # провайдером ещё до появления нарезки по предложениям, живёт вечно: годность
     # озвучки определялась наличием файла на диске, и переозвучить её было нечем.
     for scene in video.scenes:
-        if _scene_audio_ok(scene) and _audio_broken(session, video, scene):
+        if not _scene_audio_ok(scene):
+            continue
+        if (_audio_broken(session, video, scene)
+                or _speech_incomplete(session, video, channel, scene)):
             _drop_file(scene.audio_path)
             scene.audio_path = ""
             scene.audio_sec = 0.0
@@ -898,7 +901,8 @@ def _build_outro(session: Session, video: Video, channel: Channel, scene: Scene,
         voice = result.path
         video.cost_credits = (video.cost_credits or 0) + result.credits
         session.commit()
-        duration = result.duration + OUTRO_PAD
+        # Пауза перед призывом входит в длину куска, иначе конец фразы срежется.
+        duration = media.OUTRO_LEAD_IN + result.duration + OUTRO_PAD
     except Exception as exc:  # noqa: BLE001 — без озвучки концовка всё равно нужна
         log_event(session, video.id,
                   f"Концовка не озвучена ({exc}) — показываю только ссылку",
@@ -1119,6 +1123,52 @@ def _subtitle_style(channel: Channel) -> str:
     return subtitles.normalize_style(getattr(channel, "subtitle_style", "shorts") or "shorts")
 
 
+# Ниже этой доли текста считаем озвучку неполной. На чистой синтезированной речи
+# распознавание слышит почти всё, поэтому запас небольшой.
+SPEECH_COVERAGE_MIN = 0.85
+
+
+def _revoice_scene(session: Session, video: Video, channel: Channel, scene: Scene,
+                   out_dir: Path) -> bool:
+    """Переозвучить сцену на месте. True — получилось."""
+    scene.voice_retries = (scene.voice_retries or 0) + 1
+    previous = scene.audio_path
+    audio_dir = out_dir / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    stamp = int(utcnow().timestamp())
+    try:
+        client = client_for(session)
+        result = tts.synthesize(
+            client, _voice_text(session, video, scene.idx, scene.narration),
+            audio_dir / f"scene_{scene.idx:02d}_v{stamp}",
+            model=channel.tts_model, voice_id=channel.voice_id,
+            stability=channel.voice_stability, similarity=channel.voice_similarity,
+            speed=channel.voice_speed,
+            fallback_model=st.get(session, "tts_fallback_model",
+                                  "google/gemini-3-1-flash-tts"),
+            fallback_voice=st.get(session, "tts_fallback_voice", "Charon"),
+            allow_fallback=st.get_bool(session, "tts_allow_fallback", True))
+    except Exception as exc:  # noqa: BLE001 — старая озвучка лучше, чем никакой
+        log_event(session, video.id,
+                  f"Сцена {scene.idx + 1}: переозвучить не удалось ({exc}) — "
+                  f"собираю с прежней озвучкой",
+                  stage="voice", level="warn")
+        session.commit()
+        return False
+
+    scene.audio_path = storage.rel(result.path)
+    scene.audio_sec = result.duration
+    video.cost_credits = (video.cost_credits or 0) + result.credits
+    # Имя файла со временем, поэтому старая дорожка — это точно другой файл.
+    if previous and previous != scene.audio_path:
+        _drop_file(previous)
+    session.commit()
+    log_event(session, video.id,
+              f"Сцена {scene.idx + 1}: переозвучена ({result.duration:.0f} с)",
+              stage="voice")
+    return True
+
+
 def _scene_cues(session: Session, video: Video, channel: Channel, scene: Scene,
                 audio: Path) -> list[subtitles.Cue]:
     """Реплики одной сцены: слова из сценария, тайминг из распознавания её озвучки."""
@@ -1128,10 +1178,53 @@ def _scene_cues(session: Session, video: Video, channel: Channel, scene: Scene,
             raw = subtitles.transcribe(audio, language=channel.language)
         except Exception as exc:  # noqa: BLE001
             log.warning("Whisper не сработал на сцене %s: %s", scene.idx, exc)
-    pair = [(scene.narration, scene.audio_sec or storage.media_duration(audio))]
+    text = scene.narration
+    if raw:
+        # Провайдер мог оборвать длинный текст, аккуратно затухнув в конце файла —
+        # по хвосту такое не поймать, зато видно по словам. Если озвучено не всё,
+        # раскладываем только прозвучавшую часть: иначе align_script утрамбует
+        # весь сценарий в те секунды, где речь есть, и титры уйдут вперёд голоса.
+        covered = subtitles.speech_coverage(raw, text)
+        if covered < SPEECH_COVERAGE_MIN:
+            text = subtitles.trim_to_spoken(text, raw)
+            log_event(session, video.id,
+                      f"Сцена {scene.idx + 1}: озвучено примерно {covered:.0%} текста — "
+                      f"титры показываю только прозвучавшее, сцену надо переозвучить",
+                      stage="assemble", level="warn")
+    pair = [(text, scene.audio_sec or storage.media_duration(audio))]
     if raw:
         return subtitles.align_script(raw, pair)
     return subtitles.cues_from_scenes(pair)
+
+
+def _speech_incomplete(session: Session, video: Video, channel: Channel,
+                       scene: Scene) -> bool:
+    """Озвучена ли сцена целиком. Считает по словам, а не по длине файла."""
+    if not config.WHISPER_ENABLED or not scene.audio_path:
+        return False
+    audio = storage.abspath(scene.audio_path)
+    if not audio.exists():
+        return False
+    try:
+        heard = subtitles.transcribe(audio, language=channel.language)
+    except Exception as exc:  # noqa: BLE001 — не смогли проверить, значит не трогаем
+        log.warning("Сцена %s: распознавание не сработало: %s", scene.idx, exc)
+        return False
+    if not heard:
+        return False
+    covered = subtitles.speech_coverage(heard, scene.narration)
+    if covered >= SPEECH_COVERAGE_MIN:
+        return False
+    if (scene.voice_retries or 0) >= MAX_VOICE_RETRIES:
+        log_event(session, video.id,
+                  f"Сцена {scene.idx + 1}: озвучено {covered:.0%} текста даже после "
+                  f"переозвучки — проверьте текст сцены",
+                  stage="voice", level="warn")
+        return False
+    log_event(session, video.id,
+              f"Сцена {scene.idx + 1}: озвучено лишь {covered:.0%} текста — переозвучиваю",
+              stage="voice", level="warn")
+    return True
 
 
 def ensure_bridge(session: Session, client: KieClient, video: Video, channel: Channel,
@@ -1846,9 +1939,10 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
             redo_voice = True
         if not _scene_audio_ok(scene):
             redo_voice = True
-        elif not redo_voice and _audio_broken(session, video, scene):
+        elif not redo_voice and (_audio_broken(session, video, scene)
+                                 or _speech_incomplete(session, video, channel, scene)):
             # Обрезанную озвучку пересобирать поверх бессмысленно: шортс снова
-            # выйдет с оборванным словом в конце.
+            # выйдет с оборванным словом в конце и с титрами впереди голоса.
             redo_voice = True
             scene.voice_retries = (scene.voice_retries or 0) + 1
 
@@ -1856,6 +1950,12 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
             scene.short_title = short_title
             scene.short_format = fmt
             session.commit()
+            # Сборка «из готового куска» — единственный путь, где озвучка не
+            # проверялась вовсе. Битую переозвучиваем и здесь: иначе шортс выйдет
+            # с оборванным словом и с титрами впереди голоса.
+            if (_audio_broken(session, video, scene)
+                    or _speech_incomplete(session, video, channel, scene)):
+                _revoice_scene(session, video, channel, scene, out_dir)
             log_event(session, video.id,
                       f"Сцена {scene.idx + 1}: собираю шортс из готового куска",
                       stage="regen")

@@ -419,6 +419,40 @@ def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720)
     return dst
 
 
+def spoken_words(cues: list[Cue]) -> int:
+    """Сколько слов распознавание реально услышало в озвучке."""
+    return sum(len(c.text.split()) for c in cues)
+
+
+def speech_coverage(cues: list[Cue], text: str) -> float:
+    """Какая доля текста сцены прозвучала. 1.0 — озвучено всё.
+
+    Провайдер может оборвать длинный текст, не оборвав при этом сам файл: он
+    аккуратно затухает, и по хвосту обрыв не поймать. Зато видно по словам:
+    распознавание слышит заметно меньше, чем написано в сценарии.
+    """
+    total = len((text or "").split())
+    if not total:
+        return 1.0
+    return min(1.0, spoken_words(cues) / total)
+
+
+def trim_to_spoken(text: str, cues: list[Cue], slack: float = 1.12) -> str:
+    """Обрезаем текст до того, что реально прозвучало.
+
+    Иначе align_script утрамбует весь сценарий в те секунды, где речь есть, и
+    титры поедут вперёд голоса — на длинной сцене это уход на десяток секунд.
+    """
+    words = (text or "").split()
+    heard = spoken_words(cues)
+    if not words or not heard:
+        return text
+    keep = int(heard * slack)
+    if keep >= len(words):
+        return text
+    return " ".join(words[:keep])
+
+
 def align_script(cues: list[Cue], scenes: list[tuple[str, float]], max_chars: int = 90) -> list[Cue]:
     """Текст берём из сценария, тайминг — из распознавания.
 
