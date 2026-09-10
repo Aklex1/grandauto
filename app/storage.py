@@ -1,6 +1,7 @@
 """Работа с файловым хранилищем на NVMe-диске сервера."""
 from __future__ import annotations
 
+import logging
 import mimetypes
 import os
 import re
@@ -14,6 +15,8 @@ from typing import Optional
 import httpx
 
 from . import config
+
+log = logging.getLogger("cf.storage")
 
 SAFE = re.compile(r"[^a-zA-Z0-9а-яА-ЯёЁ._-]+")
 
@@ -50,18 +53,54 @@ def abspath(relative: str) -> Path:
     return config.MEDIA_DIR / relative
 
 
-def download(url: str, dest: Path, *, timeout: float = 600.0) -> Path:
-    """Скачиваем результат генерации на локальный диск."""
+# Сколько раз пытаемся докачать файл. Обрыв соединения на середине — обычное
+# дело, а недокачанный файл выглядит целым: озвучка просто обрывается на
+# полуслове, и дальше этот обрезок живёт в сцене как готовая дорожка.
+DOWNLOAD_ATTEMPTS = 3
+
+
+class IncompleteDownload(RuntimeError):
+    """Файл скачался не полностью."""
+
+
+def download(url: str, dest: Path, *, timeout: float = 600.0,
+             attempts: int = DOWNLOAD_ATTEMPTS) -> Path:
+    """Скачиваем результат генерации на локальный диск.
+
+    Обязательно сверяем размер с Content-Length. Без этой проверки оборванная
+    закачка принимается как готовый файл: у аудио это ровно тот обрыв на
+    полуслове, который потом ищут в настройках синтеза.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
-    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        with client.stream("GET", url) as resp:
-            resp.raise_for_status()
-            with open(tmp, "wb") as fh:
-                for chunk in resp.iter_bytes(chunk_size=1 << 20):
-                    fh.write(chunk)
-    tmp.replace(dest)
-    return dest
+    last: Exception | None = None
+
+    for attempt in range(1, max(1, attempts) + 1):
+        got = 0
+        expected = 0
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                with client.stream("GET", url) as resp:
+                    resp.raise_for_status()
+                    expected = int(resp.headers.get("content-length") or 0)
+                    with open(tmp, "wb") as fh:
+                        for chunk in resp.iter_bytes(chunk_size=1 << 20):
+                            fh.write(chunk)
+                            got += len(chunk)
+            if expected and got < expected:
+                raise IncompleteDownload(
+                    f"скачано {got} из {expected} байт")
+            if got == 0:
+                raise IncompleteDownload("скачано 0 байт")
+            tmp.replace(dest)
+            return dest
+        except Exception as exc:  # noqa: BLE001 — пробуем ещё раз
+            last = exc
+            log.warning("Попытка %d/%d скачать %s не удалась: %s",
+                        attempt, attempts, url.split("?")[0][-60:], exc)
+            tmp.unlink(missing_ok=True)
+
+    raise IncompleteDownload(f"не удалось скачать {url.split('?')[0][-80:]}: {last}")
 
 
 def guess_ext(url: str, default: str) -> str:
