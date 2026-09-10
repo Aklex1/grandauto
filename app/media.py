@@ -706,9 +706,16 @@ def build_loop_scene(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
     return dst
 
 
+# Ссылка в концовке. Крупнее заголовочного кегля вдвое против прежнего: адрес
+# зритель разбирает посимвольно, и мелкий пропорциональный набор на видео читался
+# плохо. Шрифт моноширинный жирный — ровные ширины знаков читаются на бегу лучше.
+OUTRO_LINK_RATIO = 0.058
+OUTRO_LINK_MAX_WIDTH = 0.88
+
+
 def build_outro(dst: Path, size: tuple[int, int], duration: float, audio: Path | None,
                 title: str, link: str, font: str, workdir: Path,
-                background: Path | None = None) -> Path:
+                background: Path | None = None, link_font: str | None = None) -> Path:
     """Концовка шортса: название канала крупно и ссылка под ним.
 
     Фоном берём последний кадр ролика, приглушённый и с наездом, — так концовка
@@ -720,8 +727,17 @@ def build_outro(dst: Path, size: tuple[int, int], duration: float, audio: Path |
     span = max(duration, 0.1)
     font_arg = font.replace(":", r"\:") if font else ""
 
+    # Ссылку рисуем своим шрифтом: моноширинным жирным, а не заголовочным.
+    link_file = link_font if link_font is not None else (fonts.mono_font() or font)
+    link_arg = (link_file or "").replace(":", r"\:")
+
     title_size = max(28, int(w * 0.085))
-    link_size = max(18, int(w * 0.042))
+    link_size = max(18, int(w * OUTRO_LINK_RATIO))
+    if link:
+        # Длинный адрес не должен вылезать за поля — ужимаем по реальным метрикам.
+        limit = w * OUTRO_LINK_MAX_WIDTH
+        per_unit = fonts.text_width(link, link_file, 100) / 100 or 1.0
+        link_size = max(18, min(link_size, int(limit / per_unit)))
     title_y = int(h * 0.40)
     link_y = title_y + int(title_size * 1.5)
 
@@ -749,9 +765,12 @@ def build_outro(dst: Path, size: tuple[int, int], duration: float, audio: Path |
         )
     if link:
         parts.append(
-            f"drawtext=fontfile='{font_arg}':text='{_escape_drawtext(link)}'"
-            f":fontcolor=white@0.92:fontsize={link_size}"
-            f":borderw={max(2, int(link_size * 0.06))}:bordercolor=black@0.55"
+            f"drawtext=fontfile='{link_arg}':text='{_escape_drawtext(link)}'"
+            f":fontcolor=white:fontsize={link_size}"
+            # Тень вместо обводки: обводка на жирном моноширинном забивает просветы
+            # внутри букв, и адрес превращается в кашу.
+            f":shadowcolor=black@0.75:shadowx={max(2, int(link_size * 0.05))}"
+            f":shadowy={max(2, int(link_size * 0.05))}"
             f":x=(w-text_w)/2:y='{link_y}+{int(link_size * 0.6)}*(1-{link_ease})'"
             f":alpha='{link_ease}'"
         )

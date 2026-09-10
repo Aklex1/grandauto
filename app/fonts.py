@@ -36,6 +36,29 @@ SYSTEM_FALLBACKS = (
 )
 
 
+# Моноширинный жирный гротеск для ссылок. Ссылка — это адрес, который зритель
+# должен разобрать посимвольно, поэтому моноширинный: одинаковые ширины знаков
+# читаются на бегу лучше пропорционального набора.
+MONO_FALLBACKS = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
+    "/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeMonoBold.ttf",
+)
+
+
+def mono_font() -> Optional[str]:
+    """Путь к моноширинному жирному шрифту."""
+    # Скачанный вариант имеет приоритет: он новее системного.
+    downloaded = FONTS_DIR / "JetBrainsMono-Bold.ttf"
+    if downloaded.exists():
+        return str(downloaded)
+    for path in MONO_FALLBACKS:
+        if Path(path).exists():
+            return path
+    return fallback_font()
+
+
 def fallback_font() -> Optional[str]:
     for path in SYSTEM_FALLBACKS:
         if Path(path).exists():
