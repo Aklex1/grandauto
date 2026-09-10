@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 from . import (config, fonts, footage, loops, media, music, prompts, references,
                storage, subtitles, tts)
 from .db import session_scope
-from .kie import KieClient, KieError, extract_urls, video_input
+from . import kie as kie_module
+from .kie import (KieClient, KieError, extract_urls,
+                  video_input)
 from .models import (Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
                      Scene, Short, Video, utcnow)
 from . import settings_store as st
@@ -635,12 +637,7 @@ def _scene_cover(session: Session, video: Video, channel: Channel, scene: Scene,
         style = ", ".join(x for x in (channel.thumb_style.strip(), hint) if x)
         prompt = prompts.short_cover(channel.name, channel.topic, scene.heading,
                                      scene.narration, style, variant=scene.idx)
-        result = client.run_task(channel.image_model, {
-            "prompt": prompt,
-            "aspect_ratio": "9:16",
-            "resolution": "1K",
-            "output_format": "png",
-        }, timeout=900, poll=5)
+        result = _image_task(session, client, channel, prompt, "cover")
         urls = extract_urls(result)
         if not urls:
             raise KieError("в ответе нет ссылки на изображение")
@@ -730,6 +727,29 @@ def normalize_format(value: str) -> str:
     return value if value in SHORT_FORMATS else "full"
 
 
+def _image_task(session: Session, client: KieClient, channel: Channel, prompt: str,
+                kind: str) -> dict:
+    """Заказ картинки. Если у канала есть образцы — отдаём их модели на вход.
+
+    nano-banana-2 принимает до 14 картинок-референсов в image_input, и стиль
+    тогда перенимается, а не пересказывается словами. Отдельная edit-модель для
+    этого не нужна: работает та же модель, что и обычно.
+    """
+    urls = references.remote_urls(session, client, channel.id, kind)
+    payload = kie_module.image_input_payload(channel.image_model, prompt=prompt,
+                                             image_urls=urls)
+    try:
+        return client.run_task(channel.image_model, payload, timeout=900, poll=5)
+    except KieError as exc:
+        if not urls:
+            raise
+        # Референсы не должны стоить нам самой картинки: если с ними не вышло,
+        # собираем по одному лишь описанию.
+        log.warning("Генерация с референсами не прошла (%s) — пробую без них", exc)
+        plain = kie_module.image_input_payload(channel.image_model, prompt=prompt)
+        return client.run_task(channel.image_model, plain, timeout=900, poll=5)
+
+
 def _scene_background(session: Session, video: Video, channel: Channel, scene: Scene,
                       fmt: str, workdir: Path) -> Optional[Path]:
     """Фоновый кадр для форматов «бюст» и «абзац» — одна картинка на весь шортс."""
@@ -743,10 +763,7 @@ def _scene_background(session: Session, video: Video, channel: Channel, scene: S
         prompt = prompts.paragraph_background(channel.topic, scene.heading)
     try:
         client = client_for(session)
-        result = client.run_task(channel.image_model, {
-            "prompt": prompt, "aspect_ratio": "9:16",
-            "resolution": "1K", "output_format": "png",
-        }, timeout=900, poll=5)
+        result = _image_task(session, client, channel, prompt, "background")
         urls = extract_urls(result)
         if not urls:
             raise KieError("в ответе нет ссылки на изображение")

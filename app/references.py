@@ -81,6 +81,48 @@ def style_hint(session: Session, channel_id: int, kind: str = "") -> str:
     return "; ".join(notes[:MAX_IN_PROMPT])
 
 
+# Сколько картинок отдаём генератору за раз. Потолок берём из клиента: у
+# nano-banana-2 это 14, и пятнадцатую API отвергает прямым сообщением.
+from .kie import MAX_IMAGE_REFS as MAX_INPUT_IMAGES  # noqa: E402
+
+
+def remote_urls(session: Session, client, channel_id: int, kind: str = "",
+                limit: int = MAX_INPUT_IMAGES) -> list[str]:
+    """Ссылки на картинки-референсы, пригодные для входа генератора.
+
+    Файл лежит на нашем диске, а генератору нужен HTTP-адрес. Панель может стоять
+    за туннелем и наружу не смотреть, поэтому заливаем картинку в хранилище KIE и
+    запоминаем ссылку — повторно грузить один и тот же файл незачем.
+    """
+    import base64
+    from pathlib import Path as _Path
+
+    rows = [r for r in for_channel(session, channel_id, kind) if r.media_type == "image"]
+    if kind:
+        rows += [r for r in for_channel(session, channel_id, "style")
+                 if r.media_type == "image" and r.id not in {x.id for x in rows}]
+
+    urls: list[str] = []
+    for row in rows[:limit]:
+        if row.remote_url:
+            urls.append(row.remote_url)
+            continue
+        if client is None:
+            continue
+        path = storage.abspath(row.path)
+        try:
+            data = base64.b64encode(path.read_bytes()).decode("ascii")
+            url = client.upload_base64(data, _Path(row.path).name,
+                                       upload_path="images/references")
+        except Exception as exc:  # noqa: BLE001 — без референса генерация всё равно идёт
+            log.warning("Референс %s не загружен в KIE: %s", row.title, exc)
+            continue
+        row.remote_url = url[:600]
+        session.commit()
+        urls.append(row.remote_url)
+    return urls
+
+
 def add(session: Session, channel_id: int, channel_slug: str, filename: str,
         data: bytes, *, kind: str = "style", title: str = "",
         note: str = "") -> Optional[Reference]:

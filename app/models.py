@@ -103,6 +103,10 @@ class Channel(Base):
 
     # На основе чего строить контент-план: книги, темы, свои материалы, тренды.
     content_source: Mapped[str] = mapped_column(String(20), default="books")
+    # Модель, принимающая картинки-референсы на вход. Обычный генератор их не
+    # берёт: у него в схеме нет поля под изображения.
+    image_edit_model: Mapped[str] = mapped_column(
+        String(120), default="google/nano-banana-edit")
     # Кому канал адресован — идёт в промпт плана вместо догадки по названию.
     audience: Mapped[str] = mapped_column(String(300), default="")
     # Сколько роликов в день выпускаем: из этого считается длина плана на период.
@@ -424,6 +428,9 @@ class Reference(Base):
     path: Mapped[str] = mapped_column(String(500), default="")
     thumb_path: Mapped[str] = mapped_column(String(500), default="")
     media_type: Mapped[str] = mapped_column(String(20), default="image")
+    # Ссылка на файл в хранилище KIE. Генератор берёт картинки по HTTP, а панель
+    # может стоять за туннелем и наружу не смотреть, поэтому файл заливается им.
+    remote_url: Mapped[str] = mapped_column(String(600), default="")
     width: Mapped[int] = mapped_column(Integer, default=0)
     height: Mapped[int] = mapped_column(Integer, default=0)
     file_size: Mapped[int] = mapped_column(Integer, default=0)

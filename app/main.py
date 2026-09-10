@@ -353,6 +353,7 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         short_formats=pipeline.SHORT_FORMATS, **stock_ctx,
         content_sources=prompts.CONTENT_SOURCES,
         reference_kinds=references.KINDS,
+        reference_limit=references.MAX_INPUT_IMAGES,
         references_list=references.for_channel(session, channel.id),
         plan_max_items=PLAN_MAX_ITEMS,
         **estimate.channel_estimate_context(session, channel)))

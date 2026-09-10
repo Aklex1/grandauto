@@ -249,6 +249,43 @@ def video_input(model: str, *, prompt: str, aspect_ratio: str, resolution: str,
     }
 
 
+# Имя поля под картинки-референсы у генераторов изображений разное, а схему API
+# не публикует в машинном виде. Ниже — то, что установлено на живом API.
+# nano-banana-2 берёт до 14 картинок в image_input (пятнадцатая отвергается с
+# прямым сообщением про лимит), edit-модели ждут image_urls.
+# Порядок важен: google/nano-banana-edit содержит и «nano-banana», и «edit», но
+# на живом API требует именно image_urls — поэтому edit-правила идут первыми.
+IMAGE_REF_FIELDS = (
+    ("edit", "image_urls"),
+    ("image-to-image", "image_urls"),
+    ("nano-banana", "image_input"),
+    ("gemini", "image_input"),
+)
+IMAGE_REF_DEFAULT = "image_urls"
+MAX_IMAGE_REFS = 14
+
+
+def image_ref_field(model: str) -> str:
+    """Как называется поле под входные картинки у этой модели."""
+    low = (model or "").lower()
+    for marker, field in IMAGE_REF_FIELDS:
+        if marker in low:
+            return field
+    return IMAGE_REF_DEFAULT
+
+
+def image_input_payload(model: str, *, prompt: str, aspect_ratio: str = "9:16",
+                        resolution: str = "1K", output_format: str = "png",
+                        image_urls: list[str] | None = None) -> dict:
+    """Запрос на картинку. Референсы кладутся в поле, которое модель понимает."""
+    payload = {"prompt": prompt, "aspect_ratio": aspect_ratio,
+               "resolution": resolution, "output_format": output_format}
+    urls = [u for u in (image_urls or []) if u][:MAX_IMAGE_REFS]
+    if urls:
+        payload[image_ref_field(model)] = urls
+    return payload
+
+
 def image_to_video_input(model: str, *, prompt: str, image_urls: list[str],
                          resolution: str, duration: int) -> dict:
     """Поля запроса на оживление картинки.
