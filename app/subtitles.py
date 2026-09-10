@@ -423,6 +423,40 @@ def spoken_words(cues: list[Cue]) -> int:
     return sum(len(c.text.split()) for c in cues)
 
 
+def _stems(words: list[str], depth: int = 4) -> list[str]:
+    """Грубые основы слов: распознавание путает окончания, корни — почти нет."""
+    out = []
+    for word in words:
+        clean = "".join(ch for ch in word.lower() if ch.isalnum())
+        if clean:
+            out.append(clean[:depth])
+    return out
+
+
+def tail_matches(cues: list[Cue], text: str, window: int = 8,
+                 need: float = 0.45) -> bool:
+    """Дочитала ли озвучка текст до конца.
+
+    Доля озвученного тут бессильна: недоговорённые десять слов в сцене на сотню
+    теряются в процентах, а на слух обрыв очевиден. Поэтому сравниваем ХВОСТЫ —
+    последние слова сценария и последние услышанные. Сравнение по обрубленным
+    основам, потому что окончания распознавание перевирает regularly.
+    """
+    script = _stems((text or "").split()[-window:])
+    heard = _stems(" ".join(c.text for c in cues).split()[-window:])
+    if not script:
+        return True
+    if not heard:
+        return False
+    pool = list(heard)
+    hits = 0
+    for stem in script:
+        if stem in pool:
+            pool.remove(stem)
+            hits += 1
+    return hits / len(script) >= need
+
+
 def speech_coverage(cues: list[Cue], text: str) -> float:
     """Какая доля текста сцены прозвучала. 1.0 — озвучено всё.
 
@@ -436,11 +470,15 @@ def speech_coverage(cues: list[Cue], text: str) -> float:
     return min(1.0, spoken_words(cues) / total)
 
 
-def trim_to_spoken(text: str, cues: list[Cue], slack: float = 1.12) -> str:
+def trim_to_spoken(text: str, cues: list[Cue], slack: float = 1.0) -> str:
     """Обрезаем текст до того, что реально прозвучало.
 
     Иначе align_script утрамбует весь сценарий в те секунды, где речь есть, и
     титры поедут вперёд голоса — на длинной сцене это уход на десяток секунд.
+
+    Запаса намеренно нет: распознавание может проглотить пару слов, и тогда
+    столько же слов пропадёт из титров. Это дешевле обратной ошибки — показать
+    десяток слов, которых зритель не слышит.
     """
     words = (text or "").split()
     heard = spoken_words(cues)

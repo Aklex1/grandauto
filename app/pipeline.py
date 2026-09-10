@@ -1183,7 +1183,7 @@ def _scene_cues(session: Session, video: Video, channel: Channel, scene: Scene,
         # раскладываем только прозвучавшую часть: иначе align_script утрамбует
         # весь сценарий в те секунды, где речь есть, и титры уйдут вперёд голоса.
         covered = subtitles.speech_coverage(raw, text)
-        if covered < SPEECH_COVERAGE_MIN:
+        if covered < SPEECH_COVERAGE_MIN or not subtitles.tail_matches(raw, text):
             text = subtitles.trim_to_spoken(text, raw)
             log_event(session, video.id,
                       f"Сцена {scene.idx + 1}: озвучено примерно {covered:.0%} текста — "
@@ -1211,17 +1211,20 @@ def _speech_incomplete(session: Session, video: Video, channel: Channel,
     if not heard:
         return False
     covered = subtitles.speech_coverage(heard, scene.narration)
-    if covered >= SPEECH_COVERAGE_MIN:
+    # Хвост важнее доли: десять недоговорённых слов в сцене на сотню дают 88%
+    # покрытия и проходят любой разумный порог, а на слух это явный обрыв.
+    finished = subtitles.tail_matches(heard, scene.narration)
+    if covered >= SPEECH_COVERAGE_MIN and finished:
         return False
+    why = "текст озвучен не до конца" if not finished else f"озвучено {covered:.0%} текста"
     if (scene.voice_retries or 0) >= MAX_VOICE_RETRIES:
         log_event(session, video.id,
-                  f"Сцена {scene.idx + 1}: озвучено {covered:.0%} текста даже после "
-                  f"переозвучки — проверьте текст сцены",
+                  f"Сцена {scene.idx + 1}: {why} даже после переозвучки — "
+                  f"проверьте текст сцены",
                   stage="voice", level="warn")
         return False
     log_event(session, video.id,
-              f"Сцена {scene.idx + 1}: озвучено лишь {covered:.0%} текста — переозвучиваю",
-              stage="voice", level="warn")
+              f"Сцена {scene.idx + 1}: {why} — переозвучиваю", stage="voice", level="warn")
     return True
 
 
