@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 1.2.2
+ * Version: 1.4.5
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.2.2');
+define('GS_VERSION', '1.4.5');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -85,6 +85,12 @@ class Genius_Sounds_Plugin {
      * Ассеты грузим только на своих страницах, чтобы не утяжелять остальной сайт.
      */
     public function enqueue_front_assets() {
+        $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request() || GS_Pages::is_studio_request();
+        if ($ours) {
+            // Перекрашиваем шапку и подвал темы под тёмные страницы плагина.
+            wp_enqueue_style('genius-sounds-chrome', GS_PLUGIN_URL . 'assets/css/chrome.css', array(), GS_VERSION);
+        }
+
         if (GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()) {
             wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
             wp_enqueue_script('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/js/catalog.js', array(), GS_VERSION, true);
@@ -97,12 +103,14 @@ class Genius_Sounds_Plugin {
             // catalog.css несёт базовые токены и общие компоненты (кнопки, чипы, хиро).
             wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
             wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
+            // catalog.js правит отступ под фиксированной шапкой на всех наших страницах.
+            wp_enqueue_script('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/js/catalog.js', array(), GS_VERSION, true);
             wp_enqueue_script('genius-sounds-studio', GS_PLUGIN_URL . 'assets/js/studio.js', array(), GS_VERSION, true);
             wp_localize_script('genius-sounds-studio', 'GS_STUDIO', array(
                 'restUrl'   => esc_url_raw(rest_url(GS_Rest::NS . '/')),
                 'nonce'     => wp_create_nonce('wp_rest'),
                 'loggedIn'  => is_user_logged_in(),
-                'loginUrl'  => GS_Pages::get_login_url(),
+                'loginUrl'  => GS_Pages::get_login_url(GS_Pages::current_studio_url()),
                 'topupUrl'  => GS_Pages::get_dashboard_url(),
                 'cost'      => GS_SFX::get_cost(),
                 'presets'   => GS_SFX::get_presets(),

@@ -145,7 +145,7 @@ class GS_Rest {
         ));
 
         if (empty($created['ok'])) {
-            return new WP_Error('gs_kie_error', $created['message'] ?: 'KIE не принял задачу', array('status' => 502));
+            return new WP_Error('gs_kie_error', $created['message'] ?: 'Сервис генерации не принял задачу', array('status' => 502));
         }
 
         $task_id = $created['task_id'];

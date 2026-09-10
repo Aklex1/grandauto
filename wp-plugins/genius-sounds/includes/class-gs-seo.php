@@ -128,6 +128,7 @@ class GS_Seo {
                 . ($count > 0 ? GS_Catalog::plural_sounds($count) . ' — ' : '')
                 . 'слушайте онлайн и скачивайте бесплатно в MP3.';
         }
+        $text = GS_Catalog::sync_description_count($text, GS_Catalog::count_sounds($category));
         $text = preg_replace('~\s+~u', ' ', $text);
         return mb_strlen($text) > 300 ? mb_substr($text, 0, 297) . '…' : $text;
     }

@@ -38,6 +38,11 @@
     box-sizing: border-box;
 }
 
+/* Наши display:flex/grid перебивают штатное поведение атрибута hidden. */
+.gs-wrap [hidden] {
+    display: none !important;
+}
+
 /* Страницы плагина растягиваем на всю ширину темы. */
 body.gs-catalog-page .l-section-h,
 body.gs-studio-page .l-section-h,
@@ -61,12 +66,9 @@ body.gs-studio-page .w-grid {
     background: transparent !important;
 }
 
-body.gs-studio-page .l-section {
-    padding-top: 0 !important;
-}
-
 /* ---------------------------------------------------------------- Типографика */
 
+/* Тема центрирует заголовки внутри секций — нам нужен левый край. */
 .gs-wrap h1,
 .gs-wrap h2,
 .gs-wrap h3 {
@@ -74,6 +76,21 @@ body.gs-studio-page .l-section {
     margin: 0;
     line-height: 1.22;
     letter-spacing: -0.01em;
+    text-align: left;
+}
+
+.gs-wrap {
+    text-align: left;
+}
+
+.gs-wrap .gs-empty,
+.gs-wrap .gs-empty h1,
+.gs-wrap .gs-empty h2,
+.gs-wrap .gs-result__empty,
+.gs-wrap .gs-result__loading,
+.gs-wrap .gs-result__empty h2,
+.gs-wrap .gs-result__loading h2 {
+    text-align: center;
 }
 
 .gs-wrap p {

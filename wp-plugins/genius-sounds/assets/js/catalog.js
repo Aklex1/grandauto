@@ -110,7 +110,38 @@
         a.currentTime = Math.max(0, Math.min(1, ratio)) * a.duration;
     }
 
+    /**
+     * Тёмная тема базового плагина обнуляет отступ под фиксированной шапкой,
+     * потому что саму шапку прячет. Мы шапку показываем — значит, отступ надо
+     * вернуть, причём по реальной высоте: она разная на десктопе и телефоне.
+     */
+    function fixHeaderOffset() {
+        if (!document.body.classList.contains('gs-chrome')) {
+            return;
+        }
+        var header = document.querySelector('.l-header');
+        if (!header) {
+            return;
+        }
+        var target = document.querySelector('.l-main > .l-section:first-of-type > .l-section-h')
+            || document.getElementById('page-content')
+            || document.querySelector('.l-main');
+        if (!target) {
+            return;
+        }
+        if (getComputedStyle(header).position !== 'fixed') {
+            target.style.paddingTop = '';
+            return;
+        }
+        var height = header.getBoundingClientRect().height;
+        target.style.paddingTop = height > 0 ? Math.ceil(height) + 'px' : '';
+    }
+
     function init() {
+        fixHeaderOffset();
+        window.addEventListener('resize', fixHeaderOffset);
+        window.addEventListener('load', fixHeaderOffset);
+
         var cards = document.querySelectorAll('[data-gs-sound]');
         Array.prototype.forEach.call(cards, function (card) {
             var button = card.querySelector('[data-gs-play]');

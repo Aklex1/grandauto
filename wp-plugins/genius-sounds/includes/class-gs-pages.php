@@ -16,8 +16,104 @@ class GS_Pages {
     const STUDIO_SLUG   = 'sound-generator';
     const SHOWCASE_SLUG = 'ai-zvuki';
 
+    const RETURN_ARG    = 'gs_return';
+    const RETURN_COOKIE = 'gs_return_to';
+
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
+        add_action('template_redirect', array(__CLASS__, 'handle_return_after_login'), 5);
+        add_filter('login_redirect', array(__CLASS__, 'filter_login_redirect'), 20, 3);
+    }
+
+    /* ---------------------------------------------------------------------
+     * Возврат в студию после входа
+     *
+     * Базовый плагин после любого способа входа (код на почту, Telegram, VK)
+     * жёстко ведёт на /tts-dashboard/, поэтому гость, пришедший из каталога
+     * с описанием звука, попадал в старый интерфейс озвучки. Запоминаем адрес
+     * возврата в куке при переходе на страницу входа и возвращаем на него.
+     * ------------------------------------------------------------------ */
+
+    public static function handle_return_after_login() {
+        if (is_admin()) {
+            return;
+        }
+
+        // Гость пришёл на страницу входа из нашего CTA — запоминаем, куда вернуть.
+        if (!empty($_GET[self::RETURN_ARG])) {
+            $target = self::sanitize_return_url(wp_unslash((string) $_GET[self::RETURN_ARG]));
+            if ($target !== '') {
+                if (is_user_logged_in()) {
+                    wp_safe_redirect($target);
+                    exit;
+                }
+                if (!headers_sent()) {
+                    setcookie(self::RETURN_COOKIE, $target, time() + 1800, '/', '', is_ssl(), true);
+                }
+                $_COOKIE[self::RETURN_COOKIE] = $target;
+            }
+            return;
+        }
+
+        if (!is_user_logged_in() || empty($_COOKIE[self::RETURN_COOKIE])) {
+            return;
+        }
+
+        // Сработать должно только на «конечных» страницах входа, иначе кука
+        // будет уводить пользователя с любой страницы сайта.
+        $landing_ids = array_filter(array(
+            (int) get_option('kie_tts_dashboard_page_id'),
+            (int) get_option('kie_tts_auth_page_id'),
+            (int) get_option('kie_tts_login_page_id'),
+            (int) get_option('kie_tts_register_page_id'),
+        ));
+        $on_landing = false;
+        foreach ($landing_ids as $pid) {
+            if ($pid > 0 && is_page($pid)) {
+                $on_landing = true;
+                break;
+            }
+        }
+        if (!$on_landing) {
+            return;
+        }
+
+        $target = self::sanitize_return_url(wp_unslash((string) $_COOKIE[self::RETURN_COOKIE]));
+        if (!headers_sent()) {
+            setcookie(self::RETURN_COOKIE, '', time() - 3600, '/', '', is_ssl(), true);
+        }
+        unset($_COOKIE[self::RETURN_COOKIE]);
+
+        if ($target !== '') {
+            wp_safe_redirect($target);
+            exit;
+        }
+    }
+
+    public static function filter_login_redirect($redirect, $requested, $user) {
+        if (!empty($_COOKIE[self::RETURN_COOKIE])) {
+            $target = self::sanitize_return_url(wp_unslash((string) $_COOKIE[self::RETURN_COOKIE]));
+            if ($target !== '') {
+                return $target;
+            }
+        }
+        return $redirect;
+    }
+
+    /**
+     * Пускаем только свои страницы на этом же домене.
+     */
+    private static function sanitize_return_url($url) {
+        $url = esc_url_raw(trim((string) $url));
+        if ($url === '') {
+            return '';
+        }
+        $host = wp_parse_url($url, PHP_URL_HOST);
+        $home = wp_parse_url(home_url('/'), PHP_URL_HOST);
+        if ($host === null || strcasecmp((string) $host, (string) $home) !== 0) {
+            return '';
+        }
+        return $url;
     }
 
     public static function register_shortcodes() {
@@ -78,16 +174,35 @@ class GS_Pages {
         return $url;
     }
 
+    /**
+     * Адрес студии с учётом описания, которое пользователь принёс из каталога.
+     */
+    public static function current_studio_url() {
+        $prompt = isset($_GET['prompt']) ? sanitize_text_field(wp_unslash((string) $_GET['prompt'])) : '';
+        return self::get_studio_url($prompt);
+    }
+
     public static function get_showcase_url() {
         $pid = (int) get_option(self::OPT_SHOWCASE_PAGE);
         $url = $pid > 0 ? get_permalink($pid) : '';
         return $url ? $url : home_url('/' . self::SHOWCASE_SLUG . '/');
     }
 
-    public static function get_login_url() {
+    /**
+     * @param string $return_url куда вернуть после входа (по умолчанию — студия)
+     */
+    public static function get_login_url($return_url = '') {
+        $return_url = trim((string) $return_url);
+        if ($return_url === '') {
+            $return_url = self::get_studio_url();
+        }
+
         $pid = (int) get_option('kie_tts_auth_page_id');
         $url = $pid > 0 ? get_permalink($pid) : '';
-        return $url ? $url : wp_login_url(self::get_studio_url());
+        if (!$url) {
+            return wp_login_url($return_url);
+        }
+        return add_query_arg(self::RETURN_ARG, rawurlencode($return_url), $url);
     }
 
     public static function get_dashboard_url() {
@@ -115,11 +230,21 @@ class GS_Pages {
     }
 
     public static function body_class($classes) {
+        $ours = false;
         if (self::is_studio_request()) {
             $classes[] = 'gs-studio-page';
+            $ours = true;
+        }
+        if (self::is_showcase_request()) {
+            $classes[] = 'gs-showcase-page';
+            $ours = true;
         }
         if (GS_Catalog::is_catalog_request()) {
             $classes[] = 'gs-catalog-page';
+            $ours = true;
+        }
+        if ($ours) {
+            $classes[] = 'gs-chrome';
         }
         return $classes;
     }
@@ -134,11 +259,14 @@ class GS_Pages {
         $cost    = GS_SFX::get_cost();
         $balance = $logged ? GS_SFX::get_balance(get_current_user_id()) : 0.0;
 
+        // После входа возвращаем ровно на эту страницу — вместе с описанием звука.
+        $login_url = self::get_login_url(self::get_studio_url($prefill));
+
         ob_start();
         ?>
         <div class="gs-wrap gs-studio">
             <section class="gs-hero gs-hero--studio">
-                <span class="gs-hero__badge">Suno V5 · KIE</span>
+                <span class="gs-hero__badge">Нейросеть Suno V5</span>
                 <h1 class="gs-hero__title">Генератор звуков и спецэффектов</h1>
                 <p class="gs-hero__lead">Опишите нужный звук словами — нейросеть соберёт готовый эффект в MP3. Взрывы, шаги, интерфейсные сигналы, атмосфера и бесшовные лупы. Без авторских прав.</p>
                 <div class="gs-hero__meta">
@@ -240,7 +368,7 @@ class GS_Pages {
                                 Создать звук за <?php echo esc_html(number_format_i18n($cost, 0)); ?> ₽
                             </button>
                         <?php else: ?>
-                            <a class="gs-btn gs-btn--primary gs-btn--lg" href="<?php echo esc_url(self::get_login_url()); ?>">Войти и создать звук</a>
+                            <a class="gs-btn gs-btn--primary gs-btn--lg" href="<?php echo esc_url($login_url); ?>">Войти и создать звук</a>
                         <?php endif; ?>
                     </div>
 
@@ -314,7 +442,7 @@ class GS_Pages {
         ?>
         <div class="gs-wrap gs-catalog">
             <section class="gs-hero">
-                <span class="gs-hero__badge">Suno V5 · KIE</span>
+                <span class="gs-hero__badge">Нейросеть Suno V5</span>
                 <h1 class="gs-hero__title">Звуки, созданные нейросетью</h1>
                 <p class="gs-hero__lead">Примеры звуков и спецэффектов, сгенерированных в студии Genius-bot по текстовому описанию. Слушайте, скачивайте и создавайте свои.</p>
                 <div class="gs-hero__meta">

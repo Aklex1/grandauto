@@ -47,11 +47,11 @@ class GS_SFX {
     public static function get_models() {
         return array(
             'V5'   => array(
-                'label' => 'Suno V5 — звуки и эффекты',
+                'label' => 'Стандартная — звуки и эффекты',
                 'hint'  => 'Лучший выбор для отдельных SFX: удары, выстрелы, интерфейсные звуки.',
             ),
             'V5_5' => array(
-                'label' => 'Suno V5.5 — атмосфера и музыка',
+                'label' => 'Расширенная — атмосфера и музыка',
                 'hint'  => 'Длиннее и музыкальнее: эмбиенс, фоновые подложки, лупы.',
             ),
         );
@@ -150,7 +150,7 @@ class GS_SFX {
     public static function create_task($prompt, $params = array()) {
         $key = self::get_api_key();
         if ($key === '') {
-            return array('ok' => false, 'task_id' => '', 'message' => 'Не задан API-ключ KIE', 'raw' => array());
+            return array('ok' => false, 'task_id' => '', 'message' => 'Генерация временно недоступна: не настроен доступ к сервису', 'raw' => array());
         }
 
         $prompt = (string) $prompt;
@@ -198,12 +198,12 @@ class GS_SFX {
 
         $body = json_decode((string) wp_remote_retrieve_body($response), true);
         if (!is_array($body)) {
-            return array('ok' => false, 'task_id' => '', 'message' => 'Некорректный ответ KIE', 'raw' => array());
+            return array('ok' => false, 'task_id' => '', 'message' => 'Некорректный ответ сервиса генерации', 'raw' => array());
         }
 
         $code = isset($body['code']) ? (int) $body['code'] : 0;
         if ($code !== 200 || empty($body['data']['taskId'])) {
-            $msg = isset($body['msg']) ? (string) $body['msg'] : 'KIE вернул ошибку';
+            $msg = isset($body['msg']) ? (string) $body['msg'] : 'Сервис генерации вернул ошибку';
             return array('ok' => false, 'task_id' => '', 'message' => $msg . ' (code ' . $code . ')', 'raw' => $body);
         }
 
@@ -220,7 +220,7 @@ class GS_SFX {
         $out = array('ok' => false, 'status' => '', 'audio_url' => '', 'title' => '', 'duration' => 0.0, 'message' => '');
 
         if ($key === '') {
-            $out['message'] = 'Не задан API-ключ KIE';
+            $out['message'] = 'Генерация временно недоступна: не настроен доступ к сервису';
             return $out;
         }
 
@@ -236,7 +236,7 @@ class GS_SFX {
 
         $body = json_decode((string) wp_remote_retrieve_body($response), true);
         if (!is_array($body) || !isset($body['data'])) {
-            $out['message'] = 'Некорректный ответ KIE';
+            $out['message'] = 'Некорректный ответ сервиса генерации';
             return $out;
         }
 

@@ -426,7 +426,7 @@ class GS_Catalog {
             <section class="gs-hero gs-hero--category">
                 <h1 class="gs-hero__title"><?php echo esc_html($title); ?></h1>
                 <?php if (!empty($category['description'])): ?>
-                    <p class="gs-hero__lead"><?php echo esc_html($category['description']); ?></p>
+                    <p class="gs-hero__lead"><?php echo esc_html(self::sync_description_count($category['description'], $total)); ?></p>
                 <?php endif; ?>
                 <div class="gs-hero__meta">
                     <span class="gs-chip gs-chip--ok"><?php echo esc_html(self::plural_sounds($total)); ?></span>
@@ -532,7 +532,7 @@ class GS_Catalog {
                            placeholder="<?php echo esc_attr($placeholder); ?>" autocomplete="off">
                     <button class="gs-btn gs-btn--primary gs-cta__submit" type="submit">Создать звук</button>
                 </div>
-                <p class="gs-cta__hint">Работает на Suno V5 через KIE — тот же движок, что и в <a href="<?php echo esc_url($studio); ?>">студии звуков</a>.</p>
+                <p class="gs-cta__hint">Генерация идёт в <a href="<?php echo esc_url($studio); ?>">студии звуков</a> прямо на сайте — результат сразу можно скачать.</p>
             </form>
         </section>
         <?php
@@ -645,6 +645,27 @@ class GS_Catalog {
      * SEO-заголовки в каталоге длинные («Крики солдат — «вперёд», «ура» и звуки армии»).
      * Для карточек и крошек берём часть до тире.
      */
+    /**
+     * Описания категорий начинаются с числа записей у источника («31 звуков солдат: …»),
+     * а показываем мы свою подборку. Подставляем реальное число и заодно
+     * чиним согласование, которое в исходных текстах сломано.
+     */
+    public static function sync_description_count($text, $actual) {
+        $text = trim((string) $text);
+        $actual = (int) $actual;
+        if ($text === '' || $actual <= 0) {
+            return $text;
+        }
+        return (string) preg_replace_callback(
+            '~^(\d+)\s+звук\w*~u',
+            function () use ($actual) {
+                return self::plural_sounds($actual);
+            },
+            $text,
+            1
+        );
+    }
+
     public static function short_title($title) {
         $title = trim((string) $title);
         $parts = preg_split('~\s+[—–-]\s+~u', $title, 2);
