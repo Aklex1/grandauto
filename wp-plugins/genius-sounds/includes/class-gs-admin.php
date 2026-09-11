@@ -29,7 +29,7 @@ class GS_Admin {
     }
 
     public static function register_settings() {
-        foreach (array(GS_Links::OPT_ENABLED, GS_Links::OPT_FOOTER) as $flag) {
+        foreach (array(GS_Links::OPT_ENABLED, GS_Links::OPT_FOOTER, GS_Tts_Fallback::OPT_ENABLED, GS_Blog::OPT_ENABLED) as $flag) {
             register_setting('gs_settings_group', $flag, array(
                 'type'              => 'string',
                 'sanitize_callback' => function ($value) {
@@ -179,6 +179,35 @@ class GS_Admin {
                             <input id="gs-cost" name="<?php echo esc_attr(GS_SFX::OPT_COST); ?>" type="number" step="0.5" min="0"
                                    value="<?php echo esc_attr(GS_SFX::get_cost()); ?>" class="small-text">
                             <p class="description">Списывается с общего баланса пользователя (того же, что и озвучка).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Запасная озвучка</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="<?php echo esc_attr(GS_Tts_Fallback::OPT_ENABLED); ?>" value="1"
+                                    <?php checked(GS_Tts_Fallback::enabled()); ?>>
+                                при отказе ElevenLabs повторять генерацию на Gemini TTS
+                            </label>
+                            <?php $fb_log = GS_Tts_Fallback::get_log(); ?>
+                            <?php if (!empty($fb_log)): ?>
+                                <p class="description">Последние срабатывания:</p>
+                                <ul style="margin:4px 0 0 16px;list-style:disc">
+                                    <?php foreach (array_slice($fb_log, 0, 5) as $row): ?>
+                                        <li><code><?php echo esc_html($row['at']); ?></code> — <?php echo esc_html($row['message']); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Блог</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="<?php echo esc_attr(GS_Blog::OPT_ENABLED); ?>" value="1"
+                                    <?php checked(GS_Blog::enabled()); ?>>
+                                оформлять блог и статьи в стилистике микросервисов
+                            </label>
                         </td>
                     </tr>
                     <tr>

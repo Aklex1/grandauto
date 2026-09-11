@@ -96,6 +96,12 @@ class GS_Rest {
             'permission_callback' => '__return_true',
         ));
 
+        register_rest_route(self::NS, '/tts-fallback/test', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_tts_fallback_test'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/lab/credits', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_lab_credits'),
@@ -639,6 +645,34 @@ class GS_Rest {
         return rest_ensure_response(array('success' => true));
     }
 
+    /**
+     * Проверка запасной озвучки без ожидания отказа основной модели.
+     */
+    public static function handle_tts_fallback_test($request) {
+        $params = $request->get_json_params();
+        $text = is_array($params) && !empty($params['text'])
+            ? sanitize_textarea_field((string) $params['text'])
+            : 'Проверка запасной озвучки на Gemini.';
+
+        $created = GS_Tts_Fallback::create_task($text, '');
+        if (empty($created['ok'])) {
+            return new WP_Error('gs_fallback_failed', $created['message'], array('status' => 502));
+        }
+
+        $user_id = get_current_user_id();
+        $cost = class_exists('KIE_TTS_API') ? (float) KIE_TTS_API::calculate_cost($text) : 0.0;
+        if (class_exists('KIE_TTS_DB')) {
+            $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);
+            KIE_TTS_DB::save_generation($user_id, $created['task_id'], $text, 'gemini-tts', $cost, $is_telegram);
+        }
+
+        return rest_ensure_response(array(
+            'success' => true,
+            'task_id' => $created['task_id'],
+            'cost'    => $cost,
+        ));
+    }
+
     public static function handle_lab_credits() {
         return rest_ensure_response(GS_Lab::provider_credits());
     }
@@ -646,9 +680,10 @@ class GS_Rest {
     public static function handle_install_menu($request) {
         $params = $request->get_json_params();
         $menu_id = (is_array($params) && !empty($params['menu_id'])) ? (int) $params['menu_id'] : 0;
+        $reset   = is_array($params) && !empty($params['reset']);
         return rest_ensure_response(array(
             'success' => true,
-            'result'  => GS_Links::install_menu_items($menu_id),
+            'result'  => GS_Links::install_menu_items($menu_id, $reset),
         ));
     }
 

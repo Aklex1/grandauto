@@ -18,10 +18,66 @@ class GS_Links {
     const OPT_ENABLED = 'gs_sitewide_links';
     const OPT_FOOTER  = 'gs_footer_block';
 
+    /** Страница «Нейросети» — отдельный плагин, но для пользователя это такой же инструмент. */
+    const NEUROHUB_SLUG = 'neurohub';
+
     public static function boot() {
         // Универсальный путь для тем, которые рендерят меню через wp_nav_menu().
         add_filter('wp_nav_menu_items', array(__CLASS__, 'add_menu_items'), 20, 2);
         add_action('wp_footer', array(__CLASS__, 'render_footer_block'), 20);
+        add_filter('the_content', array(__CLASS__, 'append_neurohub_links'), 20);
+        // Страница «Нейросети» собрана своим плагином и the_content может не
+        // дойти до вывода — подстраховываемся хуком подвала.
+        add_action('wp_footer', array(__CLASS__, 'render_neurohub_links'), 5);
+    }
+
+    public static function neurohub_url() {
+        $page = get_page_by_path(self::NEUROHUB_SLUG);
+        return $page ? get_permalink($page) : home_url('/' . self::NEUROHUB_SLUG . '/');
+    }
+
+    /**
+     * Плагин kie-neurohub отдаёт страницу не постом, а своим шаблоном —
+     * WordPress считает её блогом. Поэтому определяем по адресу.
+     */
+    public static function is_neurohub() {
+        if (is_admin()) {
+            return false;
+        }
+        $uri = isset($_SERVER['REQUEST_URI']) ? (string) wp_unslash($_SERVER['REQUEST_URI']) : '';
+        $path = trim((string) wp_parse_url($uri, PHP_URL_PATH), '/');
+        return $path === self::NEUROHUB_SLUG || strpos($path, self::NEUROHUB_SLUG . '/') === 0;
+    }
+
+    /**
+     * На «Нейросетях» не было ни одной ссылки на остальные инструменты —
+     * дописываем тот же блок, что стоит на посадочных микросервисов.
+     */
+    /** @var bool Блок уже выведен в этом запросе. */
+    private static $neurohub_done = false;
+
+    public static function render_neurohub_links() {
+        if (is_admin() || !self::is_neurohub() || self::$neurohub_done) {
+            return;
+        }
+        self::$neurohub_done = true;
+        echo '<div class="gs-wrap gs-studio gs-neurohub-links">'
+            . GS_Lab_Page::render_cross_links('', 'Другие инструменты Genius-bot')
+            . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput
+    }
+
+    public static function append_neurohub_links($content) {
+        if (is_admin() || !self::is_neurohub() || !is_main_query()) {
+            return $content;
+        }
+        if (self::$neurohub_done) {
+            return $content;
+        }
+        self::$neurohub_done = true;
+        return $content
+            . '<div class="gs-wrap gs-studio gs-neurohub-links">'
+            . GS_Lab_Page::render_cross_links('', 'Другие инструменты Genius-bot')
+            . '</div>';
     }
 
     /**
@@ -31,7 +87,7 @@ class GS_Links {
      *
      * @return array{added:int,menu:string,skipped:array}
      */
-    public static function install_menu_items($menu_id = 0) {
+    public static function install_menu_items($menu_id = 0, $reset = false) {
         $result = array('added' => 0, 'menu' => '', 'skipped' => array());
 
         $menu_id = (int) $menu_id;
@@ -69,6 +125,29 @@ class GS_Links {
         $result['menu'] = $menu->name;
 
         $existing = wp_get_nav_menu_items($menu_id);
+
+        // Пересборка: сносим всё, что добавляли мы, и строим заново.
+        // После нескольких проходов структура успевает разъехаться.
+        if ($reset) {
+            $ours = array(untrailingslashit(self::menu_tree()['parent']['url']) => true);
+            foreach (self::nav_links() as $link) {
+                $ours[untrailingslashit($link['url'])] = true;
+            }
+            foreach (GS_Lab::services() as $lab_id => $lab) {
+                $ours[untrailingslashit(GS_Lab::get_url($lab_id))] = true;
+            }
+            $result['removed'] = 0;
+            foreach ((array) $existing as $item) {
+                $url = untrailingslashit((string) $item->url);
+                $title = trim((string) $item->title);
+                if (isset($ours[$url]) || $title === self::menu_tree()['parent']['title']) {
+                    wp_delete_post((int) $item->ID, true);
+                    $result['removed']++;
+                }
+            }
+            $existing = wp_get_nav_menu_items($menu_id);
+        }
+
         $urls = array();
         foreach ((array) $existing as $item) {
             $urls[untrailingslashit((string) $item->url)] = true;
@@ -175,6 +254,7 @@ class GS_Links {
         foreach (GS_Lab::available_services() as $service) {
             $links[] = array('url' => GS_Lab::get_url($service['id']), 'title' => $service['nav']);
         }
+        $links[] = array('url' => self::neurohub_url(), 'title' => 'Нейросети');
         return $links;
     }
 

@@ -28,6 +28,11 @@ class GS_Blog {
      * Список постов: и архивы, и страница-витрина блога на WPBakery.
      */
     public static function is_blog_list() {
+        // Страницу «Нейросети» её плагин отдаёт под видом блога —
+        // стили ленты постов ей только мешают.
+        if (class_exists('GS_Links') && GS_Links::is_neurohub()) {
+            return false;
+        }
         if (is_home() || is_archive() || is_category() || is_tag()) {
             return true;
         }

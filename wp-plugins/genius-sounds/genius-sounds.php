@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 1.11.0
+ * Version: 1.13.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.11.0');
+define('GS_VERSION', '1.13.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -28,6 +28,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-lab.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-lab-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-blog.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-tts-fallback.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rest.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-admin.php';
 
@@ -62,6 +63,7 @@ class Genius_Sounds_Plugin {
         GS_Links::boot();
         GS_Lab::boot();
         GS_Blog::boot();
+        GS_Tts_Fallback::boot();
     }
 
     public function activate() {
@@ -98,6 +100,11 @@ class Genius_Sounds_Plugin {
      */
     public function enqueue_front_assets() {
         $blog = GS_Blog::enabled() && (GS_Blog::is_single_post() || GS_Blog::is_blog_list());
+        $neurohub = GS_Links::is_neurohub();
+        if ($neurohub) {
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
+        }
         $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
             || GS_Pages::is_studio_request() || GS_Lab::current_service() || $blog;
         if ($ours) {
