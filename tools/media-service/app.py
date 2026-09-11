@@ -207,14 +207,27 @@ def deliver(url: str, form: dict, timeout: int = 25) -> dict:
     except Exception as error:
         return {"ok": False, "status": 0, "body": str(error)}
 
-def blocked_as_bot(stderr):
-    """YouTube закрылся проверкой на робота — остальные отказы лечатся иначе."""
+def worth_other_client(stderr):
+    """
+    Отказ, который лечится сменой клиента.
+
+    Площадка то требует подтвердить, что вы не робот, то присылает
+    просроченный ответ плеера. И то и другое проходит, если yt-dlp
+    представится другим клиентом.
+    """
     low = (stderr or "").lower()
     return any(mark in low for mark in (
-        "sign in to confirm",
-        "confirm you", "not a bot", "bot",
+        "sign in to confirm", "confirm you", "not a bot", "bot",
         "cookies", "account", "consent",
+        "page needs to be reloaded", "unable to extract", "player response",
+        "failed to extract", "nsig", "precondition check",
     ))
+
+
+def blocked_as_bot(stderr):
+    """Из отказов выше — те, где действительно нужны файлы входа."""
+    low = (stderr or "").lower()
+    return any(mark in low for mark in ("sign in to confirm", "not a bot", "cookies", "consent"))
 
 
 def ytdlp_command():
@@ -364,7 +377,7 @@ def youtube_audio(payload: YoutubeRequest, x_api_key: Optional[str] = Header(def
         produced = sorted(FILES_DIR.glob(stem + ".*"))
         if result.returncode == 0 and produced:
             break
-        if not blocked_as_bot(result.stderr or ""):
+        if not worth_other_client(result.stderr or ""):
             break
 
     if result is None or result.returncode != 0 or not produced:
@@ -383,7 +396,7 @@ def youtube_audio(payload: YoutubeRequest, x_api_key: Optional[str] = Header(def
         ytdlp_command() + ["--no-playlist", "--print", "%(title)s|%(duration)s", "--skip-download", url],
         capture_output=True, text=True, timeout=120,
     )
-    if info.returncode != 0 and blocked_as_bot(info.stderr or ""):
+    if info.returncode != 0 and worth_other_client(info.stderr or ""):
         info = subprocess.run(
             ytdlp_command() + ["--extractor-args", "youtube:player_client=android",
                                "--no-playlist", "--print", "%(title)s|%(duration)s", "--skip-download", url],

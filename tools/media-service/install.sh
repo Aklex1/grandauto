@@ -43,6 +43,9 @@ echo "== собираю окружение"
 python3 -m venv "$DIR/venv"
 "$DIR/venv/bin/pip" install -q --upgrade pip
 "$DIR/venv/bin/pip" install -q -r "$DIR/requirements.txt"
+# Площадки меняют отдачу чаще, чем выходят наши обновления: yt-dlp всегда
+# ставим свежий, иначе он начинает отвечать «перезагрузите страницу».
+"$DIR/venv/bin/pip" install -q -U yt-dlp
 
 echo "== описываю службу"
 cat > /etc/systemd/system/media-service.service <<UNIT
