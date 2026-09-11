@@ -108,7 +108,7 @@ class GS_Lab_Page {
                             <?php if ($logged): ?>
                                 <span class="gs-balance__label">Баланс</span>
                                 <span class="gs-balance__value" id="gs-lab-balance"><?php echo esc_html(number_format_i18n($balance, 2)); ?> ₽</span>
-                                <a class="gs-balance__topup" href="<?php echo esc_url(GS_Pages::get_dashboard_url()); ?>">Пополнить</a>
+                                <a class="gs-balance__topup" href="<?php echo esc_url(GS_Payments::topup_url($service['id'])); ?>">Пополнить</a>
                             <?php else: ?>
                                 <span class="gs-balance__label">Нужен вход</span>
                             <?php endif; ?>
