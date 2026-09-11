@@ -49,12 +49,29 @@ SOURCES: List[Source] = [
     Source("Naked Science", "https://naked-science.ru/?feed=rss", False),
 ]
 
-# По этим словам материал из общей ленты считается профильным
+# Сильные признаки темы: слово должно означать именно ИИ, а не что угодно
+# рядом с ним. Общие «ai», «обучение», «языковой» убраны намеренно — по ним
+# в ленту лезли обзоры процессоров Ryzen AI и статьи про курсы.
 AI_KEYWORDS = [
-    "нейросет", "нейронн", "искусственн", " ии ", "ии-", "ai ", " ai", "gpt", "chatgpt",
-    "llm", "gemini", "claude", "midjourney", "stable diffusion", "sora", "нейрон",
-    "машинн", "обучени", "языков", "генеративн", "openai", "anthropic", "deepseek",
-    "нейроарт", "промпт", "дипфейк", "трансформер", "инференс", "датасет",
+    "нейросет", "нейронн", "нейросеть", "искусственный интеллект",
+    "искусственного интеллекта", "искусственным интеллектом",
+    " ии ", " ии,", " ии.", "ии-", "ии:", "chatgpt", "gpt-", "gpt ",
+    "llm", "языкова модел", "языковой модел", "языковые модел",
+    "машинное обучение", "машинного обучения", "генеративн",
+    "openai", "anthropic", "deepseek", "midjourney", "stable diffusion",
+    "gemini", "claude", "нейроарт", "промпт", "дипфейк", "deepfake",
+    "ai-агент", "ии-агент", "ии-модел", "ai-модел", "чат-бот", "чатбот",
+]
+
+# Если заголовок про железо или гаджеты — это не новость про ИИ, даже когда
+# в названии продукта есть «AI». Такие материалы отсекаются до проверки темы.
+HARDWARE_STOP_WORDS = [
+    "ноутбук", "мини-пк", "минипк", "смартфон", "планшет", "видеокарт",
+    "процессор", "монитор", "наушник", "ssd", "материнск", "блок питания",
+    "клавиатур", "мышь", "роутер", "телевизор", "часы", "пылесос",
+    "холодильник", "камера", "объектив", "консол", "гб озу", "тб ssd",
+    "ryzen", "core ultra", "geforce", "radeon", "snapdragon", "ifa 20",
+    "распродаж", "скидк", "цена упала", "подешевел", "вышел в продажу",
 ]
 
 
@@ -114,11 +131,18 @@ STRICT_TITLE_MATCH = os.getenv(
 ).strip().lower() in ("1", "true", "yes", "on")
 
 
+def looks_like_hardware(title: str) -> bool:
+    """Заголовок про железо, гаджет или распродажу — не наша тема."""
+    lowered = f" {title} ".lower()
+    return any(word in lowered for word in HARDWARE_STOP_WORDS)
+
+
 def is_about_ai(title: str, summary: str) -> bool:
-    if STRICT_TITLE_MATCH:
-        haystack = f" {title} ".lower()
-    else:
-        haystack = f" {title} {summary} ".lower()
+    """Материал действительно про искусственный интеллект."""
+    if looks_like_hardware(title):
+        return False
+
+    haystack = f" {title} ".lower() if STRICT_TITLE_MATCH else f" {title} {summary} ".lower()
     return any(word in haystack for word in AI_KEYWORDS)
 
 
