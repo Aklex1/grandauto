@@ -498,7 +498,34 @@ class GS_Rest {
         if (empty($stored['ok'])) {
             return new WP_Error('gs_upload_failed', $stored['message'], array('status' => 400));
         }
-        return rest_ensure_response(array('success' => true, 'url' => $stored['url']));
+
+        // Цена зависит от длины записи, поэтому считаем её сразу после загрузки
+        // и показываем пользователю до запуска обработки.
+        $seconds = 0.0;
+        $price = GS_Lab::get_cost($service_id);
+        if ($kind === 'audio') {
+            $seconds = GS_Lab::media_duration(GS_Lab::local_path($stored['url']));
+            $limit = GS_Lab::max_seconds($service_id);
+            if ($limit > 0 && $seconds > $limit + 1) {
+                $path = GS_Lab::local_path($stored['url']);
+                if ($path !== '') {
+                    @unlink($path);
+                }
+                return new WP_Error(
+                    'gs_too_long',
+                    sprintf('Запись длиннее %d мин — загрузите файл покороче', (int) ceil($limit / 60)),
+                    array('status' => 400)
+                );
+            }
+            $price = GS_Lab::price($service_id, $seconds);
+        }
+
+        return rest_ensure_response(array(
+            'success'  => true,
+            'url'      => $stored['url'],
+            'duration' => round($seconds),
+            'price'    => $price,
+        ));
     }
 
     public static function handle_lab_generate($request) {
@@ -530,7 +557,21 @@ class GS_Rest {
             $payload['prompt'] = sanitize_textarea_field((string) ($params['prompt'] ?? ''));
         }
 
-        $cost = GS_Lab::get_cost($service_id);
+        // Считаем длительность сами, по файлу на диске: присланной цене не верим.
+        $seconds = 0.0;
+        if (!empty($payload['audio_url'])) {
+            $seconds = GS_Lab::media_duration(GS_Lab::local_path($payload['audio_url']));
+            $limit = GS_Lab::max_seconds($service_id);
+            if ($limit > 0 && $seconds > $limit + 1) {
+                return new WP_Error(
+                    'gs_too_long',
+                    sprintf('Запись длиннее %d мин — загрузите файл покороче', (int) ceil($limit / 60)),
+                    array('status' => 400)
+                );
+            }
+        }
+
+        $cost = GS_Lab::price($service_id, $seconds);
         $balance = GS_SFX::get_balance($user_id);
         if ($balance < $cost) {
             return new WP_Error(

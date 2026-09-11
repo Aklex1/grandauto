@@ -51,7 +51,8 @@ class GS_Lab {
                 'lead'        => 'Загрузите фотографию и аудио с речью — нейросеть синхронизирует губы с голосом. На выходе видео, где человек со снимка говорит вашим текстом: для аватара канала, приветствия на сайте или поздравления.',
                 'badge'       => 'Липсинк по фото и голосу',
                 'cost_option' => 'gs_lab_cost_avatar',
-                'cost'        => 90,
+                'cost'        => 120,
+                'pricing'     => array('unit' => 'second', 'rate' => 12, 'min' => 120, 'max_seconds' => 60),
                 'available'   => true,
                 'inputs'      => array('image', 'audio'),
                 'accept'      => array(
@@ -91,9 +92,10 @@ class GS_Lab {
                 'lead'        => 'Загрузите трек — нейросеть отделит вокал от музыки и вернёт две дорожки: чистый инструментал для караоке и отдельно голос. Ничего устанавливать не нужно.',
                 'badge'       => 'Разделение дорожек',
                 'cost_option' => 'gs_lab_cost_vocal',
-                'cost'        => 25,
-                'available'   => false,
-                'blocked_note'=> 'Разделение дорожек подключается: у текущего поставщика моделей эта операция работает только с треками, сгенерированными им самим, и не принимает загруженные файлы. Ищем провайдера, который умеет разделять любые записи.',
+                'cost'        => 45,
+                'pricing'     => array('unit' => 'minute', 'rate' => 15, 'min' => 45, 'max_seconds' => 600),
+                'available'   => true,
+                'blocked_note'=> 'Разделение дорожек подключается: настраиваем студию обработки звука. Загляните через пару дней — инструмент появится здесь же.',
                 'inputs'      => array('audio'),
                 'accept'      => array(
                     'audio' => 'audio/mpeg,audio/wav,audio/x-wav,audio/aac,audio/mp4,audio/ogg',
@@ -130,9 +132,10 @@ class GS_Lab {
                 'lead'        => 'Загрузите запись — нейросеть уберёт фоновый гул, шум улицы, шипение микрофона и оставит чистый голос. Подходит для интервью, созвонов, голосовых и звука из видео.',
                 'badge'       => 'Шумоподавление',
                 'cost_option' => 'gs_lab_cost_denoise',
-                'cost'        => 20,
-                'available'   => false,
-                'blocked_note'=> 'Очистка звука временно недоступна: модель шумоподавления у поставщика отвечает ошибкой даже на его собственных примерах. Включим сразу, как только он починит.',
+                'cost'        => 36,
+                'pricing'     => array('unit' => 'minute', 'rate' => 12, 'min' => 36, 'max_seconds' => 600),
+                'available'   => true,
+                'blocked_note'=> 'Очистка записи подключается: настраиваем студию обработки звука. Загляните через пару дней — инструмент появится здесь же.',
                 'inputs'      => array('audio'),
                 'accept'      => array(
                     'audio' => 'audio/mpeg,audio/wav,audio/x-wav,audio/aac,audio/mp4,audio/ogg',
@@ -173,6 +176,11 @@ class GS_Lab {
         if (!$service) {
             return false;
         }
+        // Вокал и шумоподавление живут на отдельном поставщике:
+        // без его ключа и рабочего процесса включать сервис нечем.
+        if (class_exists('GS_MusicAI') && GS_MusicAI::handles($id) && !GS_MusicAI::ready($id)) {
+            return false;
+        }
         $option = get_option('gs_lab_enabled_' . $id, null);
         if ($option === null || $option === '') {
             return !empty($service['available']);
@@ -193,13 +201,113 @@ class GS_Lab {
         return $out;
     }
 
+    /**
+     * Минимальная цена — она же цена короткого файла и то, что показываем
+     * на посадочной странице до загрузки.
+     */
     public static function get_cost($id) {
         $service = self::get_service($id);
         if (!$service) {
             return 0.0;
         }
+        $min = (float) get_option('gs_lab_min_' . $id, self::pricing($id, 'min'));
+        if ($min > 0) {
+            return round($min, 2);
+        }
         $cost = (float) get_option($service['cost_option'], $service['cost']);
         return $cost > 0 ? round($cost, 2) : (float) $service['cost'];
+    }
+
+    /* ---------------------------------------------------------------------
+     * Цена от длительности
+     *
+     * Поставщики берут деньги за секунды и минуты обработки, поэтому и здесь
+     * цена считается от длины файла: короткий ролик стоит минимум, длинный
+     * не уводит сервис в минус.
+     * ------------------------------------------------------------------ */
+
+    public static function pricing($id, $key) {
+        $service = self::get_service($id);
+        $pricing = ($service && !empty($service['pricing'])) ? $service['pricing'] : array();
+        $defaults = array('unit' => 'fixed', 'rate' => 0, 'min' => 0, 'max_seconds' => 0);
+        $pricing = array_merge($defaults, $pricing);
+        return $pricing[$key];
+    }
+
+    public static function rate($id) {
+        $rate = (float) get_option('gs_lab_rate_' . $id, self::pricing($id, 'rate'));
+        return $rate > 0 ? $rate : (float) self::pricing($id, 'rate');
+    }
+
+    public static function max_seconds($id) {
+        $max = (int) get_option('gs_lab_max_seconds_' . $id, self::pricing($id, 'max_seconds'));
+        return $max > 0 ? $max : (int) self::pricing($id, 'max_seconds');
+    }
+
+    /**
+     * Итоговая цена обработки файла длительностью $seconds.
+     */
+    public static function price($id, $seconds) {
+        $min  = self::get_cost($id);
+        $unit = (string) self::pricing($id, 'unit');
+        $seconds = (float) $seconds;
+        if ($unit === 'fixed' || $seconds <= 0) {
+            return $min;
+        }
+        $units = $unit === 'second' ? ceil($seconds) : ceil($seconds / 60);
+        $price = self::rate($id) * $units;
+        return round(max($min, $price), 2);
+    }
+
+    /**
+     * Понятная подпись цены для страницы сервиса.
+     */
+    public static function price_hint($id) {
+        $unit = (string) self::pricing($id, 'unit');
+        $min  = number_format_i18n(self::get_cost($id), 0);
+        if ($unit === 'fixed') {
+            return $min . ' ₽ за обработку';
+        }
+        $rate = number_format_i18n(self::rate($id), 0);
+        $word = $unit === 'second' ? 'секунду видео' : 'минуту записи';
+        return $rate . ' ₽ за ' . $word . ', минимум ' . $min . ' ₽';
+    }
+
+    /**
+     * Длительность аудио или видео из нашей же папки загрузок.
+     * Нужна и для цены, и для ограничения длины файла.
+     */
+    public static function media_duration($path) {
+        if (!is_string($path) || $path === '' || !file_exists($path)) {
+            return 0.0;
+        }
+        if (!function_exists('wp_read_audio_metadata')) {
+            require_once ABSPATH . 'wp-admin/includes/media.php';
+        }
+        if (!function_exists('wp_read_audio_metadata')) {
+            return 0.0;
+        }
+        $meta = wp_read_audio_metadata($path);
+        if (is_array($meta) && !empty($meta['length'])) {
+            return (float) $meta['length'];
+        }
+        return 0.0;
+    }
+
+    /**
+     * Обратное преобразование адреса загрузки в путь на диске.
+     * Чужие адреса не принимаем: длительность считаем только по своим файлам.
+     */
+    public static function local_path($url) {
+        $url = (string) $url;
+        $base = self::uploads_url();
+        if ($url === '' || strpos($url, $base) !== 0) {
+            return '';
+        }
+        $rel = ltrim(substr($url, strlen($base)), '/');
+        $rel = str_replace(array('..', "\\"), '', $rel);
+        $path = self::uploads_dir() . '/' . $rel;
+        return file_exists($path) ? $path : '';
     }
 
     /* ---------------------------------------------------------------------
@@ -401,6 +509,11 @@ class GS_Lab {
     public static function create_task($id, $params) {
         $callback = add_query_arg('token', GS_SFX::callback_token(), rest_url(GS_Rest::NS . '/lab/callback'));
 
+        // Разделение дорожек и шумоподавление — на отдельном поставщике.
+        if (class_exists('GS_MusicAI') && GS_MusicAI::handles($id)) {
+            return GS_MusicAI::create_job($id, (string) $params['audio_url']);
+        }
+
         if ($id === 'avatar') {
             $res = self::post_json(self::API_JOBS, array(
                 'model'       => 'kling/ai-avatar-pro',
@@ -447,6 +560,10 @@ class GS_Lab {
      */
     public static function fetch_task($id, $task_id) {
         $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'message' => '');
+
+        if (class_exists('GS_MusicAI') && GS_MusicAI::is_own_task($task_id)) {
+            return GS_MusicAI::fetch_job($id, $task_id);
+        }
 
         if ($id === 'vocal') {
             $res = self::get_json(self::API_VOCAL_INFO, array('taskId' => $task_id));

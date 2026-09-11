@@ -21,6 +21,7 @@
         stage:    document.getElementById('gs-lab-stage'),
         progress: document.getElementById('gs-lab-progress'),
         files:    document.getElementById('gs-lab-files'),
+        price:    document.getElementById('gs-lab-price'),
         again:    document.getElementById('gs-lab-again')
     };
 
@@ -70,6 +71,13 @@
         return Number(value).toFixed(2).replace('.', ',') + ' ₽';
     }
 
+    function duration(seconds) {
+        seconds = Math.round(Number(seconds) || 0);
+        var m = Math.floor(seconds / 60);
+        var s = seconds % 60;
+        return m > 0 ? m + ' мин ' + s + ' с' : s + ' с';
+    }
+
     function stopPolling() {
         if (polling) {
             clearInterval(polling);
@@ -111,7 +119,12 @@
                 }
                 uploaded[kind] = res.data.url;
                 if (hint) {
-                    hint.textContent = 'Готово: ' + file.name;
+                    hint.textContent = 'Готово: ' + file.name + (res.data.duration ? ' — ' + duration(res.data.duration) : '');
+                }
+                // Цена считается от длительности: показываем её сразу,
+                // чтобы списание не стало сюрпризом.
+                if (els.price && res.data.price) {
+                    els.price.textContent = money(res.data.price) + ' за эту обработку';
                 }
                 note('');
             }).catch(function () {

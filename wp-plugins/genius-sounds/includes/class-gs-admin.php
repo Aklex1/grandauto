@@ -53,6 +53,32 @@ class GS_Admin {
                     return $value > 0 ? $value : 1;
                 },
             ));
+            // Цена считается от длительности: минимум, ставка и предел длины.
+            foreach (array('gs_lab_min_' . $lab_id, 'gs_lab_rate_' . $lab_id, 'gs_lab_max_seconds_' . $lab_id) as $number) {
+                register_setting('gs_settings_group', $number, array(
+                    'type'              => 'number',
+                    'sanitize_callback' => function ($value) {
+                        $value = (float) $value;
+                        return $value > 0 ? $value : 0;
+                    },
+                ));
+            }
+        }
+
+        // Второй поставщик обработки звука: ключ и названия рабочих процессов.
+        register_setting('gs_settings_group', GS_MusicAI::OPT_KEY, array(
+            'type'              => 'string',
+            'sanitize_callback' => function ($value) {
+                return trim(sanitize_text_field((string) $value));
+            },
+        ));
+        foreach (array(GS_MusicAI::OPT_WF_VOCAL, GS_MusicAI::OPT_WF_DENOISE) as $workflow) {
+            register_setting('gs_settings_group', $workflow, array(
+                'type'              => 'string',
+                'sanitize_callback' => function ($value) {
+                    return trim(sanitize_text_field((string) $value));
+                },
+            ));
         }
 
         register_setting('gs_settings_group', GS_Importer::OPT_MAX_FILE_MB, array(
@@ -220,15 +246,52 @@ class GS_Admin {
                                             <?php checked(GS_Lab::is_available($lab_id)); ?>>
                                         <strong><?php echo esc_html($lab['menu']); ?></strong>
                                     </label>
-                                    — цена
-                                    <input name="<?php echo esc_attr($lab['cost_option']); ?>" type="number" step="1" min="1"
-                                           value="<?php echo esc_attr(GS_Lab::get_cost($lab_id)); ?>" class="small-text"> ₽
+                                    — минимум
+                                    <input name="gs_lab_min_<?php echo esc_attr($lab_id); ?>" type="number" step="1" min="1"
+                                           value="<?php echo esc_attr(GS_Lab::get_cost($lab_id)); ?>" class="small-text"> ₽,
+                                    ставка
+                                    <input name="gs_lab_rate_<?php echo esc_attr($lab_id); ?>" type="number" step="1" min="1"
+                                           value="<?php echo esc_attr(GS_Lab::rate($lab_id)); ?>" class="small-text"> ₽
+                                    за <?php echo GS_Lab::pricing($lab_id, 'unit') === 'second' ? 'секунду' : 'минуту'; ?>,
+                                    предел
+                                    <input name="gs_lab_max_seconds_<?php echo esc_attr($lab_id); ?>" type="number" step="10" min="0"
+                                           value="<?php echo esc_attr(GS_Lab::max_seconds($lab_id)); ?>" class="small-text"> сек
+                                    <br><span class="description"><?php echo esc_html(GS_Lab::price_hint($lab_id)); ?></span>
                                     <?php if (!empty($lab['blocked_note']) && !GS_Lab::is_available($lab_id)): ?>
                                         <br><span class="description"><?php echo esc_html($lab['blocked_note']); ?></span>
                                     <?php endif; ?>
                                 </p>
                             <?php endforeach; ?>
                             <p class="description">Выключенный сервис не показывается в меню, карте сайта и закрыт от индексации.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Студия обработки звука</th>
+                        <td>
+                            <p>
+                                <label>Ключ доступа<br>
+                                    <input name="<?php echo esc_attr(GS_MusicAI::OPT_KEY); ?>" type="password" autocomplete="off"
+                                           value="<?php echo esc_attr(GS_MusicAI::api_key()); ?>" class="regular-text">
+                                </label>
+                            </p>
+                            <p>
+                                <label>Рабочий процесс «Убрать вокал»<br>
+                                    <input name="<?php echo esc_attr(GS_MusicAI::OPT_WF_VOCAL); ?>" type="text"
+                                           value="<?php echo esc_attr(GS_MusicAI::workflow('vocal')); ?>" class="regular-text"
+                                           placeholder="например stems-vocals-accompaniment">
+                                </label>
+                            </p>
+                            <p>
+                                <label>Рабочий процесс «Убрать шум»<br>
+                                    <input name="<?php echo esc_attr(GS_MusicAI::OPT_WF_DENOISE); ?>" type="text"
+                                           value="<?php echo esc_attr(GS_MusicAI::workflow('denoise')); ?>" class="regular-text"
+                                           placeholder="например speech-noise-suppression">
+                                </label>
+                            </p>
+                            <p class="description">
+                                Пока ключ или название процесса пустые, оба сервиса закрыты и показывают, что инструмент подключается.
+                                Оплата у поставщика поминутная, поэтому цена для пользователя тоже считается от длительности файла.
+                            </p>
                         </td>
                     </tr>
                     <tr>

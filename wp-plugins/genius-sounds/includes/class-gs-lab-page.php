@@ -39,7 +39,7 @@ class GS_Lab_Page {
                 <h1 class="gs-hero__title"><?php echo esc_html($service['h1']); ?></h1>
                 <p class="gs-hero__lead"><?php echo esc_html($service['lead']); ?></p>
                 <div class="gs-hero__meta">
-                    <span class="gs-chip gs-chip--ok"><?php echo esc_html(number_format_i18n($cost, 0)); ?> ₽ за обработку</span>
+                    <span class="gs-chip gs-chip--ok" id="gs-lab-price"><?php echo esc_html(GS_Lab::price_hint($service['id'])); ?></span>
                     <span class="gs-chip">без установки программ</span>
                     <span class="gs-chip">результат сразу скачивается</span>
                 </div>
@@ -64,9 +64,20 @@ class GS_Lab_Page {
                                    data-kind="<?php echo esc_attr($input); ?>"
                                    accept="<?php echo esc_attr($service['accept'][$input]); ?>">
                             <span class="gs-hint" data-file-hint="<?php echo esc_attr($input); ?>">
-                                <?php echo $input === 'image'
-                                    ? 'JPEG или PNG, до 10 МБ. Лицо анфас, крупно.'
-                                    : 'MP3, WAV, M4A или OGG. До ' . ($service['id'] === 'vocal' ? '20' : '10') . ' МБ.'; ?>
+                                <?php
+                                if ($input === 'image') {
+                                    echo 'JPEG или PNG, до 10 МБ. Лицо анфас, крупно.';
+                                } else {
+                                    $limit = GS_Lab::max_seconds($service['id']);
+                                    echo 'MP3, WAV, M4A или OGG. До ' . ($service['id'] === 'vocal' ? '20' : '10') . ' МБ';
+                                    if ($limit > 0) {
+                                        echo $limit < 120
+                                            ? ' и ' . (int) $limit . ' секунд'
+                                            : ' и ' . (int) round($limit / 60) . ' минут';
+                                    }
+                                    echo '.';
+                                }
+                                ?>
                             </span>
                         </div>
                     <?php endforeach; ?>

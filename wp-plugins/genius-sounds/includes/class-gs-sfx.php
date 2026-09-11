@@ -54,8 +54,8 @@ class GS_SFX {
     }
 
     public static function get_cost() {
-        $cost = (float) get_option(self::OPT_COST, 15);
-        return $cost > 0 ? round($cost, 2) : 15.00;
+        $cost = (float) get_option(self::OPT_COST, 9);
+        return $cost > 0 ? round($cost, 2) : 9.00;
     }
 
     public static function get_models() {
