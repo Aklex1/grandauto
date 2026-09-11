@@ -165,24 +165,58 @@ def selectors():
     return {}
 
 
+def upload_track(page, source, sel):
+    """Поле загрузки у студии спрятано за кнопкой, поэтому сначала пробуем
+    честный диалог выбора файла и только потом — прямую подстановку."""
+    button = sel.get("upload_button", "")
+    if button:
+        try:
+            with page.expect_file_chooser(timeout=15000) as chooser:
+                page.click(button, timeout=10000)
+            chooser.value.set_files(str(source))
+            return True, "файл отдан через диалог выбора"
+        except Exception as error:
+            log(f"  через диалог не вышло ({type(error).__name__}), пробую поле напрямую")
+
+    page.locator(sel.get("upload_input", "input[type=file]")).first.set_input_files(str(source))
+    return True, "файл подставлен в поле загрузки"
+
+
 def run_auto(page, source, folder, slots):
     """Прокликивание студии по селекторам. Разметку меняют — правьте selectors.json."""
     sel = selectors()
     if not sel:
         return False, "нет selectors.json — автоматический режим не настроен"
 
-    page.set_input_files(sel["upload_input"], str(source))
-    page.wait_for_selector(sel["ready_marker"], timeout=int(sel.get("timeout_ms", 600000)))
+    ok, message = upload_track(page, source, sel)
+    log("  " + message)
+    if not ok:
+        return False, "не удалось загрузить файл"
+
+    # Пока не известны признак готовности и кнопки скачивания, дальше
+    # дорожки сохраняет человек — загрузку мы уже сняли с него.
+    marker = sel.get("ready_marker", "")
+    downloads = sel.get("downloads", {})
+    if not marker or not downloads:
+        return False, "загрузка сделана; признак готовности и кнопки скачивания ещё не настроены"
+
+    page.wait_for_selector(marker, timeout=int(sel.get("timeout_ms", 900000)))
 
     out = folder / "out"
     out.mkdir(exist_ok=True)
-    for slot, download_selector in sel.get("downloads", {}).items():
+    saved = []
+    for slot, download_selector in downloads.items():
         if slot not in slots:
             continue
-        with page.expect_download(timeout=120000) as info:
+        with page.expect_download(timeout=180000) as info:
             page.click(download_selector)
-        info.value.save_as(str(out / f"{slot}.mp3"))
-    return True, "дорожки скачаны"
+        download = info.value
+        target = out / (slot + Path(download.suggested_filename).suffix)
+        download.save_as(str(target))
+        saved.append(target.name)
+    if not saved:
+        return False, "кнопки скачивания не сработали"
+    return True, "скачано: " + ", ".join(saved)
 
 
 def run_assist(order, folder, source, page):
@@ -238,22 +272,41 @@ def inspect_studio(url):
             const attr = (n) => el.getAttribute(n);
             const id = attr('id');
             const testid = attr('data-testid') || attr('data-test-id') || attr('data-cy');
-            const cls = (el.className && typeof el.className === 'string')
-                ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+            const label = attr('aria-label') || '';
+            const title = attr('title') || '';
+            const text = (el.innerText || el.value || '').trim().slice(0, 60);
+            // Классы у студии генерируемые, цепляться за них нельзя —
+            // поэтому предпочитаем подпись и текст.
+            let selector = el.tagName.toLowerCase();
+            if (testid) {
+                selector = `[data-testid="${testid}"]`;
+            } else if (id && !/^radix-/.test(id)) {
+                selector = `#${id}`;
+            } else if (label) {
+                selector = `${el.tagName.toLowerCase()}[aria-label="${label}"]`;
+            } else if (text) {
+                selector = `${el.tagName.toLowerCase()}:has-text("${text.split(String.fromCharCode(10))[0]}")`;
+            }
             return {
                 tag: el.tagName.toLowerCase(),
-                text: (el.innerText || el.value || '').trim().slice(0, 60),
+                text: text,
+                label: label,
+                title: title,
                 id: id || '',
                 testid: testid || '',
-                selector: testid ? `[data-testid="${testid}"]` : (id ? `#${id}` : el.tagName.toLowerCase() + cls),
+                selector: selector,
                 visible: !!(el.offsetWidth || el.offsetHeight),
             };
         };
         const pick = (sel) => Array.from(document.querySelectorAll(sel)).map(describe);
+        const interesting = /скач|загруз|download|export|экспорт|минус|instrument|вокал|vocal|stem|дорожк|сохран/i;
         return {
             url: location.href,
             inputs: pick('input[type=file]'),
-            buttons: pick('button, [role=button], a').filter((b) => b.text).slice(0, 120),
+            buttons: pick('button, [role=button], [role=menuitem], a').filter((b) => b.text).slice(0, 150),
+            // Кнопки скачивания часто без текста — только значок с подписью для читалок.
+            labelled: pick('[aria-label], [title]').filter((b) => interesting.test(b.label || b.title || b.text)).slice(0, 80),
+            dialogs: pick('[role=dialog] button, [role=dialog] [role=menuitem]').filter((b) => b.text).slice(0, 60),
         };
     }""")
 
