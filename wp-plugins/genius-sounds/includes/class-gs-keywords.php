@@ -79,6 +79,23 @@ class GS_Keywords {
                     'убрать гул микрофона'            => 'ubrat-gul-mikrofona',
                 ),
             ),
+            'stt' => array(
+                'title' => 'Частые задачи с расшифровкой записей',
+                'items' => array(
+                    'перевести аудио в текст онлайн'    => 'perevesti-audio-v-tekst-onlayn',
+                    'текст из видео онлайн'             => 'tekst-iz-video-onlayn',
+                    'извлечь звук из видео онлайн'      => 'izvlech-zvuk-iz-video-onlayn',
+                    'перевод аудио в текст нейросетью'  => 'perevod-audio-v-tekst-neyrosetyu',
+                    'транскрибация аудио онлайн'        => 'transkribatsiya-audio-onlayn',
+                    'перевести лекцию в текст'          => 'perevesti-lektsiyu-v-tekst',
+                    'текст из голосового сообщения'     => 'tekst-iz-golosovogo-soobshcheniya',
+                    'субтитры из аудио онлайн'          => 'subtitry-iz-audio-onlayn',
+                    'расшифровка интервью в текст'      => 'rasshifrovka-intervyu-v-tekst',
+                    'аудио в текст с таймкодами'        => 'audio-v-tekst-s-taymkodami',
+                    'стенограмма аудиозаписи онлайн'    => 'stenogramma-audiozapisi-onlayn',
+                    'конспект из аудиозаписи'           => 'konspekt-iz-audiozapisi',
+                ),
+            ),
             'photo' => array(
                 'title' => 'Частые задачи с фотографиями',
                 'items' => array(

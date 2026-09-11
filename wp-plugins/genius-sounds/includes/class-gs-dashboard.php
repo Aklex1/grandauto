@@ -17,6 +17,24 @@ class GS_Dashboard {
 
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
+        add_filter('the_content', array(__CLASS__, 'append_keywords'), 20);
+    }
+
+    /**
+     * Под кабинетом показываем разборы частых задач по расшифровке:
+     * читателю — быстрый ответ, страницам блога — вес с сильной страницы.
+     */
+    public static function append_keywords($content) {
+        if (is_admin() || !is_main_query() || !in_the_loop()) {
+            return $content;
+        }
+        if (!self::enabled() || !self::is_page() || !class_exists('GS_Keywords')) {
+            return $content;
+        }
+        if (strpos($content, 'gs-keys') !== false) {
+            return $content;
+        }
+        return $content . GS_Keywords::render('stt');
     }
 
     public static function enabled() {

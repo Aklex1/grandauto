@@ -445,3 +445,69 @@ body.gs-dashboard .zv-step-num {
         grid-template-columns: 1fr;
     }
 }
+
+/* ------------------------------------------------ «Частые задачи» в кабинете
+   Блок перелинковки живёт в studio.css, а его на этой странице нет —
+   повторяем нужные правила здесь, в палитре кабинета. */
+
+body.gs-dashboard .gs-keys {
+    margin: 34px 0 0;
+    padding: 30px 26px;
+    border: 1px solid var(--gs-border);
+    border-radius: 22px;
+    background: var(--gs-surface);
+}
+
+body.gs-dashboard .gs-keys .gs-section-title {
+    margin: 0 0 8px;
+    font-size: clamp(20px, 3vw, 26px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-align: center;
+}
+
+body.gs-dashboard .gs-keys__lead {
+    max-width: 620px;
+    margin: 0 auto 20px;
+    color: var(--gs-muted) !important;
+    font-size: 15px;
+    text-align: center;
+}
+
+body.gs-dashboard .gs-keys__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+body.gs-dashboard .gs-keys__list li {
+    margin: 0;
+    list-style: none;
+}
+
+body.gs-dashboard .gs-keys__list a {
+    display: block;
+    padding: 11px 14px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface-2);
+    color: #cbd5e1 !important;
+    font-size: 14.5px;
+    text-decoration: none;
+    transition: border-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+body.gs-dashboard .gs-keys__list a:hover {
+    transform: translateY(-1px);
+    border-color: var(--gs-border-strong);
+    color: #e0e7ff !important;
+}
+
+@media (max-width: 720px) {
+    body.gs-dashboard .gs-keys {
+        padding: 24px 16px;
+    }
+}
