@@ -122,6 +122,14 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Пробник моделей поставщика: узнать идентификатор и формат входа,
+        // не заводя ради этого отдельный сервис (только админ).
+        register_rest_route(self::NS, '/jobs/probe', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_jobs_probe'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         // Временная проверка форматов запроса к поставщику (только админ).
         register_rest_route(self::NS, '/lab/provider-test', array(
             'methods'             => 'POST',
@@ -785,6 +793,25 @@ class GS_Rest {
             'task_id' => $created['task_id'],
             'cost'    => $cost,
         ));
+    }
+
+    public static function handle_jobs_probe($request) {
+        $params = $request->get_json_params();
+        $model = is_array($params) && !empty($params['model']) ? (string) $params['model'] : '';
+        $input = is_array($params) && !empty($params['input']) && is_array($params['input']) ? $params['input'] : array();
+        $info  = is_array($params) && !empty($params['task']) ? (string) $params['task'] : '';
+        $url   = is_array($params) && !empty($params['url']) ? esc_url_raw((string) $params['url']) : '';
+        if ($url !== '') {
+            $payload = is_array($params) && !empty($params['payload']) ? (array) $params['payload'] : array();
+            return rest_ensure_response(GS_Api::probe_raw($url, $payload));
+        }
+        if ($info !== '') {
+            return rest_ensure_response(GS_Api::probe_info($info));
+        }
+        if ($model === '') {
+            return new WP_Error('gs_no_model', 'Нужен model', array('status' => 400));
+        }
+        return rest_ensure_response(GS_Api::probe_create($model, $input));
     }
 
     public static function handle_provider_test($request) {

@@ -709,6 +709,74 @@ class GS_Api {
     }
 
     /* ---------------------------------------------------------------------
+     * Пробник моделей поставщика
+     *
+     * Списка идентификаторов в документации нет, поэтому формат входа
+     * выясняем живым запросом — так же, как делали с разделением дорожек.
+     * ------------------------------------------------------------------ */
+
+    public static function probe_create($model, $input) {
+        $key = trim((string) get_option('kie_tts_api_key', ''));
+        if ($key === '') {
+            return array('ok' => false, 'message' => 'Нет ключа доступа');
+        }
+        $response = wp_remote_post(self::API_CREATE, array(
+            'timeout' => 60,
+            'headers' => array('Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json'),
+            'body'    => wp_json_encode(array('model' => (string) $model, 'input' => $input)),
+        ));
+        if (is_wp_error($response)) {
+            return array('ok' => false, 'message' => $response->get_error_message());
+        }
+        return array(
+            'ok'     => true,
+            'status' => (int) wp_remote_retrieve_response_code($response),
+            'body'   => json_decode((string) wp_remote_retrieve_body($response), true),
+        );
+    }
+
+    /** Произвольный запрос к поставщику: у части моделей свой адрес. */
+    public static function probe_raw($url, $payload) {
+        $key = trim((string) get_option('kie_tts_api_key', ''));
+        if ($key === '') {
+            return array('ok' => false, 'message' => 'Нет ключа доступа');
+        }
+        $response = wp_remote_post((string) $url, array(
+            'timeout' => 180,
+            'headers' => array('Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json'),
+            'body'    => wp_json_encode($payload),
+        ));
+        if (is_wp_error($response)) {
+            return array('ok' => false, 'message' => $response->get_error_message());
+        }
+        $raw = (string) wp_remote_retrieve_body($response);
+        $decoded = json_decode($raw, true);
+        return array(
+            'ok'     => true,
+            'status' => (int) wp_remote_retrieve_response_code($response),
+            'body'   => $decoded !== null ? $decoded : mb_substr($raw, 0, 1200),
+        );
+    }
+
+    public static function probe_info($task_id) {
+        $key = trim((string) get_option('kie_tts_api_key', ''));
+        if ($key === '') {
+            return array('ok' => false, 'message' => 'Нет ключа доступа');
+        }
+        $response = wp_remote_get(add_query_arg('taskId', $task_id, self::API_INFO), array(
+            'timeout' => 60,
+            'headers' => array('Authorization' => 'Bearer ' . $key),
+        ));
+        if (is_wp_error($response)) {
+            return array('ok' => false, 'message' => $response->get_error_message());
+        }
+        return array(
+            'ok'   => true,
+            'body' => json_decode((string) wp_remote_retrieve_body($response), true),
+        );
+    }
+
+    /* ---------------------------------------------------------------------
      * Состояние задачи
      * ------------------------------------------------------------------ */
 

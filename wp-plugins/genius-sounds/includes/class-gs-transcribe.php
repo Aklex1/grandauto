@@ -1,15 +1,20 @@
 <?php
 /**
- * Подстраховка расшифровки записей.
+ * Расшифровка записей в кабинете озвучки.
  *
- * Две беды у живого сервиса. Первая: поле языка — свободный ввод, и
- * «rus» вместо «ru» поставщик отклоняет целиком. Вторая: поставщик
- * временами отваливается по таймауту, и пользователь видит отказ на
- * ровном месте.
+ * Прежний поставщик расшифровки у агрегатора не работает, поэтому
+ * задачу выполняем сами через Gemini (см. GS_Gemini) и подменяем два
+ * маршрута рабочего плагина: запуск и проверку состояния. Снаружи всё
+ * выглядит по-старому — тот же номер задачи, тот же ответ, — так что
+ * ни кабинет, ни внешний API переделывать не нужно.
  *
- * Базовый плагин не трогаем: приводим код языка к понятному виду до
- * вызова и один раз молча повторяем задачу, если она сорвалась не по
- * вине пользователя.
+ * Gemini отвечает сразу и долго, а кабинет ждёт мгновенного ответа с
+ * номером задачи, поэтому очередь держим у себя: запрос возвращает
+ * номер, работа идёт в фоне, состояние читается при опросе.
+ *
+ * Заодно оставляем прежние подпорки для старого пути: свободный ввод
+ * языка приводим к понятному коду, а сорвавшуюся задачу один раз молча
+ * повторяем.
  */
 
 if (!defined('ABSPATH')) {
@@ -19,14 +24,41 @@ if (!defined('ABSPATH')) {
 class GS_Transcribe {
 
     const OPT_ENABLED = 'gs_stt_guard';
+    /** Чем расшифровываем: gemini (своя очередь) или provider (старый путь). */
+    const OPT_ENGINE  = 'gs_stt_engine';
     /** Исходник задачи: нужен, чтобы её можно было повторить. */
     const SRC_PREFIX  = 'gs_stt_src_';
     /** Соответствие «сорвавшаяся задача → повтор». */
     const MAP_PREFIX  = 'gs_stt_retry_';
 
+    /** Наши задачи: хранилище и узнаваемый номер. */
+    const TASK_PREFIX = 'gs_stt_task_';
+    const ID_PREFIX   = 'gst-';
+    const TASK_TTL    = 259200; // трое суток
+
+    /** Сколько ждём фоновый заход, прежде чем посчитать задачу самим. */
+    const SPAWN_GRACE = 8;
+    /** Дольше этого работа считается сорвавшейся. */
+    const RUN_LIMIT   = 900;
+
     public static function boot() {
         add_filter('rest_pre_dispatch', array(__CLASS__, 'normalize_request'), 10, 3);
         add_filter('rest_request_after_callbacks', array(__CLASS__, 'after_callbacks'), 20, 3);
+        add_action('rest_api_init', array(__CLASS__, 'register_routes'));
+        add_action('gs_stt_run', array(__CLASS__, 'run'));
+    }
+
+    /** Расшифровываем сами, пока не сказано иное. */
+    public static function engine() {
+        return (string) get_option(self::OPT_ENGINE, 'gemini') === 'provider' ? 'provider' : 'gemini';
+    }
+
+    public static function register_routes() {
+        register_rest_route('genius-sounds/v1', '/stt/run', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_run'),
+            'permission_callback' => '__return_true',
+        ));
     }
 
     public static function enabled() {
@@ -71,21 +103,42 @@ class GS_Transcribe {
         return $value;
     }
 
+    /**
+     * Перехватываем маршруты расшифровки рабочего плагина.
+     *
+     * Возврат значения из этого фильтра отменяет обычную обработку —
+     * этим и пользуемся, чтобы ответить своей задачей.
+     */
     public static function normalize_request($result, $server, $request) {
         if (!self::enabled() || !($request instanceof WP_REST_Request)) {
             return $result;
         }
         $route = (string) $request->get_route();
-        if (strpos($route, '/tts/v1/') === false || strpos($route, 'transcribe') === false) {
+        if (!preg_match('~^/tts/v1/(api/)?transcribe(?:-status/([^/]+))?/?$~', $route, $m)) {
             return $result;
         }
-        if (strpos($route, 'transcribe-status') !== false) {
+        $is_api  = !empty($m[1]);
+        $task_id = isset($m[2]) ? rawurldecode($m[2]) : '';
+
+        // Состояние своей задачи отдаём сами, чужие не трогаем.
+        if ($task_id !== '') {
+            if (strpos($task_id, self::ID_PREFIX) !== 0) {
+                return $result;
+            }
+            $auth = self::authorize($request, $is_api);
+            if (is_wp_error($auth)) {
+                return $auth;
+            }
+            return self::status_response($task_id);
+        }
+
+        if ($request->get_method() !== 'POST') {
             return $result;
         }
 
         $params = $request->get_json_params();
         if (!is_array($params)) {
-            return $result;
+            $params = array();
         }
         if (isset($params['language_code'])) {
             $clean = self::normalize_language($params['language_code']);
@@ -95,7 +148,16 @@ class GS_Transcribe {
                 $request->set_param('language_code', $clean);
             }
         }
-        // Запоминаем исходные данные — по ним можно будет повторить задачу.
+
+        if (self::engine() === 'gemini') {
+            $auth = self::authorize($request, $is_api);
+            if (is_wp_error($auth)) {
+                return $auth;
+            }
+            return self::start($params, $is_api ? (int) $request->get_param('_api_user_id') : get_current_user_id());
+        }
+
+        // Старый путь: запоминаем исходные данные — по ним можно повторить задачу.
         self::$pending = array(
             'audio_url'   => isset($params['audio_url']) ? (string) $params['audio_url'] : '',
             'youtube_url' => isset($params['youtube_url']) ? (string) $params['youtube_url'] : '',
@@ -108,8 +170,236 @@ class GS_Transcribe {
         return $result;
     }
 
+    /**
+     * Доступ ровно тот же, что у рабочего плагина: в кабинете — вход,
+     * во внешнем API — ключ.
+     */
+    private static function authorize($request, $is_api) {
+        if (!$is_api) {
+            if (!is_user_logged_in()) {
+                return new WP_Error('rest_forbidden', 'Требуется вход', array('status' => 401));
+            }
+            return true;
+        }
+
+        $key = (string) $request->get_header('X-API-Key');
+        if ($key === '') {
+            $auth = (string) $request->get_header('Authorization');
+            if ($auth !== '' && stripos($auth, 'Bearer ') === 0) {
+                $key = trim(substr($auth, 7));
+            }
+        }
+        if ($key === '') {
+            $key = (string) $request->get_param('api_key');
+        }
+        $key = trim($key);
+        if ($key === '') {
+            return new WP_Error('missing_api_key', 'API key отсутствует', array('status' => 401));
+        }
+        if (!class_exists('KIE_TTS_DB')) {
+            return new WP_Error('rest_forbidden', 'Проверка ключа недоступна', array('status' => 503));
+        }
+        $user_id = KIE_TTS_DB::validate_api_key($key, array(
+            'endpoint'   => (string) $request->get_route(),
+            'method'     => (string) $request->get_method(),
+            'ip'         => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field((string) $_SERVER['REMOTE_ADDR']) : '',
+            'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field((string) $_SERVER['HTTP_USER_AGENT']) : '',
+        ));
+        if (!$user_id) {
+            return new WP_Error('invalid_api_key', 'Некорректный API key', array('status' => 401));
+        }
+        $request->set_param('_api_user_id', (int) $user_id);
+        return true;
+    }
+
     /** @var array|null Данные запроса, который сейчас обрабатывается. */
     private static $pending = null;
+
+    /* ---------------------------------------------------------------------
+     * Своя очередь расшифровки
+     * ------------------------------------------------------------------ */
+
+    /** Ставим задачу и сразу отдаём её номер — как делал прежний поставщик. */
+    private static function start($params, $user_id) {
+        $audio_url   = isset($params['audio_url']) ? esc_url_raw((string) $params['audio_url']) : '';
+        $youtube_url = isset($params['youtube_url']) ? esc_url_raw((string) $params['youtube_url']) : '';
+
+        if ($audio_url === '' && $youtube_url === '') {
+            return new WP_Error('missing_source', 'Укажите audio_url или youtube_url', array('status' => 400));
+        }
+        if ($audio_url === '' && $youtube_url !== '') {
+            $extracted = self::audio_from_youtube($youtube_url);
+            if (is_wp_error($extracted)) {
+                return $extracted;
+            }
+            $audio_url = $extracted;
+        }
+
+        $id = self::ID_PREFIX . wp_generate_password(20, false, false);
+        $task = array(
+            'id'        => $id,
+            'user_id'   => (int) $user_id,
+            'audio_url' => $audio_url,
+            'params'    => array(
+                'language_code'    => isset($params['language_code']) ? sanitize_text_field((string) $params['language_code']) : '',
+                'tag_audio_events' => !empty($params['tag_audio_events']),
+                'diarize'          => !empty($params['diarize']),
+            ),
+            'status'    => 'pending',
+            'text'      => '',
+            'segments'  => array(),
+            'language'  => '',
+            'error'     => '',
+            'credits'   => 0.0,
+            'created'   => time(),
+            'started'   => 0,
+            'finished'  => 0,
+        );
+        self::save($task);
+        self::spawn($id);
+
+        return new WP_REST_Response(array(
+            'success'   => true,
+            'task_id'   => $id,
+            'record_id' => '',
+            'audio_url' => $audio_url,
+        ), 200);
+    }
+
+    /** Звук с YouTube достаёт отдельная служба рабочего плагина. */
+    private static function audio_from_youtube($youtube_url) {
+        if (!class_exists('KIE_TTS_API')) {
+            return new WP_Error('youtube_audio_error', 'Извлечение звука с YouTube сейчас недоступно', array('status' => 503));
+        }
+        $data = KIE_TTS_API::create_youtube_audio_task($youtube_url, 'mp3');
+        if (is_array($data) && !empty($data['audio_url'])) {
+            return esc_url_raw((string) $data['audio_url']);
+        }
+        $message = is_array($data) && !empty($data['message'])
+            ? (string) $data['message']
+            : 'Не удалось получить звук по ссылке YouTube';
+        return new WP_Error('youtube_audio_error', $message, array('status' => 503));
+    }
+
+    /** Ответ о состоянии в том же виде, что отдавал рабочий плагин. */
+    private static function status_response($id) {
+        $task = self::load($id);
+        if (!$task) {
+            return new WP_Error('transcribe_status_error', 'Задача не найдена или устарела', array('status' => 404));
+        }
+
+        // Фоновый заход мог не состояться — тогда считаем прямо здесь.
+        if ($task['status'] === 'pending') {
+            $waiting = time() - (int) $task['created'];
+            $running = (int) $task['started'] > 0 ? time() - (int) $task['started'] : 0;
+            if ((int) $task['started'] === 0 && $waiting >= self::SPAWN_GRACE) {
+                self::run($id);
+                $task = self::load($id);
+            } elseif ((int) $task['started'] > 0 && $running > self::RUN_LIMIT) {
+                $task['status']   = 'failed';
+                $task['error']    = 'Расшифровка не уложилась во время. Попробуйте ещё раз.';
+                $task['finished'] = time();
+                self::save($task);
+            }
+        }
+        if (!$task) {
+            return new WP_Error('transcribe_status_error', 'Задача не найдена', array('status' => 404));
+        }
+
+        $state = 'waiting';
+        if ($task['status'] === 'completed') {
+            $state = 'success';
+        } elseif ($task['status'] === 'failed') {
+            $state = 'fail';
+        }
+
+        return new WP_REST_Response(array(
+            'success'       => true,
+            'task_id'       => $task['id'],
+            'status'        => $task['status'],
+            'state'         => $state,
+            'text'          => (string) $task['text'],
+            'segments'      => is_array($task['segments']) ? $task['segments'] : array(),
+            'result'        => array(
+                'text'     => (string) $task['text'],
+                'segments' => is_array($task['segments']) ? $task['segments'] : array(),
+                'language' => (string) $task['language'],
+            ),
+            'error_message' => (string) $task['error'],
+        ), 200);
+    }
+
+    /** Фоновый заход: свой же маршрут, вызов без ожидания ответа. */
+    private static function spawn($id) {
+        $task = self::load($id);
+        if (!$task) {
+            return;
+        }
+        $secret = wp_hash($id . '|gs-stt');
+        wp_remote_post(rest_url('genius-sounds/v1/stt/run'), array(
+            'timeout'   => 0.01,
+            'blocking'  => false,
+            'sslverify' => false,
+            'body'      => array('id' => $id, 'key' => $secret),
+        ));
+    }
+
+    public static function handle_run($request) {
+        $id  = sanitize_text_field((string) $request->get_param('id'));
+        $key = (string) $request->get_param('key');
+        if ($id === '' || !hash_equals(wp_hash($id . '|gs-stt'), $key)) {
+            return new WP_Error('rest_forbidden', 'Нет доступа', array('status' => 403));
+        }
+        self::run($id);
+        return rest_ensure_response(array('ok' => true));
+    }
+
+    /** Собственно работа: спрашиваем Gemini и сохраняем ответ. */
+    public static function run($id) {
+        $task = self::load($id);
+        if (!$task || $task['status'] !== 'pending') {
+            return;
+        }
+        // Кто-то уже считает эту задачу.
+        if ((int) $task['started'] > 0 && (time() - (int) $task['started']) < self::RUN_LIMIT) {
+            return;
+        }
+        $task['started'] = time();
+        self::save($task);
+
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(self::RUN_LIMIT);
+        }
+
+        $result = GS_Gemini::transcribe($task['audio_url'], $task['params']);
+
+        $task = self::load($id);
+        if (!$task) {
+            return;
+        }
+        if (!empty($result['ok'])) {
+            $task['status']   = 'completed';
+            $task['text']     = (string) $result['text'];
+            $task['segments'] = is_array($result['segments']) ? $result['segments'] : array();
+            $task['language'] = (string) $result['language'];
+            $task['credits']  = (float) $result['credits'];
+        } else {
+            $task['status'] = 'failed';
+            $task['error']  = (string) $result['error'];
+            self::log('расшифровка не удалась (' . $id . '): ' . $result['error']);
+        }
+        $task['finished'] = time();
+        self::save($task);
+    }
+
+    private static function save($task) {
+        set_transient(self::TASK_PREFIX . $task['id'], $task, self::TASK_TTL);
+    }
+
+    private static function load($id) {
+        $task = get_transient(self::TASK_PREFIX . $id);
+        return is_array($task) && !empty($task['id']) ? $task : null;
+    }
 
     /* ---------------------------------------------------------------------
      * Повтор при отказе поставщика
