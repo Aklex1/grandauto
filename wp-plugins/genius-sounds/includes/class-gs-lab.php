@@ -534,6 +534,32 @@ class GS_Lab {
     }
 
     /**
+     * Сколько кредитов реально съела задача — из этого считается себестоимость.
+     *
+     * @return array{ok:bool,credits:float,state:string,message:string}
+     */
+    public static function task_credits($task_id) {
+        $res = self::get_json(self::API_JOBS_INFO, array('taskId' => (string) $task_id));
+        if (empty($res['ok'])) {
+            return array('ok' => false, 'credits' => 0.0, 'state' => '', 'message' => $res['message']);
+        }
+        $data = is_array($res['body']['data']) ? $res['body']['data'] : array();
+        $credits = 0.0;
+        foreach (array('creditsConsumed', 'credits_consumed', 'costCredits', 'credits') as $field) {
+            if (isset($data[$field])) {
+                $credits = (float) $data[$field];
+                break;
+            }
+        }
+        return array(
+            'ok'      => true,
+            'credits' => $credits,
+            'state'   => (string) ($data['state'] ?? ''),
+            'message' => '',
+        );
+    }
+
+    /**
      * Копируем результат к себе: ссылки агрегатора живут ограниченное время.
      */
     public static function store_result($task_id, $url, $kind) {

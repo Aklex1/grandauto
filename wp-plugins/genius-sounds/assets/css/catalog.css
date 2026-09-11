@@ -864,3 +864,45 @@ body.gs-studio-page .w-grid {
     font-size: 15px;
     font-weight: 600;
 }
+
+/* ----------------------------------------------------- Поля ввода: читаемость
+   Тема задаёт свои input[type=…] с белым фоном и светло-серым текстом, и они
+   перебивали одноклассовые селекторы. Держим тёмный фон и светлый текст
+   и во время набора, и при автозаполнении. */
+
+.gs-wrap input[type="text"],
+.gs-wrap input[type="search"],
+.gs-wrap input[type="number"],
+.gs-wrap input[type="email"],
+.gs-wrap input[type="url"],
+.gs-wrap textarea,
+.gs-wrap select,
+.gs-wrap .gs-search__input,
+.gs-wrap .gs-cta__input {
+    background-color: rgba(8, 12, 20, 0.82) !important;
+    color: var(--gs-text) !important;
+    border-color: var(--gs-border);
+    caret-color: var(--gs-primary-light);
+}
+
+.gs-wrap input::placeholder,
+.gs-wrap textarea::placeholder {
+    color: #7d8ba1 !important;
+    opacity: 1;
+}
+
+.gs-wrap select option {
+    background-color: #0d1320;
+    color: var(--gs-text);
+}
+
+/* Автозаполнение в Chrome красит поле в белый поверх наших стилей. */
+.gs-wrap input:-webkit-autofill,
+.gs-wrap input:-webkit-autofill:hover,
+.gs-wrap input:-webkit-autofill:focus,
+.gs-wrap textarea:-webkit-autofill {
+    -webkit-text-fill-color: #f1f5f9 !important;
+    caret-color: #818cf8;
+    box-shadow: 0 0 0 1000px #0d1320 inset !important;
+    transition: background-color 9999s ease-in-out 0s;
+}

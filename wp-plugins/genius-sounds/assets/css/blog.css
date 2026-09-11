@@ -338,3 +338,48 @@ body.gs-post-page .w-post-elm.post_author {
         padding: 18px;
     }
 }
+
+/* ----------------------------------------------------- Поля ввода в блоге
+   Поиск, комментарии и формы темы на тёмном фоне оставались белыми
+   со светло-серым текстом — набирать было не видно. */
+
+body.gs-blog-page input[type="text"],
+body.gs-blog-page input[type="search"],
+body.gs-blog-page input[type="email"],
+body.gs-blog-page input[type="url"],
+body.gs-blog-page textarea,
+body.gs-blog-page select,
+body.gs-post-page input[type="text"],
+body.gs-post-page input[type="search"],
+body.gs-post-page input[type="email"],
+body.gs-post-page input[type="url"],
+body.gs-post-page textarea,
+body.gs-post-page select {
+    background-color: #0d1320 !important;
+    color: #f1f5f9 !important;
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+    border-radius: 10px !important;
+    caret-color: #818cf8;
+    box-shadow: none !important;
+}
+
+body.gs-blog-page input::placeholder,
+body.gs-blog-page textarea::placeholder,
+body.gs-post-page input::placeholder,
+body.gs-post-page textarea::placeholder {
+    color: #7d8ba1 !important;
+    opacity: 1;
+}
+
+body.gs-blog-page select option,
+body.gs-post-page select option {
+    background-color: #0d1320;
+    color: #f1f5f9;
+}
+
+body.gs-blog-page input:-webkit-autofill,
+body.gs-post-page input:-webkit-autofill {
+    -webkit-text-fill-color: #f1f5f9 !important;
+    box-shadow: 0 0 0 1000px #0d1320 inset !important;
+    transition: background-color 9999s ease-in-out 0s;
+}

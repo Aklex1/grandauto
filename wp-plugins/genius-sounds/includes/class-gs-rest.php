@@ -673,7 +673,11 @@ class GS_Rest {
         ));
     }
 
-    public static function handle_lab_credits() {
+    public static function handle_lab_credits($request) {
+        $task = (string) $request->get_param('task');
+        if ($task !== '') {
+            return rest_ensure_response(GS_Lab::task_credits($task));
+        }
         return rest_ensure_response(GS_Lab::provider_credits());
     }
 
