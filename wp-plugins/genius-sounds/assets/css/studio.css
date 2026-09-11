@@ -714,3 +714,54 @@
     font-size: 14.5px;
     line-height: 1.6;
 }
+
+/* ------------------------------------------------ Блок «Частые задачи»
+   Ссылки на разборы под конкретные запросы: и читателю полезно,
+   и вес расходится с посадочной на материалы блога. */
+
+.gs-keys {
+    margin-top: 34px;
+}
+
+.gs-keys__lead {
+    margin: 0 0 14px;
+    color: var(--gs-muted, #94a3b8);
+    font-size: 15px;
+}
+
+.gs-keys__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.gs-keys__list li {
+    margin: 0;
+}
+
+.gs-keys__list a {
+    display: block;
+    padding: 11px 14px;
+    border: 1px solid var(--gs-border, rgba(148, 163, 184, 0.14));
+    border-radius: var(--gs-radius-sm, 10px);
+    background: rgba(148, 163, 184, 0.05);
+    color: #cbd5e1;
+    font-size: 14.5px;
+    text-decoration: none;
+    transition: border-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.gs-keys__list a:hover {
+    transform: translateY(-1px);
+    border-color: rgba(129, 140, 248, 0.42);
+    color: #e0e7ff;
+}
+
+@media (max-width: 600px) {
+    .gs-keys__list {
+        grid-template-columns: 1fr;
+    }
+}

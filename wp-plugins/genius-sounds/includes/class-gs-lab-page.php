@@ -162,6 +162,8 @@ class GS_Lab_Page {
                 </ol>
             </section>
 
+            <?php echo GS_Keywords::render(GS_Keywords::group_for_lab($service['id'])); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <?php echo self::render_cross_links($service['id']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <section class="gs-faq">

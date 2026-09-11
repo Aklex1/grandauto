@@ -426,6 +426,8 @@ class GS_Pages {
                     </article>
                 </div>
             </section>
+
+            <?php echo GS_Keywords::render('sfx'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         </div>
         <?php
         return ob_get_clean();

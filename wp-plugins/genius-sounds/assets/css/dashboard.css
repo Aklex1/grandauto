@@ -1,0 +1,277 @@
+/**
+ * Genius Sounds — кабинет озвучки в стилистике микросервисов.
+ * Разметку базового плагина не меняем: только цвета, отступы и сетка.
+ */
+
+body.gs-dashboard {
+    --gs-bg: #080c14;
+    --gs-surface: #131b2b;
+    --gs-surface-2: #0d1320;
+    --gs-border: rgba(148, 163, 184, 0.14);
+    --gs-border-strong: rgba(129, 140, 248, 0.38);
+    --gs-text: #f1f5f9;
+    --gs-muted: #94a3b8;
+    --gs-primary: #6366f1;
+    --gs-primary-light: #818cf8;
+    --gs-radius: 16px;
+    --gs-radius-sm: 10px;
+
+    background: var(--gs-bg) !important;
+    color: var(--gs-text);
+}
+
+body.gs-dashboard .l-canvas,
+body.gs-dashboard .l-main,
+body.gs-dashboard #page-content,
+body.gs-dashboard .l-section,
+body.gs-dashboard .wpb_column,
+body.gs-dashboard .vc_column-inner {
+    background: transparent !important;
+}
+
+body.gs-dashboard h1,
+body.gs-dashboard h2,
+body.gs-dashboard h3,
+body.gs-dashboard h4 {
+    color: var(--gs-text) !important;
+}
+
+body.gs-dashboard p,
+body.gs-dashboard li,
+body.gs-dashboard label,
+body.gs-dashboard small {
+    color: #cbd5e1;
+}
+
+/* ---------------------------------------------------------------- меню */
+
+body.gs-dashboard .kie-tts-top-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 18px;
+    padding: 6px;
+    border: 1px solid var(--gs-border);
+    border-radius: 14px;
+    background: rgba(19, 27, 43, 0.6);
+}
+
+body.gs-dashboard .kie-tts-menu-item {
+    flex: 0 1 auto;
+    padding: 10px 16px;
+    border: 1px solid transparent !important;
+    border-radius: var(--gs-radius-sm) !important;
+    background: transparent !important;
+    color: var(--gs-muted) !important;
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.16s ease, color 0.16s ease;
+}
+
+body.gs-dashboard .kie-tts-menu-item:hover {
+    color: var(--gs-text) !important;
+}
+
+body.gs-dashboard .kie-tts-menu-item.active,
+body.gs-dashboard .kie-tts-menu-item[aria-selected="true"] {
+    background: linear-gradient(135deg, var(--gs-primary) 0%, #8b5cf6 100%) !important;
+    color: #fff !important;
+}
+
+/* -------------------------------------------------------------- карточки */
+
+body.gs-dashboard .kie-tts-form-container,
+body.gs-dashboard .kie-tts-editor-sidebar-card,
+body.gs-dashboard .kie-tts-generations,
+body.gs-dashboard .generation-result,
+body.gs-dashboard .api-access-card,
+body.gs-dashboard .kie-tts-balance-section,
+body.gs-dashboard .zv-mini-stat,
+body.gs-dashboard .topup-modal-content {
+    border: 1px solid var(--gs-border) !important;
+    border-radius: var(--gs-radius) !important;
+    background: var(--gs-surface) !important;
+    box-shadow: none !important;
+    color: var(--gs-text);
+}
+
+body.gs-dashboard .kie-tts-editor-topbar,
+body.gs-dashboard .kie-tts-editor-cost-bar,
+body.gs-dashboard .generations-header {
+    border-color: var(--gs-border) !important;
+    background: transparent !important;
+    color: var(--gs-text);
+}
+
+body.gs-dashboard .kie-tts-dashboard-layout,
+body.gs-dashboard .kie-tts-content-panels,
+body.gs-dashboard .kie-tts-editor-body {
+    background: transparent !important;
+}
+
+/* --------------------------------------------------------------- кнопки */
+
+body.gs-dashboard .action-btn,
+body.gs-dashboard .kie-tts-secondary-btn,
+body.gs-dashboard .topup-amount-btn,
+body.gs-dashboard .kie-tts-sidebar-tool-btn,
+body.gs-dashboard .toggle-settings-btn,
+body.gs-dashboard .kie-voice-compare-btn {
+    border: 1px solid var(--gs-border) !important;
+    border-radius: var(--gs-radius-sm) !important;
+    background: rgba(148, 163, 184, 0.08) !important;
+    color: var(--gs-text) !important;
+    font-weight: 600;
+    box-shadow: none !important;
+    transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+body.gs-dashboard .action-btn:hover,
+body.gs-dashboard .kie-tts-secondary-btn:hover,
+body.gs-dashboard .topup-amount-btn:hover,
+body.gs-dashboard .toggle-settings-btn:hover {
+    border-color: var(--gs-border-strong) !important;
+}
+
+body.gs-dashboard .generate-btn,
+body.gs-dashboard .action-btn.play-btn,
+body.gs-dashboard button[type="submit"],
+body.gs-dashboard .topup-toggle-btn,
+body.gs-dashboard .topup-amount-btn.active {
+    border-color: transparent !important;
+    background: linear-gradient(135deg, var(--gs-primary) 0%, #8b5cf6 100%) !important;
+    color: #fff !important;
+}
+
+/* ----------------------------------------------------------- поля ввода */
+
+body.gs-dashboard input[type="text"],
+body.gs-dashboard input[type="email"],
+body.gs-dashboard input[type="password"],
+body.gs-dashboard input[type="number"],
+body.gs-dashboard input[type="search"],
+body.gs-dashboard input[type="url"],
+body.gs-dashboard textarea,
+body.gs-dashboard select,
+body.gs-dashboard .search-input {
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+    border-radius: var(--gs-radius-sm) !important;
+    background-color: var(--gs-surface-2) !important;
+    color: var(--gs-text) !important;
+    caret-color: var(--gs-primary-light);
+    box-shadow: none !important;
+}
+
+body.gs-dashboard input::placeholder,
+body.gs-dashboard textarea::placeholder {
+    color: #7d8ba1 !important;
+    opacity: 1;
+}
+
+body.gs-dashboard input:focus,
+body.gs-dashboard textarea:focus,
+body.gs-dashboard select:focus {
+    outline: none;
+    border-color: var(--gs-primary-light) !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18) !important;
+}
+
+body.gs-dashboard select option {
+    background-color: var(--gs-surface-2);
+    color: var(--gs-text);
+}
+
+body.gs-dashboard input:-webkit-autofill {
+    -webkit-text-fill-color: var(--gs-text) !important;
+    box-shadow: 0 0 0 1000px var(--gs-surface-2) inset !important;
+    transition: background-color 9999s ease-in-out 0s;
+}
+
+/* --------------------------------------------------- расширенные настройки
+   Оставляем их доступными, но по умолчанию свёрнутыми: простая форма
+   сверху, всё остальное — по кнопке. */
+
+body.gs-dashboard .toggle-settings-btn {
+    width: 100%;
+    text-align: left;
+}
+
+body.gs-dashboard .advanced-settings {
+    margin-top: 10px;
+    padding: 14px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface-2);
+}
+
+body.gs-dashboard .form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+body.gs-dashboard .form-col {
+    flex: 1 1 220px;
+}
+
+body.gs-dashboard .form-group {
+    margin-bottom: 12px;
+}
+
+/* ------------------------------------------------------- история и итог */
+
+body.gs-dashboard .kie-tts-generations > *,
+body.gs-dashboard .generation-item {
+    border-color: var(--gs-border) !important;
+    background: var(--gs-surface-2) !important;
+    color: var(--gs-text);
+}
+
+body.gs-dashboard audio {
+    width: 100%;
+}
+
+body.gs-dashboard .gs-dash-apinote {
+    margin: 0 0 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--gs-border-strong);
+    border-radius: var(--gs-radius-sm);
+    background: #1b2440;
+    color: #dbe3f0;
+    font-size: 14.5px;
+}
+
+body.gs-dashboard .gs-dash-apinote a {
+    color: #a5b4fc;
+}
+
+/* ------------------------------------------------------------- модалка */
+
+body.gs-dashboard .topup-modal-overlay {
+    background: rgba(4, 8, 16, 0.72);
+}
+
+body.gs-dashboard .topup-modal-header,
+body.gs-dashboard .topup-modal-body {
+    background: transparent !important;
+    color: var(--gs-text);
+}
+
+/* -------------------------------------------------------------- адаптив */
+
+@media (max-width: 720px) {
+    body.gs-dashboard .kie-tts-menu-item {
+        flex: 1 1 45%;
+        text-align: center;
+    }
+
+    body.gs-dashboard .kie-tts-editor-body {
+        display: block;
+    }
+
+    body.gs-dashboard .kie-tts-editor-sidebar {
+        width: 100%;
+        margin-top: 14px;
+    }
+}

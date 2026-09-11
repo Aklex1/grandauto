@@ -100,6 +100,7 @@ class GS_Api_Page {
                     <span class="gs-chip gs-chip--ok">без абонплаты — платите за запуск</span>
                     <span class="gs-chip">REST + JSON</span>
                     <span class="gs-chip">вебхук о готовности</span>
+                    <span class="gs-chip">озвучка и расшифровка</span>
                 </div>
             </section>
 
@@ -159,6 +160,38 @@ class GS_Api_Page {
                     <code>callback_url</code> включает вебхук, <code>voice</code> выбирает голос озвучки,
                     <code>mode</code> и <code>seconds</code> управляют генерацией звука
                     (<code>sfx</code>, <code>ambient</code>, <code>loop</code>).
+                </p>
+            </section>
+
+            <section class="gs-api__section" id="voice">
+                <h2 class="gs-section-title">Озвучка, расшифровка и звук с YouTube</h2>
+                <p class="gs-api__text">
+                    Эти операции живут на отдельном адресе <code><?php echo esc_html(rest_url('tts/v1/api')); ?></code>
+                    и используют собственный ключ — он выпускается в личном кабинете озвучки,
+                    раздел «API». Передаётся заголовком <code>X-API-Key</code> или
+                    <code>Authorization: Bearer</code>.
+                </p>
+                <div class="gs-api__tablewrap">
+                    <table class="gs-api__table">
+                        <thead><tr><th>Запрос</th><th>Что делает</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>POST /generate</code></td><td>Озвучить текст: модель, голос, формат вывода</td></tr>
+                            <tr><td><code>GET /status/{task_id}</code></td><td>Состояние озвучки и ссылка на файл</td></tr>
+                            <tr><td><code>POST /transcribe</code></td><td>Расшифровать запись: <code>audio_url</code> или <code>youtube_url</code></td></tr>
+                            <tr><td><code>GET /transcribe-status/{task_id}</code></td><td>Текст, сегменты и тайминги</td></tr>
+                            <tr><td><code>POST /youtube-audio</code></td><td>Достать звуковую дорожку из ролика</td></tr>
+                            <tr><td><code>POST /parse-text-file</code></td><td>Достать текст из загруженного документа</td></tr>
+                            <tr><td><code>GET /balance</code></td><td>Остаток на балансе</td></tr>
+                            <tr><td><code>GET /generations</code></td><td>История озвучек</td></tr>
+                            <tr><td><code>GET /free-voices</code></td><td>Список бесплатных голосов</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <?php echo self::render_code('Озвучить текст и расшифровать запись', self::sample_voice()); ?>
+                <p class="gs-api__text">
+                    Ключи не взаимозаменяемы: <code>gb_…</code> работает на <code>genius/v1</code>,
+                    ключ озвучки — на <code>tts/v1</code>. Баланс у них общий, списания видны
+                    в одной истории.
                 </p>
             </section>
 
@@ -459,6 +492,69 @@ if ($ok) {
 }
 CODE;
         return array('python' => $python, 'php' => $php);
+    }
+
+    private static function sample_voice() {
+        $curl = <<<'CODE'
+# Озвучить текст
+curl -X POST {{TTS}}/generate \
+  -H 'X-API-Key: КЛЮЧ_ОЗВУЧКИ' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "elevenlabs/text-to-speech-multilingual-v2",
+    "text": "Привет! Это тест.",
+    "voice": "Rachel",
+    "output_format": "mp3_44100_128"
+  }'
+
+# Расшифровать запись
+curl -X POST {{TTS}}/transcribe \
+  -H 'X-API-Key: КЛЮЧ_ОЗВУЧКИ' \
+  -H 'Content-Type: application/json' \
+  -d '{"audio_url": "https://example.com/audio.mp3", "language_code": "ru", "diarize": true}'
+CODE;
+
+        $python = <<<'CODE'
+import requests, time
+
+TTS = '{{TTS}}'
+HEAD = {'X-API-Key': 'КЛЮЧ_ОЗВУЧКИ'}
+
+# озвучка
+task = requests.post(f'{TTS}/generate', headers=HEAD, json={
+    'model': 'elevenlabs/text-to-speech-multilingual-v2',
+    'text': 'Привет! Это тест.',
+    'voice': 'Rachel',
+}).json()
+
+while True:
+    state = requests.get(f"{TTS}/status/{task['task_id']}", headers=HEAD).json()
+    if state.get('status') != 'pending':
+        break
+    time.sleep(5)
+
+print(state.get('audio_url'))
+CODE;
+
+        $json = <<<'CODE'
+// POST /transcribe → ответ
+{ "success": true, "task_id": "a1b2c3d4" }
+
+// GET /transcribe-status/a1b2c3d4 после готовности
+{
+  "status": "completed",
+  "text": "Полный текст записи…",
+  "segments": [
+    { "start": 0.0, "end": 3.4, "speaker": "Спикер 1", "text": "Первая фраза" }
+  ]
+}
+CODE;
+        $base = rest_url('tts/v1/api');
+        $out = array('curl' => $curl, 'python' => $python, 'json' => $json);
+        foreach ($out as $lang => $code) {
+            $out[$lang] = str_replace('{{TTS}}', $base, $code);
+        }
+        return $out;
     }
 
     private static function with_base($samples, $base) {

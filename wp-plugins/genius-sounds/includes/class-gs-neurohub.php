@@ -104,6 +104,8 @@ class GS_Neurohub {
                 </ol>
             </section>
 
+            <?php echo GS_Keywords::render('photo'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <section class="gs-faq">
                 <h2 class="gs-section-title">Частые вопросы</h2>
                 <?php foreach (self::faq() as $pair): ?>

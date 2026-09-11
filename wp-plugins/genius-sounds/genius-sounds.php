@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 1.17.4
+ * Version: 1.19.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.17.4');
+define('GS_VERSION', '1.19.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -26,6 +26,8 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-seo.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-musicai.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-dashboard.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-keywords.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-neurohub.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-manual.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-lab.php';
@@ -70,6 +72,7 @@ class Genius_Sounds_Plugin {
         GS_Lab::boot();
         GS_Manual::boot();
         GS_Neurohub::boot();
+        GS_Dashboard::boot();
         GS_Blog::boot();
         GS_Tts_Fallback::boot();
         GS_Api::boot();
@@ -127,8 +130,9 @@ class Genius_Sounds_Plugin {
             wp_enqueue_style('genius-sounds-neurohub', GS_PLUGIN_URL . 'assets/css/neurohub.css', array('genius-sounds-studio'), GS_VERSION);
         }
         $api = GS_Api_Page::is_page();
+        $dashboard = GS_Dashboard::enabled() && GS_Dashboard::is_page();
         $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
-            || GS_Pages::is_studio_request() || GS_Lab::current_service() || $blog || $api;
+            || GS_Pages::is_studio_request() || GS_Lab::current_service() || $blog || $api || $dashboard;
         if ($ours) {
             // Перекрашиваем шапку и подвал темы под тёмные страницы плагина.
             wp_enqueue_style('genius-sounds-chrome', GS_PLUGIN_URL . 'assets/css/chrome.css', array(), GS_VERSION);
@@ -157,6 +161,15 @@ class Genius_Sounds_Plugin {
             wp_localize_script('genius-sounds-apidocs', 'GS_API', array(
                 'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),
                 'nonce'   => wp_create_nonce('wp_rest'),
+            ));
+        }
+
+        if ($dashboard) {
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-dashboard', GS_PLUGIN_URL . 'assets/css/dashboard.css', array('genius-sounds-catalog'), GS_VERSION);
+            wp_enqueue_script('genius-sounds-dashboard', GS_PLUGIN_URL . 'assets/js/dashboard.js', array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-dashboard', 'GS_DASHBOARD', array(
+                'apiUrl' => GS_Api_Page::get_url(),
             ));
         }
 
