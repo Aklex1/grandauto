@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 1.21.0
+ * Version: 1.22.2
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.21.0');
+define('GS_VERSION', '1.22.2');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -27,6 +27,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-musicai.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-payments.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-yoomoney.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-dashboard.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-keywords.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-neurohub.php';
@@ -76,6 +77,7 @@ class Genius_Sounds_Plugin {
         GS_Neurohub::boot();
         GS_Dashboard::boot();
         GS_Payments::boot();
+        GS_Yoomoney::boot();
         GS_Blog::boot();
         GS_Tts_Fallback::boot();
         GS_Transcribe::boot();

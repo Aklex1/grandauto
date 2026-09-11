@@ -71,6 +71,21 @@ class GS_Admin {
             }
         }
 
+        // Приём платежей: секрет для проверки подписи и адрес пересылки чужих.
+        register_setting('gs_settings_group', GS_Yoomoney::OPT_SECRET, array(
+            'type'              => 'string',
+            'sanitize_callback' => function ($value) {
+                return trim(sanitize_text_field((string) $value));
+            },
+        ));
+        register_setting('gs_settings_group', GS_Yoomoney::OPT_FORWARD, array(
+            'type'              => 'string',
+            'sanitize_callback' => function ($value) {
+                $value = trim((string) $value);
+                return $value === '' ? '' : esc_url_raw($value);
+            },
+        ));
+
         // Второй поставщик обработки звука: ключ и названия рабочих процессов.
         register_setting('gs_settings_group', GS_MusicAI::OPT_KEY, array(
             'type'              => 'string',
@@ -175,6 +190,60 @@ class GS_Admin {
                     </form>
                 </div>
             <?php endforeach; ?>
+        <?php endif; ?>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Платежи по сервисам: баланс общий, но видно, откуда пришли деньги.
+     */
+    public static function render_payments() {
+        $stats = GS_Yoomoney::get_stats();
+        $log = array_slice(GS_Yoomoney::get_log(), 0, 15);
+        if (empty($stats) && empty($log)) {
+            return '';
+        }
+        $names = GS_Payments::sources();
+
+        ob_start();
+        ?>
+        <h2 id="gs-payments">Платежи по сервисам</h2>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
+            <?php wp_nonce_field('gs_yoomoney_reset'); ?>
+            <input type="hidden" name="action" value="gs_yoomoney_reset">
+            <?php submit_button('Очистить журнал и счётчики', 'secondary', 'submit', false); ?>
+        </form>
+        <?php if (!empty($stats)): ?>
+            <table class="widefat striped" style="max-width:620px">
+                <thead><tr><th>Сервис</th><th>Платежей</th><th>Сумма</th></tr></thead>
+                <tbody>
+                    <?php foreach ($stats as $source => $row): ?>
+                        <tr>
+                            <td><?php echo esc_html($names[$source] ?? $source); ?></td>
+                            <td><?php echo (int) $row['count']; ?></td>
+                            <td><?php echo esc_html(number_format_i18n((float) $row['sum'], 2)); ?> ₽</td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+
+        <?php if (!empty($log)): ?>
+            <h3>Последние уведомления</h3>
+            <table class="widefat striped" style="max-width:900px">
+                <thead><tr><th>Когда</th><th>Метка</th><th>Сумма</th><th>Итог</th></tr></thead>
+                <tbody>
+                    <?php foreach ($log as $row): ?>
+                        <tr>
+                            <td><?php echo esc_html(mysql2date('d.m.Y H:i', $row['at'])); ?></td>
+                            <td><code><?php echo esc_html(mb_substr((string) $row['label'], 0, 46)); ?></code></td>
+                            <td><?php echo esc_html(number_format_i18n((float) $row['amount'], 2)); ?> ₽</td>
+                            <td><?php echo esc_html($row['status'] . ($row['message'] ? ' — ' . $row['message'] : '')); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
         <?php endif; ?>
         <?php
         return ob_get_clean();
@@ -382,6 +451,33 @@ class GS_Admin {
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row">Приём платежей</th>
+                        <td>
+                            <p>
+                                Адрес для уведомлений ЮMoney:<br>
+                                <code><?php echo esc_html(GS_Yoomoney::endpoint_url()); ?></code>
+                            </p>
+                            <p>
+                                <label>Секрет для проверки подписи<br>
+                                    <input name="<?php echo esc_attr(GS_Yoomoney::OPT_SECRET); ?>" type="password" autocomplete="off"
+                                           value="<?php echo esc_attr(get_option(GS_Yoomoney::OPT_SECRET, '')); ?>" class="regular-text">
+                                </label>
+                            </p>
+                            <p>
+                                <label>Куда пересылать чужие платежи<br>
+                                    <input name="<?php echo esc_attr(GS_Yoomoney::OPT_FORWARD); ?>" type="url"
+                                           value="<?php echo esc_attr(get_option(GS_Yoomoney::OPT_FORWARD, '')); ?>" class="regular-text"
+                                           placeholder="http://89.169.38.152:8000/yoomoney-webhook">
+                                </label>
+                            </p>
+                            <p class="description">
+                                Сайт сам раскладывает платежи по балансам: метка <code>kie-neurohub|…</code> идёт в «Нейросети»,
+                                <code>topup_…</code> — в общий баланс сервисов, остальные пересылаются по указанному адресу без изменений.
+                                Пока секрет не задан, подпись не проверяется — это видно в журнале.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row">Сквозные ссылки</th>
                         <td>
                             <label><input type="checkbox" name="<?php echo esc_attr(GS_Links::OPT_ENABLED); ?>" value="1" <?php checked(GS_Links::menu_enabled()); ?>>
@@ -404,6 +500,8 @@ class GS_Admin {
             </form>
 
             <?php echo self::render_manual_queue(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <p>
                 Страницы:
