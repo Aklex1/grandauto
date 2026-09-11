@@ -46,6 +46,10 @@ Environment="PUBLIC_BASE=$BASE"
 Environment="FILES_DIR=$DIR/files"
 Environment="KEEP_HOURS=24"
 Environment="MAX_MINUTES=90"
+Environment="YOOMONEY_SECRET=${YOOMONEY_SECRET:-}"
+Environment="SITE_WEBHOOK=${SITE_WEBHOOK:-https://genius-bot.ru/wp-json/genius/v1/yoomoney}"
+Environment="BOT_WEBHOOK=${BOT_WEBHOOK:-http://127.0.0.1:8000/yoomoney-webhook}"
+Environment="PAY_LOG=$DIR/payments.log"
 ExecStart=$DIR/venv/bin/uvicorn app:app --host 0.0.0.0 --port $PORT --workers 2
 Restart=always
 RestartSec=5
@@ -62,6 +66,7 @@ echo "== проверка"
 curl -fsS "http://127.0.0.1:${PORT}/health" && echo
 echo
 echo "Служба слушает порт ${PORT}, файлы отдаются по адресу ${BASE}/files/"
+echo "Адрес для уведомлений ЮMoney: ${BASE}/yoomoney-webhook"
 echo "В настройках сайта укажите:"
 echo "  Free TTS Endpoint URL: ${BASE}/tts"
 echo "  Free TTS API Key:      ${KEY:-<пусто>}"

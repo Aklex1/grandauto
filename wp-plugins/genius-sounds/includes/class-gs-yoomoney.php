@@ -69,31 +69,46 @@ class GS_Yoomoney {
 
         if (!self::signature_ok($params)) {
             self::remember($label, $amount, 'отклонено', 'подпись не сошлась', $params);
-            return new WP_REST_Response('bad signature', 403);
+            return new WP_REST_Response(array('status' => 'error', 'credited' => false, 'reason' => 'bad signature'), 403);
         }
 
         // Тестовое уведомление из личного кабинета ЮMoney приходит без метки.
         if ($label === '') {
             self::remember('', $amount, 'пропущено', 'уведомление без метки', $params);
-            return new WP_REST_Response('OK', 200);
+            return self::reply(false, 'none', 'уведомление без метки');
         }
 
         if (strpos($label, 'kie-neurohub|') === 0) {
             $result = self::forward_internal('/neurohub/v1/yoomoney-callback', $params);
             self::remember($label, $amount, $result['ok'] ? 'зачислено' : 'ошибка', $result['message'], $params, 'neurohub');
-            return new WP_REST_Response('OK', 200);
+            return self::reply($result['ok'], 'neurohub', $result['message']);
         }
 
         if (strpos($label, 'topup_') === 0) {
             $result = self::forward_internal('/tts/v1/yoomoney-webhook', $params);
             self::remember($label, $amount, $result['ok'] ? 'зачислено' : 'ошибка', $result['message'], $params);
-            return new WP_REST_Response('OK', 200);
+            return self::reply($result['ok'], 'tts', $result['message']);
         }
 
-        // Чужая метка — платёж не наш, отдаём его прежнему получателю.
+        // Метка не наша: платёж заводил не сайт. Пересылаем, если задан адрес,
+        // и в любом случае честно говорим, что зачисления не было.
         $result = self::forward_external($params);
-        self::remember($label, $amount, $result['ok'] ? 'переслано' : 'ошибка пересылки', $result['message'], $params, 'bot');
-        return new WP_REST_Response('OK', 200);
+        self::remember($label, $amount, $result['ok'] ? 'переслано' : 'не наш платёж', $result['message'], $params, 'bot');
+        return self::reply(false, 'unknown', $result['message']);
+    }
+
+    /**
+     * Ответ в машиночитаемом виде: по нему приёмник на сервере понимает,
+     * нужно ли отдавать платёж дальше. Код всегда 200 — иначе ЮMoney
+     * будет повторять уведомление, хотя разбирать его уже некому.
+     */
+    private static function reply($credited, $route, $message) {
+        return new WP_REST_Response(array(
+            'status'   => 'ok',
+            'credited' => (bool) $credited,
+            'route'    => (string) $route,
+            'message'  => (string) $message,
+        ), 200);
     }
 
     /**

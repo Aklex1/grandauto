@@ -16,7 +16,7 @@
 Ключ доступа передаётся заголовком X-API-Key, если он задан в настройках.
 """
 
-import asyncio
+import json
 import os
 import re
 import shutil
@@ -26,7 +26,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -36,6 +36,12 @@ PUBLIC_BASE = os.environ.get("PUBLIC_BASE", "").rstrip("/")
 FILES_DIR = Path(os.environ.get("FILES_DIR", "files")).resolve()
 KEEP_HOURS = int(os.environ.get("KEEP_HOURS", "24"))
 MAX_MINUTES = int(os.environ.get("MAX_MINUTES", "90"))
+
+# Приём платежей: уведомления ЮMoney приходят сюда, на сервер.
+YOOMONEY_SECRET = os.environ.get("YOOMONEY_SECRET", "").strip()
+SITE_WEBHOOK = os.environ.get("SITE_WEBHOOK", "https://genius-bot.ru/wp-json/genius/v1/yoomoney").strip()
+BOT_WEBHOOK = os.environ.get("BOT_WEBHOOK", "http://127.0.0.1:8000/yoomoney-webhook").strip()
+PAY_LOG = Path(os.environ.get("PAY_LOG", FILES_DIR.parent / "payments.log"))
 
 FILES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -126,6 +132,58 @@ class YoutubeRequest(BaseModel):
     url: str
     format: str = "mp3"
 
+
+
+
+def yoomoney_signature_ok(form: dict) -> bool:
+    """Подпись ЮMoney. Без секрета проверять нечем — тогда принимаем как есть."""
+    if not YOOMONEY_SECRET:
+        return True
+    import hashlib
+
+    parts = "&".join([
+        form.get("notification_type", ""),
+        form.get("operation_id", ""),
+        form.get("amount", ""),
+        form.get("currency", ""),
+        form.get("datetime", ""),
+        form.get("sender", ""),
+        form.get("codepro", ""),
+        YOOMONEY_SECRET,
+        form.get("label", ""),
+    ])
+    mine = hashlib.sha1(parts.encode("utf-8")).hexdigest()
+    return mine == (form.get("sha1_hash") or "").lower()
+
+
+def write_pay_log(entry: dict) -> None:
+    try:
+        PAY_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(PAY_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def deliver(url: str, form: dict, timeout: int = 25) -> dict:
+    """Передаём уведомление дальше ровно в том виде, в каком получили."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    data = urllib.parse.urlencode(form).encode("utf-8")
+    request = urllib.request.Request(
+        url, data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read(600).decode("utf-8", "replace")
+            return {"ok": 200 <= response.status < 300, "status": response.status, "body": body}
+    except urllib.error.HTTPError as error:
+        return {"ok": False, "status": error.code, "body": error.read(300).decode("utf-8", "replace")}
+    except Exception as error:
+        return {"ok": False, "status": 0, "body": str(error)}
 
 @app.get("/health")
 def health():
@@ -258,6 +316,69 @@ def youtube_audio(payload: YoutubeRequest, x_api_key: Optional[str] = Header(def
         "format": target.suffix.lstrip("."),
         "size": target.stat().st_size,
     }
+
+
+@app.post("/yoomoney-webhook")
+async def yoomoney_webhook(request: Request):
+    """Единая точка приёма платежей на сервере.
+
+    Платёж за услуги сайта уходит на сайт: там по метке находят
+    пользователя и пополняют ему баланс. Всё остальное достаётся боту —
+    его логику не трогаем.
+    """
+    form = {k: str(v) for k, v in (await request.form()).items()}
+    label = form.get("label", "")
+    amount = form.get("withdraw_amount") or form.get("amount") or "0"
+    entry = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "label": label, "amount": amount}
+
+    if not yoomoney_signature_ok(form):
+        entry.update(route="отклонено", detail="подпись не сошлась")
+        write_pay_log(entry)
+        return JSONResponse(status_code=403, content={"detail": "bad signature"})
+
+    if not label:
+        # ЮMoney так проверяет адрес при сохранении настроек.
+        entry.update(route="пропущено", detail="уведомление без метки")
+        write_pay_log(entry)
+        return {"status": "ok"}
+
+    # Сначала всегда сайт: он знает своих пользователей, включая тех, кто
+    # вошёл через ВК или Telegram, и сам пополняет им баланс.
+    result = deliver(SITE_WEBHOOK, form)
+    credited = False
+    try:
+        credited = bool(json.loads(result["body"]).get("credited"))
+    except (ValueError, AttributeError):
+        credited = result["ok"]
+
+    if credited:
+        entry.update(route="сайт", detail=f"{result['status']} зачислено")
+    elif BOT_WEBHOOK:
+        # Платёж сайту неизвестен — значит, его заводил не он.
+        second = deliver(BOT_WEBHOOK, form)
+        entry.update(route="бот", detail=f"сайт не узнал платёж; бот: {second['status']} {second['body'][:90]}")
+    else:
+        entry.update(route="никуда", detail=f"сайт не узнал платёж: {result['body'][:120]}")
+
+    write_pay_log(entry)
+    # ЮMoney повторяет уведомление, если ответ не 200: подтверждаем приём,
+    # а разбор неудач остаётся в журнале.
+    return {"status": "ok", "route": entry["route"]}
+
+
+@app.get("/payments/log")
+def payments_log(limit: int = 50, x_api_key: Optional[str] = Header(default=None)):
+    check_key(x_api_key)
+    if not PAY_LOG.exists():
+        return {"entries": []}
+    lines = PAY_LOG.read_text(encoding="utf-8", errors="replace").splitlines()[-max(1, min(limit, 500)):]
+    entries = []
+    for line in lines:
+        try:
+            entries.append(json.loads(line))
+        except ValueError:
+            continue
+    return {"entries": list(reversed(entries))}
 
 
 @app.exception_handler(HTTPException)
