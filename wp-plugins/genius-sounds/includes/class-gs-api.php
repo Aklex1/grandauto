@@ -736,16 +736,21 @@ class GS_Api {
     }
 
     /** Произвольный запрос к поставщику: у части моделей свой адрес. */
-    public static function probe_raw($url, $payload) {
+    public static function probe_raw($url, $payload, $method = 'POST') {
         $key = trim((string) get_option('kie_tts_api_key', ''));
         if ($key === '') {
             return array('ok' => false, 'message' => 'Нет ключа доступа');
         }
-        $response = wp_remote_post((string) $url, array(
+        $args = array(
             'timeout' => 180,
             'headers' => array('Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json'),
-            'body'    => wp_json_encode($payload),
-        ));
+        );
+        if (strtoupper((string) $method) === 'GET') {
+            $response = wp_remote_get((string) $url, $args);
+        } else {
+            $args['body'] = wp_json_encode($payload);
+            $response = wp_remote_post((string) $url, $args);
+        }
         if (is_wp_error($response)) {
             return array('ok' => false, 'message' => $response->get_error_message());
         }

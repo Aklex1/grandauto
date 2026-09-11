@@ -96,12 +96,44 @@ class GS_Lab_Page {
 
                     <?php if (!empty($service['prompt'])): ?>
                         <div class="gs-field">
-                            <label class="gs-label" for="gs-lab-prompt">Описание сцены</label>
-                            <textarea id="gs-lab-prompt" class="gs-textarea" rows="2" maxlength="500"
-                                      placeholder="Например: спокойно рассказывает, смотрит в камеру"></textarea>
+                            <label class="gs-label" for="gs-lab-prompt">
+                                <?php echo esc_html(!empty($service['prompt_label']) ? $service['prompt_label'] : 'Описание сцены'); ?>
+                            </label>
+                            <textarea id="gs-lab-prompt" class="gs-textarea" rows="<?php echo empty($service['inputs']) ? 3 : 2; ?>" maxlength="500"
+                                      placeholder="<?php echo esc_attr(!empty($service['prompt_place']) ? $service['prompt_place'] : 'Например: спокойно рассказывает, смотрит в камеру'); ?>"></textarea>
                             <span class="gs-hint"><?php echo esc_html($service['prompt_hint']); ?></span>
                         </div>
                     <?php endif; ?>
+
+                    <?php foreach ((array) (isset($service['fields']) ? $service['fields'] : array()) as $name => $field): ?>
+                        <?php $fid = 'gs-lab-f-' . sanitize_key($name); ?>
+                        <div class="gs-field">
+                            <?php if ($field['type'] === 'checkbox'): ?>
+                                <label class="gs-check" for="<?php echo esc_attr($fid); ?>">
+                                    <input type="checkbox" id="<?php echo esc_attr($fid); ?>"
+                                           data-gs-field="<?php echo esc_attr($name); ?>"
+                                           <?php checked(!empty($field['default'])); ?>>
+                                    <span><?php echo esc_html($field['label']); ?></span>
+                                </label>
+                            <?php elseif ($field['type'] === 'textarea'): ?>
+                                <label class="gs-label" for="<?php echo esc_attr($fid); ?>"><?php echo esc_html($field['label']); ?></label>
+                                <textarea id="<?php echo esc_attr($fid); ?>" class="gs-textarea"
+                                          data-gs-field="<?php echo esc_attr($name); ?>"
+                                          rows="<?php echo (int) (isset($field['rows']) ? $field['rows'] : 4); ?>"
+                                          maxlength="<?php echo (int) (isset($field['max']) ? $field['max'] : 2000); ?>"
+                                          placeholder="<?php echo esc_attr(isset($field['place']) ? $field['place'] : ''); ?>"></textarea>
+                            <?php else: ?>
+                                <label class="gs-label" for="<?php echo esc_attr($fid); ?>"><?php echo esc_html($field['label']); ?></label>
+                                <input type="text" id="<?php echo esc_attr($fid); ?>" class="gs-input"
+                                       data-gs-field="<?php echo esc_attr($name); ?>"
+                                       maxlength="<?php echo (int) (isset($field['max']) ? $field['max'] : 200); ?>"
+                                       placeholder="<?php echo esc_attr(isset($field['place']) ? $field['place'] : ''); ?>">
+                            <?php endif; ?>
+                            <?php if (!empty($field['hint'])): ?>
+                                <span class="gs-hint"><?php echo esc_html($field['hint']); ?></span>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
 
                     <div class="gs-form__foot">
                         <div class="gs-balance">
@@ -128,9 +160,11 @@ class GS_Lab_Page {
 
                 <aside class="gs-panel gs-result" id="gs-lab-result">
                     <div class="gs-result__empty" id="gs-lab-empty">
-                        <div class="gs-result__icon" aria-hidden="true"><?php echo $service['id'] === 'avatar' ? '🎬' : '🎚️'; ?></div>
+                        <div class="gs-result__icon" aria-hidden="true"><?php echo $service['id'] === 'avatar' ? '🎬' : ($service['id'] === 'music' ? '🎵' : '🎚️'); ?></div>
                         <h2 class="gs-result__title">Здесь появится результат</h2>
-                        <p class="gs-result__text">Загрузите файл слева и запустите обработку.</p>
+                        <p class="gs-result__text"><?php echo empty($service['inputs'])
+                            ? 'Опишите задачу слева и запустите генерацию.'
+                            : 'Загрузите файл слева и запустите обработку.'; ?></p>
                     </div>
 
                     <div class="gs-result__loading" id="gs-lab-loading" hidden>
@@ -188,6 +222,8 @@ class GS_Lab_Page {
                 return 'Разделить дорожки';
             case 'denoise':
                 return 'Очистить запись';
+            case 'music':
+                return 'Создать музыку';
         }
         return 'Запустить';
     }

@@ -633,6 +633,27 @@ class GS_Rest {
             $payload['prompt'] = sanitize_textarea_field((string) ($params['prompt'] ?? ''));
         }
 
+        // Дополнительные поля берём только объявленные сервисом — присланному
+        // сверх того не верим.
+        if (!empty($service['fields']) && is_array($service['fields'])) {
+            $sent = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
+            $clean = array();
+            foreach ($service['fields'] as $name => $field) {
+                $type = isset($field['type']) ? (string) $field['type'] : 'text';
+                if ($type === 'checkbox') {
+                    $clean[$name] = array_key_exists($name, $sent)
+                        ? (bool) filter_var($sent[$name], FILTER_VALIDATE_BOOLEAN)
+                        : !empty($field['default']);
+                    continue;
+                }
+                $value = isset($sent[$name]) ? (string) $sent[$name] : '';
+                $value = $type === 'textarea' ? sanitize_textarea_field($value) : sanitize_text_field($value);
+                $max = isset($field['max']) ? (int) $field['max'] : 200;
+                $clean[$name] = $max > 0 ? mb_substr($value, 0, $max) : $value;
+            }
+            $payload['fields'] = $clean;
+        }
+
         // Считаем длительность сами, по файлу на диске: присланной цене не верим.
         $seconds = 0.0;
         if (!empty($payload['audio_url'])) {
@@ -803,7 +824,8 @@ class GS_Rest {
         $url   = is_array($params) && !empty($params['url']) ? esc_url_raw((string) $params['url']) : '';
         if ($url !== '') {
             $payload = is_array($params) && !empty($params['payload']) ? (array) $params['payload'] : array();
-            return rest_ensure_response(GS_Api::probe_raw($url, $payload));
+            $method  = is_array($params) && !empty($params['method']) ? (string) $params['method'] : 'POST';
+            return rest_ensure_response(GS_Api::probe_raw($url, $payload, $method));
         }
         if ($info !== '') {
             return rest_ensure_response(GS_Api::probe_info($info));

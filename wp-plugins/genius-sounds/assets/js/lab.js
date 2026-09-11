@@ -163,6 +163,16 @@
             payload.prompt = els.prompt.value.trim();
         }
 
+        // Дополнительные поля сервиса объявлены в разметке — собираем их как есть.
+        var extra = form.querySelectorAll('[data-gs-field]');
+        if (extra.length) {
+            payload.fields = {};
+            Array.prototype.forEach.call(extra, function (el) {
+                var name = el.getAttribute('data-gs-field');
+                payload.fields[name] = el.type === 'checkbox' ? el.checked : el.value.trim();
+            });
+        }
+
         setBusy(true);
         note('');
         show('loading');

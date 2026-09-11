@@ -15,6 +15,8 @@ class GS_Lab {
 
     const API_JOBS        = 'https://api.kie.ai/api/v1/jobs/createTask';
     const API_JOBS_INFO   = 'https://api.kie.ai/api/v1/jobs/recordInfo';
+    const API_MUSIC      = 'https://api.kie.ai/api/v1/generate';
+    const API_MUSIC_INFO = 'https://api.kie.ai/api/v1/generate/record-info';
     const API_VOCAL       = 'https://api.kie.ai/api/v1/vocal-removal/generate';
     const API_VOCAL_INFO  = 'https://api.kie.ai/api/v1/vocal-removal/record-info';
 
@@ -117,6 +119,77 @@ class GS_Lab {
                           'Да, сервис отдаёт обе дорожки сразу: и инструментал, и вокал. Отдельный файл с голосом удобен для ремиксов, разборов и караоке-бэков.'),
                     array('Подойдёт ли результат для караоке?',
                           'Да, инструментальная дорожка — это и есть готовый минус для караоке. Если в песне плотный бэк-вокал, его частично может унести вместе с основным голосом.'),
+                ),
+            ),
+
+            'music' => array(
+                'id'          => 'music',
+                'slug'        => 'sozdat-muzyku',
+                'page_option' => 'gs_lab_page_music',
+                'menu'        => 'Создать музыку',
+                'nav'         => 'Создать музыку',
+                'h1'          => 'Создать музыку нейросетью: трек по описанию за пару минут',
+                'seo_title'   => 'Создать музыку нейросетью онлайн — генератор песен и треков',
+                'seo_desc'    => 'Создайте музыку нейросетью онлайн: опишите настроение и стиль — и получите два готовых трека по три минуты. Инструментал для видео или песня с вокалом и вашим текстом, скачивание в MP3.',
+                'lead'        => 'Опишите словами, какая нужна музыка — стиль, настроение, инструменты. Нейросеть напишет и сыграет трек: инструментал для фона видео или песню с вокалом на ваш текст. За одну генерацию приходит два разных варианта.',
+                'badge'       => 'Музыка по описанию',
+                'cost_option' => 'gs_lab_cost_music',
+                'cost'        => 59,
+                'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 59, 'max_seconds' => 0),
+                'available'   => true,
+                'inputs'      => array(),
+                'accept'      => array(),
+                'prompt'      => true,
+                'prompt_label'=> 'Какая нужна музыка',
+                'prompt_hint' => 'Опишите стиль, настроение и инструменты: «спокойная акустическая гитара, тёплое настроение, фон для видео о путешествии».',
+                'prompt_place'=> 'Например: энергичный поп-рок с электрогитарой, припев с женским вокалом',
+                'fields'      => array(
+                    'instrumental' => array(
+                        'type'    => 'checkbox',
+                        'label'   => 'Без вокала — только музыка',
+                        'default' => true,
+                        'hint'    => 'Снимите галочку, если нужна песня с голосом.',
+                    ),
+                    'style' => array(
+                        'type'  => 'text',
+                        'label' => 'Стиль и жанр (необязательно)',
+                        'place' => 'поп, лоу-фай, рок, эмбиент, шансон',
+                        'max'   => 200,
+                        'hint'  => 'Можно перечислить через запятую — так точнее попадает в нужное звучание.',
+                    ),
+                    'title' => array(
+                        'type'  => 'text',
+                        'label' => 'Название трека (необязательно)',
+                        'place' => 'Тёплый вечер',
+                        'max'   => 80,
+                    ),
+                    'lyrics' => array(
+                        'type'  => 'textarea',
+                        'label' => 'Текст песни (необязательно)',
+                        'place' => "Куплет...\nПрипев...",
+                        'rows'  => 6,
+                        'max'   => 2500,
+                        'hint'  => 'Если вписать свой текст, нейросеть споёт именно его. Оставьте пустым — придумает сама.',
+                    ),
+                ),
+                'result_kind' => 'audio',
+                'poll_seconds'=> 600,
+                'steps'       => array(
+                    'Опишите словами нужную музыку: стиль, настроение, инструменты.',
+                    'Решите, нужен ли вокал, и при желании впишите свой текст песни.',
+                    'Запустите генерацию и через пару минут скачайте два готовых варианта.',
+                ),
+                'faq'         => array(
+                    array('Как нейросеть создаёт музыку по описанию?',
+                          'Она обучена на связке «описание — звучание», поэтому понимает и жанр, и настроение, и набор инструментов. Чем конкретнее описание, тем ближе результат: «спокойная гитара, медленный темп, тёплое настроение» сработает лучше, чем просто «красивая музыка».'),
+                    array('Можно ли сделать песню со своим текстом?',
+                          'Да. Снимите галочку «без вокала» и вставьте свой текст — нейросеть споёт именно его. Если текста нет, она напишет его сама по описанию.'),
+                    array('Сколько длится трек и сколько их приходит?',
+                          'За одну генерацию приходит два разных варианта примерно по три минуты каждый. Можно выбрать тот, что ближе, или запустить ещё раз с уточнённым описанием.'),
+                    array('Можно ли использовать музыку в своих роликах?',
+                          'Да, сгенерированные треки вы используете в своих проектах — в видео, подкастах, рекламе. Это удобнее готовых библиотек: площадки не предъявляют претензий по авторским правам к музыке, которой раньше не существовало.'),
+                    array('Чем это отличается от генератора звуков?',
+                          'Генератор звуков делает короткие эффекты и атмосферу — шаги, взрыв, дождь. Здесь получается полноценный музыкальный трек со структурой: вступление, развитие, финал.'),
                 ),
             ),
 
@@ -513,6 +586,37 @@ class GS_Lab {
      *
      * @return array{ok:bool,task_id:string,message:string}
      */
+    /** Короткое название трека из описания — когда пользователь его не задал. */
+    private static function music_title($prompt) {
+        $prompt = trim(preg_replace('~\s+~u', ' ', (string) $prompt));
+        if ($prompt === '') {
+            return 'Трек';
+        }
+        $words = preg_split('~\s+~u', $prompt);
+        $words = array_slice($words, 0, 5);
+        // Обрывок вида «бит для» выглядит небрежно: отбрасываем хвостовые
+        // предлоги и союзы, на которых название повисает.
+        $tail = array('для', 'под', 'из', 'в', 'на', 'с', 'и', 'о', 'по', 'к', 'от', 'до', 'при', 'без');
+        while ($words && in_array(mb_strtolower(rtrim(end($words), ',.')), $tail, true)) {
+            array_pop($words);
+        }
+        $title = trim(implode(' ', $words), " ,.;:-");
+        if ($title === '') {
+            return 'Трек';
+        }
+        return function_exists('mb_convert_case')
+            ? mb_convert_case(mb_substr($title, 0, 1), MB_CASE_UPPER) . mb_substr($title, 1)
+            : $title;
+    }
+
+    /** «3 мин 24 с» — подпись длительности трека. */
+    private static function human_length($seconds) {
+        $seconds = max(0, (int) $seconds);
+        $m = intdiv($seconds, 60);
+        $s = $seconds % 60;
+        return $m > 0 ? $m . ' мин ' . $s . ' с' : $s . ' с';
+    }
+
     public static function create_task($id, $params) {
         $callback = add_query_arg('token', GS_SFX::callback_token(), rest_url(GS_Rest::NS . '/lab/callback'));
 
@@ -552,6 +656,41 @@ class GS_Lab {
             return array('ok' => $res['ok'] && $task !== '', 'task_id' => $task, 'message' => $res['message']);
         }
 
+        if ($id === 'music') {
+            $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
+            $instrumental = !isset($fields['instrumental']) || !empty($fields['instrumental']);
+            $lyrics = trim((string) ($fields['lyrics'] ?? ''));
+            $style  = trim((string) ($fields['style'] ?? ''));
+            $title  = trim((string) ($fields['title'] ?? ''));
+            $prompt = trim((string) ($params['prompt'] ?? ''));
+
+            // Свой текст песни поставщик принимает только в «своём» режиме,
+            // где описание и стиль задаются отдельными полями.
+            $custom = (!$instrumental && $lyrics !== '') || $style !== '' || $title !== '';
+
+            $payload = array(
+                'model'        => 'V5',
+                'customMode'   => $custom,
+                'instrumental' => $instrumental,
+                'callBackUrl'  => $callback,
+            );
+            if ($custom) {
+                // В своём режиме prompt — это текст песни, а описание уходит в стиль.
+                $payload['style'] = mb_substr($style !== '' ? $style : $prompt, 0, 200);
+                $payload['title'] = mb_substr($title !== '' ? $title : self::music_title($prompt), 0, 80);
+                $payload['prompt'] = $instrumental ? '' : mb_substr($lyrics !== '' ? $lyrics : $prompt, 0, 2500);
+                if ($instrumental) {
+                    unset($payload['prompt']);
+                }
+            } else {
+                $payload['prompt'] = mb_substr($prompt, 0, 1000);
+            }
+
+            $res = self::post_json(self::API_MUSIC, $payload);
+            $task = $res['ok'] ? (string) ($res['body']['data']['taskId'] ?? '') : '';
+            return array('ok' => $res['ok'] && $task !== '', 'task_id' => $task, 'message' => $res['message']);
+        }
+
         if ($id === 'vocal') {
             $res = self::post_json(self::API_VOCAL, array(
                 'audioUrl'    => (string) $params['audio_url'],
@@ -581,6 +720,57 @@ class GS_Lab {
 
         if (class_exists('GS_MusicAI') && GS_MusicAI::is_own_task($task_id)) {
             return GS_MusicAI::fetch_job($id, $task_id);
+        }
+
+        if ($id === 'music') {
+            $res = self::get_json(self::API_MUSIC_INFO, array('taskId' => $task_id));
+            if (!$res['ok']) {
+                $out['message'] = $res['message'];
+                return $out;
+            }
+            $data = is_array($res['body']['data']) ? $res['body']['data'] : array();
+            $out['ok'] = true;
+            $status = (string) ($data['status'] ?? '');
+
+            if (in_array($status, array('CREATE_TASK_FAILED', 'GENERATE_AUDIO_FAILED', 'CALLBACK_EXCEPTION', 'SENSITIVE_WORD_ERROR'), true)) {
+                $out['status'] = 'failed';
+                $out['message'] = $status === 'SENSITIVE_WORD_ERROR'
+                    ? 'Описание не прошло проверку — переформулируйте запрос'
+                    : 'Не удалось создать трек';
+                return $out;
+            }
+
+            $items = array();
+            if (!empty($data['response']['sunoData']) && is_array($data['response']['sunoData'])) {
+                $items = $data['response']['sunoData'];
+            }
+            // Поставщик отдаёт первый вариант раньше второго: показываем готовое
+            // только когда пришли оба и у них есть окончательные ссылки.
+            $files = array();
+            foreach ($items as $index => $item) {
+                $url = '';
+                foreach (array('audioUrl', 'audio_url', 'sourceAudioUrl', 'source_audio_url') as $field) {
+                    if (!empty($item[$field])) {
+                        $url = (string) $item[$field];
+                        break;
+                    }
+                }
+                if ($url === '') {
+                    continue;
+                }
+                $name = trim((string) ($item['title'] ?? ''));
+                $seconds = isset($item['duration']) ? (int) round((float) $item['duration']) : 0;
+                $label = ($name !== '' ? $name : 'Вариант ' . ((int) $index + 1));
+                if ($seconds > 0) {
+                    $label .= ' — ' . self::human_length($seconds);
+                }
+                $files[] = array('label' => $label, 'url' => $url, 'kind' => 'audio');
+            }
+            if ($status === 'SUCCESS' && $files) {
+                $out['status'] = 'completed';
+                $out['files'] = $files;
+            }
+            return $out;
         }
 
         if ($id === 'vocal') {
