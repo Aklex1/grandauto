@@ -8,6 +8,13 @@ PORT=${PORT:-8099}
 KEY=${MEDIA_API_KEY:-}
 BASE=${PUBLIC_BASE:-}
 
+# Подсказку из инструкции легко скопировать вместе с текстом — тогда ключом
+# становится слово «придумайте-ключ». Выдаём настоящий и печатаем его в конце.
+if [ -z "$KEY" ] || [ "$KEY" = "придумайте-ключ" ]; then
+    KEY=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
+    echo "== ключ доступа не задан, выдан новый"
+fi
+
 if [ -z "$BASE" ]; then
     IP=$(hostname -I | awk '{print $1}')
     BASE="http://${IP}:${PORT}"
@@ -16,6 +23,12 @@ fi
 case "$BASE" in
     http://*|https://*) ;;
     *) BASE="http://${BASE}" ;;
+esac
+
+SELF_IP=$(hostname -I | awk '{print $1}')
+case "$BASE" in
+    *"$SELF_IP"*) ;;
+    *) echo "!! PUBLIC_BASE указывает не на этот сервер ($SELF_IP). Файлы будут отдаваться по адресу $BASE — проверьте, что он ведёт сюда." ;;
 esac
 
 echo "== ставлю зависимости системы"

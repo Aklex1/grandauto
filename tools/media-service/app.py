@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -206,12 +207,37 @@ def deliver(url: str, form: dict, timeout: int = 25) -> dict:
     except Exception as error:
         return {"ok": False, "status": 0, "body": str(error)}
 
+def ytdlp_command():
+    """
+    Как запускать yt-dlp.
+
+    Он ставится в окружение службы, а не в общий PATH, поэтому службе,
+    запущенной из systemd, простого имени мало: ищем рядом с интерпретатором,
+    потом в PATH, и в последнюю очередь зовём модулем.
+    """
+    local = Path(sys.executable).with_name("yt-dlp")
+    if local.exists():
+        return [str(local)]
+    found = shutil.which("yt-dlp")
+    if found:
+        return [found]
+    return [sys.executable, "-m", "yt_dlp"]
+
+
+def ytdlp_ready():
+    try:
+        probe = subprocess.run(ytdlp_command() + ["--version"], capture_output=True, timeout=20)
+        return probe.returncode == 0
+    except Exception:
+        return False
+
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "ffmpeg": shutil.which("ffmpeg") is not None,
-        "ytdlp": shutil.which("yt-dlp") is not None,
+        "ytdlp": ytdlp_ready(),
         "files": len(list(FILES_DIR.glob("*"))),
     }
 
@@ -296,8 +322,7 @@ def youtube_audio(payload: YoutubeRequest, x_api_key: Optional[str] = Header(def
     stem = f"yt-{uuid.uuid4().hex[:16]}"
     template = str(FILES_DIR / (stem + ".%(ext)s"))
 
-    command = [
-        "yt-dlp",
+    command = ytdlp_command() + [
         "-x", "--audio-format", ext,
         "--audio-quality", "0",
         "--no-playlist",
@@ -309,7 +334,7 @@ def youtube_audio(payload: YoutubeRequest, x_api_key: Optional[str] = Header(def
     cookies = os.environ.get("YTDLP_COOKIES", "")
     if cookies and Path(cookies).exists():
         # Ролики с ограничением по возрасту и регионам требуют входа.
-        command[1:1] = ["--cookies", cookies]
+        command += ["--cookies", cookies]
 
     result = subprocess.run(command, capture_output=True, text=True, timeout=600)
     produced = sorted(FILES_DIR.glob(stem + ".*"))
@@ -322,7 +347,7 @@ def youtube_audio(payload: YoutubeRequest, x_api_key: Optional[str] = Header(def
     title = ""
     duration = 0
     info = subprocess.run(
-        ["yt-dlp", "--no-playlist", "--print", "%(title)s|%(duration)s", "--skip-download", url],
+        ytdlp_command() + ["--no-playlist", "--print", "%(title)s|%(duration)s", "--skip-download", url],
         capture_output=True, text=True, timeout=120,
     )
     if info.returncode == 0 and "|" in info.stdout:
