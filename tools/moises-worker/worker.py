@@ -128,6 +128,7 @@ def open_studio(page_url=STUDIO):
             context = browser.contexts[0] if browser.contexts else browser.new_context(accept_downloads=True)
             page = context.pages[0] if context.pages else context.new_page()
             page.goto(page_url, wait_until="domcontentloaded")
+            page.bring_to_front()
             return playwright, context, page
         except Exception as error:
             # Частый случай: переменная осталась с прошлого запуска,
@@ -145,7 +146,14 @@ def open_studio(page_url=STUDIO):
         "viewport": {"width": 1440, "height": 900},
         # Без этих двух строк Google считает окно автоматизированным
         # и не показывает форму входа.
-        "args": ["--disable-blink-features=AutomationControlled"],
+        "args": [
+            "--disable-blink-features=AutomationControlled",
+            # В неактивном окне Chrome тормозит таймеры, и студия
+            # застревает на «идёт разделение».
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+        ],
         "ignore_default_args": ["--enable-automation"],
     }
     if CHANNEL:
@@ -156,6 +164,7 @@ def open_studio(page_url=STUDIO):
     context = playwright.chromium.launch_persistent_context(**options)
     page = context.pages[0] if context.pages else context.new_page()
     page.goto(page_url, wait_until="domcontentloaded")
+    page.bring_to_front()
     return playwright, context, page
 
 
@@ -191,6 +200,25 @@ def upload_track(page, source, sel):
     return True, "файл подставлен в поле загрузки"
 
 
+def wait_ready(page, marker, timeout_ms):
+    """Ждём готовности, а на полпути один раз перезагружаем страницу:
+    вкладка, открытая до конца обработки, иногда так и висит на прогрессе."""
+    half = max(30000, timeout_ms // 2)
+    try:
+        page.wait_for_selector(marker, timeout=half)
+        return True
+    except Exception:
+        log("  готовность не появилась — перезагружаю страницу")
+
+    page.reload(wait_until="domcontentloaded")
+    page.bring_to_front()
+    try:
+        page.wait_for_selector(marker, timeout=timeout_ms - half)
+        return True
+    except Exception:
+        return False
+
+
 def run_auto(page, source, folder, slots):
     """Прокликивание студии по селекторам. Разметку меняют — правьте selectors.json."""
     sel = selectors()
@@ -209,7 +237,9 @@ def run_auto(page, source, folder, slots):
     if not marker or not downloads:
         return False, "загрузка сделана; признак готовности и кнопки скачивания ещё не настроены"
 
-    page.wait_for_selector(marker, timeout=int(sel.get("timeout_ms", 900000)))
+    if not wait_ready(page, marker, int(sel.get("timeout_ms", 900000))):
+        return False, "студия так и не показала готовый трек"
+
 
     out = folder / "out"
     out.mkdir(exist_ok=True)
