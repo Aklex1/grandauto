@@ -86,7 +86,7 @@ class GS_Sitemap {
             );
         }
 
-        $extra = array(GS_Pages::get_studio_url(), GS_Pages::get_showcase_url());
+        $extra = array(GS_Pages::get_studio_url(), GS_Pages::get_showcase_url(), GS_Api_Page::get_url());
         foreach (GS_Lab::available_services() as $service) {
             $extra[] = GS_Lab::get_url($service['id']);
         }
@@ -110,7 +110,7 @@ class GS_Sitemap {
     }
 
     public static function chunk_count() {
-        $total = count(GS_Catalog::load_index()) + 3 + count(GS_Lab::available_services());
+        $total = count(GS_Catalog::load_index()) + 4 + count(GS_Lab::available_services());
         return max(1, (int) ceil($total / self::CHUNK));
     }
 

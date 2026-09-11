@@ -46,6 +46,26 @@ class GS_Rest {
             'permission_callback' => '__return_true',
         ));
 
+        // --- ключи публичного API: выдача и отзыв из личного кабинета ---
+
+        register_rest_route(self::NS, '/api-keys', array(
+            array(
+                'methods'             => 'GET',
+                'callback'            => array(__CLASS__, 'handle_api_keys_list'),
+                'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+            ),
+            array(
+                'methods'             => 'POST',
+                'callback'            => array(__CLASS__, 'handle_api_key_issue'),
+                'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+            ),
+            array(
+                'methods'             => 'DELETE',
+                'callback'            => array(__CLASS__, 'handle_api_key_revoke'),
+                'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+            ),
+        ));
+
         // --- админские маршруты ---
 
         register_rest_route(self::NS, '/import/start', array(
@@ -475,6 +495,47 @@ class GS_Rest {
     /* ---------------------------------------------------------------------
      * Микросервисы
      * ------------------------------------------------------------------ */
+
+    /* ---------------------------------------------------------------------
+     * Ключи публичного API
+     * ------------------------------------------------------------------ */
+
+    public static function handle_api_keys_list($request) {
+        return rest_ensure_response(array(
+            'success' => true,
+            'keys'    => GS_Api_Keys::for_user(get_current_user_id()),
+        ));
+    }
+
+    public static function handle_api_key_issue($request) {
+        $params = $request->get_json_params();
+        $label = is_array($params) && isset($params['label']) ? (string) $params['label'] : '';
+
+        $issued = GS_Api_Keys::issue(get_current_user_id(), $label);
+        if (empty($issued['ok'])) {
+            return new WP_Error('gs_key_failed', $issued['message'], array('status' => 400));
+        }
+        // Открытое значение ключа и секрет отдаём ровно один раз.
+        return rest_ensure_response(array(
+            'success' => true,
+            'key'     => $issued['key'],
+            'secret'  => $issued['record']['secret'],
+            'keys'    => GS_Api_Keys::for_user(get_current_user_id()),
+        ));
+    }
+
+    public static function handle_api_key_revoke($request) {
+        $params = $request->get_json_params();
+        $prefix = is_array($params) && isset($params['prefix']) ? sanitize_text_field((string) $params['prefix']) : '';
+        if ($prefix === '') {
+            return new WP_Error('gs_key_missing', 'Не указан ключ', array('status' => 400));
+        }
+        GS_Api_Keys::revoke(get_current_user_id(), $prefix);
+        return rest_ensure_response(array(
+            'success' => true,
+            'keys'    => GS_Api_Keys::for_user(get_current_user_id()),
+        ));
+    }
 
     public static function handle_lab_upload($request) {
         $kind = sanitize_key((string) $request->get_param('kind'));

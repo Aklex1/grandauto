@@ -255,6 +255,7 @@ class GS_Links {
             $links[] = array('url' => GS_Lab::get_url($service['id']), 'title' => $service['nav']);
         }
         $links[] = array('url' => self::neurohub_url(), 'title' => 'Нейросети');
+        $links[] = array('url' => GS_Api_Page::get_url(), 'title' => 'API для разработчиков');
         return $links;
     }
 

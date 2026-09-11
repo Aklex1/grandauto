@@ -59,6 +59,18 @@ class GS_Seo {
         self::$resolved = true;
         self::$ctx = null;
 
+        if (GS_Api_Page::is_page()) {
+            self::$ctx = array(
+                'type'     => 'api',
+                'service'  => null,
+                'category' => null,
+                'page'     => 1,
+                'pages'    => 1,
+                'query'    => '',
+            );
+            return self::$ctx;
+        }
+
         $lab = GS_Lab::current_service();
         if ($lab) {
             self::$ctx = array(
@@ -134,6 +146,9 @@ class GS_Seo {
     }
 
     private static function build_title($ctx) {
+        if ($ctx['type'] === 'api') {
+            return 'API для разработчиков — нейросети для фото, видео и звука';
+        }
         if ($ctx['type'] === 'lab') {
             return (string) $ctx['service']['seo_title'];
         }
@@ -175,6 +190,9 @@ class GS_Seo {
      * ------------------------------------------------------------------ */
 
     private static function build_description($ctx) {
+        if ($ctx['type'] === 'api') {
+            return 'HTTP API нейросетей: оживление фото, говорящий аватар, редактирование картинок, генерация звуков и озвучка текста. REST и JSON, ключ доступа, вебхук о готовности, оплата за запуск без абонплаты.';
+        }
         if ($ctx['type'] === 'lab') {
             return (string) $ctx['service']['seo_desc'];
         }
@@ -209,6 +227,9 @@ class GS_Seo {
      * дублями первой и выпадают из индекса вместе со своими ссылками.
      */
     private static function page_url($ctx, $page = null) {
+        if ($ctx['type'] === 'api') {
+            return GS_Api_Page::get_url();
+        }
         if ($ctx['type'] === 'lab') {
             return GS_Lab::get_url($ctx['service']['id']);
         }
@@ -337,6 +358,15 @@ class GS_Seo {
             $out .= '<link rel="next" href="' . esc_url(self::page_url($ctx, $ctx['page'] + 1)) . '">' . "\n";
         }
 
+        if ($ctx['type'] === 'api') {
+            foreach (self::schema_api() as $schema) {
+                $out .= '<script type="application/ld+json">'
+                    . wp_json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    . '</script>' . "\n";
+            }
+            return $out;
+        }
+
         if ($ctx['type'] === 'lab') {
             foreach (self::schema_lab($ctx) as $schema) {
                 $out .= '<script type="application/ld+json">'
@@ -421,6 +451,49 @@ class GS_Seo {
         );
 
         return array($app, $faq);
+    }
+
+    /**
+     * Страница API: сам интерфейс как программный продукт плюс те же вопросы,
+     * что видны на странице.
+     */
+    private static function schema_api() {
+        $url = GS_Api_Page::get_url();
+
+        $api = array(
+            '@context'            => 'https://schema.org',
+            '@type'               => 'WebAPI',
+            'name'                => 'API Genius-bot',
+            'description'         => 'HTTP API нейросетей: оживление фото, говорящий аватар, редактирование изображений, генерация звуков и озвучка текста.',
+            'url'                 => $url,
+            'documentation'       => $url,
+            'inLanguage'          => 'ru-RU',
+            'provider'            => array(
+                '@type' => 'Organization',
+                'name'  => self::brand_name(get_bloginfo('name')),
+                'url'   => home_url('/'),
+            ),
+            'breadcrumb'          => self::breadcrumbs(array(
+                'Главная'                => home_url('/'),
+                'API для разработчиков'  => $url,
+            )),
+        );
+
+        $questions = array();
+        foreach (GS_Api_Page::faq() as $pair) {
+            $questions[] = array(
+                '@type'          => 'Question',
+                'name'           => $pair[0],
+                'acceptedAnswer' => array('@type' => 'Answer', 'text' => $pair[1]),
+            );
+        }
+        $faq = array(
+            '@context'   => 'https://schema.org',
+            '@type'      => 'FAQPage',
+            'mainEntity' => $questions,
+        );
+
+        return array($api, $faq);
     }
 
     private static function schema_index($ctx) {
