@@ -53,6 +53,7 @@ from autopost_test import setup_autopost_test
 from autopost_fix import setup_autopost_fix
 from admin_links import setup_admin_links
 from news_autopost import news_worker
+from promo_posts import promo_worker
 from database import (
     create_tables,
     add_user,
@@ -9248,6 +9249,7 @@ async def main():
         guarded(autopost_worker(bot), "автопостинг"),
         guarded(telethon_worker(), "чтение каналов"),
         guarded(news_worker(bot), "новостной канал"),
+        guarded(promo_worker(bot), "промо-посты"),
     )
 
     
