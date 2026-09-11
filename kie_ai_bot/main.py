@@ -52,6 +52,7 @@ from telethon_source import telethon_worker
 from autopost_test import setup_autopost_test
 from autopost_fix import setup_autopost_fix
 from admin_links import setup_admin_links
+from news_autopost import news_worker
 from database import (
     create_tables,
     add_user,
@@ -9246,6 +9247,7 @@ async def main():
         guarded(start_task_monitor(), "мониторинг задач"),
         guarded(autopost_worker(bot), "автопостинг"),
         guarded(telethon_worker(), "чтение каналов"),
+        guarded(news_worker(bot), "новостной канал"),
     )
 
     

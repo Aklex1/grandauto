@@ -36,6 +36,10 @@ mkdir -p "${APP_DIR}"
 # Пути только через SRC_DIR — скрипт должен работать из любого каталога.
 cp -f "${SRC_DIR}"/*.py "${APP_DIR}/"
 cp -f "${SRC_DIR}/requirements.txt" "${APP_DIR}/"
+# Контент-план копируем только если его ещё нет: на сервере он мог быть дополнен
+if [[ ! -e "${APP_DIR}/content_plan.json" ]]; then
+    cp -f "${SRC_DIR}/content_plan.json" "${APP_DIR}/"
+fi
 if [[ -e "${SRC_DIR}/prometheus.yml" ]]; then cp -f "${SRC_DIR}/prometheus.yml" "${APP_DIR}/"; fi
 cp -rf "${SRC_DIR}/middlewares" "${APP_DIR}/"
 cp -rf "${SRC_DIR}/models"      "${APP_DIR}/"
