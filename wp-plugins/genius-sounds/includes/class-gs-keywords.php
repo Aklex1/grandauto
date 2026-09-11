@@ -79,6 +79,23 @@ class GS_Keywords {
                     'убрать гул микрофона'            => 'ubrat-gul-mikrofona',
                 ),
             ),
+            'music' => array(
+                'title' => 'Частые задачи с музыкой',
+                'items' => array(
+                    'нейросеть создаёт песни'          => 'neyroset-sozdaet-pesni',
+                    'создать песню нейросетью'         => 'sozdat-pesnyu-neyrosetyu',
+                    'ии генератор песен'               => 'ii-generator-pesen',
+                    'ии генератор музыки'              => 'ii-generator-muzyki',
+                    'нейросеть напишет песню'          => 'neyroset-napishet-pesnyu',
+                    'написать песню онлайн'            => 'napisat-pesnyu-onlayn-besplatno',
+                    'музыка для видео нейросетью'      => 'neyroset-dlya-sozdaniya-muzyki-dlya-video',
+                    'сделать трек нейросетью'          => 'sdelat-trek-neyrosetyu',
+                    'создать бит нейросетью'           => 'sozdat-bit-neyrosetyu',
+                    'создать инструментал онлайн'      => 'sozdat-instrumental-onlayn',
+                    'создать мелодию нейросетью'       => 'sozdat-melodiyu-neyrosetyu',
+                    'сколько стоит генерация музыки'   => 'sozdat-muzyku-neyrosetyu-besplatno',
+                ),
+            ),
             'stt' => array(
                 'title' => 'Частые задачи с расшифровкой записей',
                 'items' => array(
@@ -143,7 +160,7 @@ class GS_Keywords {
 
     /** Какой набор запросов относится к сервису лаборатории. */
     public static function group_for_lab($service_id) {
-        $known = array('avatar', 'vocal', 'denoise');
+        $known = array('avatar', 'vocal', 'denoise', 'music');
         return in_array($service_id, $known, true) ? $service_id : '';
     }
 }
