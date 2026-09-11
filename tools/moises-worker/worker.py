@@ -59,6 +59,14 @@ COOKIES = {"beget": "begetok"}
 HEAD = {"Authorization": "Bearer " + KEY}
 
 
+def wait_enter(prompt):
+    """Пауза до нажатия Enter. В консоли без ввода просто идём дальше."""
+    try:
+        input(prompt)
+    except EOFError:
+        pass
+
+
 def log(message):
     print(time.strftime("[%H:%M:%S] ") + message, flush=True)
 
@@ -288,6 +296,91 @@ def run_assist(order, folder, source, page):
     return False
 
 
+def resolve_shortcut(path):
+    """Windows-ярлык (.lnk) хранит путь к программе внутри себя —
+    достаём его через PowerShell, чтобы не искать exe руками."""
+    import subprocess
+    script = (
+        "$s=(New-Object -COM WScript.Shell).CreateShortcut('" + str(path).replace("'", "''") + "');"
+        "Write-Output $s.TargetPath"
+    )
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                             capture_output=True, text=True, timeout=30)
+        target = (out.stdout or "").strip().splitlines()
+        return target[0] if target else ""
+    except Exception as error:
+        log(f"  не удалось прочитать ярлык: {type(error).__name__}")
+        return ""
+
+
+def find_app(hint=""):
+    """Ищем программу: по подсказке, по ярлыку рядом со скриптом,
+    затем в обычных местах установки."""
+    if hint:
+        path = Path(hint)
+        if path.suffix.lower() == ".lnk":
+            target = resolve_shortcut(path)
+            if target:
+                return target
+        if path.exists():
+            return str(path)
+
+    here = Path(__file__).parent
+    for link in sorted(here.glob("*.lnk")):
+        target = resolve_shortcut(link)
+        if target and Path(target).exists():
+            log(f"  нашёл по ярлыку {link.name}")
+            return target
+
+    local = os.environ.get("LOCALAPPDATA", "")
+    guesses = []
+    if local:
+        for name in ("moises", "Moises", "moises-desktop"):
+            guesses.append(Path(local) / "Programs" / name / "Moises.exe")
+    for guess in guesses:
+        if guess.exists():
+            return str(guess)
+    return ""
+
+
+def wait_for_port(url, seconds=40):
+    """Приложению нужно время, чтобы поднять отладочный порт."""
+    import urllib.request
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url.rstrip("/") + "/json/version", timeout=3) as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            time.sleep(1.5)
+    return False
+
+
+def launch_app(hint=""):
+    """Запускаем настольное приложение с отладочным портом и дожидаемся его."""
+    import subprocess
+    app = find_app(hint)
+    if not app:
+        log("Не нашёл программу. Укажите путь: --launch-app \"C:\\путь\\Moises.exe\"")
+        return ""
+    port = os.environ.get("GB_PORT", "9222")
+    url = f"http://127.0.0.1:{port}"
+    log(f"Запускаю: {app}")
+    try:
+        subprocess.Popen([app, f"--remote-debugging-port={port}"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as error:
+        log(f"  не запустилось: {error}")
+        return ""
+    if not wait_for_port(url):
+        log("  отладочный порт так и не открылся — возможно, приложение не на Electron")
+        return ""
+    log(f"  подключаюсь к {url}")
+    return url
+
+
 def resolve_file(raw):
     """Путь может быть без расширения или с приблизительным именем —
     ищем подходящий файл рядом, чтобы не спотыкаться на мелочи."""
@@ -313,7 +406,7 @@ def inspect_studio(url):
     playwright, context, page = open_studio(url)
     log("Открыл студию. Войдите в аккаунт и дойдите до экрана загрузки трека.")
     if not HEADLESS:
-        input("Когда нужный экран открыт — нажмите Enter здесь... ")
+        wait_enter("Когда нужный экран открыт — нажмите Enter здесь... ")
 
     dump = page.evaluate("""() => {
         const describe = (el) => {
@@ -382,7 +475,7 @@ def run_single_file(raw_path, url, auto):
                 auto = False
         if not auto:
             log(f"Загрузите файл в студии и сохраните минус как {folder / 'out' / 'minus.mp3'}")
-            input("Когда файл сохранён — нажмите Enter... ")
+            wait_enter("Когда файл сохранён — нажмите Enter... ")
         saved = sorted((folder / "out").glob("*"))
         log("Получено: " + (", ".join(f.name for f in saved) if saved else "ничего"))
     finally:
@@ -394,6 +487,8 @@ def main():
     parser.add_argument("--auto", action="store_true", help="прокликивать студию по selectors.json")
     parser.add_argument("--once", action="store_true", help="обработать одну партию и выйти")
     parser.add_argument("--file", help="разовая проверка: обработать файл с диска, без очереди сайта")
+    parser.add_argument("--launch-app", nargs="?", const="", default=None,
+                        help="запустить настольное приложение с отладочным портом и подключиться к нему")
     parser.add_argument("--keep-page", action="store_true",
                         help="не переходить по адресу: разбирать окно как есть (для настольного приложения)")
     parser.add_argument("--inspect", action="store_true",
@@ -401,6 +496,13 @@ def main():
     parser.add_argument("--url", default=STUDIO, help="адрес страницы студии")
     args = parser.parse_args()
     if args.keep_page:
+        globals()["KEEP_PAGE"] = True
+
+    if args.launch_app is not None:
+        url = launch_app(args.launch_app)
+        if not url:
+            sys.exit("Приложение не поднялось с отладочным портом.")
+        globals()["CDP"] = url
         globals()["KEEP_PAGE"] = True
 
     # Проверочные режимы к сайту не обращаются — ключ им не нужен.
