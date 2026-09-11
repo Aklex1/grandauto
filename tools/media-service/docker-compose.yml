@@ -1,0 +1,16 @@
+services:
+  media:
+    build: .
+    container_name: genius-media
+    restart: always
+    ports:
+      - "8099:8099"
+    environment:
+      # Ключ должен совпасть с полем Free TTS API Key в настройках плагина.
+      MEDIA_API_KEY: "${MEDIA_API_KEY:-}"
+      # Адрес, по которому файлы видны снаружи: сайт скачивает их по нему.
+      PUBLIC_BASE: "${PUBLIC_BASE:-http://127.0.0.1:8099}"
+      KEEP_HOURS: "24"
+      MAX_MINUTES: "90"
+    volumes:
+      - ./data:/data

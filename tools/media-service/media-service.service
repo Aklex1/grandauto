@@ -1,0 +1,19 @@
+[Unit]
+Description=Genius media service (бесплатная озвучка и звук из роликов)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/genius-media
+Environment="MEDIA_API_KEY="
+Environment="PUBLIC_BASE=http://SERVER_IP:8099"
+Environment="FILES_DIR=/opt/genius-media/files"
+Environment="KEEP_HOURS=24"
+ExecStart=/opt/genius-media/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8099 --workers 2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
