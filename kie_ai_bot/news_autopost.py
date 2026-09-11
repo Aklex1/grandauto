@@ -61,6 +61,10 @@ TICK_INTERVAL = _env_int("NEWS_TICK_INTERVAL", 300)
 
 FOOTER = os.getenv("NEWS_FOOTER", "")
 BOT_URL = os.getenv("NEWS_BOT_URL", "https://t.me/Neuro_HubAI_bot")
+# Призыв со ссылкой на свой бот под новостью; пустая строка — без него
+BOT_CTA = os.getenv("NEWS_BOT_CTA", "Сделать фото или видео нейросетью")
+# Название источника словом. Ссылку на сторонний сайт не ставим никогда
+SHOW_SOURCE_NAME = _env_flag("NEWS_SHOW_SOURCE_NAME", "1")
 
 CAPTION_LIMIT = 1024
 MESSAGE_LIMIT = 4096
@@ -182,6 +186,8 @@ def load_plan() -> List[dict]:
 # --- Оформление ------------------------------------------------------------
 
 def build_news_text(item: news_sources.NewsItem) -> str:
+    """Текст новости. Ссылок на сторонние сайты не ставим: источник
+    указывается словом, чтобы не уводить читателя из канала."""
     summary = item.summary
     if len(summary) > 450:
         summary = summary[:447].rsplit(" ", 1)[0] + "..."
@@ -189,7 +195,10 @@ def build_news_text(item: news_sources.NewsItem) -> str:
     parts = [f"<b>{escape(item.title)}</b>"]
     if summary:
         parts.append(escape(summary))
-    parts.append(f'<a href="{escape(item.link)}">Источник: {escape(item.source)}</a>')
+    if SHOW_SOURCE_NAME and item.source:
+        parts.append(f"<i>Источник: {escape(item.source)}</i>")
+    if BOT_URL and BOT_CTA:
+        parts.append(f'<a href="{escape(BOT_URL)}">{escape(BOT_CTA)}</a>')
     if FOOTER:
         parts.append(FOOTER)
     return "\n\n".join(parts)
@@ -231,13 +240,14 @@ async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
         else:
             await bot.send_message(
                 chat_id=CHAT_ID, text=_trim(text, MESSAGE_LIMIT), parse_mode="HTML",
-                disable_web_page_preview=False,
+                disable_web_page_preview=True,
             )
     except Exception as e:
         logger.warning("[новости] с картинкой не вышло (%s), публикуем текстом", e)
         try:
             await bot.send_message(
                 chat_id=CHAT_ID, text=_trim(text, MESSAGE_LIMIT), parse_mode="HTML",
+                disable_web_page_preview=True,
             )
         except Exception as e2:
             logger.error("[новости] публикация не удалась: %s", e2)

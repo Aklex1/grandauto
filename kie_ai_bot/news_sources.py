@@ -9,6 +9,7 @@
 """
 
 import logging
+import os
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -105,8 +106,19 @@ async def fetch_og_image(client: httpx.AsyncClient, url: str) -> Optional[str]:
     return None
 
 
+# Материал из общей ленты берём, только если тема заявлена в заголовке.
+# Упоминание ИИ в описании ещё ничего не значит: так проходят обзоры техники,
+# где нейросети названы одной строкой среди прочего.
+STRICT_TITLE_MATCH = os.getenv(
+    "NEWS_STRICT_TITLE_MATCH", "1"
+).strip().lower() in ("1", "true", "yes", "on")
+
+
 def is_about_ai(title: str, summary: str) -> bool:
-    haystack = f" {title} {summary} ".lower()
+    if STRICT_TITLE_MATCH:
+        haystack = f" {title} ".lower()
+    else:
+        haystack = f" {title} {summary} ".lower()
     return any(word in haystack for word in AI_KEYWORDS)
 
 
