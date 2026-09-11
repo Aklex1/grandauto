@@ -163,13 +163,23 @@ class GS_Api_Page {
                 </p>
             </section>
 
-            <section class="gs-api__section" id="voice">
-                <h2 class="gs-section-title">Озвучка, расшифровка и звук с YouTube</h2>
+            <section class="gs-api__section" id="more">
+                <h2 class="gs-section-title">Видео, музыка и расшифровка</h2>
                 <p class="gs-api__text">
-                    Эти операции живут на отдельном адресе <code><?php echo esc_html(rest_url('tts/v1/api')); ?></code>
-                    и используют собственный ключ — он выпускается в личном кабинете озвучки,
-                    раздел «API». Передаётся заголовком <code>X-API-Key</code> или
-                    <code>Authorization: Bearer</code>.
+                    Эти операции вызываются так же, как остальные, — тем же ключом и тем же
+                    <code>POST /generate</code>. Расшифровка возвращает и готовые файлы, и сам
+                    текст; звук из ролика ничего не стоит.
+                </p>
+                <?php echo self::render_code('Видео, музыка, расшифровка, звук из ролика', self::sample_more($base)); ?>
+            </section>
+
+            <section class="gs-api__section" id="voice">
+                <h2 class="gs-section-title">Прежний адрес озвучки</h2>
+                <p class="gs-api__text">
+                    До появления общего API озвучка и расшифровка жили на отдельном адресе
+                    <code><?php echo esc_html(rest_url('tts/v1/api')); ?></code> со своим ключом.
+                    Он продолжает работать — ломать готовые интеграции мы не будем, — но для
+                    новых лучше брать общий: там те же операции и один ключ на всё.
                 </p>
                 <div class="gs-api__tablewrap">
                     <table class="gs-api__table">
@@ -190,8 +200,8 @@ class GS_Api_Page {
                 <?php echo self::render_code('Озвучить текст и расшифровать запись', self::sample_voice()); ?>
                 <p class="gs-api__text">
                     Ключи не взаимозаменяемы: <code>gb_…</code> работает на <code>genius/v1</code>,
-                    ключ озвучки — на <code>tts/v1</code>. Баланс у них общий, списания видны
-                    в одной истории.
+                    прежний ключ озвучки — на <code>tts/v1</code>. Баланс у них общий, списания
+                    видны в одной истории. Новый ключ выпускается ниже, на этой же странице.
                 </p>
             </section>
 
@@ -429,6 +439,104 @@ $task = json_decode(curl_exec($ch), true);
 CODE;
 
         return self::with_base(array('curl' => $curl, 'python' => $python, 'js' => $js, 'php' => $php), $base);
+    }
+
+    private static function sample_more($base) {
+        $curl = <<<'CODE'
+# Видео по описанию
+curl -X POST {{BASE}}/generate \
+  -H 'Authorization: Bearer ВАШ_КЛЮЧ' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "service": "video",
+    "prompt": "кот идёт по кухне, мягкий утренний свет",
+    "duration": "5",
+    "resolution": "720p"
+  }'
+
+# Музыка: инструментал или песня со своим текстом
+curl -X POST {{BASE}}/generate \
+  -H 'Authorization: Bearer ВАШ_КЛЮЧ' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "service": "music",
+    "prompt": "спокойная акустическая гитара, тёплое настроение",
+    "style": "фолк",
+    "instrumental": true
+  }'
+
+# Расшифровка записи
+curl -X POST {{BASE}}/generate \
+  -H 'Authorization: Bearer ВАШ_КЛЮЧ' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "service": "stt",
+    "audio_url": "https://example.com/interview.mp3",
+    "language": "ru",
+    "diarize": true
+  }'
+
+# Звук из ролика
+curl -X POST {{BASE}}/generate \
+  -H 'Authorization: Bearer ВАШ_КЛЮЧ' \
+  -H 'Content-Type: application/json' \
+  -d '{"service": "ytaudio", "url": "https://www.youtube.com/watch?v=...", "format": "mp3"}'
+CODE;
+
+        $python = <<<'CODE'
+import time, requests
+
+API = '{{BASE}}'
+HEAD = {'Authorization': 'Bearer ВАШ_КЛЮЧ'}
+
+
+def run(payload):
+    task = requests.post(f'{API}/generate', headers=HEAD, json=payload).json()
+    while True:
+        state = requests.get(f"{API}/tasks/{task['task_id']}", headers=HEAD).json()
+        if state['status'] != 'pending':
+            return state
+        time.sleep(5)
+
+
+# расшифровка: на выходе и текст, и файлы с субтитрами
+state = run({
+    'service': 'stt',
+    'audio_url': 'https://example.com/interview.mp3',
+    'language': 'ru',
+    'diarize': True,
+})
+print(state['text'][:200])
+for item in state['files']:
+    print(item['label'], item['url'])
+
+# песня со своим текстом
+song = run({
+    'service': 'music',
+    'prompt': 'тёплая акустическая песня про друзей',
+    'instrumental': False,
+    'lyrics': 'Куплет...\n\nПрипев...',
+})
+print([item['url'] for item in song['files']])
+CODE;
+
+        $json = <<<'CODE'
+// GET /tasks/{id} для расшифровки
+{
+  "task_id": "gst-9x5wJ7iTBaSPxXsFD9Cr",
+  "service": "stt",
+  "status": "completed",
+  "text": "Хочешь, я помогу составить пошаговый план…",
+  "files": [
+    { "label": "Текст расшифровки", "kind": "file", "url": "https://…/stt-….txt" },
+    { "label": "Субтитры SRT",     "kind": "file", "url": "https://…/stt-….srt" },
+    { "label": "Субтитры VTT",     "kind": "file", "url": "https://…/stt-….vtt" }
+  ],
+  "cost": 10
+}
+CODE;
+
+        return self::with_base(array('curl' => $curl, 'python' => $python, 'json' => $json), $base);
     }
 
     private static function sample_response() {
