@@ -635,6 +635,44 @@ class GS_Lab {
     }
 
     /**
+     * Разбор форматов запроса на разделение дорожек: документация поставщика
+     * противоречива, поэтому пробуем варианты и смотрим на живой ответ.
+     */
+    public static function vocal_probe($audio_url, $variant = 1) {
+        $callback = add_query_arg('token', GS_SFX::callback_token(), rest_url(GS_Rest::NS . '/lab/callback'));
+
+        $payloads = array(
+            1 => array('audioUrl' => $audio_url, 'type' => 'separate_vocal', 'callBackUrl' => $callback),
+            2 => array('audioUrl' => $audio_url, 'type' => 'separate_vocal', 'stemName' => 'Vocals', 'callBackUrl' => $callback),
+            3 => array('uploadUrl' => $audio_url, 'type' => 'separate_vocal', 'callBackUrl' => $callback),
+            4 => array('audioUrl' => $audio_url, 'type' => 'split_stem', 'stemName' => 'Vocals', 'callBackUrl' => $callback),
+        );
+        // Вариант 0 — не постановка задачи, а сырой ответ о её состоянии:
+        // по нему видно настоящую причину отказа, а не нашу трактовку.
+        if ($variant === 0) {
+            $res = self::get_json(self::API_VOCAL_INFO, array('taskId' => $audio_url));
+            return array(
+                'variant' => 0,
+                'sent'    => array('taskId'),
+                'ok'      => !empty($res['ok']),
+                'message' => (string) $res['message'],
+                'body'    => $res['body'],
+            );
+        }
+
+        $payload = isset($payloads[$variant]) ? $payloads[$variant] : $payloads[1];
+
+        $res = self::post_json(self::API_VOCAL, $payload);
+        return array(
+            'variant' => $variant,
+            'sent'    => array_keys($payload),
+            'ok'      => !empty($res['ok']),
+            'message' => (string) $res['message'],
+            'body'    => $res['body'],
+        );
+    }
+
+    /**
      * Остаток кредитов у поставщика — без этого нельзя считать себестоимость
      * операции и осмысленно назначать цену для пользователя.
      *

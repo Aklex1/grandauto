@@ -122,6 +122,13 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Временная проверка форматов запроса к поставщику (только админ).
+        register_rest_route(self::NS, '/lab/provider-test', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_provider_test'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/lab/credits', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_lab_credits'),
@@ -773,6 +780,16 @@ class GS_Rest {
             'task_id' => $created['task_id'],
             'cost'    => $cost,
         ));
+    }
+
+    public static function handle_provider_test($request) {
+        $params = $request->get_json_params();
+        $url = isset($params['url']) ? esc_url_raw((string) $params['url']) : '';
+        $variant = isset($params['variant']) ? (int) $params['variant'] : 1;
+        if ($url === '') {
+            return new WP_Error('gs_no_url', 'Нужен адрес файла', array('status' => 400));
+        }
+        return rest_ensure_response(GS_Lab::vocal_probe($url, $variant));
     }
 
     public static function handle_lab_credits($request) {
