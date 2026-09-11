@@ -72,6 +72,30 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        register_rest_route(self::NS, '/lab/upload', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_lab_upload'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+
+        register_rest_route(self::NS, '/lab/generate', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_lab_generate'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+
+        register_rest_route(self::NS, '/lab/status/(?P<service>[a-z]+)/(?P<task_id>[a-zA-Z0-9_-]+)', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_lab_status'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+
+        register_rest_route(self::NS, '/lab/callback', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_lab_callback'),
+            'permission_callback' => '__return_true',
+        ));
+
         register_rest_route(self::NS, '/links/install-menu', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_install_menu'),
@@ -434,6 +458,179 @@ class GS_Rest {
             'disk'      => GS_Storage::disk_usage(),
             'disk_free' => GS_Storage::disk_free(),
         ));
+    }
+
+    /* ---------------------------------------------------------------------
+     * Микросервисы
+     * ------------------------------------------------------------------ */
+
+    public static function handle_lab_upload($request) {
+        $kind = sanitize_key((string) $request->get_param('kind'));
+        if (!in_array($kind, array('image', 'audio'), true)) {
+            return new WP_Error('gs_bad_kind', 'Неизвестный тип файла', array('status' => 400));
+        }
+        $service_id = sanitize_key((string) $request->get_param('service'));
+
+        $files = $request->get_file_params();
+        $file = isset($files['file']) ? $files['file'] : null;
+        if (!$file) {
+            return new WP_Error('gs_no_file', 'Файл не приложен', array('status' => 400));
+        }
+
+        $max = GS_Lab::MAX_IMAGE_BYTES;
+        if ($kind === 'audio') {
+            $max = $service_id === 'vocal' ? GS_Lab::MAX_AUDIO_BYTES_VOCAL : GS_Lab::MAX_AUDIO_BYTES;
+        }
+
+        $stored = GS_Lab::store_upload($file, $kind, $max);
+        if (empty($stored['ok'])) {
+            return new WP_Error('gs_upload_failed', $stored['message'], array('status' => 400));
+        }
+        return rest_ensure_response(array('success' => true, 'url' => $stored['url']));
+    }
+
+    public static function handle_lab_generate($request) {
+        $user_id = get_current_user_id();
+        $params  = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        $service_id = sanitize_key((string) ($params['service'] ?? ''));
+        $service = GS_Lab::get_service($service_id);
+        if (!$service) {
+            return new WP_Error('gs_bad_service', 'Неизвестный сервис', array('status' => 400));
+        }
+
+        $payload = array();
+        foreach ($service['inputs'] as $input) {
+            $field = $input . '_url';
+            $url = isset($params[$field]) ? esc_url_raw((string) $params[$field]) : '';
+            // Обычным пользователям — только свои загрузки; администратору разрешаем
+            // внешний адрес, чтобы можно было проверить сервис на эталонном файле.
+            $own_upload = $url !== '' && strpos($url, GS_Lab::uploads_url()) === 0;
+            if (!$own_upload && !(current_user_can('manage_options') && $url !== '')) {
+                return new WP_Error('gs_missing_file', 'Сначала загрузите файл', array('status' => 400));
+            }
+            $payload[$field] = $url;
+        }
+        if (!empty($service['prompt'])) {
+            $payload['prompt'] = sanitize_textarea_field((string) ($params['prompt'] ?? ''));
+        }
+
+        $cost = GS_Lab::get_cost($service_id);
+        $balance = GS_SFX::get_balance($user_id);
+        if ($balance < $cost) {
+            return new WP_Error(
+                'gs_insufficient_balance',
+                sprintf('Недостаточно средств. Баланс: %.2f ₽, нужно: %.2f ₽', $balance, $cost),
+                array('status' => 402, 'balance' => $balance, 'cost' => $cost)
+            );
+        }
+
+        $created = GS_Lab::create_task($service_id, $payload);
+        if (empty($created['ok'])) {
+            return new WP_Error('gs_service_error', $created['message'] ?: 'Сервис не принял задачу', array('status' => 502));
+        }
+        $task_id = $created['task_id'];
+
+        if (!GS_SFX::charge($user_id, $cost)) {
+            return new WP_Error('gs_charge_failed', 'Не удалось списать средства с баланса', array('status' => 500));
+        }
+
+        if (class_exists('KIE_TTS_DB')) {
+            $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);
+            KIE_TTS_DB::save_generation($user_id, $task_id, $service['menu'], 'lab:' . $service_id, $cost, $is_telegram);
+        }
+        update_option('gs_lab_task_' . $task_id, array(
+            'user_id' => $user_id,
+            'service' => $service_id,
+            'cost'    => $cost,
+        ), false);
+
+        return rest_ensure_response(array(
+            'success' => true,
+            'task_id' => $task_id,
+            'cost'    => $cost,
+            'balance' => GS_SFX::get_balance($user_id),
+        ));
+    }
+
+    public static function handle_lab_status($request) {
+        $service_id = sanitize_key((string) $request['service']);
+        $task_id    = (string) $request['task_id'];
+        $user_id    = get_current_user_id();
+
+        if (!GS_Lab::get_service($service_id)) {
+            return new WP_Error('gs_bad_service', 'Неизвестный сервис', array('status' => 400));
+        }
+
+        $meta = get_option('gs_lab_task_' . $task_id, array());
+        $stored = self::get_stored_generation($task_id);
+        $owner = 0;
+        if (is_array($meta) && !empty($meta['user_id'])) {
+            $owner = (int) $meta['user_id'];
+        } elseif (is_array($stored) && isset($stored['user_id'])) {
+            $owner = (int) $stored['user_id'];
+        }
+        if ($owner > 0 && $owner !== (int) $user_id && !current_user_can('manage_options')) {
+            return new WP_Error('gs_forbidden', 'Задача принадлежит другому пользователю', array('status' => 403));
+        }
+
+        $task = GS_Lab::fetch_task($service_id, $task_id);
+        if (empty($task['ok'])) {
+            return rest_ensure_response(array('success' => true, 'status' => 'pending', 'message' => $task['message']));
+        }
+
+        if ($task['status'] === 'failed') {
+            if (class_exists('KIE_TTS_DB')) {
+                KIE_TTS_DB::update_generation_status($task_id, 'failed');
+            }
+            if (is_array($meta) && !empty($meta['user_id']) && !empty($meta['cost'])) {
+                GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
+            }
+            delete_option('gs_lab_task_' . $task_id);
+            return rest_ensure_response(array(
+                'success' => false,
+                'status'  => 'failed',
+                'message' => $task['message'] ?: 'Обработка не удалась, средства возвращены',
+                'balance' => GS_SFX::get_balance($user_id),
+            ));
+        }
+
+        if ($task['status'] !== 'completed') {
+            return rest_ensure_response(array('success' => true, 'status' => 'pending'));
+        }
+
+        $files = array();
+        foreach ($task['files'] as $file) {
+            $local = GS_Lab::store_result($task_id, $file['url'], $file['kind']);
+            $files[] = array(
+                'label' => $file['label'],
+                'kind'  => $file['kind'],
+                'url'   => $local !== '' ? $local : $file['url'],
+            );
+        }
+        if (class_exists('KIE_TTS_DB') && !empty($files)) {
+            KIE_TTS_DB::update_generation_status($task_id, 'completed', $files[0]['url']);
+        }
+        delete_option('gs_lab_task_' . $task_id);
+
+        return rest_ensure_response(array(
+            'success' => true,
+            'status'  => 'completed',
+            'files'   => $files,
+            'balance' => GS_SFX::get_balance($user_id),
+        ));
+    }
+
+    public static function handle_lab_callback($request) {
+        $token = (string) $request->get_param('token');
+        if (!hash_equals(GS_SFX::callback_token(), $token)) {
+            return new WP_Error('gs_bad_token', 'Неверный токен колбэка', array('status' => 403));
+        }
+        // Результат забирает опрос статуса: колбэк нужен агрегатору как подтверждение.
+        return rest_ensure_response(array('success' => true));
     }
 
     public static function handle_install_menu($request) {

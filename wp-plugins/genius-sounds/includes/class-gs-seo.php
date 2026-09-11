@@ -59,6 +59,19 @@ class GS_Seo {
         self::$resolved = true;
         self::$ctx = null;
 
+        $lab = GS_Lab::current_service();
+        if ($lab) {
+            self::$ctx = array(
+                'type'     => 'lab',
+                'service'  => $lab,
+                'category' => null,
+                'page'     => 1,
+                'pages'    => 1,
+                'query'    => '',
+            );
+            return self::$ctx;
+        }
+
         if (is_admin() || !GS_Catalog::is_catalog_request()) {
             return null;
         }
@@ -121,6 +134,9 @@ class GS_Seo {
     }
 
     private static function build_title($ctx) {
+        if ($ctx['type'] === 'lab') {
+            return (string) $ctx['service']['seo_title'];
+        }
         if ($ctx['type'] === 'index') {
             $title = 'Каталог звуков — скачать бесплатно в MP3';
             if ($ctx['query'] !== '') {
@@ -159,6 +175,9 @@ class GS_Seo {
      * ------------------------------------------------------------------ */
 
     private static function build_description($ctx) {
+        if ($ctx['type'] === 'lab') {
+            return (string) $ctx['service']['seo_desc'];
+        }
         if ($ctx['type'] === 'index') {
             $stats = GS_Catalog::stats();
             return sprintf(
@@ -190,6 +209,9 @@ class GS_Seo {
      * дублями первой и выпадают из индекса вместе со своими ссылками.
      */
     private static function page_url($ctx, $page = null) {
+        if ($ctx['type'] === 'lab') {
+            return GS_Lab::get_url($ctx['service']['id']);
+        }
         $page = $page === null ? (int) $ctx['page'] : (int) $page;
         $base = $ctx['type'] === 'category'
             ? GS_Catalog::category_url($ctx['category']['slug'])
@@ -295,6 +317,12 @@ class GS_Seo {
     private static function extra_tags($ctx) {
         $out = "\n";
 
+        // Пока сервис не подключён, странице нечего делать в индексе:
+        // пользователь придёт из поиска и упрётся в заглушку.
+        if ($ctx['type'] === 'lab' && !GS_Lab::is_available($ctx['service']['id'])) {
+            return $out . '<meta name="robots" content="noindex, follow">' . "\n";
+        }
+
         // Страницы поиска — служебные, в индексе им делать нечего,
         // но ссылки с них пусть передают вес.
         if ($ctx['type'] === 'index' && $ctx['query'] !== '') {
@@ -307,6 +335,15 @@ class GS_Seo {
         }
         if ($ctx['page'] < $ctx['pages']) {
             $out .= '<link rel="next" href="' . esc_url(self::page_url($ctx, $ctx['page'] + 1)) . '">' . "\n";
+        }
+
+        if ($ctx['type'] === 'lab') {
+            foreach (self::schema_lab($ctx) as $schema) {
+                $out .= '<script type="application/ld+json">'
+                    . wp_json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    . '</script>' . "\n";
+            }
+            return $out;
         }
 
         $schema = $ctx['type'] === 'category' ? self::schema_category($ctx) : self::schema_index($ctx);
@@ -333,6 +370,57 @@ class GS_Seo {
             );
         }
         return array('@type' => 'BreadcrumbList', 'itemListElement' => $list);
+    }
+
+    /**
+     * Посадочная микросервиса: сам инструмент, крошки и вопросы.
+     * FAQPage печатаем только потому, что те же вопросы видимы на странице —
+     * разметка без соответствующего контента нарушает требования поисковиков.
+     */
+    private static function schema_lab($ctx) {
+        $service = $ctx['service'];
+        $url = GS_Lab::get_url($service['id']);
+
+        $app = array(
+            '@context'        => 'https://schema.org',
+            '@type'           => 'WebApplication',
+            'name'            => $service['h1'],
+            'description'     => $service['seo_desc'],
+            'url'             => $url,
+            'applicationCategory' => 'MultimediaApplication',
+            'operatingSystem' => 'Any',
+            'inLanguage'      => 'ru-RU',
+            'offers'          => array(
+                '@type'         => 'Offer',
+                'price'         => (string) GS_Lab::get_cost($service['id']),
+                'priceCurrency' => 'RUB',
+            ),
+            'publisher'       => array(
+                '@type' => 'Organization',
+                'name'  => self::brand_name(get_bloginfo('name')),
+                'url'   => home_url('/'),
+            ),
+            'breadcrumb'      => self::breadcrumbs(array(
+                'Главная'          => home_url('/'),
+                $service['menu']   => $url,
+            )),
+        );
+
+        $questions = array();
+        foreach ($service['faq'] as $pair) {
+            $questions[] = array(
+                '@type'          => 'Question',
+                'name'           => $pair[0],
+                'acceptedAnswer' => array('@type' => 'Answer', 'text' => $pair[1]),
+            );
+        }
+        $faq = array(
+            '@context'   => 'https://schema.org',
+            '@type'      => 'FAQPage',
+            'mainEntity' => $questions,
+        );
+
+        return array($app, $faq);
     }
 
     private static function schema_index($ctx) {

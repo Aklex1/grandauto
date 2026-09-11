@@ -86,7 +86,11 @@ class GS_Sitemap {
             );
         }
 
-        foreach (array(GS_Pages::get_studio_url(), GS_Pages::get_showcase_url()) as $url) {
+        $extra = array(GS_Pages::get_studio_url(), GS_Pages::get_showcase_url());
+        foreach (GS_Lab::available_services() as $service) {
+            $extra[] = GS_Lab::get_url($service['id']);
+        }
+        foreach ($extra as $url) {
             if ($url) {
                 $urls[] = array(
                     'loc'        => $url,
@@ -106,7 +110,7 @@ class GS_Sitemap {
     }
 
     public static function chunk_count() {
-        $total = count(GS_Catalog::load_index()) + 3; // каталог, студия, витрина
+        $total = count(GS_Catalog::load_index()) + 3 + count(GS_Lab::available_services());
         return max(1, (int) ceil($total / self::CHUNK));
     }
 

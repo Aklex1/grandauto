@@ -74,8 +74,67 @@ class GS_Links {
             $urls[untrailingslashit((string) $item->url)] = true;
         }
 
+        // Сервис могли выключить после установки пункта — убираем такие из меню,
+        // иначе в шапке висит ссылка на заглушку.
+        $wanted = array();
         foreach (self::nav_links() as $link) {
-            if ($link['url'] === '' || isset($urls[untrailingslashit($link['url'])])) {
+            $wanted[untrailingslashit($link['url'])] = true;
+        }
+        $result['removed'] = 0;
+        foreach (GS_Lab::services() as $lab_id => $lab) {
+            if (GS_Lab::is_available($lab_id)) {
+                continue;
+            }
+            $stale = untrailingslashit(GS_Lab::get_url($lab_id));
+            foreach ((array) $existing as $item) {
+                if (untrailingslashit((string) $item->url) === $stale && !isset($wanted[$stale])) {
+                    wp_delete_post((int) $item->ID, true);
+                    $result['removed']++;
+                }
+            }
+        }
+
+        $tree = self::menu_tree();
+
+        // Родительский пункт — один на всё меню, ищем его среди существующих.
+        $parent_id = 0;
+        foreach ((array) $existing as $item) {
+            if (trim((string) $item->title) === $tree['parent']['title']) {
+                $parent_id = (int) $item->ID;
+                break;
+            }
+        }
+        if ($parent_id === 0) {
+            $parent_id = wp_update_nav_menu_item($menu_id, 0, array(
+                'menu-item-title'  => $tree['parent']['title'],
+                'menu-item-url'    => $tree['parent']['url'],
+                'menu-item-status' => 'publish',
+                'menu-item-type'   => 'custom',
+            ));
+            if (is_wp_error($parent_id)) {
+                return $result;
+            }
+            $result['added']++;
+        }
+
+        foreach ($tree['children'] as $link) {
+            if ($link['url'] === '') {
+                continue;
+            }
+            $key = untrailingslashit($link['url']);
+            if (isset($urls[$key])) {
+                // Уже есть — на всякий случай подчиняем родителю.
+                foreach ((array) $existing as $item) {
+                    if (untrailingslashit((string) $item->url) === $key && (int) $item->menu_item_parent !== (int) $parent_id) {
+                        wp_update_nav_menu_item($menu_id, (int) $item->ID, array(
+                            'menu-item-title'     => $link['title'],
+                            'menu-item-url'       => $link['url'],
+                            'menu-item-status'    => 'publish',
+                            'menu-item-type'      => 'custom',
+                            'menu-item-parent-id' => $parent_id,
+                        ));
+                    }
+                }
                 $result['skipped'][] = $link['title'];
                 continue;
             }
@@ -84,6 +143,7 @@ class GS_Links {
                 'menu-item-url'       => $link['url'],
                 'menu-item-status'    => 'publish',
                 'menu-item-type'      => 'custom',
+                'menu-item-parent-id' => $parent_id,
             ));
             if (!is_wp_error($added) && $added) {
                 $result['added']++;
@@ -104,10 +164,28 @@ class GS_Links {
     /**
      * Ссылки, которые должны быть в навигации.
      */
+    /**
+     * Плоский список ссылок (для фильтра меню и проверок).
+     */
     private static function nav_links() {
+        $links = array(
+            array('url' => GS_Catalog::base_url(),     'title' => 'Каталог звуков'),
+            array('url' => GS_Pages::get_studio_url(), 'title' => 'Генератор звуков'),
+        );
+        foreach (GS_Lab::available_services() as $service) {
+            $links[] = array('url' => GS_Lab::get_url($service['id']), 'title' => $service['nav']);
+        }
+        return $links;
+    }
+
+    /**
+     * Пункты для меню сайта: родитель «Звуки и видео» и вложенные инструменты.
+     * Плоским списком семь пунктов не помещаются в шапку и обрезаются.
+     */
+    private static function menu_tree() {
         return array(
-            array('url' => GS_Catalog::base_url(),          'title' => 'Каталог звуков'),
-            array('url' => GS_Pages::get_studio_url(),      'title' => 'Генератор звуков'),
+            'parent'   => array('url' => GS_Catalog::base_url(), 'title' => 'Звуки и видео'),
+            'children' => self::nav_links(),
         );
     }
 
@@ -186,6 +264,9 @@ class GS_Links {
                 <p class="gs-footer-links__lead">
                     <a href="<?php echo esc_url(GS_Catalog::base_url()); ?>">Каталог звуков</a> ·
                     <a href="<?php echo esc_url(GS_Pages::get_studio_url()); ?>">Генератор звуков и спецэффектов</a> ·
+                    <?php foreach (GS_Lab::available_services() as $svc): ?>
+                        <a href="<?php echo esc_url(GS_Lab::get_url($svc['id'])); ?>"><?php echo esc_html($svc['menu']); ?></a> ·
+                    <?php endforeach; ?>
                     <a href="<?php echo esc_url(GS_Pages::get_showcase_url()); ?>">Звуки, созданные нейросетью</a>
                 </p>
                 <ul class="gs-footer-links__list">

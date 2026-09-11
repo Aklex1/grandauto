@@ -39,6 +39,22 @@ class GS_Admin {
             ));
         }
 
+        foreach (GS_Lab::services() as $lab_id => $lab) {
+            register_setting('gs_settings_group', 'gs_lab_enabled_' . $lab_id, array(
+                'type'              => 'string',
+                'sanitize_callback' => function ($value) {
+                    return $value ? '1' : '0';
+                },
+            ));
+            register_setting('gs_settings_group', $lab['cost_option'], array(
+                'type'              => 'number',
+                'sanitize_callback' => function ($value) {
+                    $value = (float) $value;
+                    return $value > 0 ? $value : 1;
+                },
+            ));
+        }
+
         register_setting('gs_settings_group', GS_Importer::OPT_MAX_FILE_MB, array(
             'type'              => 'number',
             'sanitize_callback' => function ($value) {
@@ -163,6 +179,27 @@ class GS_Admin {
                             <input id="gs-cost" name="<?php echo esc_attr(GS_SFX::OPT_COST); ?>" type="number" step="0.5" min="0"
                                    value="<?php echo esc_attr(GS_SFX::get_cost()); ?>" class="small-text">
                             <p class="description">Списывается с общего баланса пользователя (того же, что и озвучка).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Микросервисы</th>
+                        <td>
+                            <?php foreach (GS_Lab::services() as $lab_id => $lab): ?>
+                                <p>
+                                    <label>
+                                        <input type="checkbox" name="gs_lab_enabled_<?php echo esc_attr($lab_id); ?>" value="1"
+                                            <?php checked(GS_Lab::is_available($lab_id)); ?>>
+                                        <strong><?php echo esc_html($lab['menu']); ?></strong>
+                                    </label>
+                                    — цена
+                                    <input name="<?php echo esc_attr($lab['cost_option']); ?>" type="number" step="1" min="1"
+                                           value="<?php echo esc_attr(GS_Lab::get_cost($lab_id)); ?>" class="small-text"> ₽
+                                    <?php if (!empty($lab['blocked_note']) && !GS_Lab::is_available($lab_id)): ?>
+                                        <br><span class="description"><?php echo esc_html($lab['blocked_note']); ?></span>
+                                    <?php endif; ?>
+                                </p>
+                            <?php endforeach; ?>
+                            <p class="description">Выключенный сервис не показывается в меню, карте сайта и закрыт от индексации.</p>
                         </td>
                     </tr>
                     <tr>

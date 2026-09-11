@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 1.7.3
+ * Version: 1.10.2
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.7.3');
+define('GS_VERSION', '1.10.2');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -25,6 +25,9 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-pages.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-seo.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-lab.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-lab-page.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-blog.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rest.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-admin.php';
 
@@ -57,12 +60,15 @@ class Genius_Sounds_Plugin {
         GS_Seo::boot();
         GS_Sitemap::boot();
         GS_Links::boot();
+        GS_Lab::boot();
+        GS_Blog::boot();
     }
 
     public function activate() {
         GS_Storage::ensure_dirs();
         GS_Catalog::ensure_seeded();
         GS_Pages::ensure_pages();
+        GS_Lab::ensure_pages();
         flush_rewrite_rules();
     }
 
@@ -74,12 +80,14 @@ class Genius_Sounds_Plugin {
     public function init() {
         GS_Catalog::takeover_shortcode();
         GS_Pages::register_shortcodes();
+        GS_Lab_Page::register_shortcodes();
 
         // Разовая инициализация после обновления версии плагина.
         if (get_option('gs_bootstrap_version') !== GS_VERSION) {
             GS_Storage::ensure_dirs();
             GS_Catalog::ensure_seeded();
             GS_Pages::ensure_pages();
+            GS_Lab::ensure_pages();
             update_option('gs_bootstrap_version', GS_VERSION);
             add_action('shutdown', 'flush_rewrite_rules');
         }
@@ -89,7 +97,9 @@ class Genius_Sounds_Plugin {
      * Ассеты грузим только на своих страницах, чтобы не утяжелять остальной сайт.
      */
     public function enqueue_front_assets() {
-        $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request() || GS_Pages::is_studio_request();
+        $blog = GS_Blog::enabled() && (GS_Blog::is_single_post() || GS_Blog::is_blog_list());
+        $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
+            || GS_Pages::is_studio_request() || GS_Lab::current_service() || $blog;
         if ($ours) {
             // Перекрашиваем шапку и подвал темы под тёмные страницы плагина.
             wp_enqueue_style('genius-sounds-chrome', GS_PLUGIN_URL . 'assets/css/chrome.css', array(), GS_VERSION);
@@ -100,6 +110,29 @@ class Genius_Sounds_Plugin {
             wp_enqueue_script('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/js/catalog.js', array(), GS_VERSION, true);
             wp_localize_script('genius-sounds-catalog', 'GS_CATALOG', array(
                 'studioUrl' => GS_Pages::get_studio_url(),
+            ));
+        }
+
+        if ($blog) {
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-blog', GS_PLUGIN_URL . 'assets/css/blog.css', array('genius-sounds-catalog'), GS_VERSION);
+            wp_enqueue_script('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/js/catalog.js', array(), GS_VERSION, true);
+        }
+
+        $lab = GS_Lab::current_service();
+        if ($lab) {
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
+            wp_enqueue_script('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/js/catalog.js', array(), GS_VERSION, true);
+            wp_enqueue_script('genius-sounds-lab', GS_PLUGIN_URL . 'assets/js/lab.js', array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-lab', 'GS_LAB', array(
+                'restUrl'     => esc_url_raw(rest_url(GS_Rest::NS . '/')),
+                'nonce'       => wp_create_nonce('wp_rest'),
+                'loggedIn'    => is_user_logged_in(),
+                'loginUrl'    => GS_Pages::get_login_url(GS_Lab::get_url($lab['id'])),
+                'service'     => $lab['id'],
+                'inputs'      => array_values($lab['inputs']),
+                'pollSeconds' => (int) $lab['poll_seconds'],
             ));
         }
 

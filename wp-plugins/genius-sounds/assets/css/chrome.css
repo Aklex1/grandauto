@@ -171,3 +171,23 @@ body.gs-chrome.kie-tts-plugin-page-body #page-content,
 body.gs-chrome.kie-tts-plugin-page-body .l-main > .l-section:first-of-type > .l-section-h {
     padding-top: var(--header-height, 96px) !important;
 }
+
+/* Выпадающее подменю «Звуки и видео» */
+body.gs-chrome .w-nav-list.level_2,
+body.gs-chrome .w-nav .w-nav-list.sub {
+    background-color: #0d1320 !important;
+    border: 1px solid var(--gs-chrome-border) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5) !important;
+    overflow: hidden;
+}
+
+body.gs-chrome .w-nav-anchor.level_2 {
+    color: var(--gs-chrome-text) !important;
+    background-color: transparent !important;
+}
+
+body.gs-chrome .w-nav-anchor.level_2:hover {
+    background-color: rgba(99, 102, 241, 0.18) !important;
+    color: #fff !important;
+}

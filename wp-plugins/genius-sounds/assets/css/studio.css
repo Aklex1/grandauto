@@ -524,3 +524,180 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* ---------------------------------------------------------------- Микросервисы */
+
+.gs-wrap .gs-file {
+    padding: 11px 14px;
+    cursor: pointer;
+}
+
+.gs-wrap .gs-file::file-selector-button {
+    margin-right: 12px;
+    padding: 8px 14px;
+    border: 1px solid var(--gs-border);
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--gs-text);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.gs-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin: 16px 0 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: gs-step;
+}
+
+.gs-step {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 18px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+}
+
+.gs-step__num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gs-primary) 0%, #8b5cf6 100%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.gs-step__text {
+    color: var(--gs-muted);
+    font-size: 14.5px;
+}
+
+/* Перелинковка сервисов */
+
+.gs-cross {
+    margin-top: clamp(30px, 4vw, 48px);
+}
+
+.gs-cross__lead {
+    margin: 8px 0 16px;
+    color: var(--gs-muted);
+}
+
+.gs-cross__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 12px;
+}
+
+.gs-cross__card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 20px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+    transition: border-color 0.18s var(--gs-ease), transform 0.16s var(--gs-ease);
+}
+
+.gs-cross__card:hover {
+    transform: translateY(-2px);
+    border-color: var(--gs-border-strong);
+}
+
+.gs-cross__title {
+    font-size: 16.5px;
+    font-weight: 700;
+}
+
+.gs-wrap .gs-cross__title a {
+    color: var(--gs-text);
+}
+
+.gs-wrap .gs-cross__title a:hover {
+    color: var(--gs-primary-light);
+}
+
+.gs-cross__text {
+    flex: 1 1 auto;
+    color: var(--gs-muted);
+    font-size: 14px;
+}
+
+.gs-cross__cta {
+    align-self: flex-start;
+}
+
+/* Вопросы и ответы */
+
+.gs-faq {
+    margin-top: clamp(30px, 4vw, 48px);
+}
+
+.gs-faq__item {
+    margin-top: 10px;
+    padding: 16px 18px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+}
+
+.gs-faq__q {
+    color: var(--gs-text);
+    font-size: 15.5px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+}
+
+.gs-faq__q::-webkit-details-marker {
+    display: none;
+}
+
+.gs-faq__q::before {
+    content: '+ ';
+    color: var(--gs-primary-light);
+    font-weight: 700;
+}
+
+.gs-faq__item[open] .gs-faq__q::before {
+    content: '− ';
+}
+
+.gs-faq__a {
+    margin-top: 10px;
+    color: var(--gs-muted);
+    font-size: 14.5px;
+}
+
+/* Результат */
+
+.gs-lab-file {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.gs-lab-file__title {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.gs-lab-video {
+    width: 100%;
+    border-radius: var(--gs-radius-sm);
+    background: #000;
+}
