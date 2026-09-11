@@ -275,3 +275,173 @@ body.gs-dashboard .topup-modal-body {
         margin-top: 14px;
     }
 }
+
+/* ------------------------------------------ «Почему выбирают» и «Как это работает»
+   Базовый плагин рисует эти блоки светлыми карточками со светлым же
+   заголовком — на тёмном кабинете заголовки пропадали. Переносим блоки
+   в общую стилистику: тёмная подложка, читаемый текст, значок у каждой
+   карточки и живой порядковый номер у шагов. */
+
+body.gs-dashboard .zv-why-section,
+body.gs-dashboard .zv-steps-section {
+    margin: 34px 0 0;
+    padding: 30px 26px;
+    border: 1px solid var(--gs-border) !important;
+    border-radius: 22px !important;
+    background:
+        radial-gradient(120% 140% at 0% 0%, rgba(99, 102, 241, 0.14) 0%, rgba(99, 102, 241, 0) 55%),
+        var(--gs-surface) !important;
+    box-shadow: none !important;
+}
+
+body.gs-dashboard .zv-why-section h2,
+body.gs-dashboard .zv-steps-section h2 {
+    margin: 0 0 8px;
+    font-size: clamp(22px, 3.4vw, 30px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-align: center;
+}
+
+body.gs-dashboard .zv-section-subtitle {
+    max-width: 640px;
+    margin: 0 auto 24px;
+    color: var(--gs-muted) !important;
+    font-size: 15.5px;
+    line-height: 1.55;
+    text-align: center;
+}
+
+body.gs-dashboard .zv-steps-section h2 {
+    margin-bottom: 24px;
+}
+
+body.gs-dashboard .zv-cards-grid,
+body.gs-dashboard .zv-steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+/* Шесть карточек и три шага ложатся в три колонки без рваного хвоста. */
+@media (min-width: 861px) {
+    body.gs-dashboard .zv-cards-grid,
+    body.gs-dashboard .zv-steps-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+body.gs-dashboard .zv-card,
+body.gs-dashboard .zv-step-card {
+    position: relative;
+    padding: 22px 20px 20px;
+    border: 1px solid var(--gs-border) !important;
+    border-radius: var(--gs-radius) !important;
+    background: var(--gs-surface-2) !important;
+    box-shadow: none !important;
+    transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
+}
+
+body.gs-dashboard .zv-card:hover,
+body.gs-dashboard .zv-step-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--gs-border-strong) !important;
+    background: #111a2c !important;
+}
+
+body.gs-dashboard .zv-card h3,
+body.gs-dashboard .zv-step-card h3 {
+    margin: 0 0 8px;
+    color: var(--gs-text) !important;
+    font-size: 17.5px;
+    font-weight: 700;
+}
+
+body.gs-dashboard .zv-card p,
+body.gs-dashboard .zv-step-card p {
+    margin: 0;
+    color: #c3cddd !important;
+    font-size: 14.8px;
+    line-height: 1.6;
+}
+
+body.gs-dashboard .zv-card code {
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: rgba(99, 102, 241, 0.16) !important;
+    color: #c7d2fe !important;
+    font-size: 13.5px;
+}
+
+/* Значок у карточки: рисуем средствами стиля, разметку не трогаем. */
+body.gs-dashboard .zv-card::before {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 14px;
+    border-radius: 12px;
+    background: rgba(99, 102, 241, 0.14);
+    font-size: 20px;
+    line-height: 1;
+    content: '✨';
+}
+
+body.gs-dashboard .zv-card:nth-child(1)::before { content: '🎙'; }
+body.gs-dashboard .zv-card:nth-child(2)::before { content: '🎛'; }
+body.gs-dashboard .zv-card:nth-child(3)::before { content: '💬'; }
+body.gs-dashboard .zv-card:nth-child(4)::before { content: '📄'; }
+body.gs-dashboard .zv-card:nth-child(5)::before { content: '🕘'; }
+body.gs-dashboard .zv-card:nth-child(6)::before { content: '⚡'; }
+
+/* Шаги: номер крупный и приглушённый, чтобы вести взгляд по порядку. */
+body.gs-dashboard .zv-steps-grid {
+    counter-reset: gs-step;
+}
+
+body.gs-dashboard .zv-step-card {
+    padding-top: 24px;
+}
+
+body.gs-dashboard .zv-step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+    height: 38px;
+    margin-bottom: 12px;
+    padding: 0 10px;
+    border: 1px solid rgba(129, 140, 248, 0.35) !important;
+    border-radius: 12px !important;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.28) 0%, rgba(139, 92, 246, 0.22) 100%) !important;
+    color: #c7d2fe !important;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+/* Соединяем шаги тонкой линией — видно, что это последовательность. */
+@media (min-width: 861px) {
+    body.gs-dashboard .zv-step-card:not(:last-child)::after {
+        position: absolute;
+        top: 42px;
+        right: -9px;
+        width: 18px;
+        height: 1px;
+        background: var(--gs-border-strong);
+        content: '';
+    }
+}
+
+@media (max-width: 720px) {
+    body.gs-dashboard .zv-why-section,
+    body.gs-dashboard .zv-steps-section {
+        padding: 24px 16px;
+    }
+
+    body.gs-dashboard .zv-cards-grid,
+    body.gs-dashboard .zv-steps-grid {
+        grid-template-columns: 1fr;
+    }
+}
