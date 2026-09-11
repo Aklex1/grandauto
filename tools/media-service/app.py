@@ -41,6 +41,17 @@ MAX_MINUTES = int(os.environ.get("MAX_MINUTES", "90"))
 YOOMONEY_SECRET = os.environ.get("YOOMONEY_SECRET", "").strip()
 SITE_WEBHOOK = os.environ.get("SITE_WEBHOOK", "https://genius-bot.ru/wp-json/genius/v1/yoomoney").strip()
 BOT_WEBHOOK = os.environ.get("BOT_WEBHOOK", "http://127.0.0.1:8000/yoomoney-webhook").strip()
+
+# Метки платежей сайта. Их выдают плагины: кабинет озвучки и «Нейросети».
+# Всё, что сюда не подходит, считается платежом бота.
+SITE_PREFIXES = tuple(
+    p.strip() for p in os.environ.get(
+        "SITE_LABEL_PREFIXES", "topup_wp_,topup_telegram_,topup_,kie-neurohub|"
+    ).split(",") if p.strip()
+)
+BOT_PREFIXES = tuple(
+    p.strip() for p in os.environ.get("BOT_LABEL_PREFIXES", "").split(",") if p.strip()
+)
 PAY_LOG = Path(os.environ.get("PAY_LOG", FILES_DIR.parent / "payments.log"))
 
 FILES_DIR.mkdir(parents=True, exist_ok=True)
@@ -154,6 +165,16 @@ def yoomoney_signature_ok(form: dict) -> bool:
     ])
     mine = hashlib.sha1(parts.encode("utf-8")).hexdigest()
     return mine == (form.get("sha1_hash") or "").lower()
+
+
+def whose_payment(label: str) -> str:
+    """Чей это платёж — сайта или бота. Решаем по метке, которую выдал
+    тот, кто заводил платёж: у сайта она своя, у бота своя."""
+    if BOT_PREFIXES and label.startswith(BOT_PREFIXES):
+        return "бот"
+    if label.startswith(SITE_PREFIXES):
+        return "сайт"
+    return "бот"
 
 
 def write_pay_log(entry: dict) -> None:
@@ -342,23 +363,30 @@ async def yoomoney_webhook(request: Request):
         write_pay_log(entry)
         return {"status": "ok"}
 
-    # Сначала всегда сайт: он знает своих пользователей, включая тех, кто
-    # вошёл через ВК или Telegram, и сам пополняет им баланс.
-    result = deliver(SITE_WEBHOOK, form)
-    credited = False
-    try:
-        credited = bool(json.loads(result["body"]).get("credited"))
-    except (ValueError, AttributeError):
-        credited = result["ok"]
+    owner = whose_payment(label)
+    entry["owner"] = owner
 
-    if credited:
-        entry.update(route="сайт", detail=f"{result['status']} зачислено")
+    if owner == "сайт":
+        # Пользователя ищет сам сайт: по метке он знает, кому пополнять,
+        # независимо от того, вошёл человек по почте, через ВК или из бота.
+        result = deliver(SITE_WEBHOOK, form)
+        credited = False
+        try:
+            credited = bool(json.loads(result["body"]).get("credited"))
+        except (ValueError, AttributeError):
+            credited = result["ok"]
+
+        if credited:
+            entry.update(route="сайт", detail="баланс пополнен")
+        else:
+            entry.update(route="сайт", detail=f"не зачислено: {result['body'][:140]}")
+            # Метка сайта, а платежа нет — это уже не вопрос маршрута,
+            # поэтому боту такое не передаём, а оставляем в журнале.
     elif BOT_WEBHOOK:
-        # Платёж сайту неизвестен — значит, его заводил не он.
-        second = deliver(BOT_WEBHOOK, form)
-        entry.update(route="бот", detail=f"сайт не узнал платёж; бот: {second['status']} {second['body'][:90]}")
+        result = deliver(BOT_WEBHOOK, form)
+        entry.update(route="бот", detail=f"{result['status']} {result['body'][:120]}")
     else:
-        entry.update(route="никуда", detail=f"сайт не узнал платёж: {result['body'][:120]}")
+        entry.update(route="никуда", detail="платёж бота, но адрес бота не задан")
 
     write_pay_log(entry)
     # ЮMoney повторяет уведомление, если ответ не 200: подтверждаем приём,
