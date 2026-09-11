@@ -62,6 +62,20 @@ systemctl daemon-reload
 systemctl enable --now media-service
 sleep 3
 
+# Порт нестандартный, и на свежем сервере он чаще всего закрыт межсетевым
+# экраном — сайт тогда получает таймаут вместо ответа. Открываем тот,
+# что найден; облачную группу безопасности всё равно придётся настроить
+# в панели провайдера.
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi '^Status: active'; then
+    echo "== открываю порт $PORT в ufw"
+    ufw allow "${PORT}/tcp" >/dev/null 2>&1 || true
+fi
+if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+    echo "== открываю порт $PORT в firewalld"
+    firewall-cmd --permanent --add-port="${PORT}/tcp" >/dev/null 2>&1 || true
+    firewall-cmd --reload >/dev/null 2>&1 || true
+fi
+
 echo "== проверка"
 curl -fsS "http://127.0.0.1:${PORT}/health" && echo
 echo
