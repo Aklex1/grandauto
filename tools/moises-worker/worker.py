@@ -123,11 +123,20 @@ def open_studio(page_url=STUDIO):
     playwright = sync_playwright().start()
 
     if CDP:
-        browser = playwright.chromium.connect_over_cdp(CDP)
-        context = browser.contexts[0] if browser.contexts else browser.new_context(accept_downloads=True)
-        page = context.pages[0] if context.pages else context.new_page()
-        page.goto(page_url, wait_until="domcontentloaded")
-        return playwright, context, page
+        try:
+            browser = playwright.chromium.connect_over_cdp(CDP)
+            context = browser.contexts[0] if browser.contexts else browser.new_context(accept_downloads=True)
+            page = context.pages[0] if context.pages else context.new_page()
+            page.goto(page_url, wait_until="domcontentloaded")
+            return playwright, context, page
+        except Exception as error:
+            # Частый случай: переменная осталась с прошлого запуска,
+            # а браузер с отладочным портом уже закрыт.
+            log(f"Не подключился к браузеру на {CDP}: {type(error).__name__}")
+            log("  либо запустите Chrome с ключом --remote-debugging-port=9222,")
+            log("  либо очистите переменную: set GB_CDP=")
+            log("  пока открою свой браузер — в нём нужен вход в студию")
+            globals()["CDP"] = ""
 
     options = {
         "user_data_dir": str(PROFILE),
