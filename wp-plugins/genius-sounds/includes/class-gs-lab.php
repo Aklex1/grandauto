@@ -677,6 +677,31 @@ class GS_Lab {
     }
 
     /**
+     * Расширение файла по типу содержимого, с запасным вариантом по виду задачи.
+     */
+    private static function ext_from_type($content_type, $kind) {
+        $map = array(
+            'image/png'  => 'png',
+            'image/jpeg' => 'jpg',
+            'image/webp' => 'webp',
+            'video/mp4'  => 'mp4',
+            'audio/mpeg' => 'mp3',
+            'audio/wav'  => 'wav',
+            'audio/x-wav'=> 'wav',
+            'audio/ogg'  => 'ogg',
+            'audio/mp4'  => 'm4a',
+        );
+        $type = strtolower(trim(explode(';', (string) $content_type)[0]));
+        if (isset($map[$type])) {
+            return $map[$type];
+        }
+        if ($kind === 'video') {
+            return 'mp4';
+        }
+        return $kind === 'image' ? 'png' : 'mp3';
+    }
+
+    /**
      * Копируем результат к себе: ссылки агрегатора живут ограниченное время.
      */
     public static function store_result($task_id, $url, $kind) {
@@ -686,21 +711,37 @@ class GS_Lab {
         }
         GS_Storage::ensure_dirs();
 
+        $known = array('mp3', 'wav', 'mp4', 'ogg', 'm4a', 'png', 'jpg', 'jpeg', 'webp');
         $ext = strtolower((string) pathinfo(wp_parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION));
-        if (!in_array($ext, array('mp3', 'wav', 'mp4', 'ogg', 'm4a'), true)) {
-            $ext = $kind === 'video' ? 'mp4' : 'mp3';
+        if (!in_array($ext, $known, true)) {
+            $ext = '';
         }
-        $name = $task_id . '-' . substr(md5($url), 0, 8) . '.' . $ext;
-        $target = GS_Storage::generated_dir() . '/' . $name;
 
-        if (file_exists($target) && filesize($target) > 1024) {
-            return GS_Storage::generated_url() . '/' . $name;
+        // Имя уже известно — отдаём готовый файл, не скачивая заново.
+        if ($ext !== '') {
+            $name = $task_id . '-' . substr(md5($url), 0, 8) . '.' . $ext;
+            $target = GS_Storage::generated_dir() . '/' . $name;
+            if (file_exists($target) && filesize($target) > 1024) {
+                return GS_Storage::generated_url() . '/' . $name;
+            }
         }
+
         $response = wp_remote_get($url, array('timeout' => 180));
         if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
             return '';
         }
         $body = wp_remote_retrieve_body($response);
+
+        // Ссылки моделей часто без расширения: тип берём из ответа,
+        // иначе картинка ляжет на диск как mp3 и не откроется у клиента.
+        if ($ext === '') {
+            $ext = self::ext_from_type((string) wp_remote_retrieve_header($response, 'content-type'), $kind);
+        }
+        $name = $task_id . '-' . substr(md5($url), 0, 8) . '.' . $ext;
+        $target = GS_Storage::generated_dir() . '/' . $name;
+        if (file_exists($target) && filesize($target) > 1024) {
+            return GS_Storage::generated_url() . '/' . $name;
+        }
         if (strlen((string) $body) < 1024) {
             return '';
         }

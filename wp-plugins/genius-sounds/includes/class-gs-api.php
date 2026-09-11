@@ -61,6 +61,7 @@ class GS_Api {
                 'title'  => 'Оживить фото',
                 'about'  => 'Из фотографии получается короткое видео: движение головы, мимика, лёгкая камера.',
                 'model'  => 'bytedance/v1-pro-fast-image-to-video',
+                'info'   => 'https://api.kie.ai/api/v1/seedance/record-info',
                 'input'  => array('image_url' => 'required', 'prompt' => 'optional'),
                 'result' => 'video',
                 'price'  => 25,
@@ -72,6 +73,7 @@ class GS_Api {
                 'title'  => 'Изменить фото по описанию',
                 'about'  => 'Замена фона и одежды, удаление объектов, реставрация — словами, без редактора.',
                 'model'  => 'google/nano-banana-edit',
+                'info'   => 'https://api.kie.ai/api/v1/nano-banana/record-info',
                 'input'  => array('image_url' => 'required', 'prompt' => 'required'),
                 'result' => 'image',
                 'price'  => 35,
@@ -83,6 +85,7 @@ class GS_Api {
                 'title'  => 'Картинка по описанию',
                 'about'  => 'Изображение из текста — для карточек товара, обложек и иллюстраций.',
                 'model'  => 'google/nano-banana',
+                'info'   => 'https://api.kie.ai/api/v1/nano-banana/record-info',
                 'input'  => array('prompt' => 'required'),
                 'result' => 'image',
                 'price'  => 9,
@@ -94,6 +97,7 @@ class GS_Api {
                 'title'  => 'Увеличить качество фото',
                 'about'  => 'Апскейл вдвое с восстановлением деталей: для старых снимков и мелких картинок.',
                 'model'  => 'topaz/image-upscale',
+                'info'   => 'https://api.kie.ai/api/v1/topaz/record-info',
                 'input'  => array('image_url' => 'required'),
                 'result' => 'image',
                 'price'  => 50,
@@ -639,7 +643,8 @@ class GS_Api {
         } elseif ($engine === 'tts') {
             $state = self::state_from_generations($task_id);
         } else {
-            $state = self::jobs_state($task_id);
+            $service = self::get_service($task['service']);
+            $state = self::jobs_state($task_id, $service && !empty($service['info']) ? $service['info'] : '');
         }
 
         if (empty($state['ok'])) {
@@ -684,27 +689,42 @@ class GS_Api {
         return array('status' => 'completed', 'files' => $files, 'message' => '');
     }
 
-    /** Задачи моделей: единый разбор ответа jobs/recordInfo. */
-    private static function jobs_state($task_id) {
+    /**
+     * Задачи моделей. У части семейств свой адрес проверки статуса,
+     * общий jobs/recordInfo про них просто ничего не знает — поэтому
+     * сначала спрашиваем «родной» адрес, а общий оставляем запасным.
+     */
+    private static function jobs_state($task_id, $info_url = '') {
         $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'message' => '');
         $key = trim((string) get_option('kie_tts_api_key', ''));
         if ($key === '') {
             return $out;
         }
-        $response = wp_remote_get(add_query_arg('taskId', $task_id, self::API_INFO), array(
-            'timeout' => 45,
-            'headers' => array('Authorization' => 'Bearer ' . $key),
-        ));
-        if (is_wp_error($response)) {
-            return $out;
+
+        $data = array();
+        $urls = $info_url !== '' ? array($info_url, self::API_INFO) : array(self::API_INFO);
+        foreach ($urls as $url) {
+            $response = wp_remote_get(add_query_arg('taskId', $task_id, $url), array(
+                'timeout' => 45,
+                'headers' => array('Authorization' => 'Bearer ' . $key),
+            ));
+            if (is_wp_error($response)) {
+                continue;
+            }
+            $body = json_decode((string) wp_remote_retrieve_body($response), true);
+            if (!is_array($body) || (int) ($body['code'] ?? 0) !== 200) {
+                continue;
+            }
+            if (isset($body['data']) && is_array($body['data']) && !empty($body['data'])) {
+                $data = $body['data'];
+                break;
+            }
         }
-        $body = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($body) || !isset($body['data']) || !is_array($body['data'])) {
+        if (empty($data)) {
             return $out;
         }
         $out['ok'] = true;
-        $data = $body['data'];
-        $state = (string) ($data['state'] ?? '');
+        $state = (string) ($data['state'] ?? $data['successFlag'] ?? '');
 
         if ($state === 'fail') {
             $out['status'] = 'failed';
