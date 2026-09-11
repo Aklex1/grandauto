@@ -146,10 +146,13 @@
         }
 
         var payload = { service: cfg.service };
+        var optional = cfg.inputsOptional || [];
         var missing = false;
         (cfg.inputs || []).forEach(function (kind) {
             if (!uploaded[kind]) {
-                missing = true;
+                if (optional.indexOf(kind) === -1) {
+                    missing = true;
+                }
                 return;
             }
             payload[kind + '_url'] = uploaded[kind];
@@ -228,7 +231,7 @@
                 if (data.status === 'completed') {
                     stopPolling();
                     setBusy(false);
-                    renderFiles(data.files || []);
+                    renderFiles(data.files || [], data.text || '');
                     if (els.balance && typeof data.balance !== 'undefined') {
                         els.balance.textContent = money(data.balance);
                     }
@@ -249,9 +252,49 @@
         }, POLL_INTERVAL);
     }
 
-    function renderFiles(files) {
+    function renderFiles(files, text) {
         els.progress.style.width = '100%';
         els.files.innerHTML = '';
+
+        // Расшифровка — это прежде всего текст: показываем его сразу,
+        // а файлы идут ниже как способ забрать результат с собой.
+        if (text) {
+            var box = document.createElement('div');
+            box.className = 'gs-lab-file gs-lab-text';
+
+            var caption = document.createElement('h3');
+            caption.className = 'gs-lab-file__title';
+            caption.textContent = 'Расшифровка';
+            box.appendChild(caption);
+
+            var body = document.createElement('div');
+            body.className = 'gs-lab-text__body';
+            body.textContent = text;
+            box.appendChild(body);
+
+            var copy = document.createElement('button');
+            copy.type = 'button';
+            copy.className = 'gs-btn gs-btn--primary';
+            copy.textContent = 'Скопировать текст';
+            copy.addEventListener('click', function () {
+                var done = function () {
+                    copy.textContent = 'Скопировано';
+                    setTimeout(function () { copy.textContent = 'Скопировать текст'; }, 1800);
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(done, function () {});
+                    return;
+                }
+                var area = document.createElement('textarea');
+                area.value = text;
+                document.body.appendChild(area);
+                area.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+                document.body.removeChild(area);
+            });
+            box.appendChild(copy);
+            els.files.appendChild(box);
+        }
 
         files.forEach(function (file) {
             var wrap = document.createElement('div');
@@ -262,14 +305,16 @@
             title.textContent = file.label;
             wrap.appendChild(title);
 
-            var media = document.createElement(file.kind === 'video' ? 'video' : 'audio');
-            media.controls = true;
-            media.src = file.url;
-            media.className = file.kind === 'video' ? 'gs-lab-video' : 'gs-audio';
-            if (file.kind === 'video') {
-                media.setAttribute('playsinline', '');
+            if (file.kind !== 'file') {
+                var media = document.createElement(file.kind === 'video' ? 'video' : 'audio');
+                media.controls = true;
+                media.src = file.url;
+                media.className = file.kind === 'video' ? 'gs-lab-video' : 'gs-audio';
+                if (file.kind === 'video') {
+                    media.setAttribute('playsinline', '');
+                }
+                wrap.appendChild(media);
             }
-            wrap.appendChild(media);
 
             var link = document.createElement('a');
             link.className = 'gs-btn gs-btn--primary';

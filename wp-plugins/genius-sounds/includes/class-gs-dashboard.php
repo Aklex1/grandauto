@@ -21,8 +21,9 @@ class GS_Dashboard {
     }
 
     /**
-     * Под кабинетом показываем разборы частых задач по расшифровке:
-     * читателю — быстрый ответ, страницам блога — вес с сильной страницы.
+     * Разборы частых задач переехали на страницу расшифровки вместе с
+     * самим сервисом. Здесь фильтр оставлен пустым, чтобы блок не появился
+     * в кабинете второй раз.
      */
     public static function append_keywords($content) {
         if (is_admin() || !is_main_query() || !in_the_loop()) {
@@ -34,7 +35,7 @@ class GS_Dashboard {
         if (strpos($content, 'gs-keys') !== false) {
             return $content;
         }
-        return $content . GS_Keywords::render('stt');
+        return $content;
     }
 
     public static function enabled() {

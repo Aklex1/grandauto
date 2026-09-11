@@ -122,6 +122,135 @@ class GS_Lab {
                 ),
             ),
 
+            'stt' => array(
+                'id'          => 'stt',
+                'slug'        => 'rasshifrovka-audio',
+                'page_option' => 'gs_lab_page_stt',
+                'menu'        => 'Расшифровка записи',
+                'nav'         => 'Расшифровка записи',
+                'h1'          => 'Расшифровка аудио в текст онлайн: с таймкодами и по говорящим',
+                'seo_title'   => 'Расшифровка аудио в текст онлайн — перевести запись в текст',
+                'seo_desc'    => 'Расшифровка аудио в текст онлайн: загрузите запись или дайте ссылку на ролик — нейросеть вернёт текст с отметками времени и разделением по говорящим. Выгрузка в TXT, SRT и VTT.',
+                'lead'        => 'Загрузите запись или вставьте ссылку на ролик — нейросеть вернёт текст с пунктуацией, отметками времени и разделением по говорящим. Готовый результат скачивается текстом или субтитрами.',
+                'badge'       => 'Речь в текст',
+                'cost_option' => 'gs_lab_cost_stt',
+                'cost'        => 0,
+                'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 0, 'max_seconds' => 0),
+                'available'   => true,
+                'inputs'      => array('audio'),
+                'input_optional' => array('audio'),
+                'accept'      => array(
+                    'audio' => 'audio/mpeg,audio/wav,audio/x-wav,audio/aac,audio/mp4,audio/ogg,video/mp4,video/webm',
+                ),
+                'prompt'      => false,
+                'fields'      => array(
+                    'source_url' => array(
+                        'type'  => 'text',
+                        'label' => 'Или ссылка на запись либо ролик',
+                        'place' => 'https://www.youtube.com/watch?v=… или ссылка на MP3',
+                        'max'   => 500,
+                        'hint'  => 'Годится и прямая ссылка на файл, и ссылка на ролик — дорожку достанем сами.',
+                    ),
+                    'language' => array(
+                        'type'  => 'text',
+                        'label' => 'Язык записи (необязательно)',
+                        'place' => 'ru, en, de…',
+                        'max'   => 20,
+                        'hint'  => 'На коротких записях явный язык заметно повышает точность.',
+                    ),
+                    'diarize' => array(
+                        'type'    => 'checkbox',
+                        'label'   => 'Разделить по говорящим',
+                        'default' => true,
+                        'hint'    => 'Для интервью, совещаний и подкастов.',
+                    ),
+                    'events' => array(
+                        'type'    => 'checkbox',
+                        'label'   => 'Отмечать неречевые звуки',
+                        'default' => false,
+                        'hint'    => 'Смех, музыка, аплодисменты — пометками в тексте.',
+                    ),
+                ),
+                'result_kind' => 'text',
+                'poll_seconds'=> 900,
+                'steps'       => array(
+                    'Загрузите запись или вставьте ссылку на ролик.',
+                    'Укажите язык и включите разделение по говорящим, если в записи несколько человек.',
+                    'Через пару минут заберите текст, субтитры SRT или VTT.',
+                ),
+                'faq'         => array(
+                    array('Какие файлы принимаются?',
+                          'MP3, WAV, M4A, OGG и дорожка из видео — MP4 и WebM. Можно не загружать файл вовсе, а дать ссылку на ролик: звук из него будет извлечён автоматически.'),
+                    array('Насколько точная расшифровка?',
+                          'На разборчивой записи — близко к дословной, со знаками препинания и заглавными буквами. Слабое место — имена собственные и узкие термины: их стоит проверить поиском по тексту. Если запись шумная, сначала прогоните её через очистку звука.'),
+                    array('Как работает разделение по говорящим?',
+                          'Голоса сравниваются по тембру и манере речи, каждому присваивается номер: «Говорящий 1», «Говорящий 2». Имён модель не знает — их подставляют заменой по тексту. Двух-трёх человек различает уверенно, в записи на пятерых часть реплик придётся поправить.'),
+                    array('Что можно скачать?',
+                          'Текст с отметками времени и говорящими, субтитры SRT и VTT. Субтитры сразу подхватываются видеоредактором и плеером.'),
+                    array('Сколько это стоит?',
+                          'Сейчас расшифровка бесплатна: платить нужно только за сервисы с тяжёлой генерацией.'),
+                ),
+            ),
+
+            'ytaudio' => array(
+                'id'          => 'ytaudio',
+                'slug'        => 'zvuk-iz-video',
+                'page_option' => 'gs_lab_page_ytaudio',
+                'menu'        => 'Звук из видео',
+                'nav'         => 'Звук из видео',
+                'h1'          => 'Извлечь звук из видео онлайн: дорожка по ссылке за полминуты',
+                'seo_title'   => 'Извлечь звук из видео онлайн — скачать аудиодорожку в MP3',
+                'seo_desc'    => 'Извлеките звук из видео онлайн по ссылке: вставьте адрес ролика и получите готовую дорожку в MP3, WAV или M4A. Без установки программ и без скачивания самого видео.',
+                'lead'        => 'Вставьте ссылку на ролик — и заберите звуковую дорожку отдельным файлом. Само видео скачивать не нужно: дорожка снимается на нашей стороне и приходит готовым файлом.',
+                'badge'       => 'Дорожка из ролика',
+                'cost_option' => 'gs_lab_cost_ytaudio',
+                'cost'        => 0,
+                'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 0, 'max_seconds' => 0),
+                'available'   => true,
+                'inputs'      => array(),
+                'accept'      => array(),
+                'prompt'      => false,
+                'fields'      => array(
+                    'url' => array(
+                        'type'  => 'text',
+                        'label' => 'Ссылка на ролик',
+                        'place' => 'https://www.youtube.com/watch?v=…',
+                        'max'   => 500,
+                        'hint'  => 'Ролик должен открываться без входа и без ограничения по возрасту.',
+                    ),
+                    'format' => array(
+                        'type'    => 'select',
+                        'label'   => 'Формат дорожки',
+                        'options' => array(
+                            'mp3' => 'MP3 — слушать и отправлять',
+                            'wav' => 'WAV — для обработки и монтажа',
+                            'm4a' => 'M4A — без потерь, формат из ролика',
+                        ),
+                        'default' => 'mp3',
+                        'hint'    => 'Для расшифровки и монтажа лучше WAV, для прослушивания — MP3.',
+                    ),
+                ),
+                'result_kind' => 'audio',
+                'poll_seconds'=> 600,
+                'steps'       => array(
+                    'Вставьте ссылку на ролик.',
+                    'Выберите формат: MP3 для прослушивания, WAV для обработки.',
+                    'Скачайте готовую дорожку.',
+                ),
+                'faq'         => array(
+                    array('Нужно ли скачивать само видео?',
+                          'Нет. Достаточно ссылки: дорожка снимается на нашей стороне и приходит готовым файлом.'),
+                    array('Теряется ли качество?',
+                          'В M4A дорожка отдаётся ровно такой, какой была в ролике. MP3 и WAV получаются перекодированием — на слух разница незаметна, но для дальнейшей обработки лучше брать WAV.'),
+                    array('Какой длины ролик можно обработать?',
+                          'До полутора часов. Более длинные записи стоит разрезать: обработка занимает дольше, а файл получается громоздким.'),
+                    array('Что делать с дорожкой дальше?',
+                          'Её можно расшифровать в текст, очистить от шума или разделить на голос и музыку — все инструменты рядом.'),
+                    array('А если ролик с ограничением по возрасту?',
+                          'Такие ролики требуют входа в аккаунт, и дорожку снять не получится. То же касается приватных и удалённых видео.'),
+                ),
+            ),
+
             'music' => array(
                 'id'          => 'music',
                 'slug'        => 'sozdat-muzyku',
@@ -586,6 +715,24 @@ class GS_Lab {
      *
      * @return array{ok:bool,task_id:string,message:string}
      */
+    /** Отказ службы извлечения — на языке пользователя. */
+    private static function ytaudio_error($message) {
+        $low = mb_strtolower((string) $message);
+        if (strpos($low, 'ключ') !== false || strpos($low, 'key') !== false) {
+            return 'Служба извлечения звука не настроена — сообщите нам, починим.';
+        }
+        if (strpos($low, 'timeout') !== false || strpos($low, 'таймаут') !== false || strpos($low, 'timed out') !== false) {
+            return 'Служба извлечения звука не ответила вовремя. Попробуйте ещё раз через минуту.';
+        }
+        if (strpos($low, 'sign in') !== false || strpos($low, 'age') !== false || strpos($low, 'private') !== false) {
+            return 'Ролик требует входа в аккаунт или закрыт — дорожку снять нельзя.';
+        }
+        if (strpos($low, 'duration') !== false) {
+            return 'Ролик слишком длинный. Разрежьте запись или возьмите фрагмент покороче.';
+        }
+        return (string) $message;
+    }
+
     /** Короткое название трека из описания — когда пользователь его не задал. */
     private static function music_title($prompt) {
         $prompt = trim(preg_replace('~\s+~u', ' ', (string) $prompt));
@@ -656,6 +803,70 @@ class GS_Lab {
             return array('ok' => $res['ok'] && $task !== '', 'task_id' => $task, 'message' => $res['message']);
         }
 
+        if ($id === 'stt') {
+            $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
+            $link = trim((string) ($fields['source_url'] ?? ''));
+            $audio = (string) ($params['audio_url'] ?? '');
+            if ($audio === '' && $link === '') {
+                return array('ok' => false, 'task_id' => '', 'message' => 'Загрузите запись или вставьте ссылку');
+            }
+
+            $source = array(
+                'language_code'    => trim((string) ($fields['language'] ?? '')),
+                'tag_audio_events' => !empty($fields['events']),
+                'diarize'          => !empty($fields['diarize']),
+            );
+            // Прямую ссылку на файл отдаём как есть, ссылку на ролик — через
+            // извлечение дорожки: разбирать её здесь незачем, это умеет очередь.
+            if ($audio !== '') {
+                $source['audio_url'] = $audio;
+            } elseif (preg_match('~\.(mp3|wav|m4a|ogg|opus|aac|mp4|webm)(\?|$)~i', $link)) {
+                $source['audio_url'] = $link;
+            } else {
+                $source['youtube_url'] = $link;
+            }
+
+            $created = GS_Transcribe::create($source, (int) ($params['user_id'] ?? 0));
+            if (is_wp_error($created)) {
+                return array('ok' => false, 'task_id' => '', 'message' => $created->get_error_message());
+            }
+            return array('ok' => true, 'task_id' => (string) $created['id'], 'message' => '');
+        }
+
+        if ($id === 'ytaudio') {
+            $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
+            $url = esc_url_raw(trim((string) ($fields['url'] ?? '')));
+            if ($url === '') {
+                return array('ok' => false, 'task_id' => '', 'message' => 'Вставьте ссылку на ролик');
+            }
+            $format = strtolower(trim((string) ($fields['format'] ?? 'mp3')));
+            if (!in_array($format, array('mp3', 'wav', 'm4a'), true)) {
+                $format = 'mp3';
+            }
+            if (!class_exists('KIE_TTS_API')) {
+                return array('ok' => false, 'task_id' => '', 'message' => 'Извлечение звука сейчас недоступно');
+            }
+
+            // Служба отвечает сразу, очереди у неё нет: складываем готовый
+            // ответ под своим номером, чтобы страница работала как обычно.
+            $data = KIE_TTS_API::create_youtube_audio_task($url, $format);
+            $audio = is_array($data) && !empty($data['audio_url']) ? esc_url_raw((string) $data['audio_url']) : '';
+            if ($audio === '') {
+                $message = is_array($data) && !empty($data['message'])
+                    ? (string) $data['message']
+                    : 'Не удалось получить дорожку по этой ссылке';
+                return array('ok' => false, 'task_id' => '', 'message' => self::ytaudio_error($message));
+            }
+
+            $task_id = 'yta-' . wp_generate_password(20, false, false);
+            $title = is_array($data) && !empty($data['title']) ? (string) $data['title'] : 'Звуковая дорожка';
+            set_transient('gs_lab_yta_' . $task_id, array(
+                'url'   => $audio,
+                'title' => $title,
+            ), DAY_IN_SECONDS);
+            return array('ok' => true, 'task_id' => $task_id, 'message' => '');
+        }
+
         if ($id === 'music') {
             $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
             $instrumental = !isset($fields['instrumental']) || !empty($fields['instrumental']);
@@ -712,7 +923,7 @@ class GS_Lab {
      * @return array{ok:bool,status:string,files:array,message:string}
      */
     public static function fetch_task($id, $task_id) {
-        $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'message' => '');
+        $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'text' => '', 'message' => '');
 
         if (class_exists('GS_Manual') && GS_Manual::is_own_task($task_id)) {
             return GS_Manual::state($task_id);
@@ -720,6 +931,33 @@ class GS_Lab {
 
         if (class_exists('GS_MusicAI') && GS_MusicAI::is_own_task($task_id)) {
             return GS_MusicAI::fetch_job($id, $task_id);
+        }
+
+        if ($id === 'stt') {
+            $state = GS_Transcribe::state($task_id);
+            $out['ok']      = true;
+            $out['status']  = (string) $state['status'];
+            $out['files']   = is_array($state['files']) ? $state['files'] : array();
+            $out['text']    = (string) $state['text'];
+            $out['message'] = (string) $state['message'];
+            return $out;
+        }
+
+        if ($id === 'ytaudio') {
+            $saved = get_transient('gs_lab_yta_' . $task_id);
+            $out['ok'] = true;
+            if (!is_array($saved) || empty($saved['url'])) {
+                $out['status'] = 'failed';
+                $out['message'] = 'Дорожка не найдена — попробуйте ещё раз';
+                return $out;
+            }
+            $out['status'] = 'completed';
+            $out['files'][] = array(
+                'label' => (string) $saved['title'],
+                'url'   => (string) $saved['url'],
+                'kind'  => 'audio',
+            );
+            return $out;
         }
 
         if ($id === 'music') {

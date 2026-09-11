@@ -227,7 +227,9 @@ class GS_Rest {
 
         $task_id = $created['task_id'];
 
-        if (!GS_SFX::charge($user_id, $cost)) {
+        // Бесплатный сервис ничего не списывает: нулевое списание база
+        // считает неудачей, и пользователь получил бы ложный отказ.
+        if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_charge_failed', 'Не удалось списать средства с баланса', array('status' => 500));
         }
 
@@ -618,9 +620,15 @@ class GS_Rest {
         }
 
         $payload = array();
+        $optional = (array) (isset($service['input_optional']) ? $service['input_optional'] : array());
         foreach ($service['inputs'] as $input) {
             $field = $input . '_url';
             $url = isset($params[$field]) ? esc_url_raw((string) $params[$field]) : '';
+            if ($url === '' && in_array($input, $optional, true)) {
+                // Файл необязателен: сервис примет вместо него ссылку.
+                $payload[$field] = '';
+                continue;
+            }
             // Обычным пользователям — только свои загрузки; администратору разрешаем
             // внешний адрес, чтобы можно было проверить сервис на эталонном файле.
             $own_upload = $url !== '' && strpos($url, GS_Lab::uploads_url()) === 0;
@@ -648,6 +656,9 @@ class GS_Rest {
                 }
                 $value = isset($sent[$name]) ? (string) $sent[$name] : '';
                 $value = $type === 'textarea' ? sanitize_textarea_field($value) : sanitize_text_field($value);
+                if ($type === 'select' && !empty($field['options']) && !array_key_exists($value, (array) $field['options'])) {
+                    $value = (string) (isset($field['default']) ? $field['default'] : '');
+                }
                 $max = isset($field['max']) ? (int) $field['max'] : 200;
                 $clean[$name] = $max > 0 ? mb_substr($value, 0, $max) : $value;
             }
@@ -759,7 +770,8 @@ class GS_Rest {
 
         $files = array();
         foreach ($task['files'] as $file) {
-            $local = GS_Lab::store_result($task_id, $file['url'], $file['kind']);
+            // Текстовые выгрузки уже лежат у нас — перекладывать их незачем.
+            $local = $file['kind'] === 'file' ? '' : GS_Lab::store_result($task_id, $file['url'], $file['kind']);
             $files[] = array(
                 'label' => $file['label'],
                 'kind'  => $file['kind'],
@@ -775,6 +787,7 @@ class GS_Rest {
             'success' => true,
             'status'  => 'completed',
             'files'   => $files,
+            'text'    => isset($task['text']) ? (string) $task['text'] : '',
             'balance' => GS_SFX::get_balance($user_id),
         ));
     }

@@ -69,8 +69,9 @@ class GS_Lab_Page {
                 <form class="gs-panel gs-form" id="gs-lab-form" novalidate>
                     <?php foreach ($service['inputs'] as $input): ?>
                         <div class="gs-field">
+                            <?php $optional = in_array($input, (array) (isset($service['input_optional']) ? $service['input_optional'] : array()), true); ?>
                             <label class="gs-label" for="gs-lab-<?php echo esc_attr($input); ?>">
-                                <?php echo $input === 'image' ? 'Фотография' : 'Аудиофайл'; ?>
+                                <?php echo $input === 'image' ? 'Фотография' : 'Аудиофайл'; ?><?php echo $optional ? ' (необязательно)' : ''; ?>
                             </label>
                             <input id="gs-lab-<?php echo esc_attr($input); ?>" class="gs-input gs-file" type="file"
                                    data-kind="<?php echo esc_attr($input); ?>"
@@ -81,7 +82,10 @@ class GS_Lab_Page {
                                     echo 'JPEG или PNG, до 10 МБ. Лицо анфас, крупно.';
                                 } else {
                                     $limit = GS_Lab::max_seconds($service['id']);
-                                    echo 'MP3, WAV, M4A или OGG. До ' . ($service['id'] === 'vocal' ? '20' : '10') . ' МБ';
+                                    $formats = $service['id'] === 'stt'
+                                        ? 'MP3, WAV, M4A, OGG, а также MP4 и WebM'
+                                        : 'MP3, WAV, M4A или OGG';
+                                    echo $formats . '. До ' . ($service['id'] === 'vocal' ? '20' : '10') . ' МБ';
                                     if ($limit > 0) {
                                         echo $limit < 120
                                             ? ' и ' . (int) $limit . ' секунд'
@@ -115,6 +119,17 @@ class GS_Lab_Page {
                                            <?php checked(!empty($field['default'])); ?>>
                                     <span><?php echo esc_html($field['label']); ?></span>
                                 </label>
+                            <?php elseif ($field['type'] === 'select'): ?>
+                                <label class="gs-label" for="<?php echo esc_attr($fid); ?>"><?php echo esc_html($field['label']); ?></label>
+                                <select id="<?php echo esc_attr($fid); ?>" class="gs-input"
+                                        data-gs-field="<?php echo esc_attr($name); ?>">
+                                    <?php foreach ((array) $field['options'] as $value => $caption): ?>
+                                        <option value="<?php echo esc_attr($value); ?>"
+                                            <?php selected((string) $value, (string) (isset($field['default']) ? $field['default'] : '')); ?>>
+                                            <?php echo esc_html($caption); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                             <?php elseif ($field['type'] === 'textarea'): ?>
                                 <label class="gs-label" for="<?php echo esc_attr($fid); ?>"><?php echo esc_html($field['label']); ?></label>
                                 <textarea id="<?php echo esc_attr($fid); ?>" class="gs-textarea"
@@ -160,11 +175,22 @@ class GS_Lab_Page {
 
                 <aside class="gs-panel gs-result" id="gs-lab-result">
                     <div class="gs-result__empty" id="gs-lab-empty">
-                        <div class="gs-result__icon" aria-hidden="true"><?php echo $service['id'] === 'avatar' ? '🎬' : ($service['id'] === 'music' ? '🎵' : '🎚️'); ?></div>
+                        <div class="gs-result__icon" aria-hidden="true"><?php
+                        $icons = array('avatar' => '🎬', 'music' => '🎵', 'stt' => '📝', 'ytaudio' => '🎬');
+                        echo isset($icons[$service['id']]) ? $icons[$service['id']] : '🎚️';
+                    ?></div>
                         <h2 class="gs-result__title">Здесь появится результат</h2>
-                        <p class="gs-result__text"><?php echo empty($service['inputs'])
-                            ? 'Опишите задачу слева и запустите генерацию.'
-                            : 'Загрузите файл слева и запустите обработку.'; ?></p>
+                        <p class="gs-result__text"><?php
+                        if ($service['id'] === 'ytaudio') {
+                            echo 'Вставьте ссылку слева и заберите дорожку.';
+                        } elseif ($service['id'] === 'stt') {
+                            echo 'Загрузите запись или вставьте ссылку слева.';
+                        } elseif (empty($service['inputs'])) {
+                            echo 'Опишите задачу слева и запустите генерацию.';
+                        } else {
+                            echo 'Загрузите файл слева и запустите обработку.';
+                        }
+                    ?></p>
                     </div>
 
                     <div class="gs-result__loading" id="gs-lab-loading" hidden>
@@ -224,6 +250,10 @@ class GS_Lab_Page {
                 return 'Очистить запись';
             case 'music':
                 return 'Создать музыку';
+            case 'stt':
+                return 'Расшифровать';
+            case 'ytaudio':
+                return 'Достать дорожку';
         }
         return 'Запустить';
     }

@@ -765,3 +765,22 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* ------------------------------------------------ расшифровка на странице
+   Текст — главный результат сервиса, поэтому он показывается сразу,
+   а файлы идут ниже как способ забрать его с собой. */
+
+.gs-lab-text__body {
+    max-height: 420px;
+    margin: 0 0 14px;
+    padding: 14px 16px;
+    overflow-y: auto;
+    border: 1px solid var(--gs-border, rgba(148, 163, 184, 0.14));
+    border-radius: var(--gs-radius-sm, 10px);
+    background: var(--gs-surface-2, #0d1320);
+    color: #cbd5e1;
+    font-size: 15px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

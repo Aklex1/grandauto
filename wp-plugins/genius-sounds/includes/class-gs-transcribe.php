@@ -221,11 +221,30 @@ class GS_Transcribe {
 
     /** Ставим задачу и сразу отдаём её номер — как делал прежний поставщик. */
     private static function start($params, $user_id) {
+        $created = self::create($params, $user_id);
+        if (is_wp_error($created)) {
+            return $created;
+        }
+        return new WP_REST_Response(array(
+            'success'   => true,
+            'task_id'   => $created['id'],
+            'record_id' => '',
+            'audio_url' => $created['audio_url'],
+        ), 200);
+    }
+
+    /**
+     * Ставит расшифровку в очередь. Отсюда её заводят и кабинет озвучки,
+     * и отдельный микросервис — очередь у них общая.
+     *
+     * @return array{id:string,audio_url:string}|WP_Error
+     */
+    public static function create($params, $user_id) {
         $audio_url   = isset($params['audio_url']) ? esc_url_raw((string) $params['audio_url']) : '';
         $youtube_url = isset($params['youtube_url']) ? esc_url_raw((string) $params['youtube_url']) : '';
 
         if ($audio_url === '' && $youtube_url === '') {
-            return new WP_Error('missing_source', 'Укажите audio_url или youtube_url', array('status' => 400));
+            return new WP_Error('missing_source', 'Укажите ссылку на запись или загрузите файл', array('status' => 400));
         }
         if ($audio_url === '' && $youtube_url !== '') {
             $extracted = self::audio_from_youtube($youtube_url);
@@ -258,12 +277,142 @@ class GS_Transcribe {
         self::save($task);
         self::spawn($id);
 
-        return new WP_REST_Response(array(
-            'success'   => true,
-            'task_id'   => $id,
-            'record_id' => '',
-            'audio_url' => $audio_url,
-        ), 200);
+        return array('id' => $id, 'audio_url' => $audio_url);
+    }
+
+    /**
+     * Состояние задачи для микросервиса: текст, фразы и готовые файлы.
+     *
+     * @return array{ok:bool,status:string,files:array,text:string,message:string}
+     */
+    public static function state($id) {
+        $out = array('ok' => true, 'status' => 'pending', 'files' => array(), 'text' => '', 'message' => '');
+        $task = self::load($id);
+        if (!$task) {
+            $out['status'] = 'failed';
+            $out['message'] = 'Задача не найдена или устарела';
+            return $out;
+        }
+
+        // Фоновый заход мог не состояться — тогда считаем прямо здесь.
+        if ($task['status'] === 'pending' && (int) $task['started'] === 0
+            && (time() - (int) $task['created']) >= self::SPAWN_GRACE) {
+            self::run($id);
+            $task = self::load($id);
+            if (!$task) {
+                $out['status'] = 'failed';
+                $out['message'] = 'Задача потерялась';
+                return $out;
+            }
+        }
+
+        if ($task['status'] === 'failed') {
+            $out['status'] = 'failed';
+            $out['message'] = (string) $task['error'];
+            return $out;
+        }
+        if ($task['status'] !== 'completed') {
+            return $out;
+        }
+
+        $out['status'] = 'completed';
+        $out['text']   = (string) $task['text'];
+        $out['files']  = self::result_files($task);
+        return $out;
+    }
+
+    /**
+     * Раскладываем расшифровку по файлам: текст, субтитры и таблицу фраз.
+     * Их удобнее скачать, чем выделять мышью на странице.
+     */
+    private static function result_files($task) {
+        if (!class_exists('GS_Storage')) {
+            return array();
+        }
+        GS_Storage::ensure_dirs();
+        $dir = GS_Storage::generated_dir();
+        $url = GS_Storage::generated_url();
+        $stem = 'stt-' . preg_replace('~[^a-zA-Z0-9_-]~', '', (string) $task['id']);
+
+        $segments = is_array($task['segments']) ? $task['segments'] : array();
+        $parts = array(
+            'txt' => array('Текст расшифровки', self::as_text($task)),
+            'srt' => array('Субтитры SRT', self::as_srt($segments)),
+            'vtt' => array('Субтитры VTT', self::as_vtt($segments)),
+        );
+
+        $files = array();
+        foreach ($parts as $ext => $part) {
+            list($label, $body) = $part;
+            if (trim((string) $body) === '') {
+                continue;
+            }
+            $name = $stem . '.' . $ext;
+            if (!file_exists($dir . '/' . $name)) {
+                // Текстовый файл отдаётся без указания кодировки: без метки
+                // браузер и «Блокнот» читают кириллицу как набор символов.
+                $prefix = $ext === 'txt' ? "\xEF\xBB\xBF" : '';
+                file_put_contents($dir . '/' . $name, $prefix . $body);
+            }
+            $files[] = array('label' => $label, 'url' => $url . '/' . $name, 'kind' => 'file');
+        }
+        return $files;
+    }
+
+    /** Текст с отметками времени и говорящими — если они есть. */
+    private static function as_text($task) {
+        $segments = is_array($task['segments']) ? $task['segments'] : array();
+        if (!$segments) {
+            return (string) $task['text'];
+        }
+        $lines = array();
+        foreach ($segments as $seg) {
+            $stamp = '[' . self::clock((float) $seg['start']) . ' — ' . self::clock((float) $seg['end']) . ']';
+            $who = trim((string) $seg['speaker']);
+            $lines[] = $stamp . ($who !== '' ? ' ' . $who . ':' : '') . ' ' . $seg['text'];
+        }
+        return implode("\n", $lines) . "\n\n---\n\n" . (string) $task['text'] . "\n";
+    }
+
+    private static function as_srt($segments) {
+        if (!$segments) {
+            return '';
+        }
+        $out = array();
+        foreach ($segments as $i => $seg) {
+            $out[] = ($i + 1);
+            $out[] = self::stamp((float) $seg['start'], ',') . ' --> ' . self::stamp((float) $seg['end'], ',');
+            $out[] = (string) $seg['text'];
+            $out[] = '';
+        }
+        return implode("\n", $out);
+    }
+
+    private static function as_vtt($segments) {
+        if (!$segments) {
+            return '';
+        }
+        $out = array('WEBVTT', '');
+        foreach ($segments as $seg) {
+            $out[] = self::stamp((float) $seg['start'], '.') . ' --> ' . self::stamp((float) $seg['end'], '.');
+            $out[] = (string) $seg['text'];
+            $out[] = '';
+        }
+        return implode("\n", $out);
+    }
+
+    private static function stamp($seconds, $sep) {
+        $seconds = max(0.0, (float) $seconds);
+        $h = (int) floor($seconds / 3600);
+        $m = (int) floor(fmod($seconds, 3600) / 60);
+        $s = (int) floor(fmod($seconds, 60));
+        $ms = (int) round(fmod($seconds, 1) * 1000);
+        return sprintf('%02d:%02d:%02d%s%03d', $h, $m, $s, $sep, $ms);
+    }
+
+    private static function clock($seconds) {
+        $seconds = max(0.0, (float) $seconds);
+        return sprintf('%02d:%02d', (int) floor($seconds / 60), (int) floor(fmod($seconds, 60)));
     }
 
     /** Звук с YouTube достаёт отдельная служба рабочего плагина. */

@@ -79,6 +79,17 @@ class GS_Keywords {
                     'убрать гул микрофона'            => 'ubrat-gul-mikrofona',
                 ),
             ),
+            'ytaudio' => array(
+                'title' => 'Частые задачи со звуком из видео',
+                'items' => array(
+                    'извлечь звук из видео онлайн' => 'izvlech-zvuk-iz-video-onlayn',
+                    'текст из видео онлайн'        => 'tekst-iz-video-onlayn',
+                    'субтитры из аудио онлайн'     => 'subtitry-iz-audio-onlayn',
+                    'субтитры к видео автоматически' => 'sdelat-subtitry-k-video-avtomaticheski',
+                    'перевести лекцию в текст'     => 'perevesti-lektsiyu-v-tekst',
+                    'перевод вебинара в текст'     => 'perevod-vebinara-v-tekst',
+                ),
+            ),
             'music' => array(
                 'title' => 'Частые задачи с музыкой',
                 'items' => array(
@@ -160,7 +171,7 @@ class GS_Keywords {
 
     /** Какой набор запросов относится к сервису лаборатории. */
     public static function group_for_lab($service_id) {
-        $known = array('avatar', 'vocal', 'denoise', 'music');
+        $known = array('avatar', 'vocal', 'denoise', 'music', 'stt', 'ytaudio');
         return in_array($service_id, $known, true) ? $service_id : '';
     }
 }
