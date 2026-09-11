@@ -823,3 +823,44 @@ body.gs-studio-page .w-grid {
         animation: none !important;
     }
 }
+
+/* ---------------------------------------------------------------- Соседние подборки */
+
+.gs-adjacent {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+}
+
+.gs-wrap .gs-adjacent__link {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 18px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+    color: var(--gs-text);
+    transition: border-color 0.18s var(--gs-ease), background 0.18s var(--gs-ease);
+}
+
+.gs-wrap .gs-adjacent__link:hover {
+    border-color: var(--gs-border-strong);
+    background: var(--gs-surface-hover);
+    color: #fff;
+}
+
+.gs-adjacent__link--next {
+    text-align: right;
+}
+
+.gs-adjacent__dir {
+    color: var(--gs-muted);
+    font-size: 13px;
+}
+
+.gs-adjacent__title {
+    font-size: 15px;
+    font-weight: 600;
+}

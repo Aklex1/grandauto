@@ -640,39 +640,183 @@ class GS_Catalog {
     }
 
     /**
-     * Соседние подборки — простая перелинковка по заполненным категориям.
+     * Похожие подборки.
+     *
+     * Раньше блок собирался через shuffle(): на каждый запрос страница отдавала
+     * другой набор ссылок. Для поисковика это нестабильный граф — вес по такому
+     * не передаётся. Теперь подбор детерминированный: сначала категории с общими
+     * словами в заголовке, затем соседи по каталогу.
+     *
+     * @return array<int,array> строки индекса
      */
-    private static function render_related($current_slug) {
-        $filled = array();
-        foreach (self::load_index() as $cat) {
-            if (empty($cat['slug']) || $cat['slug'] === $current_slug) {
+    public static function related_categories($current_slug, $limit = 10) {
+        $index = self::load_index();
+        $current = null;
+        $pos = -1;
+        foreach ($index as $i => $row) {
+            if (!empty($row['slug']) && $row['slug'] === $current_slug) {
+                $current = $row;
+                $pos = $i;
+                break;
+            }
+        }
+        if ($current === null) {
+            return array();
+        }
+
+        $own = self::title_tokens((string) $current['title']);
+        $scored = array();
+        foreach ($index as $row) {
+            if (empty($row['slug']) || $row['slug'] === $current_slug) {
                 continue;
             }
-            if ((int) ($cat['count'] ?? 0) > 0) {
-                $filled[] = $cat;
+            if ((int) ($row['count'] ?? 0) <= 0) {
+                continue;
+            }
+            $shared = array_intersect($own, self::title_tokens((string) $row['title']));
+            if (empty($shared)) {
+                continue;
+            }
+            $scored[] = array(
+                'row'   => $row,
+                'score' => count($shared),
+            );
+        }
+
+        usort($scored, function ($a, $b) {
+            if ($a['score'] !== $b['score']) {
+                return $b['score'] <=> $a['score'];
+            }
+            $ca = (int) ($a['row']['count'] ?? 0);
+            $cb = (int) ($b['row']['count'] ?? 0);
+            if ($ca !== $cb) {
+                return $cb <=> $ca;
+            }
+            return strcmp((string) $a['row']['slug'], (string) $b['row']['slug']);
+        });
+
+        $result = array();
+        $seen = array($current_slug => true);
+        foreach ($scored as $item) {
+            if (count($result) >= $limit) {
+                break;
+            }
+            $slug = (string) $item['row']['slug'];
+            if (isset($seen[$slug])) {
+                continue;
+            }
+            $seen[$slug] = true;
+            $result[] = $item['row'];
+        }
+
+        // Добираем соседями по каталогу, чтобы блок не пустовал у редких тем.
+        for ($step = 1; count($result) < $limit && $step < count($index); $step++) {
+            foreach (array($pos - $step, $pos + $step) as $i) {
+                if ($i < 0 || $i >= count($index) || count($result) >= $limit) {
+                    continue;
+                }
+                $row = $index[$i];
+                $slug = isset($row['slug']) ? (string) $row['slug'] : '';
+                if ($slug === '' || isset($seen[$slug]) || (int) ($row['count'] ?? 0) <= 0) {
+                    continue;
+                }
+                $seen[$slug] = true;
+                $result[] = $row;
             }
         }
-        if (empty($filled)) {
+
+        return $result;
+    }
+
+    /**
+     * Значимые слова заголовка для поиска похожих подборок.
+     */
+    private static function title_tokens($title) {
+        $title = mb_strtolower(self::short_title($title));
+        $parts = preg_split('~[^\p{L}\p{N}]+~u', $title, -1, PREG_SPLIT_NO_EMPTY);
+        if (!is_array($parts)) {
+            return array();
+        }
+        $stop = array('звук', 'звуки', 'звука', 'звуков', 'скачать', 'бесплатно', 'для', 'при',
+                      'онлайн', 'подборка', 'эффект', 'эффекты', 'сборник', 'без');
+        $tokens = array();
+        foreach ($parts as $word) {
+            if (mb_strlen($word) < 4 || in_array($word, $stop, true)) {
+                continue;
+            }
+            // Грубая нормализация окончаний: «солдат/солдаты/солдатов» → общий корень.
+            $tokens[] = mb_substr($word, 0, 6);
+        }
+        return array_values(array_unique($tokens));
+    }
+
+    /**
+     * Предыдущая и следующая категории каталога — стабильная цепочка,
+     * по которой обход доходит до глубоких страниц.
+     *
+     * @return array{prev:?array,next:?array}
+     */
+    private static function adjacent_categories($current_slug) {
+        $index = self::load_index();
+        $pos = -1;
+        foreach ($index as $i => $row) {
+            if (!empty($row['slug']) && $row['slug'] === $current_slug) {
+                $pos = $i;
+                break;
+            }
+        }
+        if ($pos < 0) {
+            return array('prev' => null, 'next' => null);
+        }
+        return array(
+            'prev' => $pos > 0 ? $index[$pos - 1] : null,
+            'next' => isset($index[$pos + 1]) ? $index[$pos + 1] : null,
+        );
+    }
+
+    private static function render_related($current_slug) {
+        $related = self::related_categories($current_slug, 10);
+        $adjacent = self::adjacent_categories($current_slug);
+
+        if (empty($related) && empty($adjacent['prev']) && empty($adjacent['next'])) {
             return '';
         }
-        shuffle($filled);
-        $filled = array_slice($filled, 0, 8);
 
         ob_start();
         ?>
         <section class="gs-related">
-            <h2 class="gs-section-title">Другие подборки</h2>
-            <ul class="gs-related__list">
-                <?php foreach ($filled as $cat): ?>
-                    <li>
-                        <a class="gs-related__link" href="<?php echo esc_url(self::category_url($cat['slug'])); ?>">
-                            <?php echo esc_html(self::short_title($cat['title'])); ?>
-                            <span class="gs-chip gs-chip--ok"><?php echo (int) ($cat['count'] ?? 0); ?></span>
+            <h2 class="gs-section-title">Похожие подборки звуков</h2>
+            <?php if (!empty($related)): ?>
+                <ul class="gs-related__list">
+                    <?php foreach ($related as $cat): ?>
+                        <li>
+                            <a class="gs-related__link" href="<?php echo esc_url(self::category_url($cat['slug'])); ?>">
+                                <?php echo esc_html(self::short_title($cat['title'])); ?>
+                                <span class="gs-chip gs-chip--ok"><?php echo (int) ($cat['count'] ?? 0); ?></span>
+                            </a>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
+
+            <?php if (!empty($adjacent['prev']) || !empty($adjacent['next'])): ?>
+                <nav class="gs-adjacent" aria-label="Соседние подборки">
+                    <?php if (!empty($adjacent['prev'])): ?>
+                        <a class="gs-adjacent__link" href="<?php echo esc_url(self::category_url($adjacent['prev']['slug'])); ?>">
+                            <span class="gs-adjacent__dir">← Предыдущая подборка</span>
+                            <span class="gs-adjacent__title"><?php echo esc_html(self::short_title($adjacent['prev']['title'])); ?></span>
                         </a>
-                    </li>
-                <?php endforeach; ?>
-            </ul>
-            <a class="gs-btn gs-btn--ghost" href="<?php echo esc_url(self::base_url()); ?>">Все категории</a>
+                    <?php endif; ?>
+                    <?php if (!empty($adjacent['next'])): ?>
+                        <a class="gs-adjacent__link gs-adjacent__link--next" href="<?php echo esc_url(self::category_url($adjacent['next']['slug'])); ?>">
+                            <span class="gs-adjacent__dir">Следующая подборка →</span>
+                            <span class="gs-adjacent__title"><?php echo esc_html(self::short_title($adjacent['next']['title'])); ?></span>
+                        </a>
+                    <?php endif; ?>
+                </nav>
+            <?php endif; ?>
+
+            <a class="gs-btn gs-btn--ghost" href="<?php echo esc_url(self::base_url()); ?>">Все категории звуков</a>
         </section>
         <?php
         return ob_get_clean();

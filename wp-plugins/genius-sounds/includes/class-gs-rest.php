@@ -72,6 +72,12 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        register_rest_route(self::NS, '/links/install-menu', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_install_menu'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/showcase', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_showcase_add'),
@@ -427,6 +433,15 @@ class GS_Rest {
             'queue_len' => count((array) get_option(GS_Importer::OPT_QUEUE, array())),
             'disk'      => GS_Storage::disk_usage(),
             'disk_free' => GS_Storage::disk_free(),
+        ));
+    }
+
+    public static function handle_install_menu($request) {
+        $params = $request->get_json_params();
+        $menu_id = (is_array($params) && !empty($params['menu_id'])) ? (int) $params['menu_id'] : 0;
+        return rest_ensure_response(array(
+            'success' => true,
+            'result'  => GS_Links::install_menu_items($menu_id),
         ));
     }
 

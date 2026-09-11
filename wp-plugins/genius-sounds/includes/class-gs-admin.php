@@ -29,6 +29,16 @@ class GS_Admin {
     }
 
     public static function register_settings() {
+        foreach (array(GS_Links::OPT_ENABLED, GS_Links::OPT_FOOTER) as $flag) {
+            register_setting('gs_settings_group', $flag, array(
+                'type'              => 'string',
+                'sanitize_callback' => function ($value) {
+                    return $value ? '1' : '0';
+                },
+                'default'           => '1',
+            ));
+        }
+
         register_setting('gs_settings_group', GS_Importer::OPT_MAX_FILE_MB, array(
             'type'              => 'number',
             'sanitize_callback' => function ($value) {
@@ -153,6 +163,16 @@ class GS_Admin {
                             <input id="gs-cost" name="<?php echo esc_attr(GS_SFX::OPT_COST); ?>" type="number" step="0.5" min="0"
                                    value="<?php echo esc_attr(GS_SFX::get_cost()); ?>" class="small-text">
                             <p class="description">Списывается с общего баланса пользователя (того же, что и озвучка).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Сквозные ссылки</th>
+                        <td>
+                            <label><input type="checkbox" name="<?php echo esc_attr(GS_Links::OPT_ENABLED); ?>" value="1" <?php checked(GS_Links::menu_enabled()); ?>>
+                                пункты «Каталог звуков» и «Генератор звуков» в меню</label><br>
+                            <label><input type="checkbox" name="<?php echo esc_attr(GS_Links::OPT_FOOTER); ?>" value="1" <?php checked(GS_Links::footer_enabled()); ?>>
+                                блок ссылок на каталог в подвале сайта</label>
+                            <p class="description">Без них каталог не получает внутреннего веса: на него не ссылается ни одна страница сайта.</p>
                         </td>
                     </tr>
                     <tr>
