@@ -134,8 +134,8 @@ class GS_Lab {
                 'lead'        => 'Загрузите запись или вставьте ссылку на ролик — нейросеть вернёт текст с пунктуацией, отметками времени и разделением по говорящим. Готовый результат скачивается текстом или субтитрами.',
                 'badge'       => 'Речь в текст',
                 'cost_option' => 'gs_lab_cost_stt',
-                'cost'        => 0,
-                'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 0, 'max_seconds' => 0),
+                'cost'        => 10,
+                'pricing'     => array('unit' => 'minute', 'rate' => 3, 'min' => 10, 'max_seconds' => 7200),
                 'available'   => true,
                 'inputs'      => array('audio'),
                 'input_optional' => array('audio'),
@@ -188,7 +188,7 @@ class GS_Lab {
                     array('Что можно скачать?',
                           'Текст с отметками времени и говорящими, субтитры SRT и VTT. Субтитры сразу подхватываются видеоредактором и плеером.'),
                     array('Сколько это стоит?',
-                          'Сейчас расшифровка бесплатна: платить нужно только за сервисы с тяжёлой генерацией.'),
+                          'Три рубля за минуту записи, минимум десять рублей за обработку. Час интервью — 180 ₽ против нескольких часов ручного набора. Цена считается по настоящей длительности файла и показывается до запуска.'),
                 ),
             ),
 
@@ -715,11 +715,88 @@ class GS_Lab {
      *
      * @return array{ok:bool,task_id:string,message:string}
      */
+    /**
+     * Длительность записи по ссылке — нужна, чтобы посчитать цену до
+     * запуска. Файл берём частями: полного скачивания для метаданных
+     * не требуется.
+     */
+    public static function remote_duration($url) {
+        $local = self::local_path($url);
+        if ($local !== '') {
+            return self::media_duration($local);
+        }
+        $response = wp_remote_get((string) $url, array('timeout' => 90, 'limit_response_size' => 26214400));
+        if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
+            return 0.0;
+        }
+        $body = (string) wp_remote_retrieve_body($response);
+        if (strlen($body) < 1024) {
+            return 0.0;
+        }
+        $tmp = wp_tempnam('gs-lab-audio');
+        if (!$tmp) {
+            return 0.0;
+        }
+        file_put_contents($tmp, $body);
+        $seconds = self::media_duration($tmp);
+        @unlink($tmp);
+        return $seconds;
+    }
+
+    /**
+     * Готовит задачу к оплате: приводит источник к ссылке на звук и
+     * выясняет длительность. Без этого запись по ссылке считалась бы по
+     * минимальной цене независимо от того, минута там или два часа.
+     *
+     * @return array{ok:bool,message:string,payload:array,seconds:float}
+     */
+    public static function prepare($id, $payload) {
+        $out = array('ok' => true, 'message' => '', 'payload' => $payload, 'seconds' => 0.0);
+        if ($id !== 'stt') {
+            return $out;
+        }
+
+        $fields = isset($payload['fields']) && is_array($payload['fields']) ? $payload['fields'] : array();
+        $link = trim((string) ($fields['source_url'] ?? ''));
+        $audio = (string) ($payload['audio_url'] ?? '');
+
+        if ($audio === '' && $link === '') {
+            return array('ok' => false, 'message' => 'Загрузите запись или вставьте ссылку', 'payload' => $payload, 'seconds' => 0.0);
+        }
+
+        // Ссылка на ролик: дорожку достаём сразу — она нужна и для цены,
+        // и для самой расшифровки, а извлечение идёт на нашей стороне.
+        if ($audio === '' && !preg_match('~\.(mp3|wav|m4a|ogg|opus|aac|mp4|webm)(\?|$)~i', $link)) {
+            if (!class_exists('KIE_TTS_API')) {
+                return array('ok' => false, 'message' => 'Извлечение звука сейчас недоступно', 'payload' => $payload, 'seconds' => 0.0);
+            }
+            $data = KIE_TTS_API::create_youtube_audio_task($link, 'mp3');
+            $extracted = is_array($data) && !empty($data['audio_url']) ? esc_url_raw((string) $data['audio_url']) : '';
+            if ($extracted === '') {
+                $message = is_array($data) && !empty($data['message']) ? (string) $data['message'] : 'Не удалось получить дорожку по этой ссылке';
+                return array('ok' => false, 'message' => self::ytaudio_error($message), 'payload' => $payload, 'seconds' => 0.0);
+            }
+            $payload['audio_url'] = $extracted;
+            $out['seconds'] = is_array($data) && !empty($data['duration']) ? (float) $data['duration'] : self::remote_duration($extracted);
+            $out['payload'] = $payload;
+            return $out;
+        }
+
+        if ($audio === '') {
+            $payload['audio_url'] = esc_url_raw($link);
+            $out['payload'] = $payload;
+        }
+        $source = (string) $payload['audio_url'];
+        $local = self::local_path($source);
+        $out['seconds'] = $local !== '' ? self::media_duration($local) : self::remote_duration($source);
+        return $out;
+    }
+
     /** Отказ службы извлечения — на языке пользователя. */
     private static function ytaudio_error($message) {
         $low = mb_strtolower((string) $message);
         if (strpos($low, 'ключ') !== false || strpos($low, 'key') !== false) {
-            return 'Служба извлечения звука не настроена — сообщите нам, починим.';
+            return 'Служба извлечения звука не приняла ключ доступа — её нужно обновить на сервере.';
         }
         if (strpos($low, 'timeout') !== false || strpos($low, 'таймаут') !== false || strpos($low, 'timed out') !== false) {
             return 'Служба извлечения звука не ответила вовремя. Попробуйте ещё раз через минуту.';
@@ -811,20 +888,14 @@ class GS_Lab {
                 return array('ok' => false, 'task_id' => '', 'message' => 'Загрузите запись или вставьте ссылку');
             }
 
+            // Источник уже разобран при расчёте цены: сюда приходит ссылка
+            // на звук, даже если пользователь дал ссылку на ролик.
             $source = array(
+                'audio_url'        => $audio !== '' ? $audio : $link,
                 'language_code'    => trim((string) ($fields['language'] ?? '')),
                 'tag_audio_events' => !empty($fields['events']),
                 'diarize'          => !empty($fields['diarize']),
             );
-            // Прямую ссылку на файл отдаём как есть, ссылку на ролик — через
-            // извлечение дорожки: разбирать её здесь незачем, это умеет очередь.
-            if ($audio !== '') {
-                $source['audio_url'] = $audio;
-            } elseif (preg_match('~\.(mp3|wav|m4a|ogg|opus|aac|mp4|webm)(\?|$)~i', $link)) {
-                $source['audio_url'] = $link;
-            } else {
-                $source['youtube_url'] = $link;
-            }
 
             $created = GS_Transcribe::create($source, (int) ($params['user_id'] ?? 0));
             if (is_wp_error($created)) {

@@ -665,15 +665,26 @@ class GS_Rest {
             $payload['fields'] = $clean;
         }
 
-        // Считаем длительность сами, по файлу на диске: присланной цене не верим.
-        $seconds = 0.0;
-        if (!empty($payload['audio_url'])) {
+        // Источник может быть ссылкой: приводим его к звуку и узнаём
+        // длительность до оплаты — иначе двухчасовая запись по ссылке
+        // считалась бы по минимальной цене.
+        $prepared = GS_Lab::prepare($service_id, $payload);
+        if (empty($prepared['ok'])) {
+            return new WP_Error('gs_bad_source', $prepared['message'] ?: 'Не удалось разобрать источник', array('status' => 400));
+        }
+        $payload = $prepared['payload'];
+
+        // Считаем длительность сами: присланной цене не верим.
+        $seconds = (float) $prepared['seconds'];
+        if ($seconds <= 0 && !empty($payload['audio_url'])) {
             $seconds = GS_Lab::media_duration(GS_Lab::local_path($payload['audio_url']));
+        }
+        if (!empty($payload['audio_url'])) {
             $limit = GS_Lab::max_seconds($service_id);
             if ($limit > 0 && $seconds > $limit + 1) {
                 return new WP_Error(
                     'gs_too_long',
-                    sprintf('Запись длиннее %d мин — загрузите файл покороче', (int) ceil($limit / 60)),
+                    sprintf('Запись длиннее %d мин — разрежьте её на части', (int) ceil($limit / 60)),
                     array('status' => 400)
                 );
             }
@@ -835,6 +846,13 @@ class GS_Rest {
         $input = is_array($params) && !empty($params['input']) && is_array($params['input']) ? $params['input'] : array();
         $info  = is_array($params) && !empty($params['task']) ? (string) $params['task'] : '';
         $url   = is_array($params) && !empty($params['url']) ? esc_url_raw((string) $params['url']) : '';
+        if ($url !== '' && !empty($params['duration'])) {
+            // Диагностика расчёта цены: сколько секунд мы видим по ссылке.
+            return rest_ensure_response(array(
+                'url'     => $url,
+                'seconds' => GS_Lab::remote_duration($url),
+            ));
+        }
         if ($url !== '') {
             $payload = is_array($params) && !empty($params['payload']) ? (array) $params['payload'] : array();
             $method  = is_array($params) && !empty($params['method']) ? (string) $params['method'] : 'POST';
