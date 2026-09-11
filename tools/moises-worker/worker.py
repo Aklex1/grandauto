@@ -40,6 +40,11 @@ STUDIO = os.environ.get("MOISES_URL", "https://studio.moises.ai/home")
 WORK = Path(os.environ.get("GB_WORK", "work")).resolve()
 PROFILE = Path(os.environ.get("MOISES_PROFILE", WORK / "chrome-profile")).resolve()
 POLL_SECONDS = int(os.environ.get("GB_POLL", "60"))
+# Обычно браузер нужен видимый — в него вы входите руками.
+# GB_HEADLESS=1 пригодится для проверок и работы без экрана.
+HEADLESS = os.environ.get("GB_HEADLESS", "") == "1"
+# На некоторых машинах браузер стоит отдельно от playwright.
+CHROME_PATH = os.environ.get("GB_CHROME", "")
 
 # Сайт отдаёт файлы через защиту хостинга: без этой куки вместо звука
 # приезжает страница проверки.
@@ -107,12 +112,15 @@ def open_studio(page_url=STUDIO):
     from playwright.sync_api import sync_playwright
 
     playwright = sync_playwright().start()
-    context = playwright.chromium.launch_persistent_context(
-        user_data_dir=str(PROFILE),
-        headless=False,
-        accept_downloads=True,
-        viewport={"width": 1440, "height": 900},
-    )
+    options = {
+        "user_data_dir": str(PROFILE),
+        "headless": HEADLESS,
+        "accept_downloads": True,
+        "viewport": {"width": 1440, "height": 900},
+    }
+    if CHROME_PATH:
+        options["executable_path"] = CHROME_PATH
+    context = playwright.chromium.launch_persistent_context(**options)
     page = context.pages[0] if context.pages else context.new_page()
     page.goto(page_url, wait_until="domcontentloaded")
     return playwright, context, page
@@ -166,11 +174,105 @@ def run_assist(order, folder, source, page):
     return False
 
 
+def resolve_file(raw):
+    """Путь может быть без расширения или с приблизительным именем —
+    ищем подходящий файл рядом, чтобы не спотыкаться на мелочи."""
+    path = Path(raw).expanduser()
+    if path.exists():
+        return path
+    folder = path.parent if str(path.parent) not in ("", ".") else Path.cwd()
+    stem = path.name.lower()
+    if folder.is_dir():
+        for candidate in sorted(folder.iterdir()):
+            name = candidate.name.lower()
+            if candidate.is_file() and (name.startswith(stem) or stem in name):
+                if candidate.suffix.lower() in (".mp3", ".wav", ".flac", ".m4a", ".ogg"):
+                    return candidate
+    sys.exit(f"Не нашёл файл: {raw}")
+
+
+def inspect_studio(url):
+    """Один раз проходим по странице студии и записываем, за что можно зацепиться.
+
+    Разметку студии я подобрать не могу — доступа к аккаунту нет. Этот режим
+    собирает кандидатов сам: поля загрузки, кнопки и ссылки с их текстом."""
+    playwright, context, page = open_studio(url)
+    log("Открыл студию. Войдите в аккаунт и дойдите до экрана загрузки трека.")
+    if not HEADLESS:
+        input("Когда нужный экран открыт — нажмите Enter здесь... ")
+
+    dump = page.evaluate("""() => {
+        const describe = (el) => {
+            const attr = (n) => el.getAttribute(n);
+            const id = attr('id');
+            const testid = attr('data-testid') || attr('data-test-id') || attr('data-cy');
+            const cls = (el.className && typeof el.className === 'string')
+                ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+            return {
+                tag: el.tagName.toLowerCase(),
+                text: (el.innerText || el.value || '').trim().slice(0, 60),
+                id: id || '',
+                testid: testid || '',
+                selector: testid ? `[data-testid="${testid}"]` : (id ? `#${id}` : el.tagName.toLowerCase() + cls),
+                visible: !!(el.offsetWidth || el.offsetHeight),
+            };
+        };
+        const pick = (sel) => Array.from(document.querySelectorAll(sel)).map(describe);
+        return {
+            url: location.href,
+            inputs: pick('input[type=file]'),
+            buttons: pick('button, [role=button], a').filter((b) => b.text).slice(0, 120),
+        };
+    }""")
+
+    out = Path(__file__).with_name("studio-dump.json")
+    out.write_text(json.dumps(dump, ensure_ascii=False, indent=2), encoding="utf-8")
+    log(f"Записал {out}")
+    log("Пришлите этот файл — по нему соберу selectors.json для автоматического режима.")
+    context.close()
+    playwright.stop()
+
+
+def run_single_file(raw_path, url, auto):
+    """Разовая проверка без очереди: обработать один файл с диска."""
+    source = resolve_file(raw_path)
+    folder = WORK / "single"
+    (folder / "out").mkdir(parents=True, exist_ok=True)
+    log(f"Файл: {source} ({source.stat().st_size // 1024} КБ)")
+
+    playwright, context, page = open_studio(url)
+    slots = {"minus": "Минусовка", "vocal": "Вокал"}
+    try:
+        if auto:
+            ok, message = run_auto(page, source, folder, slots)
+            log(f"автоматический режим: {message}")
+            if not ok:
+                auto = False
+        if not auto:
+            log(f"Загрузите файл в студии и сохраните минус как {folder / 'out' / 'minus.mp3'}")
+            input("Когда файл сохранён — нажмите Enter... ")
+        saved = sorted((folder / "out").glob("*"))
+        log("Получено: " + (", ".join(f.name for f in saved) if saved else "ничего"))
+    finally:
+        context.close()
+        playwright.stop()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--auto", action="store_true", help="прокликивать студию по selectors.json")
     parser.add_argument("--once", action="store_true", help="обработать одну партию и выйти")
+    parser.add_argument("--file", help="разовая проверка: обработать файл с диска, без очереди сайта")
+    parser.add_argument("--inspect", action="store_true",
+                        help="собрать со страницы студии кандидатов в селекторы и сохранить в studio-dump.json")
+    parser.add_argument("--url", default=STUDIO, help="адрес страницы студии")
     args = parser.parse_args()
+
+    # Проверочные режимы к сайту не обращаются — ключ им не нужен.
+    if args.inspect:
+        return inspect_studio(args.url)
+    if args.file:
+        return run_single_file(args.file, args.url, args.auto)
 
     if not KEY:
         sys.exit("Не задан GB_KEY — ключ доступа с правами владельца сайта.")
