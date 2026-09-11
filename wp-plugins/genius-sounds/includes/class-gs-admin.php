@@ -53,6 +53,12 @@ class GS_Admin {
                     return $value > 0 ? $value : 1;
                 },
             ));
+            register_setting('gs_settings_group', 'gs_lab_manual_' . $lab_id, array(
+                'type'              => 'string',
+                'sanitize_callback' => function ($value) {
+                    return $value ? '1' : '0';
+                },
+            ));
             // Цена считается от длительности: минимум, ставка и предел длины.
             foreach (array('gs_lab_min_' . $lab_id, 'gs_lab_rate_' . $lab_id, 'gs_lab_max_seconds_' . $lab_id) as $number) {
                 register_setting('gs_settings_group', $number, array(
@@ -98,6 +104,80 @@ class GS_Admin {
             },
             'default'           => 15,
         ));
+    }
+
+    /**
+     * Очередь ручной обработки: пока у сервиса нет рабочего API,
+     * заказы выполняются руками, и делать это надо прямо здесь.
+     */
+    public static function render_manual_queue() {
+        $manual = array();
+        foreach (GS_Lab::services() as $id => $service) {
+            if (GS_Lab::is_manual($id)) {
+                $manual[$id] = $service;
+            }
+        }
+        $orders = GS_Manual::open_orders();
+        if (empty($manual) && empty($orders)) {
+            return '';
+        }
+
+        $notice = isset($_GET['gs_manual_notice']) ? sanitize_text_field(wp_unslash((string) $_GET['gs_manual_notice'])) : '';
+
+        ob_start();
+        ?>
+        <h2 id="gs-manual">Очередь ручной обработки</h2>
+        <?php if ($notice !== ''): ?>
+            <div class="notice notice-success"><p><?php echo esc_html($notice); ?></p></div>
+        <?php endif; ?>
+
+        <p class="description">
+            Заказы по услугам <?php echo esc_html(implode(', ', wp_list_pluck($manual, 'menu'))); ?>
+            выполняются вручную: скачайте исходник, обработайте его в студии и приложите готовые дорожки.
+            Пользователь получит их в истории и на почту. Кнопка «Вернуть деньги» закрывает заказ с возвратом на баланс.
+        </p>
+
+        <?php if (empty($orders)): ?>
+            <p><em>Открытых заказов нет.</em></p>
+        <?php else: ?>
+            <?php foreach ($orders as $order): ?>
+                <?php $service = GS_Lab::get_service($order['service']); ?>
+                <div class="gs-admin-card" style="margin-bottom:12px">
+                    <p style="margin-top:0">
+                        <strong><?php echo esc_html($service ? $service['menu'] : $order['service']); ?></strong>
+                        — <?php echo esc_html(GS_Storage::format_duration((int) $order['seconds'])); ?>,
+                        <?php echo esc_html(number_format_i18n((float) $order['cost'], 2)); ?> ₽,
+                        <?php echo esc_html(human_time_diff((int) $order['created'])); ?> назад
+                        <br>
+                        <a href="<?php echo esc_url($order['audio_url']); ?>" target="_blank" rel="noopener">скачать исходник</a>
+                    </p>
+
+                    <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php wp_nonce_field('gs_manual'); ?>
+                        <input type="hidden" name="action" value="gs_manual_result">
+                        <input type="hidden" name="task_id" value="<?php echo esc_attr($order['task_id']); ?>">
+                        <?php foreach (GS_Manual::labels((string) $order['service']) as $slot => $label): ?>
+                            <p>
+                                <label><?php echo esc_html($label); ?><br>
+                                    <input type="file" name="<?php echo esc_attr($slot); ?>" accept="audio/*">
+                                </label>
+                            </p>
+                        <?php endforeach; ?>
+                        <?php submit_button('Отправить результат', 'primary', 'submit', false); ?>
+                    </form>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:8px">
+                        <?php wp_nonce_field('gs_manual'); ?>
+                        <input type="hidden" name="action" value="gs_manual_fail">
+                        <input type="hidden" name="task_id" value="<?php echo esc_attr($order['task_id']); ?>">
+                        <input type="text" name="reason" class="regular-text" placeholder="Причина (необязательно)">
+                        <?php submit_button('Вернуть деньги', 'secondary', 'submit', false); ?>
+                    </form>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+        <?php
+        return ob_get_clean();
     }
 
     public static function render_page() {
@@ -257,6 +337,13 @@ class GS_Admin {
                                     <input name="gs_lab_max_seconds_<?php echo esc_attr($lab_id); ?>" type="number" step="10" min="0"
                                            value="<?php echo esc_attr(GS_Lab::max_seconds($lab_id)); ?>" class="small-text"> сек
                                     <br><span class="description"><?php echo esc_html(GS_Lab::price_hint($lab_id)); ?></span>
+                                    <?php if (GS_MusicAI::handles($lab_id)): ?>
+                                        <br><label>
+                                            <input type="checkbox" name="gs_lab_manual_<?php echo esc_attr($lab_id); ?>" value="1"
+                                                <?php checked(GS_Manual::enabled($lab_id)); ?>>
+                                            временно обрабатывать вручную: заказ попадает в очередь ниже, результат прикладываете сами
+                                        </label>
+                                    <?php endif; ?>
                                     <?php if (!empty($lab['blocked_note']) && !GS_Lab::is_available($lab_id)): ?>
                                         <br><span class="description"><?php echo esc_html($lab['blocked_note']); ?></span>
                                     <?php endif; ?>
@@ -315,6 +402,8 @@ class GS_Admin {
                 </table>
                 <?php submit_button('Сохранить'); ?>
             </form>
+
+            <?php echo self::render_manual_queue(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <p>
                 Страницы:

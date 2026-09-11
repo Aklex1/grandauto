@@ -176,9 +176,10 @@ class GS_Lab {
         if (!$service) {
             return false;
         }
-        // Вокал и шумоподавление живут на отдельном поставщике:
-        // без его ключа и рабочего процесса включать сервис нечем.
-        if (class_exists('GS_MusicAI') && GS_MusicAI::handles($id) && !GS_MusicAI::ready($id)) {
+        // Вокал и шумоподавление живут на отдельном поставщике. Если его ключа
+        // нет, сервис всё равно можно открыть во временном ручном режиме.
+        if (class_exists('GS_MusicAI') && GS_MusicAI::handles($id)
+            && !GS_MusicAI::ready($id) && !GS_Manual::enabled($id)) {
             return false;
         }
         $option = get_option('gs_lab_enabled_' . $id, null);
@@ -205,6 +206,12 @@ class GS_Lab {
      * Минимальная цена — она же цена короткого файла и то, что показываем
      * на посадочной странице до загрузки.
      */
+    /** Сервис выполняется руками — об этом надо честно писать на странице. */
+    public static function is_manual($id) {
+        return class_exists('GS_Manual') && GS_Manual::enabled($id)
+            && !(class_exists('GS_MusicAI') && GS_MusicAI::ready($id));
+    }
+
     public static function get_cost($id) {
         $service = self::get_service($id);
         if (!$service) {
@@ -509,9 +516,16 @@ class GS_Lab {
     public static function create_task($id, $params) {
         $callback = add_query_arg('token', GS_SFX::callback_token(), rest_url(GS_Rest::NS . '/lab/callback'));
 
-        // Разделение дорожек и шумоподавление — на отдельном поставщике.
+        // Разделение дорожек и шумоподавление — на отдельном поставщике,
+        // а пока его нет — заказом в ручную очередь.
         if (class_exists('GS_MusicAI') && GS_MusicAI::handles($id)) {
-            return GS_MusicAI::create_job($id, (string) $params['audio_url']);
+            if (GS_MusicAI::ready($id)) {
+                return GS_MusicAI::create_job($id, (string) $params['audio_url']);
+            }
+            if (GS_Manual::enabled($id)) {
+                return GS_Manual::create_order($id, $params);
+            }
+            return array('ok' => false, 'task_id' => '', 'message' => 'Инструмент сейчас недоступен');
         }
 
         if ($id === 'avatar') {
@@ -560,6 +574,10 @@ class GS_Lab {
      */
     public static function fetch_task($id, $task_id) {
         $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'message' => '');
+
+        if (class_exists('GS_Manual') && GS_Manual::is_own_task($task_id)) {
+            return GS_Manual::state($task_id);
+        }
 
         if (class_exists('GS_MusicAI') && GS_MusicAI::is_own_task($task_id)) {
             return GS_MusicAI::fetch_job($id, $task_id);
@@ -752,6 +770,10 @@ class GS_Lab {
         $task_id = preg_replace('~[^a-zA-Z0-9_-]~', '', (string) $task_id);
         if ($task_id === '' || $url === '') {
             return '';
+        }
+        // Файл уже лежит у нас (например, приложен вручную) — копировать нечего.
+        if (strpos((string) $url, GS_Storage::generated_url()) === 0) {
+            return (string) $url;
         }
         GS_Storage::ensure_dirs();
 

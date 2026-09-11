@@ -228,6 +228,24 @@ class GS_Api {
             'callback'            => array(__CLASS__, 'handle_generate'),
             'permission_callback' => $auth,
         ));
+        // Очередь ручной обработки: её забирает либо человек в админке,
+        // либо скрипт-обработчик по ключу владельца сайта.
+        register_rest_route(self::NS, '/queue', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_queue'),
+            'permission_callback' => array(__CLASS__, 'check_owner_key'),
+        ));
+        register_rest_route(self::NS, '/queue/(?P<task_id>[a-zA-Z0-9_-]+)', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_queue_result'),
+            'permission_callback' => array(__CLASS__, 'check_owner_key'),
+        ));
+        register_rest_route(self::NS, '/queue/(?P<task_id>[a-zA-Z0-9_-]+)/fail', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_queue_fail'),
+            'permission_callback' => array(__CLASS__, 'check_owner_key'),
+        ));
+
         register_rest_route(self::NS, '/tasks/(?P<task_id>[a-zA-Z0-9_-]+)', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_task'),
@@ -251,6 +269,18 @@ class GS_Api {
             return new WP_Error('gs_api_rate', 'Слишком много запросов: не больше ' . self::RATE_PER_MINUTE . ' в минуту', array('status' => 429));
         }
         self::$caller = $resolved;
+        return true;
+    }
+
+    /** Очередь чужих заказов доступна только ключу владельца сайта. */
+    public static function check_owner_key($request) {
+        $ok = self::check_key($request);
+        if ($ok !== true) {
+            return $ok;
+        }
+        if (!user_can((int) self::$caller['user_id'], 'manage_options')) {
+            return new WP_Error('gs_api_forbidden', 'Очередь доступна только владельцу сайта', array('status' => 403));
+        }
         return true;
     }
 
@@ -358,6 +388,10 @@ class GS_Api {
             );
         }
 
+        // Ручной очереди нужны владелец заказа и списанная сумма.
+        $input['user_id'] = $user_id;
+        $input['cost']    = $cost;
+
         $created = self::dispatch($service, $input);
         if (empty($created['ok'])) {
             return new WP_Error('gs_api_provider', $created['message'] ?: 'Сервис не принял задачу', array('status' => 502));
@@ -394,6 +428,62 @@ class GS_Api {
             'cost'    => $cost,
             'balance' => GS_SFX::get_balance($user_id),
         ));
+    }
+
+    /* ---------------------------------------------------------------------
+     * Очередь ручной обработки
+     * ------------------------------------------------------------------ */
+
+    public static function handle_queue($request) {
+        $orders = array();
+        foreach (GS_Manual::open_orders() as $order) {
+            $orders[] = array(
+                'task_id'   => $order['task_id'],
+                'service'   => $order['service'],
+                'audio_url' => $order['audio_url'],
+                'seconds'   => (int) $order['seconds'],
+                'created'   => (int) $order['created'],
+                'slots'     => GS_Manual::labels((string) $order['service']),
+            );
+        }
+        return rest_ensure_response(array('orders' => $orders));
+    }
+
+    public static function handle_queue_result($request) {
+        $task_id = (string) $request['task_id'];
+        $order = GS_Manual::get($task_id);
+        if (!$order) {
+            return new WP_Error('gs_api_no_task', 'Заказ не найден', array('status' => 404));
+        }
+        $files = array();
+        $errors = array();
+        $sent = $request->get_file_params();
+        foreach (GS_Manual::labels((string) $order['service']) as $slot => $label) {
+            if (empty($sent[$slot])) {
+                continue;
+            }
+            $stored = GS_Manual::store_result_file($sent[$slot], $task_id, $slot);
+            if (empty($stored['ok'])) {
+                $errors[] = $label . ': ' . $stored['message'];
+                continue;
+            }
+            $files[] = array('label' => $label, 'url' => $stored['url'], 'kind' => 'audio');
+        }
+        if (empty($files)) {
+            return new WP_Error('gs_api_no_files', $errors ? implode('; ', $errors) : 'Файлы не приложены', array('status' => 400));
+        }
+        GS_Manual::complete($task_id, $files);
+        return rest_ensure_response(array('task_id' => $task_id, 'status' => 'completed', 'files' => $files));
+    }
+
+    public static function handle_queue_fail($request) {
+        $task_id = (string) $request['task_id'];
+        $params = $request->get_json_params();
+        $reason = is_array($params) && isset($params['reason']) ? sanitize_text_field((string) $params['reason']) : '';
+        if (!GS_Manual::fail($task_id, $reason)) {
+            return new WP_Error('gs_api_no_task', 'Заказ не найден или уже закрыт', array('status' => 404));
+        }
+        return rest_ensure_response(array('task_id' => $task_id, 'status' => 'failed'));
     }
 
     public static function handle_task($request) {

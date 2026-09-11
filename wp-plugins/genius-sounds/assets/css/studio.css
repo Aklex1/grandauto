@@ -701,3 +701,16 @@
     border-radius: var(--gs-radius-sm);
     background: #000;
 }
+
+/* Пояснение в шапке услуги: временный ручной режим обработки. */
+.gs-hero__note {
+    max-width: 720px;
+    margin: 14px 0 0;
+    padding: 12px 16px;
+    border: 1px solid rgba(250, 204, 21, 0.32);
+    border-radius: var(--gs-radius-sm, 10px);
+    background: rgba(250, 204, 21, 0.09);
+    color: #fde68a;
+    font-size: 14.5px;
+    line-height: 1.6;
+}

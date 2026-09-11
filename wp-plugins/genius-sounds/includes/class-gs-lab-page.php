@@ -41,8 +41,20 @@ class GS_Lab_Page {
                 <div class="gs-hero__meta">
                     <span class="gs-chip gs-chip--ok" id="gs-lab-price"><?php echo esc_html(GS_Lab::price_hint($service['id'])); ?></span>
                     <span class="gs-chip">без установки программ</span>
-                    <span class="gs-chip">результат сразу скачивается</span>
+                    <?php if (GS_Lab::is_manual($service['id'])): ?>
+                        <span class="gs-chip">готово в течение 15 минут</span>
+                    <?php else: ?>
+                        <span class="gs-chip">результат сразу скачивается</span>
+                    <?php endif; ?>
                 </div>
+
+                <?php if (GS_Lab::is_manual($service['id'])): ?>
+                    <p class="gs-hero__note">
+                        Сейчас записи обрабатываются в ручном режиме, поэтому результат приходит не мгновенно:
+                        обычно в течение 15 минут. Готовые дорожки появятся в вашей истории и придут на почту —
+                        страницу можно закрыть. Если обработать не получится, деньги вернутся на баланс.
+                    </p>
+                <?php endif; ?>
             </section>
 
             <?php if (!GS_Lab::is_available($service['id'])): ?>

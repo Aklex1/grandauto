@@ -183,7 +183,9 @@
             if (els.balance && typeof res.data.balance !== 'undefined') {
                 els.balance.textContent = money(res.data.balance);
             }
-            els.stage.textContent = 'Нейросеть обрабатывает файл…';
+            els.stage.textContent = cfg.manual
+                ? 'Заказ принят. Обычно готово за 10–15 минут — файл придёт в историю и на почту, страницу можно закрыть.'
+                : 'Нейросеть обрабатывает файл…';
             els.progress.style.width = '30%';
             startPolling(res.data.task_id);
         }).catch(function () {
@@ -204,7 +206,9 @@
                 stopPolling();
                 setBusy(false);
                 show('empty');
-                note('Обработка занимает слишком долго. Загляните в историю через пару минут.', 'error');
+                note(cfg.manual
+                    ? 'Заказ в работе. Готовый файл появится в истории и придёт на почту.'
+                    : 'Обработка занимает слишком долго. Загляните в историю через пару минут.', cfg.manual ? 'ok' : 'error');
                 return;
             }
             els.progress.style.width = Math.min(92, 30 + (elapsed / timeout) * 120) + '%';

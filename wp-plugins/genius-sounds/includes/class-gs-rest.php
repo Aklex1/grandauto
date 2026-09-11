@@ -649,6 +649,11 @@ class GS_Rest {
             );
         }
 
+        // Ручной очереди нужно знать, чей это заказ и на какую сумму.
+        $payload['user_id'] = $user_id;
+        $payload['cost']    = $cost;
+        $payload['seconds'] = (int) round($seconds);
+
         $created = GS_Lab::create_task($service_id, $payload);
         if (empty($created['ok'])) {
             return new WP_Error('gs_service_error', $created['message'] ?: 'Сервис не принял задачу', array('status' => 502));
