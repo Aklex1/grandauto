@@ -518,6 +518,22 @@ class GS_Lab {
     }
 
     /**
+     * Остаток кредитов у поставщика — без этого нельзя считать себестоимость
+     * операции и осмысленно назначать цену для пользователя.
+     *
+     * @return array{ok:bool,credits:float,message:string}
+     */
+    public static function provider_credits() {
+        $res = self::get_json('https://api.kie.ai/api/v1/chat/credit', array());
+        if (empty($res['ok'])) {
+            return array('ok' => false, 'credits' => 0.0, 'message' => $res['message']);
+        }
+        $data = $res['body']['data'];
+        $credits = is_array($data) ? (float) ($data['credit'] ?? $data['credits'] ?? 0) : (float) $data;
+        return array('ok' => true, 'credits' => $credits, 'message' => '');
+    }
+
+    /**
      * Копируем результат к себе: ссылки агрегатора живут ограниченное время.
      */
     public static function store_result($task_id, $url, $kind) {

@@ -96,6 +96,12 @@ class GS_Rest {
             'permission_callback' => '__return_true',
         ));
 
+        register_rest_route(self::NS, '/lab/credits', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_lab_credits'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/links/install-menu', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_install_menu'),
@@ -631,6 +637,10 @@ class GS_Rest {
         }
         // Результат забирает опрос статуса: колбэк нужен агрегатору как подтверждение.
         return rest_ensure_response(array('success' => true));
+    }
+
+    public static function handle_lab_credits() {
+        return rest_ensure_response(GS_Lab::provider_credits());
     }
 
     public static function handle_install_menu($request) {
