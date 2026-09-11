@@ -40,6 +40,8 @@ class GS_Transcribe {
     const SPAWN_GRACE = 8;
     /** Дольше этого работа считается сорвавшейся. */
     const RUN_LIMIT   = 900;
+    /** Начатая, но заглохшая задача: столько ждём, прежде чем взяться заново. */
+    const RUN_LEASE   = 240;
 
     public static function boot() {
         add_filter('rest_pre_dispatch', array(__CLASS__, 'normalize_request'), 10, 3);
@@ -294,9 +296,8 @@ class GS_Transcribe {
             return $out;
         }
 
-        // Фоновый заход мог не состояться — тогда считаем прямо здесь.
-        if ($task['status'] === 'pending' && (int) $task['started'] === 0
-            && (time() - (int) $task['created']) >= self::SPAWN_GRACE) {
+        // Фоновый заход мог не состояться или заглохнуть — тогда считаем здесь.
+        if ($task['status'] === 'pending' && self::worth_running($task)) {
             self::run($id);
             $task = self::load($id);
             if (!$task) {
@@ -439,12 +440,10 @@ class GS_Transcribe {
 
         // Фоновый заход мог не состояться — тогда считаем прямо здесь.
         if ($task['status'] === 'pending') {
-            $waiting = time() - (int) $task['created'];
-            $running = (int) $task['started'] > 0 ? time() - (int) $task['started'] : 0;
-            if ((int) $task['started'] === 0 && $waiting >= self::SPAWN_GRACE) {
+            if (self::worth_running($task)) {
                 self::run($id);
                 $task = self::load($id);
-            } elseif ((int) $task['started'] > 0 && $running > self::RUN_LIMIT) {
+            } elseif ((int) $task['started'] > 0 && (time() - (int) $task['started']) > self::RUN_LIMIT) {
                 $task['status']   = 'failed';
                 $task['error']    = 'Расшифровка не уложилась во время. Попробуйте ещё раз.';
                 $task['finished'] = time();
@@ -494,6 +493,10 @@ class GS_Transcribe {
     }
 
     public static function handle_run($request) {
+        // Вызов приходит без ожидания ответа: соединение рвётся сразу, и без
+        // этой строки PHP снимает задачу на середине — она остаётся начатой
+        // навсегда, а результат не появляется.
+        @ignore_user_abort(true);
         $id  = sanitize_text_field((string) $request->get_param('id'));
         $key = (string) $request->get_param('key');
         if ($id === '' || !hash_equals(wp_hash($id . '|gs-stt'), $key)) {
@@ -509,9 +512,13 @@ class GS_Transcribe {
         if (!$task || $task['status'] !== 'pending') {
             return;
         }
-        // Кто-то уже считает эту задачу.
-        if ((int) $task['started'] > 0 && (time() - (int) $task['started']) < self::RUN_LIMIT) {
+        // Кто-то уже считает эту задачу — но если он замолчал надолго,
+        // значит, заход сорвался, и браться надо заново.
+        if ((int) $task['started'] > 0 && (time() - (int) $task['started']) < self::RUN_LEASE) {
             return;
+        }
+        if ((int) $task['started'] > 0) {
+            self::log('заглохшая расшифровка запущена заново: ' . $id);
         }
         $task['started'] = time();
         self::save($task);
@@ -539,6 +546,18 @@ class GS_Transcribe {
         }
         $task['finished'] = time();
         self::save($task);
+    }
+
+    /**
+     * Пора ли считать задачу самим: фоновый заход не состоялся за отведённое
+     * время либо начался и заглох.
+     */
+    private static function worth_running($task) {
+        $started = (int) $task['started'];
+        if ($started === 0) {
+            return (time() - (int) $task['created']) >= self::SPAWN_GRACE;
+        }
+        return (time() - $started) >= self::RUN_LEASE;
     }
 
     private static function save($task) {

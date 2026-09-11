@@ -207,6 +207,16 @@ def deliver(url: str, form: dict, timeout: int = 25) -> dict:
     except Exception as error:
         return {"ok": False, "status": 0, "body": str(error)}
 
+def blocked_as_bot(stderr):
+    """YouTube закрылся проверкой на робота — остальные отказы лечатся иначе."""
+    low = (stderr or "").lower()
+    return any(mark in low for mark in (
+        "sign in to confirm",
+        "confirm you", "not a bot", "bot",
+        "cookies", "account", "consent",
+    ))
+
+
 def ytdlp_command():
     """
     Как запускать yt-dlp.
@@ -322,25 +332,48 @@ def youtube_audio(payload: YoutubeRequest, x_api_key: Optional[str] = Header(def
     stem = f"yt-{uuid.uuid4().hex[:16]}"
     template = str(FILES_DIR / (stem + ".%(ext)s"))
 
-    command = ytdlp_command() + [
+    base = ytdlp_command() + [
         "-x", "--audio-format", ext,
         "--audio-quality", "0",
         "--no-playlist",
         "--match-filter", f"duration < {MAX_MINUTES * 60}",
         "--retries", "3",
         "-o", template,
-        url,
     ]
     cookies = os.environ.get("YTDLP_COOKIES", "")
     if cookies and Path(cookies).exists():
         # Ролики с ограничением по возрасту и регионам требуют входа.
-        command += ["--cookies", cookies]
+        base += ["--cookies", cookies]
 
-    result = subprocess.run(command, capture_output=True, text=True, timeout=600)
-    produced = sorted(FILES_DIR.glob(stem + ".*"))
-    if result.returncode != 0 or not produced:
-        message = (result.stderr or "").strip().splitlines()
+    # YouTube отвечает серверам «подтвердите, что вы не робот»: с адреса
+    # дата-центра обычный клиент он не пускает. Обходится сменой клиента,
+    # которым представляется yt-dlp, — пробуем по очереди, пока не выйдет.
+    attempts = [[]]
+    if not cookies:
+        attempts += [
+            ["--extractor-args", "youtube:player_client=android"],
+            ["--extractor-args", "youtube:player_client=ios"],
+            ["--extractor-args", "youtube:player_client=tv_embedded"],
+            ["--extractor-args", "youtube:player_client=web_safari"],
+        ]
+
+    result = None
+    produced = []
+    for extra in attempts:
+        result = subprocess.run(base + extra + [url], capture_output=True, text=True, timeout=600)
+        produced = sorted(FILES_DIR.glob(stem + ".*"))
+        if result.returncode == 0 and produced:
+            break
+        if not blocked_as_bot(result.stderr or ""):
+            break
+
+    if result is None or result.returncode != 0 or not produced:
+        message = (result.stderr or "").strip().splitlines() if result else []
         detail = message[-1] if message else "Не удалось получить дорожку"
+        if blocked_as_bot(result.stderr if result else ""):
+            detail = ("YouTube не отдаёт ролик по запросу с сервера и просит подтвердить, "
+                      "что вы не робот. Помогают файлы входа: положите cookies.txt на сервер "
+                      "и укажите путь в YTDLP_COOKIES.")
         raise HTTPException(status_code=502, detail=detail[:300])
 
     target = produced[0]
@@ -350,6 +383,12 @@ def youtube_audio(payload: YoutubeRequest, x_api_key: Optional[str] = Header(def
         ytdlp_command() + ["--no-playlist", "--print", "%(title)s|%(duration)s", "--skip-download", url],
         capture_output=True, text=True, timeout=120,
     )
+    if info.returncode != 0 and blocked_as_bot(info.stderr or ""):
+        info = subprocess.run(
+            ytdlp_command() + ["--extractor-args", "youtube:player_client=android",
+                               "--no-playlist", "--print", "%(title)s|%(duration)s", "--skip-download", url],
+            capture_output=True, text=True, timeout=120,
+        )
     if info.returncode == 0 and "|" in info.stdout:
         raw_title, _, raw_duration = info.stdout.strip().partition("|")
         title = raw_title.strip()

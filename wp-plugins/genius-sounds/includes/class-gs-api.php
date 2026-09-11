@@ -103,6 +103,61 @@ class GS_Api {
                 'price'  => 50,
                 'build'  => array(__CLASS__, 'build_upscale'),
             ),
+            'video' => array(
+                'id'     => 'video',
+                'engine' => 'jobs',
+                'title'  => 'Видео по описанию',
+                'about'  => 'Ролик из одного текста: сцена, движение и камера — без исходной картинки.',
+                'model'  => 'bytedance/v1-pro-text-to-video',
+                'info'   => 'https://api.kie.ai/api/v1/seedance/record-info',
+                'input'  => array('prompt' => 'required', 'duration' => 'optional', 'resolution' => 'optional'),
+                'result' => 'video',
+                'price'  => 119,
+                'build'  => array(__CLASS__, 'build_video'),
+            ),
+            'music' => array(
+                'id'     => 'music',
+                'engine' => 'lab',
+                'lab_id' => 'music',
+                'title'  => 'Создать музыку',
+                'about'  => 'Два готовых трека по описанию: инструментал или песня с вокалом на свой текст.',
+                'input'  => array(
+                    'prompt'       => 'required',
+                    'style'        => 'optional',
+                    'title'        => 'optional',
+                    'lyrics'       => 'optional',
+                    'instrumental' => 'optional',
+                ),
+                'fields' => array('style', 'title', 'lyrics', 'instrumental'),
+                'bools'  => array('instrumental'),
+                'result' => 'audio',
+            ),
+            'stt' => array(
+                'id'     => 'stt',
+                'engine' => 'lab',
+                'lab_id' => 'stt',
+                'title'  => 'Расшифровка записи',
+                'about'  => 'Текст из записи с отметками времени и разделением по говорящим.',
+                'input'  => array(
+                    'audio_url' => 'required',
+                    'language'  => 'optional',
+                    'diarize'   => 'optional',
+                    'events'    => 'optional',
+                ),
+                'fields' => array('language', 'diarize', 'events'),
+                'bools'  => array('diarize', 'events'),
+                'result' => 'text',
+            ),
+            'ytaudio' => array(
+                'id'     => 'ytaudio',
+                'engine' => 'lab',
+                'lab_id' => 'ytaudio',
+                'title'  => 'Звук из видео',
+                'about'  => 'Звуковая дорожка по ссылке на ролик — MP3, WAV или M4A.',
+                'input'  => array('url' => 'required', 'format' => 'optional'),
+                'fields' => array('url', 'format'),
+                'result' => 'audio',
+            ),
             'avatar' => array(
                 'id'     => 'avatar',
                 'engine' => 'lab',
@@ -193,7 +248,7 @@ class GS_Api {
             return '';
         }
         if ($service['engine'] === 'lab') {
-            return GS_Lab::price_hint($service['lab_id']);
+            return self::price($id) <= 0 ? 'бесплатно' : GS_Lab::price_hint($service['lab_id']);
         }
         if ($service['engine'] === 'tts') {
             return '12 ₽ за 1000 знаков';
@@ -400,7 +455,7 @@ class GS_Api {
 
         // Озвучку списывает колбэк базового плагина — по строке истории,
         // которую мы заводим ниже. Дважды за одно и то же не берём.
-        if ($service['engine'] !== 'tts' && !GS_SFX::charge($user_id, $cost)) {
+        if ($cost > 0 && $service['engine'] !== 'tts' && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_api_charge', 'Не удалось списать средства с баланса', array('status' => 500));
         }
         if (class_exists('KIE_TTS_DB')) {
@@ -502,6 +557,7 @@ class GS_Api {
             'service' => $task['service'],
             'status'  => $state['status'],
             'files'   => $state['files'],
+            'text'    => isset($state['text']) ? (string) $state['text'] : '',
             'message' => $state['message'],
             'cost'    => (float) $task['cost'],
         ));
@@ -543,8 +599,11 @@ class GS_Api {
                 continue;
             }
 
+            if ($value === '' && $rule === 'required') {
+                return new WP_Error('gs_api_input', 'Не указан ' . $field, array('status' => 400));
+            }
             if ($value !== '') {
-                $input[$field] = sanitize_text_field((string) $value);
+                $input[$field] = is_bool($value) ? $value : sanitize_text_field((string) $value);
             }
         }
 
@@ -597,6 +656,24 @@ class GS_Api {
 
     private static function dispatch($service, $input) {
         if ($service['engine'] === 'lab') {
+            // Часть микросервисов принимает свои поля отдельным набором —
+            // раскладываем присланное так, как их ожидает лаборатория.
+            if (!empty($service['fields'])) {
+                $fields = array();
+                foreach ((array) $service['fields'] as $name) {
+                    if (!array_key_exists($name, $input)) {
+                        continue;
+                    }
+                    $fields[$name] = in_array($name, (array) ($service['bools'] ?? array()), true)
+                        ? filter_var($input[$name], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)
+                        : $input[$name];
+                    if ($fields[$name] === null) {
+                        unset($fields[$name]);
+                    }
+                    unset($input[$name]);
+                }
+                $input['fields'] = $fields;
+            }
             return GS_Lab::create_task($service['lab_id'], $input);
         }
         if ($service['engine'] === 'sfx') {
@@ -617,6 +694,25 @@ class GS_Api {
                 'image_url'  => $input['image_url'],
                 'resolution' => '720p',
                 'duration'   => '5',
+            ),
+        );
+    }
+
+    public static function build_video($service, $input) {
+        $duration = isset($input['duration']) ? (string) (int) $input['duration'] : '5';
+        if (!in_array($duration, array('5', '10'), true)) {
+            $duration = '5';
+        }
+        $resolution = isset($input['resolution']) ? (string) $input['resolution'] : '720p';
+        if (!in_array($resolution, array('480p', '720p', '1080p'), true)) {
+            $resolution = '720p';
+        }
+        return array(
+            'model' => $service['model'],
+            'input' => array(
+                'prompt'     => $input['prompt'],
+                'resolution' => $resolution,
+                'duration'   => $duration,
             ),
         );
     }
@@ -793,6 +889,7 @@ class GS_Api {
             return array(
                 'status'  => (string) $task['status'],
                 'files'   => is_array($task['files']) ? $task['files'] : array(),
+                'text'    => isset($task['text']) ? (string) $task['text'] : '',
                 'message' => isset($task['message']) ? (string) $task['message'] : '',
             );
         }
@@ -834,7 +931,8 @@ class GS_Api {
 
         $files = array();
         foreach ($state['files'] as $file) {
-            $local = GS_Lab::store_result($task_id, $file['url'], $file['kind']);
+            // Текстовые выгрузки уже лежат у нас — перекладывать их незачем.
+            $local = $file['kind'] === 'file' ? '' : GS_Lab::store_result($task_id, $file['url'], $file['kind']);
             $files[] = array(
                 'label' => $file['label'],
                 'kind'  => $file['kind'],
@@ -846,10 +944,11 @@ class GS_Api {
         }
         $task['status'] = 'completed';
         $task['files'] = $files;
+        $task['text'] = isset($state['text']) ? (string) $state['text'] : '';
         update_option(self::TASK_PREFIX . $task_id, $task, false);
         self::notify($task_id, $task);
 
-        return array('status' => 'completed', 'files' => $files, 'message' => '');
+        return array('status' => 'completed', 'files' => $files, 'text' => (string) $task['text'], 'message' => '');
     }
 
     /**
