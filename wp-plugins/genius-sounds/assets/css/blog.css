@@ -383,3 +383,81 @@ body.gs-post-page input:-webkit-autofill {
     box-shadow: 0 0 0 1000px #0d1320 inset !important;
     transition: background-color 9999s ease-in-out 0s;
 }
+
+/* --------------------------------------------------- Колонки конструктора
+   Тема кладёт статью в колонку со светлым фоном (--color-content-bg-alt),
+   а текст мы перекрашиваем в светлый — получалось нечитаемо.
+   Красим саму колонку в тёмную карточку. */
+
+body.gs-post-page .wpb_column,
+body.gs-post-page .vc_column-inner,
+body.gs-blog-page .wpb_column,
+body.gs-blog-page .vc_column-inner {
+    background: transparent !important;
+}
+
+body.gs-post-page .wpb_column.has_bg_color {
+    background: var(--gs-surface) !important;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius) !important;
+    padding: 32px !important;
+}
+
+body.gs-blog-page .wpb_column.has_bg_color {
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+/* Текст внутри колонки — на случай, если тема задаёт свой цвет инлайном. */
+body.gs-post-page .w-post-elm.post_content,
+body.gs-post-page .w-post-elm.post_content p,
+body.gs-post-page .w-post-elm.post_content li,
+body.gs-post-page .w-post-elm.post_content td,
+body.gs-post-page .w-post-elm.post_content th,
+body.gs-post-page .w-post-elm.post_content strong,
+body.gs-post-page .w-post-elm.post_content em {
+    color: #dbe3f0 !important;
+}
+
+body.gs-post-page .w-post-elm.post_content h2,
+body.gs-post-page .w-post-elm.post_content h3,
+body.gs-post-page .w-post-elm.post_content h4 {
+    color: #f8fafc !important;
+}
+
+body.gs-post-page .w-post-elm.post_content a {
+    color: #a5b4fc !important;
+}
+
+body.gs-post-page .w-post-elm.post_content a:hover {
+    color: #67e8f9 !important;
+}
+
+@media (max-width: 600px) {
+    body.gs-post-page .wpb_column.has_bg_color {
+        padding: 18px !important;
+    }
+}
+
+/* Блок «Читать» от плагина похожих записей: он приходит со своим светлым
+   фоном и тёмным текстом, а на тёмной статье это нечитаемо.
+   Классы у него генерируются на каждый пост, поэтому цепляемся за структуру. */
+
+body.gs-post-page .w-post-elm.post_content div[class^="u"],
+body.gs-post-page .w-post-elm.post_content a[class^="u"] {
+    background: #1b2440 !important;
+    border: 1px solid var(--gs-border-strong);
+    border-radius: var(--gs-radius-sm);
+    border-left: 4px solid var(--gs-primary-light) !important;
+    margin: 18px 0;
+    text-decoration: none !important;
+}
+
+body.gs-post-page .w-post-elm.post_content .ctaText {
+    color: #a5b4fc !important;
+}
+
+body.gs-post-page .w-post-elm.post_content .postTitle {
+    color: #f1f5f9 !important;
+    text-decoration: none !important;
+}

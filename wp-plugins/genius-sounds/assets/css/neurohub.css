@@ -1,0 +1,423 @@
+/**
+ * Genius Sounds — раздел «Нейросети» в стилистике микросервисов.
+ * Разметку плагина не меняем, только перекрашиваем и переверстываем.
+ */
+
+body.kie-neurohub-body {
+    --gs-bg: #080c14;
+    --gs-surface: #131b2b;
+    --gs-surface-2: #0d1320;
+    --gs-border: rgba(148, 163, 184, 0.14);
+    --gs-border-strong: rgba(129, 140, 248, 0.38);
+    --gs-text: #f1f5f9;
+    --gs-muted: #94a3b8;
+    --gs-primary: #6366f1;
+    --gs-primary-light: #818cf8;
+    --gs-accent: #22d3ee;
+    --gs-radius: 16px;
+    --gs-radius-sm: 10px;
+
+    margin: 0;
+    background: var(--gs-bg);
+    color: var(--gs-text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+body.kie-neurohub-body .kn-wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 20px 40px;
+}
+
+/* Свой заголовок с запросом ставим выше — родной оставляем только для доступности. */
+body.kie-neurohub-body .kn-header h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+body.kie-neurohub-body .kn-header {
+    position: relative;
+    min-height: 0;
+    margin: 0 0 10px;
+    padding: 0;
+}
+
+/* Вводный блок и текстовая часть от нашего плагина */
+.gs-nh-hero,
+.gs-nh-text {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+.gs-nh-hero {
+    padding-top: 28px;
+}
+
+.gs-nh-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+.gs-nh-card {
+    padding: 16px 18px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+}
+
+.gs-nh-card h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--gs-text);
+}
+
+.gs-nh-card p {
+    margin: 0;
+    color: var(--gs-muted);
+    font-size: 14.5px;
+    line-height: 1.6;
+}
+
+/* ------------------------------------------------------------- карточки */
+
+body.kie-neurohub-body .kn-card {
+    margin-bottom: 16px;
+    padding: 20px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+    box-shadow: none;
+}
+
+body.kie-neurohub-body .kn-card h2 {
+    margin: 0 0 14px;
+    font-size: clamp(18px, 2.4vw, 22px);
+    font-weight: 700;
+    color: var(--gs-text);
+}
+
+body.kie-neurohub-body .kn-inner {
+    background: var(--gs-surface-2);
+}
+
+body.kie-neurohub-body .kn-hint,
+body.kie-neurohub-body .kn-msg,
+body.kie-neurohub-body label {
+    color: var(--gs-muted);
+    font-size: 14px;
+}
+
+body.kie-neurohub-body .kn-balance,
+body.kie-neurohub-body .kn-account-menu-balance {
+    color: var(--gs-text);
+}
+
+/* ---------------------------------------------------------------- вкладки */
+
+body.kie-neurohub-body .kn-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 16px;
+    padding: 6px;
+    border: 1px solid var(--gs-border);
+    border-radius: 14px;
+    background: rgba(19, 27, 43, 0.6);
+}
+
+body.kie-neurohub-body .kn-tab {
+    padding: 9px 16px;
+    border: 1px solid transparent;
+    border-radius: var(--gs-radius-sm);
+    background: transparent;
+    color: var(--gs-muted);
+    font: inherit;
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.16s ease, color 0.16s ease;
+}
+
+body.kie-neurohub-body .kn-tab:hover {
+    color: var(--gs-text);
+}
+
+body.kie-neurohub-body .kn-tab.active {
+    background: linear-gradient(135deg, var(--gs-primary) 0%, #8b5cf6 100%);
+    border-color: transparent;
+    color: #fff;
+}
+
+/* ----------------------------------------------------------- сетка моделей */
+
+body.kie-neurohub-body .kn-model-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+body.kie-neurohub-body .kn-model-grid > * {
+    padding: 16px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface-2);
+    color: var(--gs-text);
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.18s ease;
+}
+
+body.kie-neurohub-body .kn-model-grid > *:hover {
+    transform: translateY(-2px);
+    border-color: var(--gs-border-strong);
+}
+
+body.kie-neurohub-body .kn-model-grid .active,
+body.kie-neurohub-body .kn-model-grid .selected,
+body.kie-neurohub-body .kn-model-grid [aria-selected="true"] {
+    border-color: var(--gs-primary-light);
+    box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.35);
+}
+
+/* ---------------------------------------------------------------- кнопки */
+
+body.kie-neurohub-body .kn-btn {
+    padding: 11px 18px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: rgba(148, 163, 184, 0.08);
+    color: var(--gs-text);
+    font: inherit;
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+body.kie-neurohub-body .kn-btn:hover {
+    border-color: var(--gs-border-strong);
+}
+
+body.kie-neurohub-body .kn-btn-primary {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--gs-primary) 0%, #8b5cf6 100%);
+    color: #fff;
+}
+
+body.kie-neurohub-body .kn-btn-primary:hover {
+    filter: brightness(1.06);
+}
+
+body.kie-neurohub-body .kn-btn-muted {
+    opacity: 0.55;
+}
+
+body.kie-neurohub-body .kn-btn-ghost {
+    background: transparent;
+}
+
+body.kie-neurohub-body .kn-btn-telegram {
+    background: #2aabee;
+    border-color: transparent;
+    color: #fff;
+}
+
+body.kie-neurohub-body .kn-btn-vk {
+    background: #0077ff;
+    border-color: transparent;
+    color: #fff;
+}
+
+body.kie-neurohub-body .kn-btn-file {
+    display: inline-block;
+}
+
+body.kie-neurohub-body .kn-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+/* -------------------------------------------------------------- поля ввода
+   На тёмном фоне поля оставались белыми со светлым текстом —
+   набирать было не видно. */
+
+body.kie-neurohub-body input[type="text"],
+body.kie-neurohub-body input[type="email"],
+body.kie-neurohub-body input[type="password"],
+body.kie-neurohub-body input[type="number"],
+body.kie-neurohub-body input[type="search"],
+body.kie-neurohub-body textarea,
+body.kie-neurohub-body select {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+    border-radius: var(--gs-radius-sm) !important;
+    background-color: var(--gs-surface-2) !important;
+    color: var(--gs-text) !important;
+    font: inherit;
+    font-size: 15px;
+    caret-color: var(--gs-primary-light);
+    box-shadow: none !important;
+}
+
+body.kie-neurohub-body input::placeholder,
+body.kie-neurohub-body textarea::placeholder {
+    color: #7d8ba1 !important;
+    opacity: 1;
+}
+
+body.kie-neurohub-body input:focus,
+body.kie-neurohub-body textarea:focus,
+body.kie-neurohub-body select:focus {
+    outline: none;
+    border-color: var(--gs-primary-light) !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18) !important;
+}
+
+body.kie-neurohub-body select option {
+    background-color: var(--gs-surface-2);
+    color: var(--gs-text);
+}
+
+body.kie-neurohub-body input:-webkit-autofill {
+    -webkit-text-fill-color: var(--gs-text) !important;
+    box-shadow: 0 0 0 1000px var(--gs-surface-2) inset !important;
+    transition: background-color 9999s ease-in-out 0s;
+}
+
+body.kie-neurohub-body .kn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+body.kie-neurohub-body .kn-row > label {
+    flex: 0 0 100%;
+}
+
+body.kie-neurohub-body .kn-row input,
+body.kie-neurohub-body .kn-row select {
+    flex: 1 1 220px;
+    width: auto;
+}
+
+body.kie-neurohub-body .kn-actions {
+    gap: 8px;
+}
+
+/* -------------------------------------------------------- файлы и история */
+
+body.kie-neurohub-body .kn-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+}
+
+body.kie-neurohub-body .kn-files img {
+    width: 84px;
+    height: 84px;
+    object-fit: cover;
+    border-radius: var(--gs-radius-sm);
+    border: 1px solid var(--gs-border);
+}
+
+body.kie-neurohub-body .kn-history > * {
+    margin-bottom: 10px;
+    padding: 14px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface-2);
+}
+
+body.kie-neurohub-body .kn-history img,
+body.kie-neurohub-body .kn-history video,
+body.kie-neurohub-body #knResult img,
+body.kie-neurohub-body #knResult video {
+    max-width: 100%;
+    border-radius: var(--gs-radius-sm);
+}
+
+/* ---------------------------------------------------------------- модалка */
+
+body.kie-neurohub-body .kn-repeat-modal-backdrop {
+    background: rgba(4, 8, 16, 0.72);
+    backdrop-filter: blur(3px);
+}
+
+body.kie-neurohub-body .kn-repeat-modal-card {
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+    color: var(--gs-text);
+}
+
+body.kie-neurohub-body .kn-repeat-close {
+    border: none;
+    background: transparent;
+    color: var(--gs-muted);
+    font-size: 24px;
+    cursor: pointer;
+}
+
+/* --------------------------------------------------------------- аккаунт */
+
+body.kie-neurohub-body .kn-account-fab {
+    border: 1px solid var(--gs-border);
+    border-radius: 50%;
+    background: var(--gs-surface);
+    color: var(--gs-text);
+    cursor: pointer;
+}
+
+body.kie-neurohub-body .kn-account-menu {
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+    color: var(--gs-text);
+}
+
+body.kie-neurohub-body .kn-account-menu-item {
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    color: var(--gs-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+body.kie-neurohub-body .kn-account-menu-item:hover {
+    background: rgba(148, 163, 184, 0.08);
+}
+
+/* --------------------------------------------------------------- адаптив */
+
+@media (max-width: 600px) {
+    body.kie-neurohub-body .kn-wrap,
+    .gs-nh-hero,
+    .gs-nh-text {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    body.kie-neurohub-body .kn-card {
+        padding: 16px;
+    }
+
+    body.kie-neurohub-body .kn-tab {
+        flex: 1 1 auto;
+        text-align: center;
+    }
+}

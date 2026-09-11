@@ -61,9 +61,11 @@ class GS_Links {
             return;
         }
         self::$neurohub_done = true;
-        echo '<div class="gs-wrap gs-studio gs-neurohub-links">'
+        // Сначала описание и вопросы — странице нужен текст, потом уже ссылки.
+        echo GS_Neurohub::render_footer_content() // phpcs:ignore WordPress.Security.EscapeOutput
+            . '<div class="gs-wrap gs-studio gs-neurohub-links">'
             . GS_Lab_Page::render_cross_links('', 'Другие инструменты Genius-bot')
-            . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput
+            . '</div>';
     }
 
     public static function append_neurohub_links($content) {

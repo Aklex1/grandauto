@@ -49,6 +49,9 @@ CHROME_PATH = os.environ.get("GB_CHROME", "")
 CHANNEL = os.environ.get("GB_CHANNEL", "")
 # Подключение к уже запущенному браузеру, где вы вошли обычным способом.
 CDP = os.environ.get("GB_CDP", "")
+# К настольному приложению подключаемся как есть: уводить его с текущего
+# экрана переходом по адресу нельзя — там нет привычной адресной строки.
+KEEP_PAGE = os.environ.get("GB_KEEP_PAGE", "") == "1"
 
 # Сайт отдаёт файлы через защиту хостинга: без этой куки вместо звука
 # приезжает страница проверки.
@@ -127,7 +130,13 @@ def open_studio(page_url=STUDIO):
             browser = playwright.chromium.connect_over_cdp(CDP)
             context = browser.contexts[0] if browser.contexts else browser.new_context(accept_downloads=True)
             page = context.pages[0] if context.pages else context.new_page()
-            page.goto(page_url, wait_until="domcontentloaded")
+            # У настольного приложения адрес вида file:// или app:// —
+            # это его собственный экран, переходить никуда не нужно.
+            current = (page.url or "")
+            if not KEEP_PAGE and current.startswith("http"):
+                page.goto(page_url, wait_until="domcontentloaded")
+            else:
+                log(f"  подключился к готовому окну: {current[:60] or 'без адреса'}")
             page.bring_to_front()
             return playwright, context, page
         except Exception as error:
@@ -385,10 +394,14 @@ def main():
     parser.add_argument("--auto", action="store_true", help="прокликивать студию по selectors.json")
     parser.add_argument("--once", action="store_true", help="обработать одну партию и выйти")
     parser.add_argument("--file", help="разовая проверка: обработать файл с диска, без очереди сайта")
+    parser.add_argument("--keep-page", action="store_true",
+                        help="не переходить по адресу: разбирать окно как есть (для настольного приложения)")
     parser.add_argument("--inspect", action="store_true",
                         help="собрать со страницы студии кандидатов в селекторы и сохранить в studio-dump.json")
     parser.add_argument("--url", default=STUDIO, help="адрес страницы студии")
     args = parser.parse_args()
+    if args.keep_page:
+        globals()["KEEP_PAGE"] = True
 
     # Проверочные режимы к сайту не обращаются — ключ им не нужен.
     if args.inspect:
