@@ -650,13 +650,19 @@ class GS_Lab {
         // Вариант 0 — не постановка задачи, а сырой ответ о её состоянии:
         // по нему видно настоящую причину отказа, а не нашу трактовку.
         if ($variant === 0) {
-            $res = self::get_json(self::API_VOCAL_INFO, array('taskId' => $audio_url));
+            $key = self::api_key();
+            $response = wp_remote_get(
+                add_query_arg('taskId', $audio_url, self::API_VOCAL_INFO),
+                array('timeout' => 45, 'headers' => array('Authorization' => 'Bearer ' . $key))
+            );
+            if (is_wp_error($response)) {
+                return array('variant' => 0, 'ok' => false, 'message' => $response->get_error_message(), 'body' => array());
+            }
             return array(
                 'variant' => 0,
-                'sent'    => array('taskId'),
-                'ok'      => !empty($res['ok']),
-                'message' => (string) $res['message'],
-                'body'    => $res['body'],
+                'ok'      => true,
+                'http'    => (int) wp_remote_retrieve_response_code($response),
+                'raw'     => mb_substr((string) wp_remote_retrieve_body($response), 0, 1500),
             );
         }
 
