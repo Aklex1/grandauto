@@ -45,6 +45,10 @@ POLL_SECONDS = int(os.environ.get("GB_POLL", "60"))
 HEADLESS = os.environ.get("GB_HEADLESS", "") == "1"
 # На некоторых машинах браузер стоит отдельно от playwright.
 CHROME_PATH = os.environ.get("GB_CHROME", "")
+# Обычный Chrome вместо встроенного Chromium: GB_CHANNEL=chrome.
+CHANNEL = os.environ.get("GB_CHANNEL", "")
+# Подключение к уже запущенному браузеру, где вы вошли обычным способом.
+CDP = os.environ.get("GB_CDP", "")
 
 # Сайт отдаёт файлы через защиту хостинга: без этой куки вместо звука
 # приезжает страница проверки.
@@ -108,22 +112,50 @@ def mark_failed(task_id, reason):
 
 
 def open_studio(page_url=STUDIO):
-    """Постоянный профиль: в студию достаточно войти один раз, вручную."""
+    """Постоянный профиль: в студию достаточно войти один раз, вручную.
+
+    Вход через Google в браузере, запущенном автоматикой, часто не открывается:
+    Google видит служебные флаги и молча блокирует окно. Поэтому флаги снимаем,
+    а при GB_CDP вообще не запускаем свой браузер — подключаемся к вашему,
+    где вы уже вошли обычным способом."""
     from playwright.sync_api import sync_playwright
 
     playwright = sync_playwright().start()
+
+    if CDP:
+        browser = playwright.chromium.connect_over_cdp(CDP)
+        context = browser.contexts[0] if browser.contexts else browser.new_context(accept_downloads=True)
+        page = context.pages[0] if context.pages else context.new_page()
+        page.goto(page_url, wait_until="domcontentloaded")
+        return playwright, context, page
+
     options = {
         "user_data_dir": str(PROFILE),
         "headless": HEADLESS,
         "accept_downloads": True,
         "viewport": {"width": 1440, "height": 900},
+        # Без этих двух строк Google считает окно автоматизированным
+        # и не показывает форму входа.
+        "args": ["--disable-blink-features=AutomationControlled"],
+        "ignore_default_args": ["--enable-automation"],
     }
+    if CHANNEL:
+        options["channel"] = CHANNEL
     if CHROME_PATH:
         options["executable_path"] = CHROME_PATH
+
     context = playwright.chromium.launch_persistent_context(**options)
     page = context.pages[0] if context.pages else context.new_page()
     page.goto(page_url, wait_until="domcontentloaded")
     return playwright, context, page
+
+
+def close_studio(playwright, context):
+    """Чужой браузер не закрываем — мы к нему только подключились."""
+    if context and not CDP:
+        context.close()
+    if playwright:
+        playwright.stop()
 
 
 def selectors():
@@ -229,8 +261,7 @@ def inspect_studio(url):
     out.write_text(json.dumps(dump, ensure_ascii=False, indent=2), encoding="utf-8")
     log(f"Записал {out}")
     log("Пришлите этот файл — по нему соберу selectors.json для автоматического режима.")
-    context.close()
-    playwright.stop()
+    close_studio(playwright, context)
 
 
 def run_single_file(raw_path, url, auto):
@@ -254,8 +285,7 @@ def run_single_file(raw_path, url, auto):
         saved = sorted((folder / "out").glob("*"))
         log("Получено: " + (", ".join(f.name for f in saved) if saved else "ничего"))
     finally:
-        context.close()
-        playwright.stop()
+        close_studio(playwright, context)
 
 
 def main():
@@ -308,10 +338,7 @@ def main():
                 break
             time.sleep(POLL_SECONDS)
     finally:
-        if context:
-            context.close()
-        if playwright:
-            playwright.stop()
+        close_studio(playwright, context)
 
 
 if __name__ == "__main__":
