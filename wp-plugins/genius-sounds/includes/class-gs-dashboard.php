@@ -3,8 +3,11 @@
  * Кабинет озвучки (/tts-dashboard/) в стилистике остальных сервисов.
  *
  * Базовый плагин не трогаем: добавляем класс на body, свой файл стилей
- * и небольшой скрипт, который уводит ссылку на документацию в общий
- * раздел API — там теперь описаны все инструменты сразу.
+ * и небольшой скрипт, который убирает переехавшие разделы.
+ *
+ * Отсюда же вычищаем из верхней панели плагина ссылки на его старую
+ * документацию: описание API теперь одно на все инструменты и живёт в
+ * общем разделе.
  */
 
 if (!defined('ABSPATH')) {
@@ -18,6 +21,29 @@ class GS_Dashboard {
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
         add_filter('the_content', array(__CLASS__, 'append_keywords'), 20);
+        // Позже вывода шорткодов: панель рисуется именно ими.
+        add_filter('the_content', array(__CLASS__, 'strip_old_docs_links'), 30);
+    }
+
+    /**
+     * Убираем из верхней панели рабочего плагина ссылки на его прежнюю
+     * документацию — «Документация» и «API» ведут на /api-docs/, которого
+     * больше нет в навигации: описание переехало в общий раздел.
+     *
+     * Разметку плагина не меняем, вырезаем уже готовый вывод.
+     */
+    public static function strip_old_docs_links($content) {
+        if (is_admin() || strpos($content, 'zv-topbar-links') === false) {
+            return $content;
+        }
+        return preg_replace_callback(
+            '~<div class="zv-topbar-links">(.*?)</div>~s',
+            function ($block) {
+                $links = preg_replace('~<a[^>]*href="[^"]*api-docs[^"]*"[^>]*>.*?</a>\s*~s', '', $block[1]);
+                return '<div class="zv-topbar-links">' . $links . '</div>';
+            },
+            $content
+        );
     }
 
     /**
