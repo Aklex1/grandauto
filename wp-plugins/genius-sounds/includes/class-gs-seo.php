@@ -89,12 +89,33 @@ class GS_Seo {
             self::$ctx = array(
                 'type'     => 'lab',
                 'service'  => $lab,
+                'url'      => GS_Lab::get_url($lab['id']),
                 'category' => null,
                 'page'     => 1,
                 'pages'    => 1,
                 'query'    => '',
             );
             return self::$ctx;
+        }
+
+        // Посадочная под коммерческий запрос: инструмент общий с сервисом,
+        // но заголовки, описание и canonical — собственные, иначе поисковик
+        // объявит её дублем страницы сервиса.
+        $landing = GS_Landing::current();
+        if ($landing) {
+            $service = GS_Landing::as_service($landing);
+            if ($service) {
+                self::$ctx = array(
+                    'type'     => 'lab',
+                    'service'  => $service,
+                    'url'      => GS_Landing::get_url($landing['id']),
+                    'category' => null,
+                    'page'     => 1,
+                    'pages'    => 1,
+                    'query'    => '',
+                );
+                return self::$ctx;
+            }
         }
 
         if (is_admin() || !GS_Catalog::is_catalog_request()) {
@@ -314,7 +335,7 @@ class GS_Seo {
             return GS_Api_Page::get_url();
         }
         if ($ctx['type'] === 'lab') {
-            return GS_Lab::get_url($ctx['service']['id']);
+            return !empty($ctx['url']) ? $ctx['url'] : GS_Lab::get_url($ctx['service']['id']);
         }
         $page = $page === null ? (int) $ctx['page'] : (int) $page;
         $base = $ctx['type'] === 'category'
@@ -498,7 +519,7 @@ class GS_Seo {
      */
     private static function schema_lab($ctx) {
         $service = $ctx['service'];
-        $url = GS_Lab::get_url($service['id']);
+        $url = !empty($ctx['url']) ? $ctx['url'] : GS_Lab::get_url($service['id']);
 
         $app = array(
             '@context'        => 'https://schema.org',

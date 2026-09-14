@@ -90,6 +90,11 @@ class GS_Sitemap {
         foreach (GS_Lab::available_services() as $service) {
             $extra[] = GS_Lab::get_url($service['id']);
         }
+        foreach (GS_Landing::all() as $landing) {
+            if (GS_Lab::is_available($landing['service'])) {
+                $extra[] = GS_Landing::get_url($landing['id']);
+            }
+        }
         foreach ($extra as $url) {
             if ($url) {
                 $urls[] = array(
@@ -110,7 +115,8 @@ class GS_Sitemap {
     }
 
     public static function chunk_count() {
-        $total = count(GS_Catalog::load_index()) + 4 + count(GS_Lab::available_services());
+        $total = count(GS_Catalog::load_index()) + 4
+            + count(GS_Lab::available_services()) + count(GS_Landing::all());
         return max(1, (int) ceil($total / self::CHUNK));
     }
 

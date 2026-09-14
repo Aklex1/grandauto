@@ -19,6 +19,28 @@ class GS_Lab_Page {
         if (!$service) {
             return '';
         }
+        return self::compose($service);
+    }
+
+    /**
+     * Разметка страницы сервиса.
+     *
+     * Посадочные под коммерческие запросы показывают тот же инструмент, но со
+     * своим заголовком, текстом и вопросами: тогда человек с поиска попадает
+     * на страницу, отвечающую ровно его запросу, а не на общую витрину.
+     *
+     * @param array $service Описание сервиса из реестра.
+     * @param array $extra   crumb, intro_html, body_html, cross_title.
+     */
+    public static function compose($service, $extra = array()) {
+        $extra = array_merge(array(
+            'crumb'       => '',
+            'intro_html'  => '',
+            'body_html'   => '',
+            'cross_title' => 'Другие инструменты со звуком',
+            'back_url'    => '',
+            'landing_id'  => '',
+        ), (array) $extra);
 
         $logged  = is_user_logged_in();
         // Бесплатные операции на своём сервере открыты и гостю: человек с
@@ -26,7 +48,8 @@ class GS_Lab_Page {
         $guest_ok = !$logged && GS_Lab::allows_guests($service['id']);
         $cost    = GS_Lab::get_cost($service['id']);
         $balance = $logged ? GS_SFX::get_balance(get_current_user_id()) : 0.0;
-        $login    = GS_Pages::get_login_url(GS_Lab::get_url($service['id']));
+        $back     = $extra['back_url'] !== '' ? $extra['back_url'] : GS_Lab::get_url($service['id']);
+        $login    = GS_Pages::get_login_url($back);
 
         ob_start();
         ?>
@@ -34,7 +57,7 @@ class GS_Lab_Page {
             <nav class="gs-breadcrumbs" aria-label="Хлебные крошки">
                 <a href="<?php echo esc_url(home_url('/')); ?>">Главная</a>
                 <span aria-hidden="true">/</span>
-                <span class="gs-breadcrumbs__current"><?php echo esc_html($service['menu']); ?></span>
+                <span class="gs-breadcrumbs__current"><?php echo esc_html($extra['crumb'] !== '' ? $extra['crumb'] : $service['menu']); ?></span>
             </nav>
 
             <section class="gs-hero gs-hero--studio">
@@ -59,6 +82,10 @@ class GS_Lab_Page {
                     </p>
                 <?php endif; ?>
             </section>
+
+            <?php if ($extra['intro_html'] !== ''): ?>
+                <section class="gs-lab-intro"><?php echo $extra['intro_html']; // phpcs:ignore WordPress.Security.EscapeOutput ?></section>
+            <?php endif; ?>
 
             <?php if (!GS_Lab::is_available($service['id'])): ?>
                 <section class="gs-empty gs-empty--page">
@@ -215,6 +242,10 @@ class GS_Lab_Page {
             </div>
             <?php endif; ?>
 
+            <?php if ($extra['body_html'] !== ''): ?>
+                <section class="gs-lab-body"><?php echo $extra['body_html']; // phpcs:ignore WordPress.Security.EscapeOutput ?></section>
+            <?php endif; ?>
+
             <section class="gs-tips">
                 <h2 class="gs-section-title">Как это работает</h2>
                 <ol class="gs-steps">
@@ -229,7 +260,7 @@ class GS_Lab_Page {
 
             <?php echo GS_Keywords::render(GS_Keywords::group_for_lab($service['id'])); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
-            <?php echo self::render_cross_links($service['id']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php echo self::render_cross_links($service['id'], $extra['cross_title'], $extra['landing_id']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <section class="gs-faq">
                 <h2 class="gs-section-title">Частые вопросы</h2>
@@ -267,7 +298,7 @@ class GS_Lab_Page {
      * Блок ссылок на остальные микросервисы с призывом.
      * Он же раздаёт вес между посадочными: каждая ссылается на все соседние.
      */
-    public static function render_cross_links($current_id = '', $title = 'Другие инструменты со звуком') {
+    public static function render_cross_links($current_id = '', $title = 'Другие инструменты со звуком', $skip_landing = '') {
         $cards = array();
 
         foreach (GS_Lab::services() as $service) {
@@ -323,6 +354,24 @@ class GS_Lab_Page {
                     </article>
                 <?php endforeach; ?>
             </div>
+
+            <?php
+            // Посадочные под частые формулировки задач. Без ссылок отсюда они
+            // остаются без внутреннего веса, и поисковик их почти не обходит.
+            $tasks = array();
+            foreach (GS_Landing::all() as $landing) {
+                if ($landing['id'] === $skip_landing || !GS_Lab::is_available($landing['service'])) {
+                    continue;
+                }
+                $tasks[] = $landing;
+            }
+            ?>
+            <?php if ($tasks): ?>
+                <p class="gs-cross__tasks">
+                    <span class="gs-cross__tasks-label">Частые задачи:</span>
+                    <?php foreach ($tasks as $i => $landing): ?><?php echo $i ? ', ' : ''; ?><a href="<?php echo esc_url(GS_Landing::get_url($landing['id'])); ?>"><?php echo esc_html(mb_strtolower($landing['menu'])); ?></a><?php endforeach; ?>.
+                </p>
+            <?php endif; ?>
         </section>
         <?php
         return ob_get_clean();

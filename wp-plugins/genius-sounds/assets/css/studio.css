@@ -833,3 +833,69 @@
     color: var(--gs-text, #f1f5f9);
     text-shadow: none;
 }
+
+/* Текстовая часть посадочных под коммерческие запросы */
+
+.gs-lab-body {
+    margin-top: clamp(30px, 4vw, 48px);
+}
+
+.gs-lab-body .gs-section-title {
+    margin-top: clamp(24px, 3vw, 36px);
+}
+
+.gs-prose {
+    color: var(--gs-text);
+    font-size: 16px;
+    line-height: 1.7;
+    max-width: 74ch;
+}
+
+.gs-prose p,
+.gs-prose ul,
+.gs-prose ol {
+    margin: 0 0 14px;
+}
+
+.gs-prose ul,
+.gs-prose ol {
+    padding-left: 22px;
+}
+
+.gs-prose li {
+    margin-bottom: 8px;
+}
+
+.gs-prose strong {
+    color: var(--gs-text);
+}
+
+.gs-prose a {
+    color: var(--gs-primary-light);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.gs-prose a:hover {
+    color: var(--gs-accent);
+}
+
+.gs-cross__tasks {
+    margin: 16px 0 0;
+    color: var(--gs-muted);
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.gs-cross__tasks-label {
+    color: var(--gs-text);
+    font-weight: 600;
+}
+
+.gs-cross__tasks a {
+    color: var(--gs-primary-light);
+}
+
+.gs-cross__tasks a:hover {
+    color: var(--gs-accent);
+}

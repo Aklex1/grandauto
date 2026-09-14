@@ -437,9 +437,14 @@ class GS_Lab {
         if (!$service) {
             return 0.0;
         }
-        $min = (float) get_option('gs_lab_min_' . $id, self::pricing($id, 'min'));
-        if ($min > 0) {
-            return round($min, 2);
+        // «Минимум» — настройка поминутной и посекундной оплаты. У сервиса с
+        // фиксированной ценой её быть не должно: иначе случайно сохранённое
+        // значение делает платной операцию, которая ничего не стоит.
+        if ((string) self::pricing($id, 'unit') !== 'fixed') {
+            $min = (float) get_option('gs_lab_min_' . $id, self::pricing($id, 'min'));
+            if ($min > 0) {
+                return round($min, 2);
+            }
         }
         $cost = (float) get_option($service['cost_option'], $service['cost']);
         return $cost > 0 ? round($cost, 2) : (float) $service['cost'];
@@ -491,7 +496,11 @@ class GS_Lab {
      */
     public static function price_hint($id) {
         $unit = (string) self::pricing($id, 'unit');
-        $min  = number_format_i18n(self::get_cost($id), 0);
+        $cost = self::get_cost($id);
+        $min  = number_format_i18n($cost, 0);
+        if ($cost <= 0 && self::rate($id) <= 0) {
+            return 'бесплатно';
+        }
         if ($unit === 'fixed') {
             return $min . ' ₽ за обработку';
         }

@@ -190,6 +190,18 @@ class GS_Rest {
             'queue'    => GS_Index::queue_size(),
             'events'   => $events,
         );
+        if ($request->get_param('prices')) {
+            $out['prices'] = array();
+            foreach (GS_Lab::services() as $id => $service) {
+                $out['prices'][$id] = array(
+                    'min'    => get_option('gs_lab_min_' . $id, 'нет'),
+                    'cost'   => get_option($service['cost_option'], 'нет'),
+                    'rate'   => get_option('gs_lab_rate_' . $id, 'нет'),
+                    'effect' => GS_Lab::get_cost($id),
+                    'guest'  => GS_Lab::allows_guests($id),
+                );
+            }
+        }
         if ($request->get_param('drain')) {
             GS_Index::drain();
             $out['after'] = GS_Index::queue_size();

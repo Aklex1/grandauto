@@ -46,11 +46,21 @@ class GS_Admin {
                     return $value ? '1' : '0';
                 },
             ));
-            register_setting('gs_settings_group', $lab['cost_option'], array(
+            // options.php сохраняет ВСЕ настройки группы, в том числе те, для
+            // которых в форме нет поля: тогда в обработчик приходит null.
+            // Без этой оговорки каждое сохранение настроек затирало цены
+            // и делала бесплатную операцию платной.
+            $cost_option  = $lab['cost_option'];
+            $default_cost = (float) $lab['cost'];
+            register_setting('gs_settings_group', $cost_option, array(
                 'type'              => 'number',
-                'sanitize_callback' => function ($value) {
+                'sanitize_callback' => function ($value) use ($cost_option, $default_cost) {
+                    if ($value === null || $value === '') {
+                        return (float) get_option($cost_option, $default_cost);
+                    }
                     $value = (float) $value;
-                    return $value > 0 ? $value : 1;
+                    // Ноль — законная цена: операции на своём сервере бесплатны.
+                    return $value >= 0 ? $value : $default_cost;
                 },
             ));
             register_setting('gs_settings_group', 'gs_lab_manual_' . $lab_id, array(
@@ -63,7 +73,10 @@ class GS_Admin {
             foreach (array('gs_lab_min_' . $lab_id, 'gs_lab_rate_' . $lab_id, 'gs_lab_max_seconds_' . $lab_id) as $number) {
                 register_setting('gs_settings_group', $number, array(
                     'type'              => 'number',
-                    'sanitize_callback' => function ($value) {
+                    'sanitize_callback' => function ($value) use ($number) {
+                        if ($value === null) {
+                            return get_option($number, 0);
+                        }
                         $value = (float) $value;
                         return $value > 0 ? $value : 0;
                     },
@@ -465,9 +478,16 @@ class GS_Admin {
                                             <?php checked(GS_Lab::is_available($lab_id)); ?>>
                                         <strong><?php echo esc_html($lab['menu']); ?></strong>
                                     </label>
+                                    <?php if (GS_Lab::pricing($lab_id, 'unit') === 'fixed'): ?>
+                                    — цена
+                                    <input name="<?php echo esc_attr($lab['cost_option']); ?>" type="number" step="1" min="0"
+                                           value="<?php echo esc_attr(GS_Lab::get_cost($lab_id)); ?>" class="small-text"> ₽
+                                    <span class="description">(0 — бесплатно и без регистрации)</span>,
+                                    <?php else: ?>
                                     — минимум
                                     <input name="gs_lab_min_<?php echo esc_attr($lab_id); ?>" type="number" step="1" min="1"
                                            value="<?php echo esc_attr(GS_Lab::get_cost($lab_id)); ?>" class="small-text"> ₽,
+                                    <?php endif; ?>
                                     ставка
                                     <input name="gs_lab_rate_<?php echo esc_attr($lab_id); ?>" type="number" step="1" min="1"
                                            value="<?php echo esc_attr(GS_Lab::rate($lab_id)); ?>" class="small-text"> ₽
