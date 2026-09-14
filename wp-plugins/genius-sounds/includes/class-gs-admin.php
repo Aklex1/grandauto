@@ -111,6 +111,22 @@ class GS_Admin {
             'default'           => GS_Importer::DEFAULT_MAX_FILE_MB,
         ));
 
+        // Подтверждение прав в вебмастерах и мгновенная отправка адресов в индекс.
+        foreach (array(GS_Index::OPT_YANDEX, GS_Index::OPT_GOOGLE) as $verify) {
+            register_setting('gs_settings_group', $verify, array(
+                'type'              => 'string',
+                'sanitize_callback' => array('GS_Index', 'clean_code'),
+                'default'           => '',
+            ));
+        }
+        register_setting('gs_settings_group', GS_Index::OPT_ENABLED, array(
+            'type'              => 'string',
+            'sanitize_callback' => function ($value) {
+                return $value ? '1' : '0';
+            },
+            'default'           => '1',
+        ));
+
         register_setting('gs_settings_group', GS_SFX::OPT_COST, array(
             'type'              => 'number',
             'sanitize_callback' => function ($value) {
@@ -119,6 +135,60 @@ class GS_Admin {
             },
             'default'           => 15,
         ));
+    }
+
+    /**
+     * Индексирование: подтверждение прав и журнал отправок IndexNow.
+     */
+    public static function render_index_tools() {
+        $rows = GS_Index::log_rows();
+        ob_start();
+        ?>
+        <h2 id="gs-index">Индексирование</h2>
+        <p>
+            Подтверждение прав:
+            Яндекс — <?php echo GS_Index::clean_code(get_option(GS_Index::OPT_YANDEX, '')) !== '' ? '<strong>код задан</strong>' : 'код не задан'; ?>,
+            Google — <?php echo GS_Index::clean_code(get_option(GS_Index::OPT_GOOGLE, '')) !== '' ? '<strong>код задан</strong>' : 'код не задан'; ?>.
+            Быстрая отправка: <?php echo GS_Index::enabled() ? '<strong>включена</strong>' : 'выключена'; ?>.
+        </p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
+            <?php wp_nonce_field('gs_indexnow_all'); ?>
+            <input type="hidden" name="action" value="gs_indexnow_all">
+            <?php submit_button('Отправить все страницы в IndexNow', 'secondary', 'submit', false); ?>
+        </form>
+        <p class="description" style="max-width:900px">
+            Новые записи уходят сами при публикации. Кнопка нужна один раз — чтобы разом сообщить
+            обо всём, что было опубликовано до подключения ключа. Адреса уходят порциями по
+            <?php echo (int) GS_Index::BATCH; ?> штук с паузой: на большой пачке сервис отвечает отказом и не берёт ничего.
+            <?php if (GS_Index::queue_size() > 0): ?>
+                <br><strong>В очереди: <?php echo (int) GS_Index::queue_size(); ?> адресов.</strong>
+            <?php endif; ?>
+        </p>
+
+        <?php if (!empty($rows)): ?>
+            <h3>Последние отправки</h3>
+            <table class="widefat striped" style="max-width:900px">
+                <thead><tr><th>Когда</th><th>Адресов</th><th>Первый адрес</th><th>Итог</th></tr></thead>
+                <tbody>
+                    <?php foreach ($rows as $row): ?>
+                        <tr>
+                            <td><?php echo esc_html(mysql2date('d.m.Y H:i', $row['time'])); ?></td>
+                            <td><?php echo (int) $row['count']; ?></td>
+                            <td><code><?php echo esc_html(mb_substr((string) $row['first'], 0, 60)); ?></code></td>
+                            <td>
+                                <?php
+                                $where = isset($row['host']) ? (string) wp_parse_url($row['host'], PHP_URL_HOST) : '';
+                                echo esc_html(($row['error'] !== '' ? $row['error'] : 'принято, код ' . $row['code'])
+                                    . ($where !== '' ? ' — ' . $where : ''));
+                                ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+        <?php
+        return ob_get_clean();
     }
 
     /**
@@ -478,6 +548,35 @@ class GS_Admin {
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row">Поисковые системы</th>
+                        <td>
+                            <p>
+                                <label>Код подтверждения Яндекс.Вебмастера<br>
+                                    <input name="<?php echo esc_attr(GS_Index::OPT_YANDEX); ?>" type="text"
+                                           value="<?php echo esc_attr(get_option(GS_Index::OPT_YANDEX, '')); ?>" class="regular-text"
+                                           placeholder="можно вставить целиком мета-тег">
+                                </label>
+                            </p>
+                            <p>
+                                <label>Код подтверждения Google Search Console<br>
+                                    <input name="<?php echo esc_attr(GS_Index::OPT_GOOGLE); ?>" type="text"
+                                           value="<?php echo esc_attr(get_option(GS_Index::OPT_GOOGLE, '')); ?>" class="regular-text"
+                                           placeholder="можно вставить целиком мета-тег">
+                                </label>
+                            </p>
+                            <p>
+                                <label><input type="checkbox" name="<?php echo esc_attr(GS_Index::OPT_ENABLED); ?>" value="1" <?php checked(GS_Index::enabled()); ?>>
+                                    сообщать Яндексу и Bing о новых страницах сразу (IndexNow)</label>
+                            </p>
+                            <p class="description">
+                                Ключ подтверждения лежит по адресу
+                                <a href="<?php echo esc_url(GS_Index::key_url()); ?>" target="_blank" rel="noopener"><?php echo esc_html(GS_Index::key_url()); ?></a>
+                                — он создаётся сам и менять его не нужно. Мета-теги выводятся только на главной: этого хватает
+                                обоим вебмастерам. Без подтверждения прав ни отчёты, ни переобход недоступны.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row">Сквозные ссылки</th>
                         <td>
                             <label><input type="checkbox" name="<?php echo esc_attr(GS_Links::OPT_ENABLED); ?>" value="1" <?php checked(GS_Links::menu_enabled()); ?>>
@@ -502,6 +601,8 @@ class GS_Admin {
             <?php echo self::render_manual_queue(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_index_tools(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <p>
                 Страницы:

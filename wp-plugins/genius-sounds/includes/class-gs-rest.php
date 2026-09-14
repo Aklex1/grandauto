@@ -158,11 +158,43 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Почему очередь отправки в индекс не двигается.
+        register_rest_route(self::NS, '/diag/cron', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_diag_cron'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/showcase', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_showcase_add'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+    }
+
+    /** Состояние планировщика и очереди IndexNow. */
+    public static function handle_diag_cron($request) {
+        $events = array();
+        foreach ((array) _get_cron_array() as $time => $hooks) {
+            foreach ((array) $hooks as $hook => $items) {
+                if (strpos($hook, 'gs_') !== 0) {
+                    continue;
+                }
+                $events[] = array('hook' => $hook, 'at' => gmdate('Y-m-d H:i:s', $time), 'in' => $time - time());
+            }
+        }
+        $out = array(
+            'disabled' => defined('DISABLE_WP_CRON') && DISABLE_WP_CRON,
+            'alt'      => defined('ALTERNATE_WP_CRON') && ALTERNATE_WP_CRON,
+            'lock'     => get_transient('doing_cron'),
+            'queue'    => GS_Index::queue_size(),
+            'events'   => $events,
+        );
+        if ($request->get_param('drain')) {
+            GS_Index::drain();
+            $out['after'] = GS_Index::queue_size();
+        }
+        return rest_ensure_response($out);
     }
 
     /** Список обработчиков, которые правят заголовок страницы. */
