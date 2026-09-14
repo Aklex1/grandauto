@@ -21,6 +21,9 @@ class GS_Lab_Page {
         }
 
         $logged  = is_user_logged_in();
+        // Бесплатные операции на своём сервере открыты и гостю: человек с
+        // поиска должен получить результат, а не форму входа.
+        $guest_ok = !$logged && GS_Lab::allows_guests($service['id']);
         $cost    = GS_Lab::get_cost($service['id']);
         $balance = $logged ? GS_SFX::get_balance(get_current_user_id()) : 0.0;
         $login    = GS_Pages::get_login_url(GS_Lab::get_url($service['id']));
@@ -156,12 +159,14 @@ class GS_Lab_Page {
                                 <span class="gs-balance__label">Баланс</span>
                                 <span class="gs-balance__value" id="gs-lab-balance"><?php echo esc_html(number_format_i18n($balance, 2)); ?> ₽</span>
                                 <a class="gs-balance__topup" href="<?php echo esc_url(GS_Payments::topup_url($service['id'])); ?>">Пополнить</a>
+                            <?php elseif ($guest_ok): ?>
+                                <span class="gs-balance__label gs-balance__label--free">Бесплатно, без регистрации</span>
                             <?php else: ?>
                                 <span class="gs-balance__label">Нужен вход</span>
                             <?php endif; ?>
                         </div>
 
-                        <?php if ($logged): ?>
+                        <?php if ($logged || $guest_ok): ?>
                             <button class="gs-btn gs-btn--primary gs-btn--lg" type="submit" id="gs-lab-submit">
                                 <?php echo esc_html(self::submit_label($service)); ?>
                             </button>

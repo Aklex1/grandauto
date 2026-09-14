@@ -784,3 +784,52 @@
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+/* ------------------------------------------------ бесплатная операция гостю
+   Подпись вместо баланса и приглашение в аккаунт под готовым результатом. */
+
+.gs-balance__label--free {
+    color: #4ade80;
+    font-weight: 600;
+}
+
+.gs-lab-invite {
+    border-color: rgba(129, 140, 248, 0.38) !important;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.14) 0%, rgba(139, 92, 246, 0.08) 100%);
+}
+
+.gs-lab-invite__text {
+    margin: 0 0 14px;
+    color: #cbd5e1;
+    font-size: 14.5px;
+    line-height: 1.6;
+}
+
+/* ------------------------------------------------------------ кнопки форм
+   Тема красит button[type=submit] своим цветом из настроек и перебивает наш
+   класс при равной силе — кнопка запуска выглядела чужой рядом с обычными.
+   Поднимаем силу селектора до класса обёртки, без !important. */
+
+.gs-wrap.gs-studio button.gs-btn--primary,
+.gs-wrap.gs-studio button.gs-btn--primary:hover,
+.gs-wrap.gs-studio button.gs-btn--primary:focus,
+.gs-wrap.gs-catalog button.gs-btn--primary,
+.gs-wrap.gs-catalog button.gs-btn--primary:hover,
+.gs-wrap.gs-catalog button.gs-btn--primary:focus {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--gs-primary, #6366f1) 0%, #8b5cf6 100%);
+    color: #fff;
+    text-shadow: none;
+}
+
+.gs-wrap.gs-studio button.gs-btn--ghost,
+.gs-wrap.gs-studio button.gs-btn--ghost:hover,
+.gs-wrap.gs-studio button.gs-btn--ghost:focus,
+.gs-wrap.gs-catalog button.gs-btn--ghost,
+.gs-wrap.gs-catalog button.gs-btn--ghost:hover,
+.gs-wrap.gs-catalog button.gs-btn--ghost:focus {
+    border: 1px solid var(--gs-border, rgba(148, 163, 184, 0.14));
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--gs-text, #f1f5f9);
+    text-shadow: none;
+}

@@ -140,7 +140,8 @@
     form.addEventListener('submit', function (e) {
         e.preventDefault();
 
-        if (!cfg.loggedIn) {
+        // Бесплатные операции гостю доступны; за остальным — на вход.
+        if (!cfg.loggedIn && !cfg.guestOk) {
             window.location.href = cfg.loginUrl;
             return;
         }
@@ -325,6 +326,31 @@
 
             els.files.appendChild(wrap);
         });
+
+        // Гость получил результат — самое время рассказать, что рядом.
+        if (!cfg.loggedIn && cfg.guestOk && cfg.registerUrl) {
+            var invite = document.createElement('div');
+            invite.className = 'gs-lab-file gs-lab-invite';
+
+            var head = document.createElement('h3');
+            head.className = 'gs-lab-file__title';
+            head.textContent = 'Что с этой дорожкой можно сделать дальше';
+            invite.appendChild(head);
+
+            var text = document.createElement('p');
+            text.className = 'gs-lab-invite__text';
+            text.textContent = 'Расшифровать в текст с таймкодами, очистить от шума, '
+                + 'отделить голос от музыки. Эти инструменты работают в аккаунте.';
+            invite.appendChild(text);
+
+            var go = document.createElement('a');
+            go.className = 'gs-btn gs-btn--primary';
+            go.href = cfg.registerUrl;
+            go.textContent = 'Создать аккаунт';
+            invite.appendChild(go);
+
+            els.files.appendChild(invite);
+        }
 
         show('ready');
         note('Готово! Файл сохранён в вашей истории.', 'ok');

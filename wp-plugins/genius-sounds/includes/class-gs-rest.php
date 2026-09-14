@@ -98,16 +98,18 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
 
+        // Бесплатные операции работают и без входа — решает обработчик,
+        // потому что право зависит от сервиса, а не от маршрута.
         register_rest_route(self::NS, '/lab/generate', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_lab_generate'),
-            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+            'permission_callback' => '__return_true',
         ));
 
         register_rest_route(self::NS, '/lab/status/(?P<service>[a-z]+)/(?P<task_id>[a-zA-Z0-9_-]+)', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_lab_status'),
-            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+            'permission_callback' => '__return_true',
         ));
 
         register_rest_route(self::NS, '/lab/callback', array(
@@ -196,6 +198,41 @@ class GS_Rest {
             }
         }
         return rest_ensure_response($out);
+    }
+
+    /**
+     * Сколько бесплатных запусков отдаём одному гостю.
+     *
+     * Операция ничего не стоит по деньгам, но занимает наш сервер, поэтому
+     * держим разумный предел: человеку на пробу хватает, выкачать чужой
+     * канал пачкой — уже нет.
+     */
+    const GUEST_LIMIT  = 5;
+    const GUEST_WINDOW = 3600;
+
+    private static function guest_key($service_id) {
+        $ip = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+        return 'gs_guest_' . $service_id . '_' . md5($ip . '|' . wp_salt());
+    }
+
+    private static function guest_gate($service_id) {
+        if ((int) get_transient(self::guest_key($service_id)) < self::GUEST_LIMIT) {
+            return true;
+        }
+        return new WP_Error(
+            'gs_guest_limit',
+            'Бесплатные запуски на ближайший час исчерпаны. Войдите в аккаунт — там ограничения нет.',
+            array('status' => 429)
+        );
+    }
+
+    /**
+     * Счёт ведём по удачным запускам: сорвалась задача не по вине
+     * человека — глупо тратить на это его попытку.
+     */
+    private static function guest_count($service_id) {
+        $key = self::guest_key($service_id);
+        set_transient($key, (int) get_transient($key) + 1, self::GUEST_WINDOW);
     }
 
     public static function perm_logged_in() {
@@ -661,6 +698,16 @@ class GS_Rest {
             return new WP_Error('gs_bad_service', 'Неизвестный сервис', array('status' => 400));
         }
 
+        if ($user_id <= 0) {
+            if (!GS_Lab::allows_guests($service_id)) {
+                return new WP_Error('gs_login_required', 'Войдите, чтобы запустить обработку', array('status' => 401));
+            }
+            $gate = self::guest_gate($service_id);
+            if (is_wp_error($gate)) {
+                return $gate;
+            }
+        }
+
         $payload = array();
         $optional = (array) (isset($service['input_optional']) ? $service['input_optional'] : array());
         foreach ($service['inputs'] as $input) {
@@ -753,11 +800,18 @@ class GS_Rest {
         }
         $task_id = $created['task_id'];
 
-        if (!GS_SFX::charge($user_id, $cost)) {
+        // Бесплатная операция ничего не списывает: нулевое списание база
+        // считает неудачей, и пользователь получил бы ложный отказ.
+        if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_charge_failed', 'Не удалось списать средства с баланса', array('status' => 500));
         }
 
-        if (class_exists('KIE_TTS_DB')) {
+        if ($user_id <= 0) {
+            self::guest_count($service_id);
+        }
+
+        // Гостю историю писать некуда — у него нет аккаунта.
+        if ($user_id > 0 && class_exists('KIE_TTS_DB')) {
             $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);
             KIE_TTS_DB::save_generation($user_id, $task_id, $service['menu'], 'lab:' . $service_id, $cost, $is_telegram);
         }

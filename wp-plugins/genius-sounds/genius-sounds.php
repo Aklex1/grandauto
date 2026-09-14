@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 1.51.0
+ * Version: 1.56.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.51.0');
+define('GS_VERSION', '1.56.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -192,7 +192,9 @@ class Genius_Sounds_Plugin {
                 'restUrl'     => esc_url_raw(rest_url(GS_Rest::NS . '/')),
                 'nonce'       => wp_create_nonce('wp_rest'),
                 'loggedIn'    => is_user_logged_in(),
+                'guestOk'     => GS_Lab::allows_guests($lab['id']),
                 'loginUrl'    => GS_Pages::get_login_url(GS_Lab::get_url($lab['id'])),
+                'registerUrl' => GS_Pages::get_login_url(GS_Lab::get_url('stt')),
                 'service'     => $lab['id'],
                 'inputs'      => array_values($lab['inputs']),
                 'inputsOptional' => array_values((array) (isset($lab['input_optional']) ? $lab['input_optional'] : array())),

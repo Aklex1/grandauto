@@ -207,6 +207,9 @@ class GS_Lab {
                 'cost'        => 0,
                 'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 0, 'max_seconds' => 0),
                 'available'   => true,
+                // Извлечение идёт на своём сервере и ничего не стоит, поэтому
+                // работает и без входа: это вход в сервис, а не подарок.
+                'guest'       => true,
                 'inputs'      => array(),
                 'accept'      => array(),
                 'prompt'      => false,
@@ -408,6 +411,21 @@ class GS_Lab {
      * Минимальная цена — она же цена короткого файла и то, что показываем
      * на посадочной странице до загрузки.
      */
+    /**
+     * Можно ли запускать сервис без входа.
+     *
+     * Открываем только то, что выполняется на своей стороне и ничего не
+     * стоит. Цену проверяем отдельно: если у бесплатной операции однажды
+     * появится тариф, доступ закроется сам, без правки этого списка.
+     */
+    public static function allows_guests($id) {
+        $service = self::get_service($id);
+        if (!$service || empty($service['guest'])) {
+            return false;
+        }
+        return self::price($id, 0) <= 0;
+    }
+
     /** Сервис выполняется руками — об этом надо честно писать на странице. */
     public static function is_manual($id) {
         return class_exists('GS_Manual') && GS_Manual::enabled($id)
@@ -801,8 +819,16 @@ class GS_Lab {
         if (strpos($low, 'timeout') !== false || strpos($low, 'таймаут') !== false || strpos($low, 'timed out') !== false) {
             return 'Служба извлечения звука не ответила вовремя. Попробуйте ещё раз через минуту.';
         }
-        if (strpos($low, 'sign in') !== false || strpos($low, 'age') !== false || strpos($low, 'private') !== false) {
+        if (strpos($low, 'sign in') !== false || strpos($low, 'age-restricted') !== false
+            || strpos($low, 'private') !== false || strpos($low, 'members-only') !== false) {
             return 'Ролик требует входа в аккаунт или закрыт — дорожку снять нельзя.';
+        }
+        if (strpos($low, 'reload') !== false || strpos($low, 'unable to extract') !== false
+            || strpos($low, 'player response') !== false) {
+            return 'Площадка сменила выдачу, и служба её пока не понимает. Мы уже знаем, скоро поправим.';
+        }
+        if (strpos($low, 'unavailable') !== false || strpos($low, 'removed') !== false) {
+            return 'Ролик недоступен: удалён или скрыт автором.';
         }
         if (strpos($low, 'duration') !== false) {
             return 'Ролик слишком длинный. Разрежьте запись или возьмите фрагмент покороче.';
