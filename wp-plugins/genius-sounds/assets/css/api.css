@@ -299,8 +299,9 @@
     font-size: 15px;
 }
 
-/* Цена — последний столбец: не переносим и отделяем от описания. */
-.gs-api__table td:last-child {
+/* Цена — последний столбец таблицы операций: не переносим и выделяем.
+   В таблице ошибок последний столбец обычный, его это не касается. */
+#services .gs-api__table td:last-child {
     color: var(--gs-api-text);
     font-weight: 600;
     white-space: nowrap;
@@ -418,4 +419,69 @@
         flex-direction: column;
         align-items: flex-start;
     }
+}
+
+/* ------------------------------------------------- ширины столбцов таблицы
+   Названия операций не должны переноситься посреди слова, а описанию нужно
+   больше места, чем остальным столбцам. Если всё вместе не помещается —
+   таблица прокручивается вбок, а не сминается. */
+
+.gs-api__table {
+    min-width: 560px;
+}
+
+.gs-api__table td:first-child,
+.gs-api__table th:first-child {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.gs-api__table td:first-child code {
+    white-space: nowrap;
+}
+
+#services .gs-api__table {
+    min-width: 660px;
+}
+
+#services .gs-api__table td:nth-child(2) {
+    min-width: 260px;
+}
+
+#services .gs-api__table td:nth-child(3) {
+    white-space: nowrap;
+}
+
+#services .gs-api__table td:nth-child(3) code {
+    display: inline-block;
+    margin: 0 2px 4px 0;
+}
+
+/* ------------------------------------------------------------ кнопки формы
+   Тема красит button[type=submit] своим синим цветом из настроек, и её
+   правило идёт ниже нашего при равной силе — на странице получались две
+   разные кнопки «получить ключ». Поднимаем силу селектора до класса
+   обёртки, чтобы вернуть кнопкам общий вид без !important. */
+
+.gs-wrap.gs-api button.gs-btn--primary,
+.gs-wrap.gs-api button.gs-btn--primary:hover,
+.gs-wrap.gs-api button.gs-btn--primary:focus {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--gs-primary, #6366f1) 0%, #8b5cf6 100%);
+    color: #fff;
+    text-shadow: none;
+}
+
+.gs-wrap.gs-api button.gs-btn--ghost,
+.gs-wrap.gs-api button.gs-btn--ghost:hover,
+.gs-wrap.gs-api button.gs-btn--ghost:focus {
+    border: 1px solid var(--gs-api-line);
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--gs-api-text);
+    text-shadow: none;
+}
+
+.gs-api .gs-api__key .gs-btn {
+    padding: 9px 16px;
+    font-size: 14px;
 }
