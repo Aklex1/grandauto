@@ -24,6 +24,7 @@ class GS_Seo {
 
     public static function boot() {
         add_filter('document_title_parts', array(__CLASS__, 'filter_title_parts'), PHP_INT_MAX);
+        add_filter('the_content', array(__CLASS__, 'promote_front_heading'), 9);
         add_action('wp_head', array(__CLASS__, 'start_buffer'), 0);
         add_action('wp_head', array(__CLASS__, 'flush_buffer'), PHP_INT_MAX);
         add_action('template_redirect', array(__CLASS__, 'maybe_send_404'));
@@ -58,6 +59,18 @@ class GS_Seo {
         }
         self::$resolved = true;
         self::$ctx = null;
+
+        if (is_front_page()) {
+            self::$ctx = array(
+                'type'     => 'home',
+                'service'  => null,
+                'category' => null,
+                'page'     => 1,
+                'pages'    => 1,
+                'query'    => '',
+            );
+            return self::$ctx;
+        }
 
         if (GS_Api_Page::is_page()) {
             self::$ctx = array(
@@ -123,10 +136,69 @@ class GS_Seo {
      * Заголовок
      * ------------------------------------------------------------------ */
 
+    /**
+     * Возвращаем заголовку полную длину.
+     *
+     * Сторонний оптимизатор обрезает <title> на 48 знаках и дописывает
+     * многоточие: у записей блога из заголовка вылетала вторая половина —
+     * та, где стоят уточняющие слова запроса. Мы идём последними в цепочке
+     * фильтров, поэтому просто подставляем настоящий заголовок обратно.
+     *
+     * Трогаем только тот случай, когда показанный заголовок — действительно
+     * обрезок настоящего: чужие осмысленные правки остаются как есть.
+     */
+    private static function restore_full_title($parts) {
+        if (is_admin() || !is_singular() || empty($parts['title'])) {
+            return $parts;
+        }
+        $post = get_queried_object();
+        if (!($post instanceof WP_Post)) {
+            return $parts;
+        }
+        $full = trim(wp_strip_all_tags(get_the_title($post)));
+        $shown = trim((string) $parts['title']);
+        if ($full === '' || $shown === $full) {
+            return $parts;
+        }
+        // Отрезаем хвостовое многоточие и сверяем начало строк.
+        $stem = rtrim($shown, ". \xe2\x80\xa6");
+        if ($stem !== '' && mb_strpos($full, $stem) === 0) {
+            $parts['title'] = $full;
+        }
+        return $parts;
+    }
+
+    /**
+     * На главной не было H1 вовсе: заголовок первого экрана свёрстан как H2.
+     * Повышаем именно его — это и есть главный заголовок страницы, и трогать
+     * ради этого содержимое в конструкторе не нужно.
+     */
+    public static function promote_front_heading($content) {
+        if (is_admin() || !is_front_page() || !in_the_loop() || !is_main_query()) {
+            return $content;
+        }
+        if (stripos($content, '<h1') !== false) {
+            return $content;
+        }
+        $done = false;
+        return (string) preg_replace_callback(
+            '~<h2([^>]*)>(.*?)</h2>~is',
+            function ($m) use (&$done) {
+                if ($done) {
+                    return $m[0];
+                }
+                $done = true;
+                return '<h1' . $m[1] . '>' . $m[2] . '</h1>';
+            },
+            $content,
+            1
+        );
+    }
+
     public static function filter_title_parts($parts) {
         $ctx = self::context();
         if (!$ctx) {
-            return $parts;
+            return self::restore_full_title($parts);
         }
         $parts['title'] = self::build_title($ctx);
         unset($parts['tagline']);
@@ -146,6 +218,11 @@ class GS_Seo {
     }
 
     private static function build_title($ctx) {
+        if ($ctx['type'] === 'home') {
+            // Заголовок обязан отвечать содержимому: первый экран и почти вся
+            // страница — про разработку ботов, сервисы идут ниже.
+            return 'Разработка чат-ботов для Telegram и ВК под ключ';
+        }
         if ($ctx['type'] === 'api') {
             return 'API для разработчиков — нейросети для фото, видео и звука';
         }
@@ -190,6 +267,9 @@ class GS_Seo {
      * ------------------------------------------------------------------ */
 
     private static function build_description($ctx) {
+        if ($ctx['type'] === 'home') {
+            return 'Разработка чат-ботов для Telegram и ВКонтакте под задачи бизнеса: продажи, поддержка, интеграция с CRM. А ещё нейросети для звука и видео: озвучка текста, генерация музыки, расшифровка записей.';
+        }
         if ($ctx['type'] === 'api') {
             return 'HTTP API нейросетей: оживление фото, говорящий аватар, редактирование картинок, генерация звуков и озвучка текста. REST и JSON, ключ доступа, вебхук о готовности, оплата за запуск без абонплаты.';
         }
@@ -227,6 +307,9 @@ class GS_Seo {
      * дублями первой и выпадают из индекса вместе со своими ссылками.
      */
     private static function page_url($ctx, $page = null) {
+        if ($ctx['type'] === 'home') {
+            return home_url('/');
+        }
         if ($ctx['type'] === 'api') {
             return GS_Api_Page::get_url();
         }
@@ -263,12 +346,16 @@ class GS_Seo {
         $url  = self::page_url($ctx);
         $desc = self::build_description($ctx);
 
-        // Тема дописывает к заголовку полное имя сайта уже после наших фильтров.
-        $html = self::replace_tag(
-            $html,
-            '~<title>.*?</title>~is',
-            '<title>' . esc_html(self::build_title($ctx) . ' — ' . self::brand_name(get_bloginfo('name'))) . '</title>'
-        );
+        // Тема дописывает к заголовку полное имя сайта уже после наших фильтров,
+        // поэтому собираем его здесь целиком. На главной бренд идёт первым:
+        // по названию сайта ищут именно его.
+        $title = self::build_title($ctx);
+        if ($ctx['type'] !== 'home') {
+            $title .= ' — ' . self::brand_name(get_bloginfo('name'));
+        } else {
+            $title = self::brand_name(get_bloginfo('name')) . ' — ' . $title;
+        }
+        $html = self::replace_tag($html, '~<title>.*?</title>~is', '<title>' . esc_html($title) . '</title>');
         $html = self::replace_tag(
             $html,
             '~<link[^>]+rel=["\']canonical["\'][^>]*>~i',
@@ -290,7 +377,9 @@ class GS_Seo {
             '<meta property="og:url" content="' . esc_url($url) . '">'
         );
 
-        $html = self::strip_foreign_schema($html);
+        if ($ctx['type'] !== 'home') {
+            $html = self::strip_foreign_schema($html);
+        }
 
         echo $html; // phpcs:ignore WordPress.Security.EscapeOutput
         echo self::extra_tags($ctx); // phpcs:ignore WordPress.Security.EscapeOutput

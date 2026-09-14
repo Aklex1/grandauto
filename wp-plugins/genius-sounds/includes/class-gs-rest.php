@@ -149,11 +149,53 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Кто вмешивается в заголовок страницы: разовая диагностика.
+        register_rest_route(self::NS, '/diag/title', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_diag_title'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/showcase', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_showcase_add'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+    }
+
+    /** Список обработчиков, которые правят заголовок страницы. */
+    public static function handle_diag_title($request) {
+        global $wp_filter;
+        $out = array();
+        foreach (array('pre_get_document_title', 'document_title_parts', 'document_title_separator', 'wp_title') as $hook) {
+            $out[$hook] = array();
+            if (empty($wp_filter[$hook])) {
+                continue;
+            }
+            foreach ($wp_filter[$hook]->callbacks as $priority => $callbacks) {
+                foreach ($callbacks as $cb) {
+                    $fn = $cb['function'];
+                    if (is_array($fn)) {
+                        $name = (is_object($fn[0]) ? get_class($fn[0]) : (string) $fn[0]) . '::' . $fn[1];
+                    } elseif ($fn instanceof Closure) {
+                        $name = 'Closure';
+                    } else {
+                        $name = (string) $fn;
+                    }
+                    $file = '';
+                    try {
+                        $ref = is_array($fn)
+                            ? new ReflectionMethod($fn[0], $fn[1])
+                            : new ReflectionFunction($fn);
+                        $file = str_replace(ABSPATH, '', (string) $ref->getFileName()) . ':' . $ref->getStartLine();
+                    } catch (Throwable $e) {
+                        $file = '—';
+                    }
+                    $out[$hook][] = array('priority' => $priority, 'callback' => $name, 'where' => $file);
+                }
+            }
+        }
+        return rest_ensure_response($out);
     }
 
     public static function perm_logged_in() {

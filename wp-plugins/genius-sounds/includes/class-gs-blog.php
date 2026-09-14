@@ -18,6 +18,95 @@ class GS_Blog {
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
         add_filter('the_content', array(__CLASS__, 'append_tools_block'), 20);
+        add_action('wp_head', array(__CLASS__, 'print_faq_schema'), 20);
+    }
+
+    /**
+     * Разметка вопросов и ответов для статей.
+     *
+     * Больше половины материалов заканчиваются разбором частых вопросов,
+     * оформленным как «<strong>Вопрос?</strong> ответ». Поисковику это
+     * обычный текст, хотя по такой паре он умеет показывать раскрывающийся
+     * ответ прямо в выдаче. Собираем разметку из того, что уже написано:
+     * выдумывать вопросы, которых нет на странице, нельзя.
+     */
+    public static function print_faq_schema() {
+        if (is_admin() || !self::enabled() || !self::is_single_post()) {
+            return;
+        }
+        $post = get_queried_object();
+        if (!($post instanceof WP_Post)) {
+            return;
+        }
+        $pairs = self::extract_faq($post->post_content);
+        if (count($pairs) < 2) {
+            return;
+        }
+
+        $items = array();
+        foreach ($pairs as $pair) {
+            $items[] = array(
+                '@type' => 'Question',
+                'name'  => $pair['q'],
+                'acceptedAnswer' => array(
+                    '@type' => 'Answer',
+                    'text'  => $pair['a'],
+                ),
+            );
+        }
+        $data = array(
+            '@context'   => 'https://schema.org',
+            '@type'      => 'FAQPage',
+            'mainEntity' => $items,
+        );
+        echo "\n<script type=\"application/ld+json\">"
+            . wp_json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            . "</script>\n";
+    }
+
+    /**
+     * Пары «вопрос — ответ» из блока частых вопросов.
+     *
+     * @return array<int, array{q:string,a:string}>
+     */
+    private static function extract_faq($content) {
+        // В хранимом тексте абзацы часто без тегов: <p> дорисовывается при
+        // выводе. Приводим содержимое к тому виду, который видит читатель,
+        // иначе вопрос и ответ не находятся рядом.
+        $content = wpautop((string) $content);
+        // Ищем именно заголовок блока: словосочетание «частые вопросы»
+        // встречается и в оглавлении, и в тексте, а нам нужен раздел.
+        if (!preg_match('~<h[23][^>]*>[^<]*(?:частые вопросы|вопросы и ответы|faq)[^<]*</h[23]>~iu', $content, $m, PREG_OFFSET_CAPTURE)) {
+            return array();
+        }
+        $tail = substr($content, $m[0][1] + strlen($m[0][0]));
+
+        // Две манеры записи: жирный вопрос в начале абзаца и вопрос
+        // отдельным подзаголовком. Материалы писались в разное время.
+        $patterns = array(
+            '~<p>\s*<strong>(.+?)</strong>\s*(.+?)</p>~is',
+            '~<h[34][^>]*>(.+?)</h[34]>\s*<p>(.+?)</p>~is',
+        );
+
+        foreach ($patterns as $pattern) {
+            $pairs = array();
+            if (!preg_match_all($pattern, $tail, $m, PREG_SET_ORDER)) {
+                continue;
+            }
+            foreach ($m as $hit) {
+                $q = trim(wp_strip_all_tags($hit[1]));
+                $a = trim(wp_strip_all_tags($hit[2]));
+                // Строка без вопроса — это уже не блок вопросов, дальше не идём.
+                if (mb_substr($q, -1) !== '?' || $a === '') {
+                    break;
+                }
+                $pairs[] = array('q' => $q, 'a' => $a);
+            }
+            if (count($pairs) >= 2) {
+                return $pairs;
+            }
+        }
+        return array();
     }
 
     public static function enabled() {
