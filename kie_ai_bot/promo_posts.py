@@ -43,6 +43,9 @@ def _env_flag(name: str, default: str = "0") -> bool:
 
 
 ENABLED = _env_flag("PROMO_ENABLED")
+# Ссылка на сайт в промо-посте. По умолчанию выключена: в группе
+# единственная ссылка — на бота, сервис называется словом
+SHOW_SITE_LINK = _env_flag("PROMO_SHOW_SITE_LINK", "0")
 # Раз в сколько дней выходит промо-пост
 EVERY_DAYS = _env_int("PROMO_EVERY_DAYS", 3)
 # Сколько ждать готовности примера, секунд
@@ -339,36 +342,52 @@ async def generate_sample(service: Service) -> tuple:
 
 # --- Оформление и публикация ----------------------------------------------
 
-def build_text(service: Service) -> str:
+def build_text(service: Service, with_cta: bool = False) -> str:
+    """Текст промо-поста. Ссылку на бота ставим не в каждый пост, а по общей
+    очереди группы; адрес сервиса — только если это разрешено настройкой."""
+    import news_autopost
+
     parts = [f"<b>{escape(service.title)}</b>", escape(service.pitch)]
     if service.details:
         parts.append("\n".join(f"• {escape(d)}" for d in service.details))
-    parts.append(f'<a href="{escape(service.url)}">Попробовать</a>')
+
+    if SHOW_SITE_LINK:
+        parts.append(f'<a href="{escape(service.url)}">Попробовать</a>')
+    if with_cta and news_autopost.BOT_URL and news_autopost.BOT_CTA:
+        parts.append(f'<a href="{escape(news_autopost.BOT_URL)}">'
+                     f'{escape(news_autopost.BOT_CTA)}</a>')
     return "\n\n".join(parts)
 
 
 async def publish(bot: Bot, chat_id: int, service: Service) -> bool:
+    import news_autopost
+
     kind, sample_url = await generate_sample(service)
-    text = build_text(service)
+    with_cta = news_autopost.cta_due()
+    text = news_autopost.strip_external_links(build_text(service, with_cta=with_cta))
+    sent = None
 
     try:
         if kind == "image" and sample_url:
-            await bot.send_photo(chat_id=chat_id, photo=URLInputFile(sample_url),
-                                 caption=text[:1024], parse_mode="HTML")
+            sent = await bot.send_photo(chat_id=chat_id, photo=URLInputFile(sample_url),
+                                        caption=text[:1024], parse_mode="HTML")
         elif kind in ("audio", "music") and sample_url:
-            await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML",
-                                   disable_web_page_preview=True)
+            sent = await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML",
+                                          disable_web_page_preview=True)
             await bot.send_audio(chat_id=chat_id, audio=URLInputFile(sample_url),
                                  caption=service.sample_caption)
         else:
-            await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML",
-                                   disable_web_page_preview=True)
+            sent = await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML",
+                                          disable_web_page_preview=True)
     except Exception as e:
         logger.error("[промо] публикация %s не удалась: %s", service.key, e)
         return False
 
-    remember(service.key, sample_url or "")
-    logger.info("[промо] опубликован пост про «%s» (пример: %s)", service.title, kind or "нет")
+    remember(service.key, sample_url or "", getattr(sent, "message_id", None))
+    news_autopost.log_publication("promo", service.title, with_cta=with_cta,
+                                  message_id=getattr(sent, "message_id", None))
+    logger.info("[промо] опубликован пост про «%s» (пример: %s), ссылка на бота: %s",
+                service.title, kind or "нет", "да" if with_cta else "нет")
     return True
 
 

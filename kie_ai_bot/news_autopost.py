@@ -74,8 +74,61 @@ BOT_CTA_EVERY = _env_int("NEWS_BOT_CTA_EVERY", 3)
 # Название источника словом. Ссылку на сторонний сайт не ставим никогда
 SHOW_SOURCE_NAME = _env_flag("NEWS_SHOW_SOURCE_NAME", "1")
 
+# Свои адреса: их в постах оставляем, всё остальное вырезаем
+OWN_DOMAINS = [d.strip().lower() for d in
+               os.getenv("NEWS_OWN_DOMAINS", "genius-bot.ru").split(",") if d.strip()]
+
 CAPTION_LIMIT = 1024
 MESSAGE_LIMIT = 4096
+
+# Ссылка тегом и голый адрес в тексте: Telegram делает кликабельным и второе,
+# поэтому вырезать нужно оба вида
+_LINK_TAG_RE = re.compile(r'<a\s[^>]*href="([^"]*)"[^>]*>(.*?)</a>', re.I | re.S)
+_BARE_URL_RE = re.compile(
+    r"https?://[^\s<>\"]+"
+    r"|(?<![\w@.])(?:[a-z0-9-]+\.)+(?:ru|com|org|net|io|ai|dev|me|info|biz|online|site|xyz|рф)"
+    r"(?:/[^\s<>\"]*)?",
+    re.I,
+)
+
+
+def _is_own_link(url: str) -> bool:
+    """Ссылка на свой бот или свой сайт — такие оставляем."""
+    lowered = (url or "").strip().lower()
+    if not lowered:
+        return False
+    if BOT_URL and lowered.startswith(BOT_URL.lower().rstrip("/")):
+        return True
+    return any(domain in lowered for domain in OWN_DOMAINS)
+
+
+def strip_external_links(text: str) -> str:
+    """В группе допускается единственная ссылка — на свой бот (и свой сайт).
+    Чужие адреса убираем: ресурс называется словом, уводить читателя незачем."""
+    kept: List[str] = []
+
+    def handle_tag(match: "re.Match") -> str:
+        href, inner = match.group(1), match.group(2)
+        if _is_own_link(href):
+            kept.append(match.group(0))
+            return f"\x00{len(kept) - 1}\x00"
+        return inner                      # ссылка становится обычным текстом
+
+    text = _LINK_TAG_RE.sub(handle_tag, text)
+    text = _BARE_URL_RE.sub(lambda m: m.group(0) if _is_own_link(m.group(0)) else "", text)
+
+    # После вырезанного адреса остаётся висячий предлог: «Читать на» —
+    # убираем и его, иначе фраза выглядит оборванной
+    text = re.sub(r"\s+(?:на|в|во|по|с|со|из|от|у|для|при|через)\s*(?=[.,;:!?)]|$)",
+                  "", text, flags=re.I | re.M)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r" +([.,;:!?])", r"\1", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = text.strip()
+
+    for index, tag in enumerate(kept):
+        text = text.replace(f"\x00{index}\x00", tag)
+    return text
 
 
 # --- Хранилище -------------------------------------------------------------
@@ -98,6 +151,20 @@ def init_db() -> None:
                 title        TEXT,
                 source       TEXT,
                 plan_index   INTEGER,
+                message_id   INTEGER,
+                published_at TEXT NOT NULL
+            )
+        """)
+        # Журнал публикаций группы: по одной строке на каждый вышедший пост.
+        # Нужен для очереди ссылки на бота — в отличие от news_posts, где
+        # один материал хранится под двумя отпечатками, а промо-посты про
+        # один и тот же сервис повторяются.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS channel_posts (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind         TEXT NOT NULL,           -- news | plan | promo
+                title        TEXT,
+                with_cta     INTEGER NOT NULL DEFAULT 0,
                 message_id   INTEGER,
                 published_at TEXT NOT NULL
             )
@@ -169,13 +236,26 @@ def posted_today(kind: str) -> int:
     return int(row["n"] if row else 0)
 
 
+def log_publication(kind: str, title: str = "", *, with_cta: bool = False,
+                    message_id: Optional[int] = None) -> None:
+    """Отмечает вышедший пост в журнале группы — новость, пост плана или промо."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        with closing(_connect()) as conn:
+            conn.execute(
+                "INSERT INTO channel_posts (kind, title, with_cta, message_id, published_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (kind, title[:300], 1 if with_cta else 0, message_id, now),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.warning("[новости] журнал публикаций недоступен: %s", e)
+
+
 def published_total() -> int:
-    """Сколько постов всего вышло в канале. Одна запись может храниться под
-    двумя отпечатками, поэтому считаем по самому материалу."""
+    """Сколько постов всего вышло в группе — новости, посты плана и промо."""
     with closing(_connect()) as conn:
-        row = conn.execute(
-            "SELECT COUNT(DISTINCT COALESCE(NULLIF(url, ''), title)) AS n FROM news_posts"
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) AS n FROM channel_posts").fetchone()
     return int(row["n"] if row else 0)
 
 
@@ -262,23 +342,24 @@ def _trim(text: str, limit: int) -> str:
 
 async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
     with_cta = cta_due()
-    text = build_news_text(item, with_cta=with_cta)
+    text = strip_external_links(build_news_text(item, with_cta=with_cta))
+    sent = None
 
     try:
         if item.image:
-            await bot.send_photo(
+            sent = await bot.send_photo(
                 chat_id=CHAT_ID, photo=URLInputFile(item.image),
                 caption=_trim(text, CAPTION_LIMIT), parse_mode="HTML",
             )
         else:
-            await bot.send_message(
+            sent = await bot.send_message(
                 chat_id=CHAT_ID, text=_trim(text, MESSAGE_LIMIT), parse_mode="HTML",
                 disable_web_page_preview=True,
             )
     except Exception as e:
         logger.warning("[новости] с картинкой не вышло (%s), публикуем текстом", e)
         try:
-            await bot.send_message(
+            sent = await bot.send_message(
                 chat_id=CHAT_ID, text=_trim(text, MESSAGE_LIMIT), parse_mode="HTML",
                 disable_web_page_preview=True,
             )
@@ -286,7 +367,10 @@ async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
             logger.error("[новости] публикация не удалась: %s", e2)
             return False
 
-    remember("news", url=item.link, title=item.title, source=item.source)
+    remember("news", url=item.link, title=item.title, source=item.source,
+             message_id=getattr(sent, "message_id", None))
+    log_publication("news", item.title, with_cta=with_cta,
+                    message_id=getattr(sent, "message_id", None))
     logger.info("[новости] опубликовано: %.60s (%s), ссылка на бота: %s",
                 item.title, item.source, "да" if with_cta else "нет")
     return True
@@ -294,9 +378,9 @@ async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
 
 async def publish_plan_post(bot: Bot, post: dict, index: int) -> bool:
     with_cta = cta_due()
-    text = build_plan_text(post, with_cta=with_cta)
+    text = strip_external_links(build_plan_text(post, with_cta=with_cta))
     try:
-        await bot.send_message(
+        sent = await bot.send_message(
             chat_id=CHAT_ID, text=_trim(text, MESSAGE_LIMIT), parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -304,7 +388,10 @@ async def publish_plan_post(bot: Bot, post: dict, index: int) -> bool:
         logger.error("[новости] пост плана %s не опубликован: %s", index, e)
         return False
 
-    remember("plan", title=post.get("title", f"план {index}"), plan_index=index)
+    remember("plan", title=post.get("title", f"план {index}"), plan_index=index,
+             message_id=getattr(sent, "message_id", None))
+    log_publication("plan", post.get("title", f"план {index}"), with_cta=with_cta,
+                    message_id=getattr(sent, "message_id", None))
     logger.info("[новости] опубликован пост плана %s: %.50s, ссылка на бота: %s",
                 index, post.get("title", ""), "да" if with_cta else "нет")
     return True
