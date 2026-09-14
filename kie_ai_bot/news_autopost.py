@@ -1,9 +1,13 @@
 """
 Автопостинг в канал про нейросети: свои посты по плану плюс новости.
 
-За сутки выходит три поста:
+За сутки выходит четыре поста:
 * один из контент-плана на три месяца (content_plan.json);
+* один разбор «как это применить» — собрал бота, автоматизировал рутину,
+  заработал на нейросетях;
 * два — свежие новости про ИИ с русскоязычных порталов.
+
+Порядок постов задаётся в NEWS_SLOTS, часы — в NEWS_SCHEDULE_HOURS.
 
 Ссылок на сторонние сайты в постах нет — источник называется словом.
 Ссылка на бота с призывом к генерации ставится в одном посте из трёх
@@ -54,12 +58,19 @@ PLAN_PATH = Path(os.getenv("NEWS_PLAN", "/opt/kie_ai_bot/content_plan.json"))
 # Сколько чего выходит за сутки
 NEWS_PER_DAY = _env_int("NEWS_PER_DAY", 2)
 PLAN_PER_DAY = _env_int("NEWS_PLAN_PER_DAY", 1)
+# Разборы «как это применить»: собрал бота, автоматизировал рутину, заработал
+CASES_PER_DAY = _env_int("NEWS_CASES_PER_DAY", 1)
 
 # Часы публикаций (UTC). По умолчанию 07:00, 12:00 и 16:00 UTC —
 # это 10:00, 15:00 и 19:00 по Москве
 SCHEDULE_HOURS = [
-    int(h) for h in os.getenv("NEWS_SCHEDULE_HOURS", "7,12,16").split(",") if h.strip().isdigit()
+    int(h) for h in os.getenv("NEWS_SCHEDULE_HOURS", "7,12,16,19").split(",")
+    if h.strip().isdigit()
 ]
+# Что выходит в каждый час расписания. Кейс ставим в середину дня — такие
+# посты читают внимательнее, чем новости
+SLOTS = [s.strip() for s in os.getenv("NEWS_SLOTS", "plan,news,case,news").split(",")
+         if s.strip() in ("plan", "news", "case")]
 # Как часто проверять расписание, секунды
 TICK_INTERVAL = _env_int("NEWS_TICK_INTERVAL", 300)
 
@@ -77,6 +88,9 @@ SHOW_SOURCE_NAME = _env_flag("NEWS_SHOW_SOURCE_NAME", "1")
 # Свои адреса: их в постах оставляем, всё остальное вырезаем
 OWN_DOMAINS = [d.strip().lower() for d in
                os.getenv("NEWS_OWN_DOMAINS", "genius-bot.ru").split(",") if d.strip()]
+
+# Заголовок рубрики над разбором — читатель сразу видит, что это не новость
+CASE_HEADER = os.getenv("NEWS_CASE_HEADER", "🛠 Как это применить")
 
 CAPTION_LIMIT = 1024
 MESSAGE_LIMIT = 4096
@@ -296,15 +310,45 @@ def load_plan() -> List[dict]:
 
 # --- Оформление ------------------------------------------------------------
 
+def shorten(text: str, limit: int = 450) -> str:
+    """Короткое описание для поста. Режем по концу предложения — обрыв на
+    середине фразы («...поэтому у меня получилась вот такая схема: Т.е...»)
+    выглядит неряшливо."""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+
+    cut = text[:limit]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "),
+              cut.rfind(".\n"), cut.rfind("…"))
+    if end > limit // 2:
+        return cut[: end + 1].strip()
+    return cut.rsplit(" ", 1)[0].rstrip(" ,;:—-") + "..."
+
+
 def build_news_text(item: news_sources.NewsItem, with_cta: bool = False) -> str:
     """Текст новости. Ссылок на сторонние сайты не ставим: источник
     указывается словом, чтобы не уводить читателя из канала.
     Ссылка на бота добавляется только там, где её ждёт очередь (with_cta)."""
-    summary = item.summary
-    if len(summary) > 450:
-        summary = summary[:447].rsplit(" ", 1)[0] + "..."
+    summary = shorten(item.summary)
 
     parts = [f"<b>{escape(item.title)}</b>"]
+    if summary:
+        parts.append(escape(summary))
+    if SHOW_SOURCE_NAME and item.source:
+        parts.append(f"<i>Источник: {escape(item.source)}</i>")
+    if with_cta and BOT_URL and BOT_CTA:
+        parts.append(f'<a href="{escape(BOT_URL)}">{escape(BOT_CTA)}</a>')
+    if FOOTER:
+        parts.append(FOOTER)
+    return "\n\n".join(parts)
+
+
+def build_case_text(item: news_sources.NewsItem, with_cta: bool = False) -> str:
+    """Разбор применения: та же вёрстка, что у новости, но с рубрикой сверху."""
+    summary = shorten(item.summary)
+
+    parts = [f"<b>{escape(CASE_HEADER)}</b>", f"<b>{escape(item.title)}</b>"]
     if summary:
         parts.append(escape(summary))
     if SHOW_SOURCE_NAME and item.source:
@@ -352,9 +396,13 @@ async def _page_image(link: str) -> Optional[str]:
         return None
 
 
-async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
+async def publish_item(bot: Bot, item: news_sources.NewsItem, kind: str = "news") -> bool:
+    """Публикует материал из ленты: новость или разбор «как это применить».
+    Различаются только вёрсткой текста и пометкой в журнале."""
+    label = "кейсы" if kind == "case" else "новости"
     with_cta = cta_due()
-    text = strip_external_links(build_news_text(item, with_cta=with_cta))
+    builder = build_case_text if kind == "case" else build_news_text
+    text = strip_external_links(builder(item, with_cta=with_cta))
     sent = None
 
     async def send_with_photo(url: str):
@@ -373,7 +421,7 @@ async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
         try:
             sent = await send_with_photo(item.image)
         except Exception as e:
-            logger.warning("[новости] картинка из ленты не подошла (%s)", e)
+            logger.warning("[%s] картинка из ленты не подошла (%s)", label, e)
 
     # Адрес из ленты Telegram берёт не всегда: у 3DNews картинка лежит на
     # cdn-домене, а в ленте указан основной. Пробуем картинку со страницы
@@ -382,24 +430,32 @@ async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
         if alternative and alternative != item.image:
             try:
                 sent = await send_with_photo(alternative)
-                logger.info("[новости] помогла картинка со страницы материала")
+                logger.info("[%s] помогла картинка со страницы материала", label)
             except Exception as e:
-                logger.warning("[новости] картинка со страницы тоже не подошла: %s", e)
+                logger.warning("[%s] картинка со страницы тоже не подошла: %s", label, e)
 
     if sent is None:
         try:
             sent = await send_plain()
         except Exception as e:
-            logger.error("[новости] публикация не удалась: %s", e)
+            logger.error("[%s] публикация не удалась: %s", label, e)
             return False
 
-    remember("news", url=item.link, title=item.title, source=item.source,
+    remember(kind, url=item.link, title=item.title, source=item.source,
              message_id=getattr(sent, "message_id", None))
-    log_publication("news", item.title, with_cta=with_cta,
+    log_publication(kind, item.title, with_cta=with_cta,
                     message_id=getattr(sent, "message_id", None))
-    logger.info("[новости] опубликовано: %.60s (%s), ссылка на бота: %s",
-                item.title, item.source, "да" if with_cta else "нет")
+    logger.info("[%s] опубликовано: %.60s (%s), ссылка на бота: %s",
+                label, item.title, item.source, "да" if with_cta else "нет")
     return True
+
+
+async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
+    return await publish_item(bot, item, "news")
+
+
+async def publish_case(bot: Bot, item: news_sources.NewsItem) -> bool:
+    return await publish_item(bot, item, "case")
 
 
 async def publish_plan_post(bot: Bot, post: dict, index: int) -> bool:
@@ -423,9 +479,10 @@ async def publish_plan_post(bot: Bot, post: dict, index: int) -> bool:
     return True
 
 
-async def pick_fresh_news(limit: int = 1) -> List[news_sources.NewsItem]:
+async def pick_fresh(limit: int = 1, kind: str = "news") -> List[news_sources.NewsItem]:
     """Свежие материалы, которых ещё не было в канале."""
-    items = await news_sources.fetch_all()
+    items = (await news_sources.fetch_cases() if kind == "case"
+             else await news_sources.fetch_all())
     chosen: List[news_sources.NewsItem] = []
     seen_in_batch = set()
 
@@ -446,12 +503,31 @@ async def pick_fresh_news(limit: int = 1) -> List[news_sources.NewsItem]:
     return chosen
 
 
+async def pick_fresh_news(limit: int = 1) -> List[news_sources.NewsItem]:
+    return await pick_fresh(limit, "news")
+
+
+async def pick_fresh_cases(limit: int = 1) -> List[news_sources.NewsItem]:
+    return await pick_fresh(limit, "case")
+
+
 async def publish_one_news(bot: Bot) -> bool:
-    items = await pick_fresh_news(limit=1)
+    items = await pick_fresh(limit=1, kind="news")
     if not items:
         logger.info("[новости] свежих материалов не нашлось — все уже выходили")
         return False
     return await publish_news(bot, items[0])
+
+
+async def publish_one_case(bot: Bot) -> bool:
+    """Разбор «как это применить». Если подходящего нет — отдаём слот новости,
+    чтобы час расписания не пропал впустую."""
+    items = await pick_fresh(limit=1, kind="case")
+    if items:
+        return await publish_case(bot, items[0])
+
+    logger.info("[кейсы] новых разборов не нашлось — публикуем новость")
+    return await publish_one_news(bot)
 
 
 async def publish_one_plan(bot: Bot) -> bool:
@@ -468,9 +544,21 @@ async def publish_one_plan(bot: Bot) -> bool:
 # --- Расписание ------------------------------------------------------------
 
 def _slot_plan() -> List[str]:
-    """Что публикуем в каждый час расписания: сначала пост плана, затем новости."""
-    slots = ["plan"] * PLAN_PER_DAY + ["news"] * NEWS_PER_DAY
-    return slots[: len(SCHEDULE_HOURS)] or slots
+    """Что публикуем в каждый час расписания. Порядок берём из NEWS_SLOTS,
+    а если он не задан — собираем из суточных лимитов."""
+    slots = list(SLOTS) or (["plan"] * PLAN_PER_DAY + ["case"] * CASES_PER_DAY
+                            + ["news"] * NEWS_PER_DAY)
+    if len(slots) < len(SCHEDULE_HOURS):
+        slots += ["news"] * (len(SCHEDULE_HOURS) - len(slots))
+    return slots[: len(SCHEDULE_HOURS)]
+
+
+def _daily_limit(kind: str) -> int:
+    """Сколько постов этого вида должно выйти за сутки."""
+    from_slots = _slot_plan().count(kind)
+    if from_slots:
+        return from_slots
+    return {"plan": PLAN_PER_DAY, "case": CASES_PER_DAY}.get(kind, NEWS_PER_DAY)
 
 
 async def news_worker(bot: Bot) -> None:
@@ -485,8 +573,8 @@ async def news_worker(bot: Bot) -> None:
     init_db()
     slots = _slot_plan()
     logger.info(
-        "[новости] запущено: канал %s, расписание %s UTC, за сутки %s из плана и %s новостей",
-        CHAT_ID, SCHEDULE_HOURS, PLAN_PER_DAY, NEWS_PER_DAY,
+        "[новости] запущено: канал %s, расписание %s UTC, слоты %s",
+        CHAT_ID, SCHEDULE_HOURS, slots,
     )
 
     while True:
@@ -497,12 +585,13 @@ async def news_worker(bot: Bot) -> None:
                     continue
 
                 kind = slots[position] if position < len(slots) else "news"
-                limit = PLAN_PER_DAY if kind == "plan" else NEWS_PER_DAY
-                if posted_today(kind) >= limit:
+                if posted_today(kind) >= _daily_limit(kind):
                     continue
 
                 if kind == "plan":
                     await publish_one_plan(bot)
+                elif kind == "case":
+                    await publish_one_case(bot)
                 else:
                     await publish_one_news(bot)
                 break
