@@ -5,6 +5,10 @@
 * один из контент-плана на три месяца (content_plan.json);
 * два — свежие новости про ИИ с русскоязычных порталов.
 
+Ссылок на сторонние сайты в постах нет — источник называется словом.
+Ссылка на бота с призывом к генерации ставится в одном посте из трёх
+(NEWS_BOT_CTA_EVERY), чтобы призыв не примелькался.
+
 Повторов не бывает: каждая новость запоминается по ссылке и по отпечатку
 заголовка, поэтому один и тот же материал не выйдет ни со второй ленты,
 ни после перезапуска бота. Посты плана тоже идут по одному разу, по порядку.
@@ -63,6 +67,10 @@ FOOTER = os.getenv("NEWS_FOOTER", "")
 BOT_URL = os.getenv("NEWS_BOT_URL", "https://t.me/Neuro_HubAI_bot")
 # Призыв со ссылкой на свой бот под новостью; пустая строка — без него
 BOT_CTA = os.getenv("NEWS_BOT_CTA", "Сделать фото или видео нейросетью")
+# Ссылка на бота идёт не под каждым постом, а под одним из трёх: в ленте,
+# где призыв стоит в каждой записи, читатель перестаёт его замечать.
+# 1 — ставить в каждый пост, 0 — не ставить нигде.
+BOT_CTA_EVERY = _env_int("NEWS_BOT_CTA_EVERY", 3)
 # Название источника словом. Ссылку на сторонний сайт не ставим никогда
 SHOW_SOURCE_NAME = _env_flag("NEWS_SHOW_SOURCE_NAME", "1")
 
@@ -161,6 +169,29 @@ def posted_today(kind: str) -> int:
     return int(row["n"] if row else 0)
 
 
+def published_total() -> int:
+    """Сколько постов всего вышло в канале. Одна запись может храниться под
+    двумя отпечатками, поэтому считаем по самому материалу."""
+    with closing(_connect()) as conn:
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT COALESCE(NULLIF(url, ''), title)) AS n FROM news_posts"
+        ).fetchone()
+    return int(row["n"] if row else 0)
+
+
+def cta_due() -> bool:
+    """Пора ли ставить ссылку на бота: один пост из BOT_CTA_EVERY."""
+    if not BOT_URL or BOT_CTA_EVERY <= 0:
+        return False
+    if BOT_CTA_EVERY == 1:
+        return True
+    try:
+        return published_total() % BOT_CTA_EVERY == 0
+    except Exception as e:
+        logger.warning("[новости] счётчик постов недоступен (%s), призыв пропускаем", e)
+        return False
+
+
 def next_plan_index() -> int:
     with closing(_connect()) as conn:
         row = conn.execute(
@@ -185,9 +216,10 @@ def load_plan() -> List[dict]:
 
 # --- Оформление ------------------------------------------------------------
 
-def build_news_text(item: news_sources.NewsItem) -> str:
+def build_news_text(item: news_sources.NewsItem, with_cta: bool = False) -> str:
     """Текст новости. Ссылок на сторонние сайты не ставим: источник
-    указывается словом, чтобы не уводить читателя из канала."""
+    указывается словом, чтобы не уводить читателя из канала.
+    Ссылка на бота добавляется только там, где её ждёт очередь (with_cta)."""
     summary = item.summary
     if len(summary) > 450:
         summary = summary[:447].rsplit(" ", 1)[0] + "..."
@@ -197,14 +229,14 @@ def build_news_text(item: news_sources.NewsItem) -> str:
         parts.append(escape(summary))
     if SHOW_SOURCE_NAME and item.source:
         parts.append(f"<i>Источник: {escape(item.source)}</i>")
-    if BOT_URL and BOT_CTA:
+    if with_cta and BOT_URL and BOT_CTA:
         parts.append(f'<a href="{escape(BOT_URL)}">{escape(BOT_CTA)}</a>')
     if FOOTER:
         parts.append(FOOTER)
     return "\n\n".join(parts)
 
 
-def build_plan_text(post: dict) -> str:
+def build_plan_text(post: dict, with_cta: bool = False) -> str:
     parts = []
     if post.get("rubric"):
         parts.append(f"<b>{escape(post['rubric'])}</b>")
@@ -212,7 +244,7 @@ def build_plan_text(post: dict) -> str:
         parts.append(f"<b>{escape(post['title'])}</b>")
     if post.get("text"):
         parts.append(escape(post["text"]))
-    if post.get("cta"):
+    if with_cta and post.get("cta") and BOT_URL:
         parts.append(f'<a href="{escape(BOT_URL)}">{escape(post["cta"])}</a>')
     if FOOTER:
         parts.append(FOOTER)
@@ -229,7 +261,8 @@ def _trim(text: str, limit: int) -> str:
 # --- Публикация ------------------------------------------------------------
 
 async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
-    text = build_news_text(item)
+    with_cta = cta_due()
+    text = build_news_text(item, with_cta=with_cta)
 
     try:
         if item.image:
@@ -254,12 +287,14 @@ async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
             return False
 
     remember("news", url=item.link, title=item.title, source=item.source)
-    logger.info("[новости] опубликовано: %.60s (%s)", item.title, item.source)
+    logger.info("[новости] опубликовано: %.60s (%s), ссылка на бота: %s",
+                item.title, item.source, "да" if with_cta else "нет")
     return True
 
 
 async def publish_plan_post(bot: Bot, post: dict, index: int) -> bool:
-    text = build_plan_text(post)
+    with_cta = cta_due()
+    text = build_plan_text(post, with_cta=with_cta)
     try:
         await bot.send_message(
             chat_id=CHAT_ID, text=_trim(text, MESSAGE_LIMIT), parse_mode="HTML",
@@ -270,7 +305,8 @@ async def publish_plan_post(bot: Bot, post: dict, index: int) -> bool:
         return False
 
     remember("plan", title=post.get("title", f"план {index}"), plan_index=index)
-    logger.info("[новости] опубликован пост плана %s: %.50s", index, post.get("title", ""))
+    logger.info("[новости] опубликован пост плана %s: %.50s, ссылка на бота: %s",
+                index, post.get("title", ""), "да" if with_cta else "нет")
     return True
 
 
