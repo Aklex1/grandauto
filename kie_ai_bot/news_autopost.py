@@ -88,6 +88,10 @@ SHOW_SOURCE_NAME = _env_flag("NEWS_SHOW_SOURCE_NAME", "1")
 # Свои адреса: их в постах оставляем, всё остальное вырезаем
 OWN_DOMAINS = [d.strip().lower() for d in
                os.getenv("NEWS_OWN_DOMAINS", "genius-bot.ru").split(",") if d.strip()]
+# Партнёрские ссылки, которые в постах разрешены (аренда хостинга под проект).
+# Их мы ставим сами в практических постах — не чужие ссылки из лент
+AFFILIATE_HOSTS = [h.strip().lower() for h in
+                   os.getenv("NEWS_AFFILIATE_HOSTS", "beget.com").split(",") if h.strip()]
 
 # Заголовок рубрики над разбором — читатель сразу видит, что это не новость
 CASE_HEADER = os.getenv("NEWS_CASE_HEADER", "🛠 Как это применить")
@@ -112,6 +116,8 @@ def _is_own_link(url: str) -> bool:
     if not lowered:
         return False
     if BOT_URL and lowered.startswith(BOT_URL.lower().rstrip("/")):
+        return True
+    if any(host in lowered for host in AFFILIATE_HOSTS):
         return True
     return any(domain in lowered for domain in OWN_DOMAINS)
 
@@ -344,8 +350,12 @@ def build_news_text(item: news_sources.NewsItem, with_cta: bool = False) -> str:
     return "\n\n".join(parts)
 
 
-def build_case_text(item: news_sources.NewsItem, with_cta: bool = False) -> str:
-    """Разбор применения: та же вёрстка, что у новости, но с рубрикой сверху."""
+def build_case_text(item: news_sources.NewsItem, with_cta: bool = False,
+                    article_url: Optional[str] = None) -> str:
+    """Разбор применения: та же вёрстка, что у новости, но с рубрикой сверху,
+    ссылкой на подробную статью и партнёрской ссылкой на хостинг."""
+    import blog_publisher
+
     summary = shorten(item.summary)
 
     parts = [f"<b>{escape(CASE_HEADER)}</b>", f"<b>{escape(item.title)}</b>"]
@@ -353,6 +363,20 @@ def build_case_text(item: news_sources.NewsItem, with_cta: bool = False) -> str:
         parts.append(escape(summary))
     if SHOW_SOURCE_NAME and item.source:
         parts.append(f"<i>Источник: {escape(item.source)}</i>")
+
+    # Ссылка на подробную статью-инструкцию на сайте — призывом
+    if article_url:
+        parts.append(f'📖 <a href="{escape(article_url)}">'
+                     f'{escape(blog_publisher.ARTICLE_CTA)}</a>')
+
+    # Партнёрская ссылка на хостинг: где развернуть бота или проект
+    if blog_publisher.HOSTING_URL:
+        parts.append(
+            "Проект работает круглосуточно — держать его удобно на сервере: "
+            f'<a href="{escape(blog_publisher.HOSTING_URL)}">'
+            f'{escape(blog_publisher.HOSTING_ANCHOR)}</a>.'
+        )
+
     if with_cta and BOT_URL and BOT_CTA:
         parts.append(f'<a href="{escape(BOT_URL)}">{escape(BOT_CTA)}</a>')
     if FOOTER:
@@ -401,8 +425,20 @@ async def publish_item(bot: Bot, item: news_sources.NewsItem, kind: str = "news"
     Различаются только вёрсткой текста и пометкой в журнале."""
     label = "кейсы" if kind == "case" else "новости"
     with_cta = cta_due()
-    builder = build_case_text if kind == "case" else build_news_text
-    text = strip_external_links(builder(item, with_cta=with_cta))
+
+    if kind == "case":
+        # Подробная статья-инструкция на сайте, ссылку на неё даём в посте
+        import blog_publisher
+
+        article_url = None
+        try:
+            article_url = await blog_publisher.publish_article(item.title, item.summary)
+        except Exception as e:
+            logger.warning("[кейсы] статью на сайт опубликовать не вышло: %s", e)
+        text = strip_external_links(
+            build_case_text(item, with_cta=with_cta, article_url=article_url))
+    else:
+        text = strip_external_links(build_news_text(item, with_cta=with_cta))
     sent = None
 
     async def send_with_photo(url: str):
