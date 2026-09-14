@@ -96,7 +96,7 @@ BOT_URL = os.getenv("AUTOPOST_BOT_URL", "https://t.me/Neuro_HubAI_bot?start=Sv_l
 SITE_URL = os.getenv("AUTOPOST_SITE_URL", "https://genius-bot.ru/neurohub/?ref=sv07")
 MAX_URL = os.getenv("AUTOPOST_MAX_URL", "")
 DEFAULT_HASHTAGS = os.getenv("AUTOPOST_HASHTAGS", "#Женский")
-FOOTER = os.getenv("AUTOPOST_FOOTER", "⚜️⚜️⚜️⚜️⚜️⚜️⚜️⚜️")
+FOOTER = os.getenv("AUTOPOST_FOOTER", "")
 
 CAPTION_LIMIT = 1024
 MESSAGE_LIMIT = 4096
