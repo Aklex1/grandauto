@@ -340,31 +340,57 @@ def _trim(text: str, limit: int) -> str:
 
 # --- Публикация ------------------------------------------------------------
 
+async def _page_image(link: str) -> Optional[str]:
+    """Картинка со страницы материала — запасной вариант для публикации."""
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
+            return await news_sources.fetch_og_image(client, link)
+    except Exception as e:
+        logger.debug("[новости] картинка со страницы недоступна: %s", e)
+        return None
+
+
 async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
     with_cta = cta_due()
     text = strip_external_links(build_news_text(item, with_cta=with_cta))
     sent = None
 
-    try:
-        if item.image:
-            sent = await bot.send_photo(
-                chat_id=CHAT_ID, photo=URLInputFile(item.image),
-                caption=_trim(text, CAPTION_LIMIT), parse_mode="HTML",
-            )
-        else:
-            sent = await bot.send_message(
-                chat_id=CHAT_ID, text=_trim(text, MESSAGE_LIMIT), parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-    except Exception as e:
-        logger.warning("[новости] с картинкой не вышло (%s), публикуем текстом", e)
+    async def send_with_photo(url: str):
+        return await bot.send_photo(
+            chat_id=CHAT_ID, photo=URLInputFile(url),
+            caption=_trim(text, CAPTION_LIMIT), parse_mode="HTML",
+        )
+
+    async def send_plain():
+        return await bot.send_message(
+            chat_id=CHAT_ID, text=_trim(text, MESSAGE_LIMIT), parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+
+    if item.image:
         try:
-            sent = await bot.send_message(
-                chat_id=CHAT_ID, text=_trim(text, MESSAGE_LIMIT), parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-        except Exception as e2:
-            logger.error("[новости] публикация не удалась: %s", e2)
+            sent = await send_with_photo(item.image)
+        except Exception as e:
+            logger.warning("[новости] картинка из ленты не подошла (%s)", e)
+
+    # Адрес из ленты Telegram берёт не всегда: у 3DNews картинка лежит на
+    # cdn-домене, а в ленте указан основной. Пробуем картинку со страницы
+    if sent is None and item.link:
+        alternative = await _page_image(item.link)
+        if alternative and alternative != item.image:
+            try:
+                sent = await send_with_photo(alternative)
+                logger.info("[новости] помогла картинка со страницы материала")
+            except Exception as e:
+                logger.warning("[новости] картинка со страницы тоже не подошла: %s", e)
+
+    if sent is None:
+        try:
+            sent = await send_plain()
+        except Exception as e:
+            logger.error("[новости] публикация не удалась: %s", e)
             return False
 
     remember("news", url=item.link, title=item.title, source=item.source,
