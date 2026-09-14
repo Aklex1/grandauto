@@ -53,22 +53,44 @@ def enabled() -> bool:
 
 # --- Определение темы кейса ------------------------------------------------
 
+def _sig(text: str, cat: str) -> bool:
+    """Есть ли в тексте признак темы. «бот» с границей слова — иначе ловит
+    «рабОТу», «забОТу»."""
+    if cat == "bot":
+        return bool(re.search(r"\bбот|телеграм|telegram|ассистент|\bагент", text))
+    if cat == "automation":
+        return any(w in text for w in ("автоматизац", "автоматизир", "рутин",
+                                       "n8n", "интеграц", "webhook"))
+    if cat == "content":
+        return any(w in text for w in ("озвуч", "видео", "фото", "изображен",
+                                       "контент", "музык", "аватар", "голос"))
+    if cat == "earning":
+        # сильные слова про деньги — по ним тему берём и из описания
+        return any(w in text for w in ("зараб", "монетиз", "доход", "фриланс",
+                                       "на заказ", "подработ"))
+    return False
+
+
 def detect_category(title: str, summary: str) -> str:
-    """Тема кейса: под неё подбираются шаги инструкции."""
-    hay = f" {title} {summary} ".lower()
+    """Тема кейса: под неё подбираются шаги инструкции.
 
-    def has(*words) -> bool:
-        return any(w in hay for w in words)
+    Тема определяется в первую очередь по заголовку — в описании слабые
+    слова вроде «клиентов» уводят не туда: телеграм-бот превращался в статью
+    про заработок только из-за упоминания клиентов."""
+    t = f" {title} ".lower()
+    full = f" {title} {summary} ".lower()
 
-    if has("заработ", "монетиз", "доход", "фриланс", "на заказ", "клиент", "продаж"):
+    # 1. По заголовку. «продаж» в заголовке — это про заработок
+    if _sig(t, "earning") or "продаж" in t:
         return "earning"
-    # «бот» отдельно с границей слова: иначе ловит «рабОТу», «забОТу»
-    if re.search(r"\bбот|телеграм|telegram|ассистент|\bагент", hay):
-        return "bot"
-    if has("автоматизац", "автоматизир", "рутин", "n8n", "интеграц", "webhook"):
-        return "automation"
-    if has("озвуч", "видео", "фото", "изображен", "контент", "музык", "аватар", "голос"):
-        return "content"
+    for cat in ("bot", "automation", "content"):
+        if _sig(t, cat):
+            return cat
+
+    # 2. По заголовку + описанию, но заработок — только по сильным словам
+    for cat in ("bot", "automation", "content", "earning"):
+        if _sig(full, cat):
+            return cat
     return "project"
 
 
@@ -265,6 +287,12 @@ async def _ensure_category(client: httpx.AsyncClient) -> Optional[int]:
                                     headers=_auth_header(), timeout=25)
         if created.status_code in (200, 201):
             return int(created.json()["id"])
+        # Рубрика уже есть — WP возвращает её id в data.term_id
+        body = created.json()
+        if body.get("code") == "term_exists":
+            term_id = (body.get("data") or {}).get("term_id")
+            if term_id:
+                return int(term_id)
     except Exception as e:
         logger.warning("[блог] рубрику не создать (%s), публикуем без неё", e)
     return None
