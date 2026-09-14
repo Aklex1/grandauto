@@ -17,6 +17,20 @@ class GS_Api_Page {
 
     public static function register_shortcodes() {
         add_shortcode('genius_api', array(__CLASS__, 'render'));
+        add_filter('body_class', array(__CLASS__, 'body_class'));
+    }
+
+    /**
+     * Страница тёмная, как остальные разделы плагина. Без этого класса
+     * тема рисует белый фон, а наши светлые заголовки на нём пропадают.
+     */
+    public static function body_class($classes) {
+        if (!is_admin() && self::is_page()) {
+            $classes[] = 'gs-api-page';
+            $classes[] = 'gs-studio-page';
+            $classes[] = 'gs-chrome';
+        }
+        return $classes;
     }
 
     public static function ensure_page() {
@@ -54,6 +68,20 @@ class GS_Api_Page {
         return $url ? $url : home_url('/' . self::SLUG . '/');
     }
 
+    /** Разделы документации: по ним строится оглавление. */
+    private static function sections() {
+        return array(
+            'start'    => 'Быстрый старт',
+            'services' => 'Что можно вызвать',
+            'more'     => 'Видео, музыка, расшифровка',
+            'files'    => 'Свои файлы',
+            'webhook'  => 'Вебхук',
+            'errors'   => 'Ошибки и лимиты',
+            'voice'    => 'Прежний адрес озвучки',
+            'faq'      => 'Частые вопросы',
+        );
+    }
+
     public static function is_page() {
         $pid = (int) get_option(self::OPT_PAGE);
         return $pid > 0 && is_page($pid);
@@ -88,11 +116,11 @@ class GS_Api_Page {
                 <span class="gs-breadcrumbs__current">API для разработчиков</span>
             </nav>
 
-            <section class="gs-hero gs-hero--studio">
+            <section class="gs-hero gs-hero--studio gs-api__hero">
                 <span class="gs-hero__badge">HTTP API</span>
                 <h1 class="gs-hero__title">API для разработчиков: нейросети в вашем сервисе</h1>
                 <p class="gs-hero__lead">
-                    Оживление фото, говорящий аватар, редактирование картинок, звуки и озвучка —
+                    Видео и музыка, оживление фото, говорящий аватар, расшифровка записей и озвучка —
                     те же инструменты, что и на сайте, только вызываются из вашего кода.
                     Один ключ, один формат запроса, оплата с общего баланса аккаунта.
                 </p>
@@ -100,11 +128,37 @@ class GS_Api_Page {
                     <span class="gs-chip gs-chip--ok">без абонплаты — платите за запуск</span>
                     <span class="gs-chip">REST + JSON</span>
                     <span class="gs-chip">вебхук о готовности</span>
-                    <span class="gs-chip">озвучка и расшифровка</span>
+                    <span class="gs-chip"><?php echo (int) count(GS_Api::available_services()); ?> операций</span>
                 </div>
+                <dl class="gs-api__flow">
+                    <div class="gs-api__flow-step">
+                        <dt>1. Запрос</dt>
+                        <dd><code>POST /generate</code> с названием операции и её полями</dd>
+                    </div>
+                    <div class="gs-api__flow-step">
+                        <dt>2. Номер задачи</dt>
+                        <dd>в ответе <code>task_id</code>, списанная сумма и остаток баланса</dd>
+                    </div>
+                    <div class="gs-api__flow-step">
+                        <dt>3. Результат</dt>
+                        <dd><code>GET /tasks/{id}</code> или вебхук, когда всё готово</dd>
+                    </div>
+                </dl>
             </section>
 
             <?php echo self::render_keys($logged, $keys); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <div class="gs-api__layout">
+            <nav class="gs-api__toc" aria-label="Разделы документации">
+                <span class="gs-api__toc-title">Разделы</span>
+                <ul class="gs-api__toc-list">
+                    <?php foreach (self::sections() as $anchor => $caption): ?>
+                        <li><a href="#<?php echo esc_attr($anchor); ?>"><?php echo esc_html($caption); ?></a></li>
+                    <?php endforeach; ?>
+                </ul>
+            </nav>
+
+            <div class="gs-api__main">
 
             <section class="gs-api__section" id="start">
                 <h2 class="gs-section-title">Быстрый старт</h2>
@@ -173,38 +227,6 @@ class GS_Api_Page {
                 <?php echo self::render_code('Видео, музыка, расшифровка, звук из ролика', self::sample_more($base)); ?>
             </section>
 
-            <section class="gs-api__section" id="voice">
-                <h2 class="gs-section-title">Прежний адрес озвучки</h2>
-                <p class="gs-api__text">
-                    До появления общего API озвучка и расшифровка жили на отдельном адресе
-                    <code><?php echo esc_html(rest_url('tts/v1/api')); ?></code> со своим ключом.
-                    Он продолжает работать — ломать готовые интеграции мы не будем, — но для
-                    новых лучше брать общий: там те же операции и один ключ на всё.
-                </p>
-                <div class="gs-api__tablewrap">
-                    <table class="gs-api__table">
-                        <thead><tr><th>Запрос</th><th>Что делает</th></tr></thead>
-                        <tbody>
-                            <tr><td><code>POST /generate</code></td><td>Озвучить текст: модель, голос, формат вывода</td></tr>
-                            <tr><td><code>GET /status/{task_id}</code></td><td>Состояние озвучки и ссылка на файл</td></tr>
-                            <tr><td><code>POST /transcribe</code></td><td>Расшифровать запись: <code>audio_url</code> или <code>youtube_url</code></td></tr>
-                            <tr><td><code>GET /transcribe-status/{task_id}</code></td><td>Текст, сегменты и тайминги</td></tr>
-                            <tr><td><code>POST /youtube-audio</code></td><td>Достать звуковую дорожку из ролика</td></tr>
-                            <tr><td><code>POST /parse-text-file</code></td><td>Достать текст из загруженного документа</td></tr>
-                            <tr><td><code>GET /balance</code></td><td>Остаток на балансе</td></tr>
-                            <tr><td><code>GET /generations</code></td><td>История озвучек</td></tr>
-                            <tr><td><code>GET /free-voices</code></td><td>Список бесплатных голосов</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                <?php echo self::render_code('Озвучить текст и расшифровать запись', self::sample_voice()); ?>
-                <p class="gs-api__text">
-                    Ключи не взаимозаменяемы: <code>gb_…</code> работает на <code>genius/v1</code>,
-                    прежний ключ озвучки — на <code>tts/v1</code>. Баланс у них общий, списания
-                    видны в одной истории. Новый ключ выпускается ниже, на этой же странице.
-                </p>
-            </section>
-
             <section class="gs-api__section" id="files">
                 <h2 class="gs-section-title">Свои файлы</h2>
                 <p class="gs-api__text">
@@ -248,9 +270,44 @@ class GS_Api_Page {
                 </p>
             </section>
 
+            <section class="gs-api__section" id="voice">
+                <h2 class="gs-section-title">Прежний адрес озвучки</h2>
+                <p class="gs-api__text">
+                    До появления общего API озвучка и расшифровка жили на отдельном адресе
+                    <code><?php echo esc_html(rest_url('tts/v1/api')); ?></code> со своим ключом.
+                    Он продолжает работать — ломать готовые интеграции мы не будем, — но для
+                    новых лучше брать общий: там те же операции и один ключ на всё.
+                </p>
+                <div class="gs-api__tablewrap">
+                    <table class="gs-api__table">
+                        <thead><tr><th>Запрос</th><th>Что делает</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>POST /generate</code></td><td>Озвучить текст: модель, голос, формат вывода</td></tr>
+                            <tr><td><code>GET /status/{task_id}</code></td><td>Состояние озвучки и ссылка на файл</td></tr>
+                            <tr><td><code>POST /transcribe</code></td><td>Расшифровать запись: <code>audio_url</code> или <code>youtube_url</code></td></tr>
+                            <tr><td><code>GET /transcribe-status/{task_id}</code></td><td>Текст, сегменты и тайминги</td></tr>
+                            <tr><td><code>POST /youtube-audio</code></td><td>Достать звуковую дорожку из ролика</td></tr>
+                            <tr><td><code>POST /parse-text-file</code></td><td>Достать текст из загруженного документа</td></tr>
+                            <tr><td><code>GET /balance</code></td><td>Остаток на балансе</td></tr>
+                            <tr><td><code>GET /generations</code></td><td>История озвучек</td></tr>
+                            <tr><td><code>GET /free-voices</code></td><td>Список бесплатных голосов</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <?php echo self::render_code('Озвучить текст и расшифровать запись', self::sample_voice()); ?>
+                <p class="gs-api__text">
+                    Ключи не взаимозаменяемы: <code>gb_…</code> работает на <code>genius/v1</code>,
+                    прежний ключ озвучки — на <code>tts/v1</code>. Баланс у них общий, списания
+                    видны в одной истории. Новый ключ выпускается ниже, на этой же странице.
+                </p>
+            </section>
+
+            </div><!-- /gs-api__main -->
+            </div><!-- /gs-api__layout -->
+
             <?php echo GS_Lab_Page::render_cross_links('', 'Те же инструменты с человеческим интерфейсом'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
-            <section class="gs-faq">
+            <section class="gs-faq gs-api__section" id="faq">
                 <h2 class="gs-section-title">Частые вопросы</h2>
                 <?php foreach (self::faq() as $pair): ?>
                     <details class="gs-faq__item">

@@ -1,30 +1,154 @@
 /**
  * Genius Sounds — страница API для разработчиков.
- * Основные переменные и кнопки берутся из catalog.css / studio.css,
- * здесь только то, чего в них нет: код, таблицы и панель ключей.
+ *
+ * Страница длинная и вся состоит из справочного текста, таблиц и кода,
+ * поэтому оформление подчинено чтению: слева оглавление, которое не
+ * уезжает при прокрутке, разделы — карточками, таблицы и блоки кода —
+ * с заметными заголовками и спокойным фоном.
+ *
+ * Базовые переменные и кнопки берутся из catalog.css / studio.css,
+ * здесь только то, чего в них нет.
  */
 
-.gs-api__section {
+.gs-api {
+    --gs-api-surface: #111a2b;
+    --gs-api-surface-2: #0b1120;
+    --gs-api-line: rgba(148, 163, 184, 0.16);
+    --gs-api-line-soft: rgba(148, 163, 184, 0.1);
+    --gs-api-text: #e8edf7;
+    --gs-api-muted: #a7b4c8;
+    --gs-api-accent: #a5b4fc;
+}
+
+/* ------------------------------------------------------------- раскладка
+   На широком экране — оглавление слева и содержимое справа. Ниже 1100px
+   колонка одна, а оглавление превращается в ленту ссылок над текстом. */
+
+.gs-api__layout {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 34px;
+    align-items: start;
     margin-top: 34px;
+}
+
+.gs-api__toc {
+    position: sticky;
+    top: 96px;
+    padding: 18px 16px;
+    border: 1px solid var(--gs-api-line);
+    border-radius: 18px;
+    background: var(--gs-api-surface);
+}
+
+.gs-api__toc-title {
+    display: block;
+    margin-bottom: 10px;
+    color: var(--gs-api-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.gs-api__toc-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.gs-api__toc-list li {
+    margin: 0;
+    list-style: none;
+}
+
+.gs-api__toc-list a {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 9px;
+    color: var(--gs-api-muted);
+    font-size: 14.5px;
+    text-decoration: none;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.gs-api__toc-list a:hover,
+.gs-api__toc-list a:focus-visible {
+    background: rgba(129, 140, 248, 0.14);
+    color: var(--gs-api-text);
+}
+
+.gs-api__main {
+    min-width: 0;
+}
+
+/* ----------------------------------------------------------------- шапка */
+
+.gs-api__flow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 22px 0 0;
+}
+
+.gs-api__flow-step {
+    padding: 14px 16px;
+    border: 1px solid var(--gs-api-line);
+    border-radius: 14px;
+    background: rgba(11, 17, 32, 0.55);
+}
+
+.gs-api__flow-step dt {
+    margin-bottom: 6px;
+    color: var(--gs-api-text);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.gs-api__flow-step dd {
+    margin: 0;
+    color: var(--gs-api-muted);
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+/* --------------------------------------------------------------- разделы */
+
+.gs-api__section {
+    margin: 0 0 22px;
+    padding: 26px 26px 10px;
+    border: 1px solid var(--gs-api-line);
+    border-radius: 20px;
+    background: var(--gs-api-surface);
+    scroll-margin-top: 90px;
+}
+
+.gs-api__section .gs-section-title {
+    margin: 0 0 14px;
+    font-size: clamp(21px, 2.6vw, 26px);
+    letter-spacing: -0.01em;
 }
 
 .gs-api__text {
     max-width: 820px;
-    margin: 0 0 14px;
-    color: var(--gs-muted, #94a3b8);
+    margin: 0 0 16px;
+    color: var(--gs-api-muted);
     font-size: 15.5px;
-    line-height: 1.65;
+    line-height: 1.7;
 }
 
 .gs-api__muted {
-    color: var(--gs-muted, #94a3b8);
+    color: var(--gs-api-muted);
     font-size: 13.5px;
 }
 
 .gs-api code {
     padding: 2px 6px;
     border-radius: 6px;
-    background: rgba(99, 102, 241, 0.14);
+    background: rgba(99, 102, 241, 0.2);
     color: #c7d2fe;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 0.92em;
@@ -36,9 +160,9 @@
 .gs-api__code-block {
     margin: 0 0 18px;
     overflow: hidden;
-    border: 1px solid var(--gs-border, rgba(148, 163, 184, 0.14));
-    border-radius: var(--gs-radius, 16px);
-    background: #0b1120;
+    border: 1px solid var(--gs-api-line);
+    border-radius: 14px;
+    background: var(--gs-api-surface-2);
 }
 
 .gs-api__code-head {
@@ -47,13 +171,13 @@
     gap: 10px;
     align-items: center;
     padding: 10px 14px;
-    border-bottom: 1px solid var(--gs-border, rgba(148, 163, 184, 0.14));
-    background: rgba(148, 163, 184, 0.06);
+    border-bottom: 1px solid var(--gs-api-line);
+    background: rgba(148, 163, 184, 0.07);
 }
 
 .gs-api__code-title {
     flex: 1 1 180px;
-    color: #e2e8f0;
+    color: var(--gs-api-text);
     font-size: 14px;
     font-weight: 600;
 }
@@ -69,7 +193,7 @@
     border: 1px solid transparent;
     border-radius: 8px;
     background: transparent;
-    color: var(--gs-muted, #94a3b8);
+    color: var(--gs-api-muted);
     font: inherit;
     font-size: 13px;
     cursor: pointer;
@@ -77,7 +201,7 @@
 }
 
 .gs-api__tab:hover {
-    color: #e2e8f0;
+    color: var(--gs-api-text);
 }
 
 .gs-api__tab.is-active {
@@ -88,17 +212,19 @@
 
 .gs-api__copy {
     padding: 5px 11px;
-    border: 1px solid var(--gs-border, rgba(148, 163, 184, 0.14));
+    border: 1px solid var(--gs-api-line);
     border-radius: 8px;
     background: transparent;
-    color: var(--gs-muted, #94a3b8);
+    color: var(--gs-api-muted);
     font: inherit;
     font-size: 13px;
     cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .gs-api__copy:hover {
-    color: #e2e8f0;
+    border-color: rgba(129, 140, 248, 0.45);
+    color: var(--gs-api-text);
 }
 
 .gs-api pre.gs-api__code {
@@ -117,9 +243,11 @@
 /* --------------------------------------------------------------- таблицы */
 
 .gs-api__tablewrap {
+    margin-bottom: 18px;
     overflow-x: auto;
-    border: 1px solid var(--gs-border, rgba(148, 163, 184, 0.14));
-    border-radius: var(--gs-radius, 16px);
+    border: 1px solid var(--gs-api-line);
+    border-radius: 14px;
+    background: var(--gs-api-surface-2);
 }
 
 .gs-api__table {
@@ -130,21 +258,34 @@
 
 .gs-api__table th,
 .gs-api__table td {
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--gs-border, rgba(148, 163, 184, 0.14));
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--gs-api-line-soft);
     text-align: left;
     vertical-align: top;
 }
 
 .gs-api__table th {
-    background: rgba(148, 163, 184, 0.06);
-    color: #e2e8f0;
-    font-weight: 600;
+    border-bottom: 1px solid var(--gs-api-line);
+    background: rgba(148, 163, 184, 0.08);
+    color: var(--gs-api-muted);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     white-space: nowrap;
 }
 
 .gs-api__table td {
-    color: #cbd5e1;
+    color: var(--gs-api-text);
+}
+
+/* Чередование строк: в длинной таблице глаз не теряет строку. */
+.gs-api__table tbody tr:nth-child(even) {
+    background: rgba(148, 163, 184, 0.04);
+}
+
+.gs-api__table tbody tr:hover {
+    background: rgba(129, 140, 248, 0.08);
 }
 
 .gs-api__table tr:last-child td {
@@ -154,7 +295,15 @@
 .gs-api__table td strong {
     display: block;
     margin-bottom: 4px;
-    color: #f1f5f9;
+    color: #f8fafc;
+    font-size: 15px;
+}
+
+/* Цена — последний столбец: не переносим и отделяем от описания. */
+.gs-api__table td:last-child {
+    color: var(--gs-api-text);
+    font-weight: 600;
+    white-space: nowrap;
 }
 
 /* ----------------------------------------------------------- ключи доступа */
@@ -216,6 +365,44 @@
 
 .gs-api__key strong {
     color: #f1f5f9;
+}
+
+@media (max-width: 1100px) {
+    .gs-api__layout {
+        display: block;
+    }
+
+    /* Оглавление становится лентой над текстом: сбоку ему уже нет места. */
+    .gs-api__toc {
+        position: static;
+        margin-bottom: 22px;
+        padding: 14px 16px;
+    }
+
+    .gs-api__toc-list {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .gs-api__toc-list a {
+        padding: 7px 12px;
+        border: 1px solid var(--gs-api-line);
+        border-radius: 999px;
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 720px) {
+    .gs-api__section {
+        padding: 20px 16px 6px;
+        border-radius: 16px;
+    }
+
+    .gs-api__table th,
+    .gs-api__table td {
+        padding: 11px 12px;
+    }
 }
 
 @media (max-width: 600px) {
