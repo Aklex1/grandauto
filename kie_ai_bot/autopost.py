@@ -252,6 +252,14 @@ def claim_for_publishing(row_id: int) -> bool:
         return cur.rowcount > 0
 
 
+def get_by_id(row_id: int) -> Optional[sqlite3.Row]:
+    """Строка автопоста по её id."""
+    with closing(_connect()) as conn:
+        return conn.execute(
+            "SELECT * FROM autopost_posts WHERE id = ?", (row_id,)
+        ).fetchone()
+
+
 def _get_by_task(task_id: str) -> Optional[sqlite3.Row]:
     with closing(_connect()) as conn:
         return conn.execute(
@@ -619,6 +627,72 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
             )
 
 
+async def deliver_result(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
+    """Готовый результат: либо сразу в канал, либо на модерацию.
+
+    Когда модерация включена, картинка уходит утверждающим пользователям, а
+    в канал попадает только после подтверждения. Иначе — публикуется сразу."""
+    try:
+        import autopost_moderation as moderation
+
+        if moderation.enabled():
+            await moderation.send_for_moderation(bot, row, result_url)
+            return
+    except Exception as e:
+        logger.error("[autopost] модерация недоступна (%s) — публикуем напрямую", e)
+    await publish(bot, row, result_url)
+
+
+async def publish_manual(bot: Bot, prompt: str, photo, source_caption: str = "") -> bool:
+    """Ручная публикация: готовое фото и промпт от модератора уходят в канал
+    в том же формате, что и автопосты — с кнопкой «Повторить это фото»."""
+    prompt = (prompt or "").strip()
+
+    row_id = None
+    base = int(time.time() * 1000)
+    for shift in range(5):
+        # source_chat_id=0 не совпадает ни с одним реальным каналом-источником
+        row_id = add_post(0, base + shift, prompt,
+                          source_caption=source_caption, status="publishing")
+        if row_id:
+            break
+    if not row_id:
+        logger.error("[autopost] ручная публикация: не удалось создать запись")
+        return False
+
+    caption = build_caption(source_caption)
+    keyboard = None
+    if prompt:
+        try:
+            from channel_deeplink import build_keyboard
+
+            keyboard = await build_keyboard(bot, row_id)
+        except Exception as e:
+            logger.warning("[autopost] ручная публикация: кнопку собрать не вышло: %s", e)
+
+    try:
+        sent = await with_retries(
+            lambda: bot.send_photo(
+                chat_id=TARGET_CHAT_ID, photo=photo, caption=caption,
+                parse_mode="HTML", reply_markup=keyboard,
+            ),
+            what="ручная публикация",
+        )
+    except Exception as e:
+        logger.error("[autopost] ручная публикация не удалась: %s", e)
+        _update(row_id, status="error", error=f"ручная публикация: {e}")
+        return False
+
+    _update(row_id, status="published", published_at=_now(),
+            channel_msg_id=sent.message_id, error=None)
+    logger.info("[autopost] ручная публикация: запись %s в канал %s", row_id, TARGET_CHAT_ID)
+
+    if prompt:
+        posted = await _comment_with_prompt(bot, sent.message_id, prompt)
+        _update(row_id, prompt_posted=1 if posted else 0, comment_tries=1)
+    return True
+
+
 def _extract_result_url(task_data: dict) -> Optional[str]:
     """Достаёт ссылку на готовое изображение из ответа Kie AI."""
     import json
@@ -679,7 +753,7 @@ async def _poll_stuck_tasks(bot: Bot) -> None:
             result_url = _extract_result_url(task_data)
             if result_url:
                 logger.info("[autopost] запись %s: результат получен опросом", row["id"])
-                await publish(bot, row, result_url)
+                await deliver_result(bot, row, result_url)
             else:
                 _update(row["id"], status="error", error="Kie вернул успех без ссылки")
         elif state in ("fail", "failed", "error"):
@@ -893,7 +967,7 @@ def setup_autopost_routes(app, bot: Bot) -> None:
         if data.get("code") == 200 and state in ("success", ""):
             result_url = _extract_result_url(task_data)
             if result_url:
-                await publish(bot, row, result_url)
+                await deliver_result(bot, row, result_url)
                 return {"status": "received"}
 
         error = data.get("msg") or f"state={state}"

@@ -6824,6 +6824,15 @@ async def start_handler(message: Message, state: FSMContext):
         
         logging.info(f"[start_handler] Пользователь создан/обновлен в БД: user_id={user_id}, tag={campaign_tag_value}")
 
+        # Модераторам при обычном /start сразу показываем меню публикации
+        if not param:
+            try:
+                import autopost_moderation
+                if autopost_moderation.is_moderator(user_id):
+                    await autopost_moderation.send_publish_menu(message)
+            except Exception as _e:
+                logging.warning(f"[start_handler] меню модератора не показано: {_e}")
+
         partner_result = None
         if referral_code:
             from database import get_connection
@@ -9231,6 +9240,10 @@ async def main():
     setup_autopost_test(dp, bot)
     setup_autopost_fix(dp, bot)
     setup_admin_links(dp, bot)
+
+    # Модерация автопостов и ручная публикация модераторами
+    import autopost_moderation
+    autopost_moderation.setup(dp, bot)
 
     # Каждая задача изолирована: если упадёт фоновая, бот продолжит отвечать,
     # а ошибка попадёт в лог. Раньше падение любой из них останавливало всё.
