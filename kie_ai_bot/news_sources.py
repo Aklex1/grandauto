@@ -84,6 +84,25 @@ def _strip_html(text: str) -> str:
     return re.sub(r"\s+", " ", unescape(text)).strip()
 
 
+# Хвосты, которые ленты дописывают в описание: в посте они выглядят
+# обрывком — «...и при чем тут ИИ. Читать далее»
+SUMMARY_TAILS = [
+    re.compile(r"\s*Читать\s+(далее|дальше|полностью|подробнее).*$", re.I),
+    re.compile(r"\s*Источник\s+изображени[ея]\s*:.*$", re.I),
+    re.compile(r"\s*(The post|Запись|Сообщение)\s+.{0,200}?\s+(появил(ась|ся)\s+сначала|first appeared)\s+на?.*$", re.I),
+    re.compile(r"\s*Подробнее\s*[.…]*\s*$", re.I),
+]
+
+
+def clean_summary(text: str) -> str:
+    """Описание без служебных хвостов ленты."""
+    text = (text or "").strip()
+    for pattern in SUMMARY_TAILS:
+        text = pattern.sub("", text)
+    # точку в конце оставляем, обрезаем только повисшие разделители
+    return text.strip().rstrip(",;:—- ").strip()
+
+
 def _image_from_item(item: ET.Element) -> Optional[str]:
     """Картинка из самой ленты: enclosure, media:content или первый img."""
     for tag in ("enclosure", f"{MEDIA_NS}content", f"{MEDIA_NS}thumbnail"):
@@ -182,7 +201,7 @@ async def fetch_source(client: httpx.AsyncClient, source: Source, limit: int = 2
     for item in (root.findall(".//item") or [])[:limit]:
         title = _strip_html(_text(item.find("title")))
         link = _text(item.find("link"))
-        summary = _strip_html(_text(item.find("description")))[:600]
+        summary = clean_summary(_strip_html(_text(item.find("description"))))[:600]
         if not title or not link:
             continue
         if not source.profile and not is_about_ai(title, summary):
