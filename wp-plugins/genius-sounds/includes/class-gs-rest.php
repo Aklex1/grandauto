@@ -138,6 +138,14 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_voice_list'),
             'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
+        // Ручной возврат на баланс: сбои случаются, и оператор должен уметь
+        // вернуть деньги, не залезая в базу. Каждый возврат попадает в журнал.
+        register_rest_route(self::NS, '/voice/refund', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_voice_refund'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/voice/song', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_voice_song'),
@@ -1014,8 +1022,16 @@ class GS_Rest {
             return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
         }
 
-        $seconds = GS_Lab::media_duration(GS_Lab::local_path($url));
-        $res = GS_Voice::start_phrase($url, $seconds);
+        try {
+            $seconds = GS_Lab::media_duration(GS_Lab::local_path($url));
+            $res = GS_Voice::start_phrase($url, $seconds);
+        } catch (Throwable $e) {
+            if ($cost > 0) {
+                GS_SFX::refund($user_id, $cost);
+            }
+            error_log('genius-sounds: создание голоса — ' . $e->getMessage());
+            return new WP_Error('gs_voice_failed', 'Не получилось начать создание голоса. Деньги вернулись на баланс.', array('status' => 500));
+        }
         if (empty($res['ok'])) {
             if ($cost > 0) {
                 GS_SFX::refund($user_id, $cost);
@@ -1150,6 +1166,49 @@ class GS_Rest {
         ));
     }
 
+    const OPT_REFUND_LOG = 'gs_refund_log';
+
+    public static function handle_voice_refund($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $user_id = (int) ($params['user_id'] ?? 0);
+        $amount  = round((float) ($params['amount'] ?? 0), 2);
+        $reason  = sanitize_text_field((string) ($params['reason'] ?? ''));
+
+        if ($user_id <= 0 || !get_userdata($user_id)) {
+            return new WP_Error('gs_bad_user', 'Пользователь не найден', array('status' => 400));
+        }
+        if ($amount <= 0 || $amount > 100000) {
+            return new WP_Error('gs_bad_amount', 'Некорректная сумма', array('status' => 400));
+        }
+
+        $before = GS_SFX::get_balance($user_id);
+        if (!GS_SFX::refund($user_id, $amount)) {
+            return new WP_Error('gs_refund_failed', 'Не удалось вернуть на баланс', array('status' => 500));
+        }
+        $after = GS_SFX::get_balance($user_id);
+
+        $log = (array) get_option(self::OPT_REFUND_LOG, array());
+        $log[] = array(
+            'time'   => current_time('mysql'),
+            'by'     => get_current_user_id(),
+            'user'   => $user_id,
+            'amount' => $amount,
+            'before' => $before,
+            'after'  => $after,
+            'reason' => mb_substr($reason, 0, 200),
+        );
+        update_option(self::OPT_REFUND_LOG, array_slice($log, -100), false);
+
+        return rest_ensure_response(array(
+            'success' => true,
+            'before'  => $before,
+            'after'   => $after,
+        ));
+    }
+
     public static function handle_voice_song($request) {
         $user_id = get_current_user_id();
         $params  = $request->get_json_params();
@@ -1174,7 +1233,18 @@ class GS_Rest {
             return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
         }
 
-        $res = GS_Voice::create_song($voice_id, $fields);
+        // Плата снята до запуска, поэтому любая неожиданность здесь — включая
+        // ошибку в самом коде — обязана вернуть деньги, а не оставить человека
+        // с белым экраном и списанным балансом.
+        try {
+            $res = GS_Voice::create_song($voice_id, $fields);
+        } catch (Throwable $e) {
+            if ($cost > 0) {
+                GS_SFX::refund($user_id, $cost);
+            }
+            error_log('genius-sounds: песня своим голосом — ' . $e->getMessage());
+            return new WP_Error('gs_song_failed', 'Не получилось запустить генерацию. Деньги вернулись на баланс.', array('status' => 500));
+        }
         if (empty($res['ok'])) {
             if ($cost > 0) {
                 GS_SFX::refund($user_id, $cost);

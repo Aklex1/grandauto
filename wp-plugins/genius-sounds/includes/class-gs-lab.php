@@ -977,8 +977,11 @@ class GS_Lab {
         return (string) $message;
     }
 
-    /** Короткое название трека из описания — когда пользователь его не задал. */
-    private static function music_title($prompt) {
+    /**
+     * Короткое название трека из описания — когда пользователь его не задал.
+     * Им пользуется и песня своим голосом, поэтому метод открытый.
+     */
+    public static function music_title($prompt) {
         $prompt = trim(preg_replace('~\s+~u', ' ', (string) $prompt));
         if ($prompt === '') {
             return 'Трек';
