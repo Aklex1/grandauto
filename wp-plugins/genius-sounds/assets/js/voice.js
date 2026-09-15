@@ -377,8 +377,10 @@
                     stopTimer();
                     show('empty');
                     fillVoices(d.voices, d.voice_id);
+                    if (steps) { steps.hidden = true; }
+                    if (ready) { ready.hidden = false; }
                     step(3);
-                    note('Голос готов. Теперь напишите текст песни.', 'ok');
+                    note('Голос готов. Больше его создавать не нужно — дальше только текст и стиль.', 'ok');
                 } else if (d.status === 'failed') {
                     stopTimer();
                     show('empty');
@@ -501,8 +503,33 @@
         note('');
     });
 
-    // Голос уже есть — сразу к песне.
-    if (cfg.hasVoice) {
+    /* ------------------------------------------- голос уже есть */
+
+    // С готовым голосом лестница из шагов не нужна: человек пришёл за песней,
+    // а не за повторной регистрацией голоса.
+    var steps = document.getElementById('gs-voice-steps');
+    var more = document.getElementById('gs-voice-more');
+    var back = document.getElementById('gs-voice-back');
+    var ready = document.querySelector('.gs-voice__ready');
+
+    function songMode() {
+        if (steps) { steps.hidden = true; }
+        if (ready) { ready.hidden = false; }
         step(3);
+        note('');
+    }
+
+    function voiceMode() {
+        if (steps) { steps.hidden = false; }
+        if (ready) { ready.hidden = true; }
+        step(1);
+        note('');
+    }
+
+    if (more) { more.addEventListener('click', voiceMode); }
+    if (back) { back.addEventListener('click', songMode); }
+
+    if (cfg.hasVoice) {
+        songMode();
     }
 })();

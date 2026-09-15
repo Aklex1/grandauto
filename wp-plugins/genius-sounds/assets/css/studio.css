@@ -1004,3 +1004,68 @@
     width: 100%;
     max-width: 320px;
 }
+
+/* Готовый голос: песня сразу, создание голоса — вторым планом */
+
+.gs-voice__ready {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 0 0 16px;
+    color: var(--gs-muted);
+}
+
+.gs-linkbtn {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--gs-primary-light);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.gs-linkbtn:hover {
+    color: var(--gs-accent);
+}
+
+.gs-voice__text--small {
+    margin-top: 12px;
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+/* Два равных способа отдать голос: запись и загрузка */
+
+.gs-source {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.gs-source__way {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface-2);
+}
+
+.gs-source__title {
+    color: var(--gs-text);
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.gs-source__way .gs-rec {
+    margin-bottom: 0;
+}
+
+.gs-source__way .gs-hint {
+    margin-top: auto;
+}

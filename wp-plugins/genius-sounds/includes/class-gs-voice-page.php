@@ -71,7 +71,16 @@ class GS_Voice_Page {
                 </section>
             <?php else: ?>
 
-            <ol class="gs-wizard" id="gs-voice-steps">
+            <?php $has_voice = !empty($voices); ?>
+
+            <?php if ($has_voice): ?>
+                <p class="gs-voice__ready">
+                    Ваш голос готов — песни делаются в один шаг.
+                    <button type="button" class="gs-linkbtn" id="gs-voice-more">Создать ещё один голос</button>
+                </p>
+            <?php endif; ?>
+
+            <ol class="gs-wizard" id="gs-voice-steps"<?php echo $has_voice ? ' hidden' : ''; ?>>
                 <li class="gs-wizard__step is-active" data-step="1"><span>1</span> Образец голоса</li>
                 <li class="gs-wizard__step" data-step="2"><span>2</span> Проверочная фраза</li>
                 <li class="gs-wizard__step" data-step="3"><span>3</span> Песня</li>
@@ -87,16 +96,21 @@ class GS_Voice_Page {
                             Двадцать секунд обычной речи без музыки и посторонних звуков. Говорите ровно,
                             ближе к микрофону — по этой записи нейросеть запомнит ваш тембр.
                         </p>
-                        <div class="gs-rec" data-rec="sample">
-                            <button type="button" class="gs-btn gs-btn--ghost gs-rec__go" data-action="rec">Записать с микрофона</button>
-                            <span class="gs-rec__time" data-role="time">0:00</span>
-                            <audio class="gs-rec__play" data-role="play" controls hidden></audio>
-                        </div>
-                        <p class="gs-voice__or">или</p>
-                        <div class="gs-field">
-                            <label class="gs-label" for="gs-voice-sample">Загрузить готовую запись</label>
-                            <input id="gs-voice-sample" class="gs-input gs-file" type="file" accept="audio/*">
-                            <span class="gs-hint">MP3, WAV, M4A или OGG, до 10 МБ.</span>
+                        <div class="gs-source">
+                            <div class="gs-source__way">
+                                <span class="gs-source__title">Записать прямо здесь</span>
+                                <div class="gs-rec" data-rec="sample">
+                                    <button type="button" class="gs-btn gs-btn--ghost gs-rec__go" data-action="rec">Записать с микрофона</button>
+                                    <span class="gs-rec__time" data-role="time">0:00</span>
+                                    <audio class="gs-rec__play" data-role="play" controls hidden></audio>
+                                </div>
+                                <span class="gs-hint">Двадцать секунд обычной речи. Остановить можно в любой момент.</span>
+                            </div>
+                            <div class="gs-source__way">
+                                <span class="gs-source__title">Загрузить готовую запись</span>
+                                <input id="gs-voice-sample" class="gs-input gs-file" type="file" accept="audio/*">
+                                <span class="gs-hint">MP3, WAV, M4A или OGG, до 10 МБ. Подойдёт запись с диктофона.</span>
+                            </div>
                         </div>
                         <div class="gs-form__foot">
                             <div class="gs-balance">
@@ -107,26 +121,36 @@ class GS_Voice_Page {
                             <button class="gs-btn gs-btn--primary gs-btn--lg" type="button" id="gs-voice-start" disabled>
                                 Создать голос за <?php echo esc_html(number_format_i18n(GS_Voice::voice_cost(), 0)); ?> ₽
                             </button>
+                            <?php if ($has_voice): ?>
+                                <button type="button" class="gs-linkbtn" id="gs-voice-back">Вернуться к песне</button>
+                            <?php endif; ?>
                         </div>
                     </section>
 
                     <!-- Шаг 2 -->
                     <section class="gs-voice__step" data-step="2" hidden>
-                        <h2 class="gs-voice__title">Прочитайте фразу вслух</h2>
-                        <p class="gs-voice__text">
-                            Эту фразу сервис придумал только что — так он убеждается, что голос ваш,
-                            а не запись из чужого ролика. Прочитайте её целиком, обычным голосом.
-                        </p>
+                        <h2 class="gs-voice__title">Прочитайте эту фразу вслух</h2>
                         <blockquote class="gs-voice__phrase" id="gs-voice-phrase">Готовим фразу…</blockquote>
-                        <div class="gs-rec" data-rec="verify">
-                            <button type="button" class="gs-btn gs-btn--ghost gs-rec__go" data-action="rec" disabled>Записать фразу</button>
-                            <span class="gs-rec__time" data-role="time">0:00</span>
-                            <audio class="gs-rec__play" data-role="play" controls hidden></audio>
-                        </div>
-                        <p class="gs-voice__or">или</p>
-                        <div class="gs-field">
-                            <label class="gs-label" for="gs-voice-verify">Загрузить запись фразы</label>
-                            <input id="gs-voice-verify" class="gs-input gs-file" type="file" accept="audio/*">
+                        <p class="gs-voice__text gs-voice__text--small">
+                            Займёт десять секунд и только один раз: без этого поставщик голос не создаёт.
+                            Так подтверждается, что голос ваш, — иначе любую запись из чужого ролика
+                            можно было бы превратить в поющий голос её владельца.
+                        </p>
+                        <div class="gs-source">
+                            <div class="gs-source__way">
+                                <span class="gs-source__title">Записать прямо здесь</span>
+                                <div class="gs-rec" data-rec="verify">
+                                    <button type="button" class="gs-btn gs-btn--ghost gs-rec__go" data-action="rec" disabled>Записать фразу</button>
+                                    <span class="gs-rec__time" data-role="time">0:00</span>
+                                    <audio class="gs-rec__play" data-role="play" controls hidden></audio>
+                                </div>
+                                <span class="gs-hint">Тем же голосом и в том же месте, что и образец.</span>
+                            </div>
+                            <div class="gs-source__way">
+                                <span class="gs-source__title">Загрузить запись фразы</span>
+                                <input id="gs-voice-verify" class="gs-input gs-file" type="file" accept="audio/*">
+                                <span class="gs-hint">Если микрофон в браузере недоступен — запишите на телефон.</span>
+                            </div>
                         </div>
                         <div class="gs-field">
                             <label class="gs-label" for="gs-voice-name">Название голоса</label>
