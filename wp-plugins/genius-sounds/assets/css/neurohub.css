@@ -421,3 +421,16 @@ body.kie-neurohub-body .kn-account-menu-item:hover {
         text-align: center;
     }
 }
+
+/* См. blog.css: в фокусе тема перекрашивает текст в тёмный. */
+
+body.kie-neurohub-body input[type="text"]:focus,
+body.kie-neurohub-body input[type="email"]:focus,
+body.kie-neurohub-body input[type="password"]:focus,
+body.kie-neurohub-body input[type="number"]:focus,
+body.kie-neurohub-body input[type="search"]:focus,
+body.kie-neurohub-body textarea:focus,
+body.kie-neurohub-body select:focus {
+    color: #f1f5f9 !important;
+    -webkit-text-fill-color: #f1f5f9 !important;
+}

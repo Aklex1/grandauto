@@ -878,9 +878,23 @@ body.gs-studio-page .w-grid {
 .gs-wrap textarea,
 .gs-wrap select,
 .gs-wrap .gs-search__input,
-.gs-wrap .gs-cta__input {
+.gs-wrap .gs-cta__input,
+/* В фокусе тема ставит color: var(--color-content-heading) !important —
+   тёмный цвет заголовков. На светлой теме это незаметно, у нас текст
+   пропадал ровно в тот момент, когда его начинают набирать. */
+.gs-wrap input[type="text"]:focus,
+.gs-wrap input[type="search"]:focus,
+.gs-wrap input[type="number"]:focus,
+.gs-wrap input[type="email"]:focus,
+.gs-wrap input[type="url"]:focus,
+.gs-wrap textarea:focus,
+.gs-wrap select:focus,
+.gs-wrap .gs-input:focus,
+.gs-wrap .gs-textarea:focus,
+.gs-wrap .gs-select:focus {
     background-color: rgba(8, 12, 20, 0.82) !important;
     color: var(--gs-text) !important;
+    -webkit-text-fill-color: var(--gs-text) !important;
     border-color: var(--gs-border);
     caret-color: var(--gs-primary-light);
 }

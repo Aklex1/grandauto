@@ -461,3 +461,23 @@ body.gs-post-page .w-post-elm.post_content .postTitle {
     color: #f1f5f9 !important;
     text-decoration: none !important;
 }
+
+/* Набранный текст в полях: тема в фокусе ставит color заголовков !important,
+   и на тёмном фоне буквы пропадают ровно во время набора. */
+
+body.gs-blog-page input[type="text"]:focus,
+body.gs-blog-page input[type="search"]:focus,
+body.gs-blog-page input[type="email"]:focus,
+body.gs-blog-page input[type="url"]:focus,
+body.gs-blog-page textarea:focus,
+body.gs-blog-page select:focus,
+body.gs-post-page input[type="text"]:focus,
+body.gs-post-page input[type="search"]:focus,
+body.gs-post-page input[type="email"]:focus,
+body.gs-post-page input[type="url"]:focus,
+body.gs-post-page textarea:focus,
+body.gs-post-page select:focus {
+    background-color: #0d1320 !important;
+    color: #f1f5f9 !important;
+    -webkit-text-fill-color: #f1f5f9 !important;
+}

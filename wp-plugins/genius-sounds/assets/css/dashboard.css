@@ -511,3 +511,18 @@ body.gs-dashboard .gs-keys__list a:hover {
         padding: 24px 16px;
     }
 }
+
+/* См. blog.css: в фокусе тема перекрашивает текст в тёмный. */
+
+body.gs-dashboard input[type="text"]:focus,
+body.gs-dashboard input[type="email"]:focus,
+body.gs-dashboard input[type="password"]:focus,
+body.gs-dashboard input[type="number"]:focus,
+body.gs-dashboard input[type="search"]:focus,
+body.gs-dashboard input[type="url"]:focus,
+body.gs-dashboard textarea:focus,
+body.gs-dashboard select:focus,
+body.gs-dashboard .search-input:focus {
+    color: #f1f5f9 !important;
+    -webkit-text-fill-color: #f1f5f9 !important;
+}
