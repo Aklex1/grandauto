@@ -920,3 +920,215 @@ body.gs-studio-page .w-grid {
     box-shadow: 0 0 0 1000px #0d1320 inset !important;
     transition: background-color 9999s ease-in-out 0s;
 }
+
+/* ------------------------------------------------- Пополнение на месте */
+
+body.gs-topup-open {
+    overflow: hidden;
+}
+
+.gs-topup {
+    /* Окно печатается в подвале, вне .gs-wrap, поэтому переменные темы
+       объявляем ему заново — иначе фон и цвета оказываются пустыми. */
+    --gs-surface: #131b2b;
+    --gs-surface-2: #182236;
+    --gs-surface-hover: #1e2a42;
+    --gs-border: rgba(148, 163, 184, 0.14);
+    --gs-border-strong: rgba(129, 140, 248, 0.38);
+    --gs-text: #f1f5f9;
+    --gs-muted: #94a3b8;
+    --gs-primary: #6366f1;
+    --gs-primary-light: #818cf8;
+    --gs-accent: #22d3ee;
+    --gs-ok: #34d399;
+    --gs-radius: 16px;
+    --gs-radius-sm: 10px;
+    --gs-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
+    --gs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.gs-topup[hidden] {
+    display: none;
+}
+
+.gs-topup__veil {
+    position: absolute;
+    inset: 0;
+    background: rgba(4, 7, 13, 0.78);
+    backdrop-filter: blur(3px);
+}
+
+.gs-topup__box {
+    position: relative;
+    width: 100%;
+    max-width: 440px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: 26px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+    box-shadow: var(--gs-shadow);
+    color: var(--gs-text);
+}
+
+.gs-topup__x {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    padding: 4px 8px;
+    border: 0;
+    background: none;
+    color: var(--gs-muted);
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.gs-topup__x:hover {
+    color: var(--gs-text);
+}
+
+.gs-topup__title {
+    margin: 0 0 6px;
+    font-size: 21px;
+    color: var(--gs-text);
+}
+
+.gs-topup__lead {
+    margin: 0 0 18px;
+    color: var(--gs-muted);
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+.gs-topup__amounts {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.gs-topup__sum {
+    padding: 14px 10px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface-2);
+    color: var(--gs-text);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.18s var(--gs-ease), background 0.18s var(--gs-ease);
+}
+
+.gs-topup__sum:hover {
+    border-color: var(--gs-border-strong);
+    background: var(--gs-surface-hover);
+}
+
+.gs-topup__row {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.gs-topup__row .gs-input {
+    flex: 1;
+}
+
+.gs-topup__note {
+    margin: 16px 0 0;
+    min-height: 20px;
+    color: var(--gs-muted);
+    font-size: 14px;
+}
+
+.gs-topup__note.is-error {
+    color: #fca5a5;
+}
+
+.gs-topup__note.is-ok {
+    color: var(--gs-ok);
+}
+
+.gs-topup__go {
+    display: block;
+    margin-top: 12px;
+    text-align: center;
+}
+
+.gs-topup__hint {
+    margin: 14px 0 0;
+    color: var(--gs-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+@media (max-width: 420px) {
+    .gs-topup__amounts {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+/* Кнопки и поле внутри окна: вне .gs-wrap общие правила до них не достают. */
+
+.gs-topup .gs-input {
+    width: 100%;
+    padding: 13px 16px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background-color: rgba(8, 12, 20, 0.82) !important;
+    color: var(--gs-text) !important;
+    -webkit-text-fill-color: var(--gs-text) !important;
+    font-size: 15px;
+    font-family: inherit;
+    box-shadow: none;
+}
+
+.gs-topup .gs-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--gs-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.gs-topup .gs-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 20px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface-2);
+    color: var(--gs-text);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.gs-topup .gs-btn--primary {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--gs-primary), var(--gs-primary-light));
+    color: #fff;
+}
+
+.gs-topup .gs-btn--lg {
+    padding: 15px 24px;
+    font-size: 16px;
+}
+
+.gs-topup .gs-btn:hover {
+    border-color: var(--gs-border-strong);
+}

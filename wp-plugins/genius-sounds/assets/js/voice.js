@@ -443,6 +443,95 @@
         });
     });
 
+    /* ------------------------------------------------------- архив песен */
+
+    var archive = document.getElementById('gs-voice-archive');
+    var archiveList = document.getElementById('gs-voice-archive-list');
+
+    function renderArchive(songs) {
+        if (!archiveList || !songs) { return; }
+        archiveList.innerHTML = '';
+        songs.forEach(function (song) {
+            var item = document.createElement('article');
+            item.className = 'gs-archive__item';
+            item.setAttribute('data-song', song.id);
+
+            var head = document.createElement('div');
+            head.className = 'gs-archive__head';
+            var title = document.createElement('span');
+            title.className = 'gs-archive__title';
+            title.textContent = song.title;
+            head.appendChild(title);
+            if (song.created) {
+                var date = document.createElement('span');
+                date.className = 'gs-archive__date';
+                date.textContent = new Date(song.created * 1000).toLocaleDateString('ru-RU');
+                head.appendChild(date);
+            }
+            item.appendChild(head);
+
+            var audio = document.createElement('audio');
+            audio.controls = true;
+            audio.preload = 'none';
+            audio.src = song.url;
+            audio.className = 'gs-archive__audio';
+            item.appendChild(audio);
+
+            var actions = document.createElement('div');
+            actions.className = 'gs-archive__actions';
+
+            var link = document.createElement('a');
+            link.className = 'gs-btn gs-btn--ghost';
+            link.href = song.url;
+            link.setAttribute('download', '');
+            link.textContent = 'Скачать MP3';
+            actions.appendChild(link);
+
+            if (song.published) {
+                var done = document.createElement('span');
+                done.className = 'gs-archive__done';
+                done.textContent = 'В галерее';
+                actions.appendChild(done);
+            } else {
+                var publish = document.createElement('button');
+                publish.type = 'button';
+                publish.className = 'gs-btn gs-btn--ghost';
+                publish.setAttribute('data-publish', song.id);
+                publish.textContent = 'Опубликовать в галерее';
+                actions.appendChild(publish);
+            }
+
+            item.appendChild(actions);
+            archiveList.appendChild(item);
+        });
+        if (archive) { archive.hidden = songs.length === 0; }
+    }
+
+    // Публикация: имя автора спрашиваем прямо здесь, чтобы не гонять
+    // человека в настройки профиля ради одной подписи.
+    if (archiveList) {
+        archiveList.addEventListener('click', function (e) {
+            var button = e.target.closest('[data-publish]');
+            if (!button) { return; }
+            var author = window.prompt('Как подписать песню в галерее?', cfg.displayName || '');
+            if (author === null) { return; }
+            button.disabled = true;
+            button.textContent = 'Публикуем…';
+            api('voice/publish', { method: 'POST', body: {
+                song_id: button.getAttribute('data-publish'), author: author
+            } }).then(function (res) {
+                if (!res.ok) {
+                    button.disabled = false;
+                    button.textContent = 'Опубликовать в галерее';
+                    note((res.data && res.data.message) || 'Не удалось опубликовать', 'error');
+                    return;
+                }
+                renderArchive(res.data.songs);
+                note('Песня в галерее.', 'ok');
+            });
+        });
+    }
+
     function pollSong() {
         stopTimer();
         var tries = 0;
@@ -454,10 +543,11 @@
                 if (d.status === 'completed') {
                     stopTimer();
                     renderFiles(d.files);
+                    renderArchive(d.archive);
                     setBalance(d.balance);
                     els.sing.disabled = false;
                     show('ready');
-                    note('');
+                    note('Песня сохранена в ваш архив ниже — её можно скачать и опубликовать в галерее.', 'ok');
                 } else if (d.status === 'failed') {
                     stopTimer();
                     els.sing.disabled = false;

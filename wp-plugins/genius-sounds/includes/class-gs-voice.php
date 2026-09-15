@@ -34,6 +34,8 @@ class GS_Voice {
 
     const SONG_MODEL  = 'ai-music-api/generate';
     const META_VOICES = 'gs_voices';
+    const META_SONGS  = 'gs_voice_songs';
+    const SONGS_KEEP  = 50;
 
     /** Отрезок образца, который поставщик разбирает как вокал. */
     const SAMPLE_START = 0;
@@ -105,6 +107,102 @@ class GS_Voice {
             }
         }
         return false;
+    }
+
+    /* ---------------------------------------------------------------------
+     * Архив песен пользователя
+     *
+     * Ссылки поставщика живут считаные часы, поэтому готовую песню сразу
+     * копируем к себе: человек должен иметь возможность скачать её и через
+     * неделю, а не только в минуту генерации.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * @return array<int,array{id:string,title:string,style:string,url:string,created:int,published:bool}>
+     */
+    public static function own_songs($user_id) {
+        $list = get_user_meta((int) $user_id, self::META_SONGS, true);
+        if (!is_array($list)) {
+            return array();
+        }
+        $out = array();
+        foreach ($list as $row) {
+            if (empty($row['url'])) {
+                continue;
+            }
+            $out[] = array(
+                'id'        => (string) ($row['id'] ?? ''),
+                'title'     => (string) ($row['title'] ?? 'Песня'),
+                'style'     => (string) ($row['style'] ?? ''),
+                'url'       => (string) $row['url'],
+                'created'   => (int) ($row['created'] ?? 0),
+                'published' => !empty($row['published']),
+            );
+        }
+        return $out;
+    }
+
+    public static function find_song($user_id, $song_id) {
+        foreach (self::own_songs($user_id) as $song) {
+            if ($song['id'] === (string) $song_id) {
+                return $song;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Сохраняет готовые варианты в архив.
+     *
+     * @param array $files Результат song_state(): label, url, kind.
+     * @return array Архив после добавления.
+     */
+    public static function remember_songs($user_id, $files, $title, $style) {
+        $list = get_user_meta((int) $user_id, self::META_SONGS, true);
+        $list = is_array($list) ? $list : array();
+
+        $n = 0;
+        foreach ((array) $files as $file) {
+            $url = (string) ($file['url'] ?? '');
+            if ($url === '') {
+                continue;
+            }
+            $local = GS_Songs::store_copy($url);
+            if ($local === '') {
+                continue; // не скопировалось — в архив не кладём битую ссылку
+            }
+            $n++;
+            $name = trim((string) $title);
+            if ($name === '') {
+                $name = 'Песня';
+            }
+            array_unshift($list, array(
+                'id'      => 'song-' . wp_generate_password(10, false, false),
+                'title'   => mb_substr($name, 0, 80) . ($n > 1 ? ' — вариант ' . $n : ''),
+                'style'   => mb_substr((string) $style, 0, 120),
+                'url'     => $local,
+                'created' => time(),
+            ));
+        }
+
+        $list = array_slice($list, 0, self::SONGS_KEEP);
+        update_user_meta((int) $user_id, self::META_SONGS, $list);
+        return self::own_songs($user_id);
+    }
+
+    /** Отметка «уже в галерее» — чтобы не предлагать публиковать дважды. */
+    public static function mark_published($user_id, $song_id) {
+        $list = get_user_meta((int) $user_id, self::META_SONGS, true);
+        if (!is_array($list)) {
+            return;
+        }
+        foreach ($list as &$row) {
+            if ((string) ($row['id'] ?? '') === (string) $song_id) {
+                $row['published'] = true;
+            }
+        }
+        unset($row);
+        update_user_meta((int) $user_id, self::META_SONGS, $list);
     }
 
     /* ---------------------------------------------------------------------

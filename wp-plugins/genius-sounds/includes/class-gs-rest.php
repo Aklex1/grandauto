@@ -138,6 +138,30 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_voice_list'),
             'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
+        // Наполнение галереи руками: положить показательную песню или убрать
+        // чужую. Только для администратора.
+        register_rest_route(self::NS, '/songs/seed', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_songs_seed'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/songs/remove', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_songs_remove'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
+        register_rest_route(self::NS, '/voice/archive', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_voice_archive'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/voice/publish', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_voice_publish'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+
         // Ручной возврат на баланс: сбои случаются, и оператор должен уметь
         // вернуть деньги, не залезая в базу. Каждый возврат попадает в журнал.
         register_rest_route(self::NS, '/voice/refund', array(
@@ -1256,6 +1280,8 @@ class GS_Rest {
             'user_id' => $user_id,
             'cost'    => $cost,
             'at'      => time(),
+            'title'   => $fields['title'] !== '' ? $fields['title'] : GS_Lab::music_title($fields['prompt'] !== '' ? $fields['prompt'] : $fields['lyrics']),
+            'style'   => $fields['style'],
         ), false);
 
         return rest_ensure_response(array(
@@ -1275,7 +1301,16 @@ class GS_Rest {
         }
 
         $state = GS_Voice::song_state($task_id);
+        $archive = array();
         if ($state['status'] === 'completed') {
+            // Ссылки поставщика живут недолго, поэтому кладём копии в архив
+            // сразу — иначе скачать песню завтра уже не выйдет.
+            $archive = GS_Voice::remember_songs(
+                $user_id,
+                $state['files'],
+                (string) ($meta['title'] ?? ''),
+                (string) ($meta['style'] ?? '')
+            );
             delete_option('gs_voice_song_' . $task_id);
         } elseif ($state['status'] === 'failed') {
             if ((float) ($meta['cost'] ?? 0) > 0) {
@@ -1289,6 +1324,79 @@ class GS_Rest {
             'files'   => $state['files'],
             'message' => $state['message'],
             'balance' => GS_SFX::get_balance($user_id),
+            'archive' => $archive,
+        ));
+    }
+
+    public static function handle_songs_seed($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $res = GS_Songs::publish(
+            get_current_user_id(),
+            (string) ($params['url'] ?? ''),
+            (string) ($params['title'] ?? ''),
+            (string) ($params['author'] ?? ''),
+            (string) ($params['style'] ?? '')
+        );
+        if (empty($res['ok'])) {
+            return new WP_Error('gs_seed_failed', $res['message'], array('status' => 400));
+        }
+        return rest_ensure_response(array(
+            'success' => true,
+            'message' => $res['message'],
+            'total'   => GS_Songs::count(),
+            'gallery' => GS_Songs::get_url(),
+        ));
+    }
+
+    public static function handle_songs_remove($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $removed = GS_Songs::remove((string) ($params['id'] ?? ''));
+        return rest_ensure_response(array('success' => $removed, 'total' => GS_Songs::count()));
+    }
+
+    public static function handle_voice_archive($request) {
+        return rest_ensure_response(array(
+            'songs'   => GS_Voice::own_songs(get_current_user_id()),
+            'gallery' => GS_Songs::get_url(),
+        ));
+    }
+
+    public static function handle_voice_publish($request) {
+        $user_id = get_current_user_id();
+        $params  = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        $song_id = sanitize_text_field((string) ($params['song_id'] ?? ''));
+        $song = GS_Voice::find_song($user_id, $song_id);
+        if (!$song) {
+            return new WP_Error('gs_no_song', 'Песня не найдена в вашем архиве', array('status' => 404));
+        }
+
+        $user = get_userdata($user_id);
+        $author = trim(sanitize_text_field((string) ($params['author'] ?? '')));
+        if ($author === '') {
+            $author = $user ? $user->display_name : 'Аноним';
+        }
+
+        $res = GS_Songs::publish($user_id, $song['url'], $song['title'], $author, $song['style']);
+        if (empty($res['ok'])) {
+            return new WP_Error('gs_publish_failed', $res['message'], array('status' => 500));
+        }
+        GS_Voice::mark_published($user_id, $song_id);
+
+        return rest_ensure_response(array(
+            'success' => true,
+            'message' => $res['message'],
+            'gallery' => GS_Songs::get_url(),
+            'songs'   => GS_Voice::own_songs($user_id),
         ));
     }
 

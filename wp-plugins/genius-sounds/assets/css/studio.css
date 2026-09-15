@@ -1069,3 +1069,99 @@
 .gs-source__way .gs-hint {
     margin-top: auto;
 }
+
+/* Архив песен пользователя и галерея */
+
+.gs-archive,
+.gs-songs-teaser {
+    margin-top: clamp(30px, 4vw, 48px);
+}
+
+.gs-archive__lead,
+.gs-songs-teaser__lead {
+    margin: 8px 0 16px;
+    color: var(--gs-muted);
+}
+
+.gs-archive__list,
+.gs-songs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.gs-archive__item,
+.gs-song {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+}
+
+.gs-archive__head,
+.gs-song__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.gs-archive__title,
+.gs-song__title {
+    margin: 0;
+    color: var(--gs-text);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.gs-archive__date,
+.gs-song__author {
+    flex: none;
+    color: var(--gs-muted);
+    font-size: 13px;
+}
+
+.gs-song__author::before {
+    content: "♪ ";
+}
+
+.gs-song__style {
+    margin: 0;
+    color: var(--gs-muted);
+    font-size: 14px;
+}
+
+.gs-archive__audio,
+.gs-song__audio {
+    width: 100%;
+}
+
+.gs-archive__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: auto;
+}
+
+.gs-archive__done {
+    color: var(--gs-ok);
+    font-size: 14px;
+}
+
+.gs-songs-teaser__more {
+    margin: 14px 0 0;
+}
+
+.gs-songs__empty {
+    margin: 0;
+    padding: 24px;
+    border: 1px dashed var(--gs-border);
+    border-radius: var(--gs-radius);
+    color: var(--gs-muted);
+    text-align: center;
+}

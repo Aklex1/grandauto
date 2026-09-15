@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 1.60.5
+ * Version: 1.62.1
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.60.5');
+define('GS_VERSION', '1.62.1');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -28,6 +28,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-index.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-landing.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-songs.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-musicai.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-payments.php';
@@ -78,6 +79,7 @@ class Genius_Sounds_Plugin {
         GS_Sitemap::boot();
         GS_Index::boot();
         GS_Landing::boot();
+        GS_Songs::boot();
         GS_Links::boot();
         GS_Lab::boot();
         GS_Manual::boot();
@@ -97,6 +99,7 @@ class Genius_Sounds_Plugin {
         GS_Pages::ensure_pages();
         GS_Lab::ensure_pages();
         GS_Landing::ensure_pages();
+        GS_Songs::ensure_page();
         GS_Api_Page::ensure_page();
         flush_rewrite_rules();
     }
@@ -112,6 +115,7 @@ class Genius_Sounds_Plugin {
         GS_Lab_Page::register_shortcodes();
         GS_Landing::register_shortcodes();
         GS_Voice_Page::register_shortcodes();
+        GS_Songs::register_shortcodes();
         GS_Api_Page::register_shortcodes();
 
         // Разовая инициализация после обновления версии плагина.
@@ -126,6 +130,7 @@ class Genius_Sounds_Plugin {
                 GS_Pages::ensure_pages();
                 GS_Lab::ensure_pages();
                 GS_Landing::ensure_pages();
+                GS_Songs::ensure_page();
                 GS_Api_Page::ensure_page();
                 add_action('shutdown', 'flush_rewrite_rules');
             } catch (Throwable $e) {
@@ -150,7 +155,7 @@ class Genius_Sounds_Plugin {
         $dashboard = GS_Dashboard::enabled() && GS_Dashboard::is_page();
         $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
             || GS_Pages::is_studio_request() || GS_Lab::current_service() || GS_Landing::current()
-            || $blog || $api || $dashboard;
+            || GS_Songs::is_page() || $blog || $api || $dashboard;
         if ($ours) {
             // Перекрашиваем шапку и подвал темы под тёмные страницы плагина.
             wp_enqueue_style('genius-sounds-chrome', GS_PLUGIN_URL . 'assets/css/chrome.css', array(), GS_VERSION);
@@ -195,6 +200,15 @@ class Genius_Sounds_Plugin {
 
         // Посадочная под коммерческий запрос показывает тот же инструмент,
         // значит ей нужны те же стили и тот же скрипт.
+        // Пополнение на месте: одно окно на все страницы сервисов.
+        if (GS_Payments::needs_modal()) {
+            wp_enqueue_script('genius-sounds-topup', GS_PLUGIN_URL . 'assets/js/topup.js', array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-topup', 'GS_TOPUP', array(
+                'restUrl' => esc_url_raw(rest_url('tts/v1/')),
+                'nonce'   => wp_create_nonce('wp_rest'),
+            ));
+        }
+
         $lab = GS_Lab::current_service();
         $landing = $lab ? null : GS_Landing::current();
         if ($landing) {
@@ -211,6 +225,7 @@ class Genius_Sounds_Plugin {
                 'restUrl'  => esc_url_raw(rest_url(GS_Rest::NS . '/')),
                 'nonce'    => wp_create_nonce('wp_rest'),
                 'hasVoice' => is_user_logged_in() && count(GS_Voice::user_voices(get_current_user_id())) > 0,
+                'displayName' => is_user_logged_in() ? wp_get_current_user()->display_name : '',
             ));
         } elseif ($lab) {
             // После входа человек должен вернуться на ту страницу, где начал,

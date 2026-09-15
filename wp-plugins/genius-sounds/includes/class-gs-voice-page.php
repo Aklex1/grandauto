@@ -116,7 +116,7 @@ class GS_Voice_Page {
                             <div class="gs-balance">
                                 <span class="gs-balance__label">Баланс</span>
                                 <span class="gs-balance__value" id="gs-voice-balance"><?php echo esc_html(number_format_i18n($balance, 2)); ?> ₽</span>
-                                <a class="gs-balance__topup" href="<?php echo esc_url(GS_Payments::topup_url(self::SERVICE)); ?>">Пополнить</a>
+                                <a class="gs-balance__topup" data-gs-topup href="<?php echo esc_url(GS_Payments::topup_url(self::SERVICE)); ?>">Пополнить</a>
                             </div>
                             <button class="gs-btn gs-btn--primary gs-btn--lg" type="button" id="gs-voice-start" disabled>
                                 Создать голос за <?php echo esc_html(number_format_i18n(GS_Voice::voice_cost(), 0)); ?> ₽
@@ -198,7 +198,7 @@ class GS_Voice_Page {
                             <div class="gs-balance">
                                 <span class="gs-balance__label">Баланс</span>
                                 <span class="gs-balance__value" id="gs-voice-balance-2"><?php echo esc_html(number_format_i18n($balance, 2)); ?> ₽</span>
-                                <a class="gs-balance__topup" href="<?php echo esc_url(GS_Payments::topup_url(self::SERVICE)); ?>">Пополнить</a>
+                                <a class="gs-balance__topup" data-gs-topup href="<?php echo esc_url(GS_Payments::topup_url(self::SERVICE)); ?>">Пополнить</a>
                             </div>
                             <button class="gs-btn gs-btn--primary gs-btn--lg" type="button" id="gs-voice-sing">
                                 Спеть за <?php echo esc_html(number_format_i18n(GS_Voice::song_cost(), 0)); ?> ₽
@@ -230,6 +230,37 @@ class GS_Voice_Page {
                 </aside>
             </div>
             <?php endif; ?>
+
+            <?php $songs = $logged ? GS_Voice::own_songs($user_id) : array(); ?>
+            <section class="gs-archive" id="gs-voice-archive"<?php echo $songs ? '' : ' hidden'; ?>>
+                <h2 class="gs-section-title">Ваши песни</h2>
+                <p class="gs-archive__lead">
+                    Всё, что вы спели своим голосом. Файлы лежат у нас — скачать можно в любой момент.
+                </p>
+                <div class="gs-archive__list" id="gs-voice-archive-list">
+                    <?php foreach ($songs as $song): ?>
+                        <article class="gs-archive__item" data-song="<?php echo esc_attr($song['id']); ?>">
+                            <div class="gs-archive__head">
+                                <span class="gs-archive__title"><?php echo esc_html($song['title']); ?></span>
+                                <?php if ($song['created']): ?>
+                                    <span class="gs-archive__date"><?php echo esc_html(date_i18n('d.m.Y', $song['created'])); ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <audio class="gs-archive__audio" controls preload="none" src="<?php echo esc_url($song['url']); ?>"></audio>
+                            <div class="gs-archive__actions">
+                                <a class="gs-btn gs-btn--ghost" href="<?php echo esc_url($song['url']); ?>" download>Скачать MP3</a>
+                                <?php if ($song['published']): ?>
+                                    <span class="gs-archive__done">В галерее</span>
+                                <?php else: ?>
+                                    <button type="button" class="gs-btn gs-btn--ghost" data-publish="<?php echo esc_attr($song['id']); ?>">Опубликовать в галерее</button>
+                                <?php endif; ?>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+
+            <?php echo GS_Songs::render_teaser(3); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <section class="gs-tips">
                 <h2 class="gs-section-title">Как это работает</h2>
