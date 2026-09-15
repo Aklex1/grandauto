@@ -5,7 +5,7 @@
 ------------
 1. В канале-источнике берётся пост с фотографией (первое фото, если это альбом).
 2. Промпт берётся из комментариев к посту. Комментария нет — пост пропускается.
-3. Фото поста и референсное фото девушки уходят в Kie AI (nano-banana-edit)
+3. В Kie AI уходит референсное фото девушки (модель Nano Banana 2 / Pro)
    вместе с промптом.
 4. Результат публикуется в целевой канал в оформлении канала, а текст промпта
    отправляется комментарием под этим постом (в связанную группу обсуждений).
@@ -90,6 +90,14 @@ SPREAD_OVER_DAY = _env_flag("AUTOPOST_SPREAD_OVER_DAY", "1")
 WORKER_INTERVAL = _env_int("AUTOPOST_WORKER_INTERVAL", 120)
 IMAGE_SIZE = os.getenv("AUTOPOST_IMAGE_SIZE", "auto")
 OUTPUT_FORMAT = os.getenv("AUTOPOST_OUTPUT_FORMAT", "png")
+
+# Модель Kie для генерации фото поста:
+#   pro  — nano-banana-pro (Nano Banana 2), качественнее и детальнее;
+#   edit — google/nano-banana-edit (прежняя).
+AUTOPOST_MODEL = os.getenv("AUTOPOST_MODEL", "pro").strip().lower()
+# Параметры для pro-модели
+PRO_ASPECT_RATIO = os.getenv("AUTOPOST_PRO_ASPECT_RATIO", "3:4")
+PRO_RESOLUTION = os.getenv("AUTOPOST_PRO_RESOLUTION", "2K")
 
 # --- Оформление поста (как в целевом канале) ---
 BOT_URL = os.getenv("AUTOPOST_BOT_URL", "https://t.me/Neuro_HubAI_bot?start=Sv_lana0707")
@@ -390,7 +398,7 @@ def _public_url(path: str) -> str:
 # --- Отправка задачи в Kie AI -------------------------------------------------
 
 async def submit_to_kie(row: sqlite3.Row) -> bool:
-    from kie_api import create_nano_banana_task
+    from kie_api import create_nano_banana_pro_task, create_nano_banana_task
 
     row_id = row["id"]
     prompt = (row["prompt"] or "").strip()
@@ -412,16 +420,28 @@ async def submit_to_kie(row: sqlite3.Row) -> bool:
     else:
         image_urls = [_public_url("/autopost/reference.jpg")]
 
-    logger.info("[autopost] запись %s -> Kie AI, промпт: %.80s", row_id, prompt)
+    logger.info("[autopost] запись %s -> Kie AI (%s), промпт: %.80s",
+                row_id, AUTOPOST_MODEL, prompt)
     try:
-        response = await create_nano_banana_task(
-            mode="edit",
-            prompt=prompt,
-            image_urls=image_urls,
-            output_format=OUTPUT_FORMAT,
-            image_size=IMAGE_SIZE,
-            callback_url=_public_url(CALLBACK_PATH),
-        )
+        if AUTOPOST_MODEL == "pro":
+            # Nano Banana 2 (Pro): референс идёт в image_input
+            response = await create_nano_banana_pro_task(
+                prompt=prompt,
+                aspect_ratio=PRO_ASPECT_RATIO,
+                resolution=PRO_RESOLUTION,
+                output_format=OUTPUT_FORMAT,
+                image_input=image_urls,
+                callback_url=_public_url(CALLBACK_PATH),
+            )
+        else:
+            response = await create_nano_banana_task(
+                mode="edit",
+                prompt=prompt,
+                image_urls=image_urls,
+                output_format=OUTPUT_FORMAT,
+                image_size=IMAGE_SIZE,
+                callback_url=_public_url(CALLBACK_PATH),
+            )
     except Exception as e:
         logger.error("[autopost] запись %s: ошибка запроса к Kie: %s", row_id, e)
         _update(row_id, status="error", error=f"запрос к Kie: {e}")
