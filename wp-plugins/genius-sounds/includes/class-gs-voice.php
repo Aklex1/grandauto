@@ -337,17 +337,48 @@ class GS_Voice {
         return trim((string) get_option('kie_tts_api_key', ''));
     }
 
+    /**
+     * Поставщик регулярно отвечает «Internal Error, Please try again later»
+     * и через несколько секунд принимает тот же запрос. Один отказ — не повод
+     * возвращать человеку ошибку, поэтому пробуем трижды с паузой.
+     */
     private static function post($url, $payload) {
         $key = self::key();
         if ($key === '') {
             return array('ok' => false, 'message' => 'Сервис не настроен', 'body' => array());
         }
-        $response = wp_remote_post($url, array(
+        $args = array(
             'timeout' => 60,
             'headers' => array('Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json'),
             'body'    => wp_json_encode($payload),
-        ));
-        return self::unpack($response);
+        );
+
+        $res = array('ok' => false, 'message' => '', 'body' => array());
+        foreach (array(0, 4, 12) as $pause) {
+            if ($pause > 0) {
+                sleep($pause);
+            }
+            $res = self::unpack(wp_remote_post($url, $args));
+            if ($res['ok'] || !self::worth_retry($res)) {
+                return $res;
+            }
+        }
+        return $res;
+    }
+
+    /** Отказ, который имеет смысл повторить: временный сбой, а не отказ по сути. */
+    private static function worth_retry($res) {
+        $code = (int) ($res['body']['code'] ?? 0);
+        $low  = mb_strtolower((string) $res['message']);
+        if ($code >= 500 || $code === 429) {
+            return true;
+        }
+        foreach (array('internal error', 'try again', 'timeout', 'timed out', 'maintain', 'temporar') as $mark) {
+            if (strpos($low, $mark) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static function get($url, $args) {
@@ -403,6 +434,12 @@ class GS_Voice {
         }
         if (strpos($low, 'credit') !== false || strpos($low, 'insufficient') !== false) {
             return 'Сервис временно недоступен — сообщите нам, починим.';
+        }
+        // Сбой на стороне поставщика: человеку важно, что дело не в его записи
+        // и что деньги уже вернулись, а не техническая формулировка.
+        if (strpos($low, 'internal error') !== false || strpos($low, 'try again') !== false
+            || strpos($low, 'timeout') !== false) {
+            return 'Сервис создания голоса сейчас отвечает сбоем — дело не в вашей записи. Деньги вернулись на баланс, попробуйте через несколько минут.';
         }
         if (strpos($low, 'copyright') !== false || strpos($low, 'policy') !== false) {
             return 'Поставщик отклонил запись: похоже на чужой голос из известной записи. Загрузите собственный голос.';
