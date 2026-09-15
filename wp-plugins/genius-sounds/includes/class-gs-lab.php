@@ -29,6 +29,88 @@ class GS_Lab {
 
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
+        add_action('init', array(__CLASS__, 'add_rewrite_rules'), 5);
+        add_filter('query_vars', array(__CLASS__, 'add_query_vars'));
+        add_action('template_redirect', array(__CLASS__, 'maybe_stream_audio'), 0);
+    }
+
+    /* ---------------------------------------------------------------------
+     * Отдача загруженных записей поставщику
+     *
+     * Сервер отдаёт файлы из uploads с типом application/octet-stream, и часть
+     * моделей такую запись молча не берёт: задача навсегда остаётся в ожидании.
+     * Поэтому наружу даём тот же файл по своему адресу и с честным звуковым
+     * типом — он же заканчивается на нужное расширение.
+     * ------------------------------------------------------------------ */
+
+    const STREAM_BASE = 'gs-audio';
+
+    public static function add_rewrite_rules() {
+        add_rewrite_rule(
+            '^' . self::STREAM_BASE . '/([0-9]{4}-[0-9]{2})/([A-Za-z0-9._-]+)$',
+            'index.php?gs_audio_ym=$matches[1]&gs_audio_file=$matches[2]',
+            'top'
+        );
+    }
+
+    public static function add_query_vars($vars) {
+        $vars[] = 'gs_audio_ym';
+        $vars[] = 'gs_audio_file';
+        return $vars;
+    }
+
+    /** Адрес записи для поставщика: своя отдача вместо прямой ссылки на файл. */
+    public static function public_url($url) {
+        $url = (string) $url;
+        $base = self::uploads_url() . '/';
+        if ($url === '' || strpos($url, $base) !== 0) {
+            return $url;
+        }
+        $rest = substr($url, strlen($base));
+        if (!preg_match('~^([0-9]{4}-[0-9]{2})/([A-Za-z0-9._-]+)$~', $rest, $m)) {
+            return $url;
+        }
+        return home_url('/' . self::STREAM_BASE . '/' . $m[1] . '/' . $m[2]);
+    }
+
+    public static function maybe_stream_audio() {
+        $ym   = (string) get_query_var('gs_audio_ym');
+        $name = (string) get_query_var('gs_audio_file');
+        if ($ym === '' || $name === '') {
+            return;
+        }
+
+        $types = array(
+            'wav'  => 'audio/wav',
+            'mp3'  => 'audio/mpeg',
+            'm4a'  => 'audio/mp4',
+            'mp4'  => 'audio/mp4',
+            'aac'  => 'audio/aac',
+            'ogg'  => 'audio/ogg',
+            'oga'  => 'audio/ogg',
+            'webm' => 'audio/webm',
+        );
+        $ext = strtolower((string) pathinfo($name, PATHINFO_EXTENSION));
+
+        $dir  = self::uploads_dir();
+        $path = $dir . '/' . $ym . '/' . $name;
+        $real = realpath($path);
+        // Файл обязан лежать внутри нашей папки загрузок: иначе подстановкой
+        // имени можно было бы вытащить произвольный файл сервера.
+        if (!isset($types[$ext]) || !$real || strpos($real, realpath($dir)) !== 0 || !is_file($real)) {
+            status_header(404);
+            nocache_headers();
+            return;
+        }
+
+        status_header(200);
+        header('Content-Type: ' . $types[$ext]);
+        header('Content-Length: ' . filesize($real));
+        header('Accept-Ranges: bytes');
+        header('Cache-Control: public, max-age=86400');
+        header('X-Robots-Tag: noindex');
+        readfile($real);
+        exit;
     }
 
     /* ---------------------------------------------------------------------
@@ -251,6 +333,52 @@ class GS_Lab {
                           'Её можно расшифровать в текст, очистить от шума или разделить на голос и музыку — все инструменты рядом.'),
                     array('А если ролик с ограничением по возрасту?',
                           'Такие ролики требуют входа в аккаунт, и дорожку снять не получится. То же касается приватных и удалённых видео.'),
+                ),
+            ),
+
+            // Собран по запросам из базы Mutagen: «создать песню своим голосом»
+            // (242 показа, конкуренция 7), «создать песню со своим голосом» (180/8),
+            // «создать песню своим голосом нейросеть» (97/4).
+            'voicesong' => array(
+                'id'          => 'voicesong',
+                'slug'        => 'pesnya-svoim-golosom',
+                'page_option' => 'gs_lab_page_voicesong',
+                'shortcode'   => 'genius_voice',
+                'menu'        => 'Песня своим голосом',
+                'nav'         => 'Песня своим голосом',
+                'h1'          => 'Создать песню своим голосом',
+                'seo_title'   => 'Создать песню своим голосом — нейросеть споёт вашим голосом',
+                'seo_desc'    => 'Создайте песню своим голосом: запишите двадцать секунд речи, подтвердите голос проверочной фразой — и нейросеть споёт вашим голосом любой текст. Два готовых трека, скачивание в MP3.',
+                'lead'        => 'Запишите двадцать секунд своего голоса, прочитайте проверочную фразу — и нейросеть научится петь вашим голосом. Дальше пишете текст песни, а поёт её ваш собственный голос. Голос сохраняется в кабинете: следующие песни делаются в один шаг.',
+                'badge'       => 'Ваш голос поёт',
+                'cost_option' => 'gs_lab_cost_voicesong',
+                'cost'        => 99,
+                'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 0, 'max_seconds' => 0),
+                'available'   => true,
+                'inputs'      => array(),
+                'accept'      => array('audio' => 'audio/mpeg,audio/wav,audio/x-wav,audio/aac,audio/mp4,audio/ogg,audio/webm'),
+                'prompt'      => false,
+                'fields'      => array(),
+                'result_kind' => 'audio',
+                'poll_seconds'=> 600,
+                'steps'       => array(
+                    'Запишите двадцать секунд своего голоса или загрузите готовую запись.',
+                    'Прочитайте вслух проверочную фразу — так сервис убеждается, что голос ваш.',
+                    'Напишите текст песни и стиль — нейросеть споёт его вашим голосом.',
+                ),
+                'faq'         => array(
+                    array('Как нейросеть поёт моим голосом?',
+                          'Сначала она разбирает образец вашей речи и запоминает тембр, а затем поёт им любой текст. Голос создаётся один раз и сохраняется в кабинете: следующие песни делаются сразу, без повторной записи.'),
+                    array('Зачем нужна проверочная фраза?',
+                          'Это защита от подделки чужого голоса. Сервис сам придумывает фразу, которой нет в интернете, и просит прочитать её вслух: записью из чужого ролика её не подменишь. Поэтому голос можно создать только свой.'),
+                    array('Какая запись подойдёт?',
+                          'Двадцать секунд чистого голоса без музыки и посторонних звуков: просто говорите обычным тоном, ближе к микрофону. Подойдёт диктофон телефона. Петь в образце не обязательно — петь нейросеть научится сама.'),
+                    array('Сколько это стоит?',
+                          'Создание голоса оплачивается один раз, каждая песня — отдельно; обе суммы показаны на странице. За один запуск приходит два варианта песни, платить за второй не нужно.'),
+                    array('Можно ли петь чужим голосом?',
+                          'Нет. Проверочную фразу нужно прочитать тем же голосом, что и в образце, иначе сервис не создаст голос. Так защищены и вы, и другие люди.'),
+                    array('Кому принадлежит готовая песня?',
+                          'Вам. Песню можно публиковать и использовать в коммерческих проектах: и голос, и музыка созданы для вас, чужих авторских прав в них нет.'),
                 ),
             ),
 
@@ -556,7 +684,8 @@ class GS_Lab {
             if ($page_id > 0 && get_post($page_id)) {
                 continue;
             }
-            $shortcode = '[genius_lab id="' . $service['id'] . '"]';
+            $tag = !empty($service['shortcode']) ? $service['shortcode'] : 'genius_lab';
+            $shortcode = '[' . $tag . ' id="' . $service['id'] . '"]';
             $existing = get_page_by_path($service['slug']);
             if ($existing) {
                 $page_id = (int) $existing->ID;
@@ -607,9 +736,12 @@ class GS_Lab {
             }
         }
         global $post;
-        if ($post instanceof WP_Post && has_shortcode((string) $post->post_content, 'genius_lab')) {
+        if ($post instanceof WP_Post) {
+            $content = (string) $post->post_content;
             foreach (self::services() as $service) {
-                if (strpos((string) $post->post_content, 'id="' . $service['id'] . '"') !== false) {
+                $tag = !empty($service['shortcode']) ? $service['shortcode'] : 'genius_lab';
+                if (has_shortcode($content, $tag)
+                    && strpos($content, 'id="' . $service['id'] . '"') !== false) {
                     return $service;
                 }
             }
@@ -660,7 +792,7 @@ class GS_Lab {
         $ext = $check['ext'] ? $check['ext'] : strtolower((string) pathinfo($file['name'], PATHINFO_EXTENSION));
         $allowed = $kind === 'image'
             ? array('jpg', 'jpeg', 'png')
-            : array('mp3', 'wav', 'aac', 'm4a', 'mp4', 'ogg', 'oga');
+            : array('mp3', 'wav', 'aac', 'm4a', 'mp4', 'ogg', 'oga', 'webm');
         if (!in_array($ext, $allowed, true)) {
             return $fail('Неподдерживаемый формат: ' . $ext);
         }

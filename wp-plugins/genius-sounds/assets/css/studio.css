@@ -899,3 +899,108 @@
 .gs-cross__tasks a:hover {
     color: var(--gs-accent);
 }
+
+/* Мастер «песня своим голосом» */
+
+.gs-wizard {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+    counter-reset: none;
+}
+
+.gs-wizard__step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--gs-border);
+    border-radius: 999px;
+    color: var(--gs-muted);
+    font-size: 14px;
+    background: var(--gs-surface);
+}
+
+.gs-wizard__step span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--gs-surface-2);
+    color: var(--gs-muted);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.gs-wizard__step.is-active {
+    color: var(--gs-text);
+    border-color: var(--gs-border-strong);
+}
+
+.gs-wizard__step.is-active span {
+    background: var(--gs-primary);
+    color: #fff;
+}
+
+.gs-wizard__step.is-done span {
+    background: var(--gs-ok);
+    color: #06281c;
+}
+
+.gs-voice__title {
+    margin: 0 0 8px;
+    font-size: 20px;
+    color: var(--gs-text);
+}
+
+.gs-voice__text {
+    margin: 0 0 14px;
+    color: var(--gs-muted);
+    line-height: 1.6;
+}
+
+.gs-voice__or {
+    margin: 14px 0 10px;
+    color: var(--gs-muted);
+    font-size: 14px;
+    text-align: center;
+}
+
+.gs-voice__phrase {
+    margin: 0 0 16px;
+    padding: 16px 18px;
+    border-left: 3px solid var(--gs-primary);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface-2);
+    color: var(--gs-text);
+    font-size: 18px;
+    line-height: 1.5;
+}
+
+.gs-rec {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.gs-rec__time {
+    color: var(--gs-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.gs-rec__go.is-rec {
+    border-color: #f87171;
+    color: #fca5a5;
+}
+
+.gs-rec__play {
+    width: 100%;
+    max-width: 320px;
+}

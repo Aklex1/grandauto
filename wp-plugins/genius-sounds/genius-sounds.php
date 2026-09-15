@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 1.58.4
+ * Version: 1.59.3
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.58.4');
+define('GS_VERSION', '1.59.3');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -26,6 +26,8 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-seo.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-index.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-landing.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-voice.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-musicai.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-payments.php';
@@ -109,6 +111,7 @@ class Genius_Sounds_Plugin {
         GS_Pages::register_shortcodes();
         GS_Lab_Page::register_shortcodes();
         GS_Landing::register_shortcodes();
+        GS_Voice_Page::register_shortcodes();
         GS_Api_Page::register_shortcodes();
 
         // Разовая инициализация после обновления версии плагина.
@@ -197,7 +200,19 @@ class Genius_Sounds_Plugin {
         if ($landing) {
             $lab = GS_Landing::current_service();
         }
-        if ($lab) {
+        if ($lab && $lab['id'] === 'voicesong') {
+            // У песни своим голосом свой мастер из трёх шагов: общая форма,
+            // рассчитанная на «загрузил — запустил», для него не годится.
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
+            wp_enqueue_script('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/js/catalog.js', array(), GS_VERSION, true);
+            wp_enqueue_script('genius-sounds-voice', GS_PLUGIN_URL . 'assets/js/voice.js', array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-voice', 'GS_VOICE', array(
+                'restUrl'  => esc_url_raw(rest_url(GS_Rest::NS . '/')),
+                'nonce'    => wp_create_nonce('wp_rest'),
+                'hasVoice' => is_user_logged_in() && count(GS_Voice::user_voices(get_current_user_id())) > 0,
+            ));
+        } elseif ($lab) {
             // После входа человек должен вернуться на ту страницу, где начал,
             // а не на общую посадочную сервиса.
             $back = $landing ? GS_Landing::get_url($landing['id']) : GS_Lab::get_url($lab['id']);

@@ -112,6 +112,43 @@ class GS_Rest {
             'permission_callback' => '__return_true',
         ));
 
+        // Песня своим голосом: голос создаётся в три приёма и живёт в кабинете.
+        register_rest_route(self::NS, '/voice/phrase', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_voice_phrase'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/voice/phrase/(?P<task_id>[a-zA-Z0-9_-]+)', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_voice_phrase_state'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/voice/verify', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_voice_verify'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/voice/verify/(?P<task_id>[a-zA-Z0-9_-]+)', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_voice_verify_state'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/voice/list', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_voice_list'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/voice/song', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_voice_song'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/voice/song/(?P<task_id>[a-zA-Z0-9_-]+)', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_voice_song_state'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+
         register_rest_route(self::NS, '/lab/callback', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_lab_callback'),
@@ -939,6 +976,248 @@ class GS_Rest {
             'status'  => 'completed',
             'files'   => $files,
             'text'    => isset($task['text']) ? (string) $task['text'] : '',
+            'balance' => GS_SFX::get_balance($user_id),
+        ));
+    }
+
+    /* ---------------------------------------------------------------------
+     * Песня своим голосом
+     *
+     * Деньги берём в двух местах: за создание голоса и за каждую песню.
+     * Списываем в момент постановки задачи, а при отказе поставщика
+     * возвращаем на баланс — человек не должен платить за неудачу.
+     * ------------------------------------------------------------------ */
+
+    /** Ссылка на запись: принимаем только свои загрузки. */
+    private static function own_upload($url) {
+        $url = esc_url_raw((string) $url);
+        if ($url === '' || strpos($url, GS_Lab::uploads_url()) !== 0) {
+            return '';
+        }
+        return $url;
+    }
+
+    public static function handle_voice_phrase($request) {
+        $user_id = get_current_user_id();
+        $params  = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        $url = self::own_upload($params['audio_url'] ?? '');
+        if ($url === '') {
+            return new WP_Error('gs_no_audio', 'Сначала запишите или загрузите свой голос', array('status' => 400));
+        }
+
+        $cost = GS_Voice::voice_cost();
+        if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
+            return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
+        }
+
+        $seconds = GS_Lab::media_duration(GS_Lab::local_path($url));
+        $res = GS_Voice::start_phrase($url, $seconds);
+        if (empty($res['ok'])) {
+            if ($cost > 0) {
+                GS_SFX::refund($user_id, $cost);
+            }
+            return new WP_Error('gs_voice_failed', $res['message'] !== '' ? $res['message'] : 'Не удалось начать создание голоса', array('status' => 502));
+        }
+
+        // Плату помним при задаче: если голос не создастся, вернём её.
+        update_option('gs_voice_task_' . $res['task_id'], array(
+            'user_id' => $user_id,
+            'cost'    => $cost,
+            'at'      => time(),
+        ), false);
+
+        return rest_ensure_response(array(
+            'task_id' => $res['task_id'],
+            'status'  => 'pending',
+            'cost'    => $cost,
+            'balance' => GS_SFX::get_balance($user_id),
+        ));
+    }
+
+    public static function handle_voice_phrase_state($request) {
+        $task_id = sanitize_text_field((string) $request['task_id']);
+        $state = GS_Voice::phrase_state($task_id);
+        if ($state['status'] === 'failed') {
+            self::refund_voice_task($task_id);
+        }
+        $meta = get_option('gs_voice_task_' . $task_id);
+        if ($state['status'] === 'pending' && is_array($meta)
+            && time() - (int) ($meta['at'] ?? 0) > self::VOICE_TIMEOUT) {
+            self::refund_voice_task($task_id);
+            return rest_ensure_response(array(
+                'status'  => 'failed',
+                'phrase'  => '',
+                'message' => 'Сервис не ответил за отведённое время. Деньги вернулись на баланс — попробуйте ещё раз.',
+            ));
+        }
+        return rest_ensure_response(array(
+            'status'  => $state['status'],
+            'phrase'  => $state['phrase'],
+            'message' => $state['message'],
+        ));
+    }
+
+    public static function handle_voice_verify($request) {
+        $user_id = get_current_user_id();
+        $params  = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        $task_id = sanitize_text_field((string) ($params['task_id'] ?? ''));
+        $url     = self::own_upload($params['audio_url'] ?? '');
+        $name    = sanitize_text_field((string) ($params['name'] ?? ''));
+
+        if ($task_id === '' || $url === '') {
+            return new WP_Error('gs_no_audio', 'Запишите проверочную фразу и попробуйте снова', array('status' => 400));
+        }
+        $meta = get_option('gs_voice_task_' . $task_id);
+        if (!is_array($meta) || (int) ($meta['user_id'] ?? 0) !== $user_id) {
+            return new WP_Error('gs_foreign_task', 'Задача не найдена', array('status' => 404));
+        }
+
+        $res = GS_Voice::submit_verify($task_id, $url, $name);
+        if (empty($res['ok'])) {
+            return new WP_Error('gs_voice_failed', $res['message'] !== '' ? $res['message'] : 'Запись не принята', array('status' => 502));
+        }
+
+        $meta['name'] = $name;
+        update_option('gs_voice_task_' . $task_id, $meta, false);
+
+        return rest_ensure_response(array('status' => 'pending'));
+    }
+
+    /** Сколько ждём голос, прежде чем считать задачу пропавшей. */
+    const VOICE_TIMEOUT = 900;
+
+    public static function handle_voice_verify_state($request) {
+        $user_id = get_current_user_id();
+        $task_id = sanitize_text_field((string) $request['task_id']);
+        $meta = get_option('gs_voice_task_' . $task_id);
+        if (!is_array($meta) || (int) ($meta['user_id'] ?? 0) !== $user_id) {
+            return new WP_Error('gs_foreign_task', 'Задача не найдена', array('status' => 404));
+        }
+
+        $state = GS_Voice::voice_state($task_id);
+        $out = array('status' => $state['status'], 'message' => $state['message'], 'voices' => array());
+
+        // Поставщик умеет молча не браться за запись: задача остаётся
+        // в ожидании навсегда. Без срока деньги зависали бы вместе с ней.
+        if ($state['status'] === 'pending'
+            && time() - (int) ($meta['at'] ?? 0) > self::VOICE_TIMEOUT) {
+            self::refund_voice_task($task_id);
+            return rest_ensure_response(array(
+                'status'  => 'failed',
+                'message' => 'Сервис не ответил за отведённое время. Деньги вернулись на баланс — попробуйте записать голос ещё раз.',
+                'voices'  => array(),
+            ));
+        }
+
+        if ($state['status'] === 'completed') {
+            $voices = GS_Voice::remember_voice($user_id, $state['voice_id'], (string) ($meta['name'] ?? ''));
+            delete_option('gs_voice_task_' . $task_id);
+            $out['voice_id'] = $state['voice_id'];
+            $out['voices']   = $voices;
+        } elseif ($state['status'] === 'failed') {
+            self::refund_voice_task($task_id);
+        }
+        return rest_ensure_response($out);
+    }
+
+    /** Возврат платы за несостоявшийся голос — ровно один раз. */
+    private static function refund_voice_task($task_id) {
+        $meta = get_option('gs_voice_task_' . $task_id);
+        if (!is_array($meta)) {
+            return;
+        }
+        if ((float) ($meta['cost'] ?? 0) > 0) {
+            GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
+        }
+        delete_option('gs_voice_task_' . $task_id);
+    }
+
+    public static function handle_voice_list($request) {
+        $user_id = get_current_user_id();
+        return rest_ensure_response(array(
+            'voices'     => GS_Voice::user_voices($user_id),
+            'balance'    => GS_SFX::get_balance($user_id),
+            'voice_cost' => GS_Voice::voice_cost(),
+            'song_cost'  => GS_Voice::song_cost(),
+        ));
+    }
+
+    public static function handle_voice_song($request) {
+        $user_id = get_current_user_id();
+        $params  = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        $voice_id = sanitize_text_field((string) ($params['voice_id'] ?? ''));
+        if ($voice_id === '' || !GS_Voice::owns_voice($user_id, $voice_id)) {
+            return new WP_Error('gs_no_voice', 'Сначала создайте свой голос', array('status' => 400));
+        }
+
+        $fields = array(
+            'lyrics' => sanitize_textarea_field((string) ($params['lyrics'] ?? '')),
+            'style'  => sanitize_text_field((string) ($params['style'] ?? '')),
+            'title'  => sanitize_text_field((string) ($params['title'] ?? '')),
+            'prompt' => sanitize_textarea_field((string) ($params['prompt'] ?? '')),
+        );
+
+        $cost = GS_Voice::song_cost();
+        if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
+            return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
+        }
+
+        $res = GS_Voice::create_song($voice_id, $fields);
+        if (empty($res['ok'])) {
+            if ($cost > 0) {
+                GS_SFX::refund($user_id, $cost);
+            }
+            return new WP_Error('gs_song_failed', $res['message'] !== '' ? $res['message'] : 'Не удалось запустить генерацию', array('status' => 502));
+        }
+
+        update_option('gs_voice_song_' . $res['task_id'], array(
+            'user_id' => $user_id,
+            'cost'    => $cost,
+            'at'      => time(),
+        ), false);
+
+        return rest_ensure_response(array(
+            'task_id' => $res['task_id'],
+            'status'  => 'pending',
+            'cost'    => $cost,
+            'balance' => GS_SFX::get_balance($user_id),
+        ));
+    }
+
+    public static function handle_voice_song_state($request) {
+        $user_id = get_current_user_id();
+        $task_id = sanitize_text_field((string) $request['task_id']);
+        $meta = get_option('gs_voice_song_' . $task_id);
+        if (!is_array($meta) || (int) ($meta['user_id'] ?? 0) !== $user_id) {
+            return new WP_Error('gs_foreign_task', 'Задача не найдена', array('status' => 404));
+        }
+
+        $state = GS_Voice::song_state($task_id);
+        if ($state['status'] === 'completed') {
+            delete_option('gs_voice_song_' . $task_id);
+        } elseif ($state['status'] === 'failed') {
+            if ((float) ($meta['cost'] ?? 0) > 0) {
+                GS_SFX::refund($user_id, (float) $meta['cost']);
+            }
+            delete_option('gs_voice_song_' . $task_id);
+        }
+
+        return rest_ensure_response(array(
+            'status'  => $state['status'],
+            'files'   => $state['files'],
+            'message' => $state['message'],
             'balance' => GS_SFX::get_balance($user_id),
         ));
     }
