@@ -86,7 +86,7 @@ class GS_Sitemap {
             );
         }
 
-        $extra = array(GS_Pages::get_studio_url(), GS_Pages::get_showcase_url(), GS_Api_Page::get_url());
+        $extra = array(GS_Pages::get_studio_url(), GS_Pages::get_showcase_url(), GS_Api_Page::get_url(), GS_Course::get_url());
         foreach (GS_Lab::available_services() as $service) {
             $extra[] = GS_Lab::get_url($service['id']);
         }

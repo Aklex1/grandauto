@@ -159,6 +159,23 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Разовая настройка лендинга: картинки в шапку и блоки. Отдельным
+        // маршрутом, а не полем в форме настроек — адреса ставятся один раз
+        // при заливке в медиатеку и руками их никто не правит.
+        register_rest_route(self::NS, '/course/images', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_course_images'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
+        // Заявка с лендинга обучения. Открыта для гостей — это её смысл;
+        // от перебора защищает счётчик по адресу внутри GS_Leads.
+        register_rest_route(self::NS, '/lead', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_lead'),
+            'permission_callback' => '__return_true',
+        ));
+
         register_rest_route(self::NS, '/voice/archive', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_voice_archive'),
@@ -1378,6 +1395,36 @@ class GS_Rest {
             (string) ($params['method'] ?? 'GET'),
             isset($params['payload']) ? $params['payload'] : null
         ));
+    }
+
+    public static function handle_course_images(WP_REST_Request $request) {
+        $images = (array) $request->get_param('images');
+        $clean = array();
+        foreach (array('hero', 'tools', 'path', 'result', 'photo') as $slug) {
+            if (!empty($images[$slug])) {
+                $clean[$slug] = (string) $images[$slug];
+            }
+        }
+        GS_Course::set_images($clean);
+        GS_Course::ensure_page();
+        return rest_ensure_response(array(
+            'ok'     => true,
+            'images' => get_option(GS_Course::OPT_IMG, array()),
+            'url'    => GS_Course::get_url(),
+        ));
+    }
+
+    public static function handle_lead(WP_REST_Request $request) {
+        $res = GS_Leads::accept(array(
+            'name'    => (string) $request->get_param('name'),
+            'contact' => (string) $request->get_param('contact'),
+            'comment' => (string) $request->get_param('comment'),
+            'source'  => (string) $request->get_param('source'),
+        ));
+        if (empty($res['ok'])) {
+            return new WP_Error('gs_lead_rejected', $res['message'], array('status' => 400));
+        }
+        return rest_ensure_response(array('ok' => true, 'message' => $res['message']));
     }
 
     public static function handle_voice_archive($request) {

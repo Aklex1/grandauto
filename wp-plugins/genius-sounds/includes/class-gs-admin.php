@@ -149,6 +149,29 @@ class GS_Admin {
             'default'           => '',
         ));
 
+        // Бот для заявок. Токен, как и токен Вебмастера, не должен стираться
+        // при сохранении формы, на которой поля нет.
+        register_setting('gs_settings_group', GS_Leads::OPT_TOKEN, array(
+            'type'              => 'string',
+            'sanitize_callback' => function ($value) {
+                if ($value === null) {
+                    return (string) get_option(GS_Leads::OPT_TOKEN, '');
+                }
+                return trim(sanitize_text_field((string) $value));
+            },
+            'default'           => '',
+        ));
+        register_setting('gs_settings_group', GS_Leads::OPT_CHAT, array(
+            'type'              => 'string',
+            'sanitize_callback' => function ($value) {
+                if ($value === null) {
+                    return (string) get_option(GS_Leads::OPT_CHAT, '');
+                }
+                return trim(sanitize_text_field((string) $value));
+            },
+            'default'           => '',
+        ));
+
         register_setting('gs_settings_group', GS_Index::OPT_ENABLED, array(
             'type'              => 'string',
             'sanitize_callback' => function ($value) {
@@ -171,6 +194,55 @@ class GS_Admin {
      * Замечания Яндекс.Вебмастера. Копировать их руками из интерфейса долго
      * и легко упустить, поэтому забираем сами и показываем рядом с настройками.
      */
+    /** Журнал заявок: последняя строка показывает, дошло ли сообщение до бота. */
+    public static function render_leads() {
+        $rows = GS_Leads::log_rows();
+        $notice = get_transient('gs_leads_notice');
+
+        ob_start();
+        ?>
+        <h2 id="gs-leads">Заявки с лендинга</h2>
+
+        <?php if (is_array($notice)): ?>
+            <?php delete_transient('gs_leads_notice'); ?>
+            <p class="notice notice-<?php echo !empty($notice['ok']) ? 'success' : 'error'; ?>" style="padding:10px;max-width:900px">
+                <?php echo !empty($notice['ok']) ? 'Тестовое сообщение ушло в Telegram.' : esc_html('Telegram не принял сообщение: ' . $notice['message']); ?>
+            </p>
+        <?php endif; ?>
+
+        <?php if (!GS_Leads::ready()): ?>
+            <p class="description" style="max-width:900px">Бот не настроен — заявки будут копиться только здесь.</p>
+        <?php else: ?>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
+                <?php wp_nonce_field('gs_leads_test'); ?>
+                <input type="hidden" name="action" value="gs_leads_test">
+                <?php submit_button('Отправить тестовое сообщение', 'secondary', 'submit', false); ?>
+            </form>
+        <?php endif; ?>
+
+        <?php if ($rows): ?>
+            <table class="widefat striped" style="max-width:1000px">
+                <thead><tr><th>Когда</th><th>Имя</th><th>Контакт</th><th>Комментарий</th><th>Откуда</th><th>В бот</th></tr></thead>
+                <tbody>
+                    <?php foreach (array_slice($rows, 0, 50) as $row): ?>
+                        <tr>
+                            <td><?php echo esc_html($row['at'] ?? ''); ?></td>
+                            <td><?php echo esc_html($row['name'] ?? ''); ?></td>
+                            <td><?php echo esc_html($row['contact'] ?? ''); ?></td>
+                            <td><?php echo esc_html($row['comment'] ?? ''); ?></td>
+                            <td><?php echo esc_html($row['source'] ?? ''); ?></td>
+                            <td><?php echo !empty($row['sent']) ? 'да' : esc_html('нет — ' . ($row['error'] ?? '')); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php else: ?>
+            <p class="description">Заявок пока нет.</p>
+        <?php endif; ?>
+        <?php
+        return ob_get_clean();
+    }
+
     public static function render_webmaster() {
         ob_start();
         ?>
@@ -711,6 +783,28 @@ class GS_Admin {
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row">Заявки в Telegram</th>
+                        <td>
+                            <p>
+                                <label>Токен бота<br>
+                                    <input name="<?php echo esc_attr(GS_Leads::OPT_TOKEN); ?>" type="password" autocomplete="off"
+                                           value="<?php echo esc_attr(get_option(GS_Leads::OPT_TOKEN, '')); ?>" class="regular-text">
+                                </label>
+                            </p>
+                            <p>
+                                <label>ID чата или канала<br>
+                                    <input name="<?php echo esc_attr(GS_Leads::OPT_CHAT); ?>" type="text" autocomplete="off"
+                                           value="<?php echo esc_attr(get_option(GS_Leads::OPT_CHAT, '')); ?>" class="regular-text">
+                                </label>
+                            </p>
+                            <p class="description">
+                                Заявки с лендинга обучения уходят сообщением в этот чат. Копия каждой заявки
+                                остаётся в журнале ниже, поэтому недоступность Telegram заявку не теряет.
+                                Чтобы бот смог написать первым, ему нужно один раз отправить <code>/start</code>.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row">Сквозные ссылки</th>
                         <td>
                             <label><input type="checkbox" name="<?php echo esc_attr(GS_Links::OPT_ENABLED); ?>" value="1" <?php checked(GS_Links::menu_enabled()); ?>>
@@ -737,6 +831,10 @@ class GS_Admin {
             <?php echo self::render_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_index_tools(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo GS_Schedule::render_panel(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_leads(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_webmaster(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 

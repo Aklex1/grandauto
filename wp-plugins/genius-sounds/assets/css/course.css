@@ -1,0 +1,355 @@
+/**
+ * Лендинг «Обучение заработку на нейросетях».
+ *
+ * Строится поверх catalog.css и studio.css: токены, кнопки, поля и FAQ
+ * берутся оттуда, здесь только собственная сетка лендинга.
+ */
+
+.gs-course {
+    padding-bottom: 72px;
+}
+
+/* --- Первый экран ---------------------------------------------------- */
+
+.gs-course__hero {
+    position: relative;
+    margin: 8px 0 56px;
+    padding: 64px 48px;
+    border: 1px solid var(--gs-border);
+    border-radius: calc(var(--gs-radius) + 8px);
+    background-color: var(--gs-surface);
+    background-position: center right;
+    background-size: cover;
+    background-repeat: no-repeat;
+    box-shadow: var(--gs-shadow);
+    overflow: hidden;
+}
+
+.gs-course__hero-text {
+    max-width: 640px;
+}
+
+.gs-course__title {
+    margin: 18px 0 0;
+    font-size: clamp(30px, 4.4vw, 50px);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    color: var(--gs-text);
+}
+
+.gs-course__lead {
+    margin: 18px 0 0;
+    font-size: clamp(16px, 1.7vw, 19px);
+    line-height: 1.62;
+    color: #cbd5e1;
+}
+
+.gs-course__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 30px;
+}
+
+.gs-course__honest {
+    margin: 22px 0 0;
+    padding-left: 14px;
+    border-left: 2px solid var(--gs-border-strong);
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--gs-muted);
+}
+
+/* --- Блоки ----------------------------------------------------------- */
+
+.gs-course__block {
+    margin-bottom: 56px;
+}
+
+.gs-course__img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 420px;
+    margin: 0 0 24px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    object-fit: cover;
+}
+
+.gs-course__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+}
+
+.gs-course__card {
+    padding: 24px 22px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+    transition: border-color 0.18s var(--gs-ease), transform 0.18s var(--gs-ease);
+}
+
+.gs-course__card:hover {
+    border-color: var(--gs-border-strong);
+    transform: translateY(-2px);
+}
+
+.gs-course__card h3 {
+    margin: 0 0 10px;
+    font-size: 18px;
+    line-height: 1.3;
+    color: var(--gs-text);
+}
+
+.gs-course__card p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--gs-muted);
+}
+
+/* --- Программа ------------------------------------------------------- */
+
+.gs-course__steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    counter-reset: gs-course-step;
+}
+
+.gs-course__step {
+    position: relative;
+    padding: 28px 24px 24px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: linear-gradient(160deg, var(--gs-surface-2) 0%, var(--gs-surface) 100%);
+}
+
+.gs-course__num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    margin-bottom: 14px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--gs-primary) 0%, #8b5cf6 100%);
+    font-size: 17px;
+    font-weight: 700;
+    color: #fff;
+}
+
+.gs-course__step h3 {
+    margin: 0 0 10px;
+    font-size: 18px;
+    line-height: 1.3;
+    color: var(--gs-text);
+}
+
+.gs-course__step p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.62;
+    color: var(--gs-muted);
+}
+
+/* --- Заявка ---------------------------------------------------------- */
+
+.gs-course__form-wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+    margin-bottom: 56px;
+    padding: 40px;
+    border: 1px solid var(--gs-border-strong);
+    border-radius: calc(var(--gs-radius) + 8px);
+    background:
+        radial-gradient(120% 140% at 0% 0%, rgba(99, 102, 241, 0.16) 0%, rgba(99, 102, 241, 0) 60%),
+        var(--gs-surface);
+}
+
+.gs-course__form-text p {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.62;
+    color: var(--gs-muted);
+}
+
+.gs-course__form {
+    margin: 0;
+}
+
+.gs-wrap .gs-req {
+    color: var(--gs-accent);
+}
+
+.gs-course__privacy {
+    margin: 12px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--gs-muted);
+}
+
+/* Заявка ушла — прячем поля, чтобы её не отправили второй раз. */
+.gs-course__form--sent .gs-field,
+.gs-course__form--sent .gs-form__foot,
+.gs-course__form--sent .gs-course__privacy {
+    display: none;
+}
+
+.gs-course__form--sent .gs-form__note {
+    margin: 0;
+    font-size: 16px;
+}
+
+@media (max-width: 900px) {
+    .gs-course__hero {
+        padding: 40px 24px;
+        background-image: none !important;
+    }
+
+    .gs-course__form-wrap {
+        grid-template-columns: 1fr;
+        padding: 28px 22px;
+        gap: 22px;
+    }
+}
+
+@media (max-width: 560px) {
+    .gs-course__cta .gs-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* --- Тарифы ---------------------------------------------------------- */
+
+.gs-course__market {
+    max-width: 780px;
+    margin: 0 0 24px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--gs-muted);
+}
+
+.gs-course__plans {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 22px;
+}
+
+.gs-course__plan {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 32px 28px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+}
+
+/* Тариф с рекламой — основной, поэтому он и выделен. */
+.gs-course__plan--best {
+    border-color: var(--gs-border-strong);
+    background:
+        radial-gradient(120% 130% at 100% 0%, rgba(99, 102, 241, 0.18) 0%, rgba(99, 102, 241, 0) 62%),
+        var(--gs-surface);
+    box-shadow: var(--gs-shadow);
+}
+
+.gs-course__plan-flag {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--gs-primary) 0%, #8b5cf6 100%);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #fff;
+}
+
+.gs-course__plan-name {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--gs-muted);
+}
+
+.gs-course__price {
+    margin: 10px 0 0;
+    font-size: clamp(34px, 4vw, 44px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--gs-text);
+}
+
+.gs-course__price span {
+    font-size: 0.55em;
+    font-weight: 600;
+    color: var(--gs-muted);
+}
+
+.gs-course__plan-note {
+    margin: 10px 0 20px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--gs-muted);
+}
+
+.gs-course__plan-list {
+    flex: 1 1 auto;
+    margin: 0 0 24px;
+    padding: 0;
+    list-style: none;
+}
+
+.gs-course__plan-list li {
+    position: relative;
+    margin-bottom: 11px;
+    padding-left: 26px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: #cbd5e1;
+}
+
+.gs-course__plan-list li::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: 4px;
+    width: 9px;
+    height: 5px;
+    border-left: 2px solid var(--gs-accent);
+    border-bottom: 2px solid var(--gs-accent);
+    transform: rotate(-45deg);
+}
+
+.gs-wrap .gs-course__plan .gs-btn {
+    width: 100%;
+    justify-content: center;
+}
+
+.gs-wrap .gs-select {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--gs-muted) 50%),
+                      linear-gradient(135deg, var(--gs-muted) 50%, transparent 50%);
+    background-position: calc(100% - 20px) 50%, calc(100% - 14px) 50%;
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
+    padding-right: 40px;
+    cursor: pointer;
+}
+
+.gs-wrap .gs-select option {
+    background: var(--gs-surface);
+    color: var(--gs-text);
+}
