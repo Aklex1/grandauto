@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Travelpayouts: стратегия запуска</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  @page :first { margin: 0; }
+
+  :root{
+    --ink:#131d2b;
+    --ink-2:#3d4c5e;
+    --muted:#6b7b8d;
+    --teal:#0d5c63;
+    --teal-lt:#e6f0f0;
+    --warn:#b03a12;
+    --warn-lt:#fdefe8;
+    --good:#1d6b45;
+    --good-lt:#e8f3ec;
+    --line:#d9e1e6;
+    --soft:#f5f8f9;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:"Liberation Sans","DejaVu Sans",Arial,sans-serif;
+    color:var(--ink);
+    font-size:9.7pt;
+    line-height:1.5;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  /* ---------- Cover ---------- */
+  .cover{
+    height:296mm; width:210mm;
+    padding:24mm 22mm 20mm 22mm;
+    display:flex; flex-direction:column;
+    background:linear-gradient(160deg,#0d5c63 0%,#0a3d4a 55%,#0b2a38 100%);
+    color:#fff;
+    page-break-after:always;
+  }
+  .cover .kicker{
+    font-size:9pt; letter-spacing:.22em; text-transform:uppercase;
+    color:#7fd4d4; font-weight:700; margin-bottom:10mm;
+  }
+  .cover h1{
+    font-size:34pt; line-height:1.12; font-weight:700; margin:0 0 6mm 0;
+    letter-spacing:-.4pt;
+  }
+  .cover .sub{
+    font-size:13pt; line-height:1.45; color:#c3dfe2; font-weight:400;
+    max-width:135mm; margin:0 0 auto 0;
+  }
+  .cover .rule{width:26mm;height:3px;background:#7fd4d4;margin:0 0 7mm 0;}
+  .cover .meta{
+    border-top:1px solid rgba(255,255,255,.25);
+    padding-top:6mm; font-size:9.5pt; color:#a9cdd2;
+    display:flex; justify-content:space-between; gap:10mm;
+  }
+  .cover .meta b{color:#fff;font-weight:600;}
+  .cover .toc{
+    margin-top:10mm; background:rgba(255,255,255,.07);
+    border:1px solid rgba(255,255,255,.14);
+    border-radius:3mm; padding:7mm 8mm;
+  }
+  .cover .toc h4{
+    margin:0 0 4mm 0;font-size:8.5pt;letter-spacing:.16em;
+    text-transform:uppercase;color:#7fd4d4;font-weight:700;
+  }
+  .cover .toc ol{margin:0;padding-left:5mm;columns:2;column-gap:10mm;font-size:9.5pt;color:#dcecee;}
+  .cover .toc li{margin-bottom:1.8mm;}
+
+  /* ---------- Structure ---------- */
+  section{page-break-inside:auto;}
+  h2{
+    font-size:16pt; color:var(--teal); margin:0 0 4mm 0; font-weight:700;
+    letter-spacing:-.2pt; page-break-after:avoid;
+  }
+  h2 .num{
+    display:inline-block; min-width:9mm; color:#9dbfc2; font-weight:700;
+  }
+  .h2wrap{border-top:2.5px solid var(--teal);padding-top:4mm;margin-top:9mm;page-break-after:avoid;}
+  .h2wrap:first-of-type{margin-top:0;}
+  h3{
+    font-size:11pt;margin:6mm 0 2.5mm 0;color:var(--ink);font-weight:700;
+    page-break-after:avoid;
+  }
+  h4{font-size:9.7pt;margin:4mm 0 1.5mm 0;color:var(--ink-2);font-weight:700;page-break-after:avoid;}
+  p{margin:0 0 2.5mm 0;}
+  .lead{font-size:10.5pt;color:var(--ink-2);margin-bottom:5mm;}
+  ul,ol{margin:0 0 3mm 0;padding-left:5mm;}
+  li{margin-bottom:1.3mm;}
+  strong{font-weight:700;}
+  code{
+    font-family:"DejaVu Sans Mono",monospace;font-size:8.5pt;
+    background:var(--soft);padding:.4mm 1.2mm;border-radius:1mm;
+  }
+
+  /* ---------- Tables ---------- */
+  table{
+    width:100%;border-collapse:collapse;margin:3mm 0 4mm 0;
+    font-size:8.9pt;page-break-inside:avoid;
+  }
+  thead th{
+    background:var(--teal);color:#fff;text-align:left;
+    padding:2.2mm 2.5mm;font-weight:700;font-size:8.4pt;
+    letter-spacing:.03em;
+  }
+  tbody td{
+    padding:2.2mm 2.5mm;border-bottom:.5px solid var(--line);
+    vertical-align:top;
+  }
+  tbody tr:nth-child(even){background:var(--soft);}
+  td.num,th.num{white-space:nowrap;}
+  .tag{
+    display:inline-block;font-size:7.6pt;font-weight:700;
+    padding:.6mm 1.6mm;border-radius:1mm;white-space:nowrap;
+  }
+  .tag.a{background:var(--good-lt);color:var(--good);}
+  .tag.b{background:var(--teal-lt);color:var(--teal);}
+  .tag.c{background:var(--warn-lt);color:var(--warn);}
+
+  /* ---------- Callouts ---------- */
+  .box{
+    border-left:3px solid var(--teal);background:var(--teal-lt);
+    padding:3.5mm 4mm;margin:3.5mm 0;border-radius:0 2mm 2mm 0;
+    page-break-inside:avoid;
+  }
+  .box.warn{border-left-color:var(--warn);background:var(--warn-lt);}
+  .box.good{border-left-color:var(--good);background:var(--good-lt);}
+  .box .t{font-weight:700;font-size:9.3pt;margin-bottom:1.5mm;display:block;}
+  .box.warn .t{color:var(--warn);}
+  .box.good .t{color:var(--good);}
+  .box.warn .t::before{content:"⚠  ";}
+  .box p:last-child{margin-bottom:0;}
+  .box ul{margin-bottom:0;}
+
+  /* ---------- Cards / grid ---------- */
+  .grid{display:flex;gap:4mm;margin:3mm 0 4mm 0;page-break-inside:avoid;}
+  .card{
+    flex:1;border:1px solid var(--line);border-radius:2mm;
+    padding:3.5mm 4mm;background:#fff;
+  }
+  .card .lbl{
+    font-size:7.6pt;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);font-weight:700;margin-bottom:1.5mm;
+  }
+  .card .big{font-size:17pt;font-weight:700;color:var(--teal);line-height:1.15;}
+  .card .cap{font-size:8.4pt;color:var(--ink-2);margin-top:1mm;}
+
+  /* ---------- Phase blocks ---------- */
+  .phase{
+    display:flex;gap:5mm;margin-bottom:4mm;page-break-inside:avoid;
+    border:1px solid var(--line);border-radius:2mm;overflow:hidden;
+  }
+  .phase .when{
+    background:var(--teal);color:#fff;padding:3.5mm 3mm;
+    width:26mm;flex-shrink:0;text-align:center;
+  }
+  .phase .when b{display:block;font-size:12pt;line-height:1.2;}
+  .phase .when span{font-size:7.6pt;letter-spacing:.1em;text-transform:uppercase;color:#a9dcdd;}
+  .phase .what{padding:3.2mm 4mm 3.2mm 0;flex:1;}
+  .phase .what h4{margin-top:0;}
+  .phase .what ul{margin-bottom:0;}
+
+  /* ---------- Checklist ---------- */
+  .check{list-style:none;padding-left:0;}
+  .check li{
+    padding-left:6mm;position:relative;margin-bottom:2mm;
+  }
+  .check li::before{
+    content:"";position:absolute;left:0;top:1.1mm;
+    width:3.2mm;height:3.2mm;border:1.2px solid var(--teal);border-radius:.8mm;
+  }
+
+  .funnel{
+    font-family:"DejaVu Sans Mono",monospace;font-size:8.3pt;
+    background:var(--soft);border:1px solid var(--line);
+    border-radius:2mm;padding:4mm;margin:3mm 0;white-space:pre;
+    line-height:1.6;page-break-inside:avoid;
+  }
+
+  footer.disc{
+    margin-top:9mm;border-top:1px solid var(--line);padding-top:4mm;
+    font-size:8.2pt;color:var(--muted);page-break-inside:avoid;
+  }
+  .nobreak{page-break-inside:avoid;}
+  .newpage{page-break-before:always;}
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="kicker">Travelpayouts · Affiliate Strategy</div>
+  <div class="rule"></div>
+  <h1>Стратегия запуска<br>на партнёрках<br>Travelpayouts</h1>
+  <div class="sub">Выбор офферов, контент-завод в Shorts и Reels,<br>SEO на дроп-доменах и оценка Мутагена<br>для поиска низкоконкурентных ключей.</div>
+
+  <div class="toc">
+    <h4>Содержание</h4>
+    <ol>
+      <li>Ключевые решения</li>
+      <li>Быстрый старт: офферы</li>
+      <li>Самые дорогие офферы</li>
+      <li>Что берём в запуск</li>
+      <li>Трафик: Shorts и Reels</li>
+      <li>Какие материалы размещать</li>
+      <li>Дроп-домены</li>
+      <li>Мутаген: оценка</li>
+      <li>План на 90 дней</li>
+      <li>Чек-листы</li>
+    </ol>
+  </div>
+
+  <div class="meta">
+    <div><b>Документ</b><br>Рабочая стратегия, v1.0</div>
+    <div><b>Дата</b><br>16 сентября 2026</div>
+    <div><b>Горизонт</b><br>90 дней до первых выплат</div>
+  </div>
+</div>
+
+<!-- ============ 1 ============ -->
+<div class="h2wrap"><h2><span class="num">1</span>Ключевые решения</h2></div>
+
+<p class="lead">Четыре вывода, от которых зависит вся остальная конструкция. Если не принять их на старте, оптимизация офферов и креативов не спасёт.</p>
+
+<div class="grid">
+  <div class="card">
+    <div class="lbl">Решение 01</div>
+    <div class="big">Гео первично</div>
+    <div class="cap">RU-аудитория и бурж — два разных набора офферов. Смешивать в одном канале нельзя: падает и CTR, и конверсия.</div>
+  </div>
+  <div class="card">
+    <div class="lbl">Решение 02</div>
+    <div class="big">Видео → Telegram</div>
+    <div class="cap">Не лить шортсы напрямую в оффер. Cookie 30 дней короче цикла принятия решения о поездке (1–3 месяца).</div>
+  </div>
+</div>
+<div class="grid">
+  <div class="card">
+    <div class="lbl">Решение 03</div>
+    <div class="big">Только тематические дропы</div>
+    <div class="cap">Google с марта 2024 официально считает смену тематики дропа спамом (Expired Domain Abuse). Нетематический дроп — мина, не актив.</div>
+  </div>
+  <div class="card">
+    <div class="lbl">Решение 04</div>
+    <div class="big">Транзакционка, не инфо</div>
+    <div class="cap">AI Overviews и нейроответы съели клики по информационным travel-запросам. Деньги остались в коммерческих.</div>
+  </div>
+</div>
+
+<div class="box warn">
+  <span class="t">Про cashflow — прочитать до запуска</span>
+  <p>Travelpayouts холдит выплаты до завершения поездки. Забронировали в марте отель на июль — деньги увидишь в августе. <strong>Первые 2–3 месяца ты будешь видеть растущий баланс «в ожидании» и нулевые выплаты.</strong> Закладывай это в план, иначе бросишь на третьем месяце, когда всё на самом деле работает.</p>
+</div>
+
+<div class="box">
+  <span class="t">Оговорка по цифрам</span>
+  <p>Заявленные в каталоге ставки («до 54%», «до 30%») — это верхняя граница, а не то, что получишь. Реальный доход показывают колонки <strong>EPC</strong> и <strong>CR</strong> в кабинете Travelpayouts по каждой программе. Оценки ниже построены на типичных для вертикали значениях — перед запуском сверь с фактическими цифрами кабинета, расхождение бывает в 2–3 раза.</p>
+</div>
+
+<!-- ============ 2 ============ -->
+<div class="h2wrap"><h2><span class="num">2</span>Быстрый старт: короткий цикл решения</h2></div>
+
+<p class="lead">Офферы с импульсной покупкой, понятной болью и коротким путём до оплаты. Работают с холодного видеотрафика — это главный критерий отбора.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:26%">Оффер</th>
+      <th class="num" style="width:15%">Ставка</th>
+      <th class="num" style="width:13%">Cookie</th>
+      <th>Почему заходит быстро</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Airalo</strong> · eSIM</td><td class="num">12%</td><td class="num">30 дней</td><td>Чек $5–30, решение за 2 минуты, боль очевидная всем</td></tr>
+    <tr><td><strong>Yesim</strong> · eSIM</td><td class="num">18%</td><td class="num">90 дней</td><td>Лучший в категории: выше ставка, длиннее cookie, есть app-трекинг</td></tr>
+    <tr><td><strong>AirHelp</strong> · компенсации</td><td class="num">15–16,6%</td><td class="num">45 дней</td><td>Вирусная тема «тебе должны €600». Максимальный охват на шортсах</td></tr>
+    <tr><td><strong>Compensair</strong></td><td class="num">€5–12 фикс</td><td class="num">30 дней</td><td>То же поле, фиксированный payout — проще считать юнит-экономику</td></tr>
+    <tr><td><strong>Radical Storage</strong></td><td class="num">8%</td><td class="num">30 дней</td><td>Камеры хранения багажа. Дешёвая, мгновенная, очень конкретная боль</td></tr>
+    <tr><td><strong>GetYourGuide</strong></td><td class="num">8%</td><td class="num">31 день</td><td>Билеты в достопримечательности — идеальный визуал для Reels</td></tr>
+    <tr><td><strong>Tiqets</strong></td><td class="num">3,5–8%</td><td class="num">30 дней</td><td>То же поле + app-трекинг. Хороший дубль к GetYourGuide</td></tr>
+    <tr><td><strong>Kiwitaxi</strong> · трансферы</td><td class="num">9–11%</td><td class="num">30 дней</td><td>Трансфер из аэропорта бронируют за неделю до поездки — влезает в cookie</td></tr>
+    <tr><td><strong>intui.travel</strong></td><td class="num">10%</td><td class="num">35 дней</td><td>Альтернатива Kiwitaxi, местами лучше покрытие по гео</td></tr>
+    <tr><td style="background:#e8f3ec"><strong>DiscoverCars</strong> · авто</td><td class="num" style="background:#e8f3ec">23–54%</td><td class="num" style="background:#e8f3ec"><strong>365 дней</strong></td><td style="background:#e8f3ec"><strong>Единственный, кто и быстрый, и дорогой.</strong> Cookie 365 дней — аномалия для рынка: забирает все последующие поездки клиента</td></tr>
+  </tbody>
+</table>
+
+<div class="box good">
+  <span class="t">Почему DiscoverCars — опорный оффер</span>
+  <p>Годовой cookie означает, что один приведённый человек монетизируется не один раз, а столько, сколько он арендует машин за год. В остальных программах списка cookie 7–90 дней, то есть ты платишь за трафик один раз и снимаешь с него одну конверсию. Это принципиально другая экономика — строй ядро вокруг неё.</p>
+</div>
+
+<!-- ============ 3 ============ -->
+<div class="h2wrap"><h2><span class="num">3</span>Самые дорогие: доход с одной конверсии</h2></div>
+
+<p class="lead">Здесь важен не процент, а абсолютные деньги с заказа. Процент от тура за 250 000 ₽ и процент от симки за $10 — несопоставимые величины.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:24%">Оффер</th>
+      <th class="num" style="width:15%">Ставка</th>
+      <th class="num" style="width:22%">Оценка с конверсии</th>
+      <th>Условия и ограничения</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Travelata</strong></td><td class="num">3,8–7%</td><td class="num"><strong>6 000–20 000 ₽</strong></td><td>Чек тура 150–300к ₽. Cookie 180 дней — одна из лучших в RU</td></tr>
+    <tr><td><strong>DiscoverCars</strong></td><td class="num">23–54%</td><td class="num">$15–45</td><td>Процент от маржи брокера, не от чека. Cookie 365 дней</td></tr>
+    <tr><td><strong>VisitorsCoverage</strong></td><td class="num">$1–160 фикс</td><td class="num">до $160</td><td>Страховка для въезжающих в США. Узкое гео, но очень дорогое</td></tr>
+    <tr><td><strong>Insubuy</strong></td><td class="num">$1,5–150 фикс</td><td class="num">до $150</td><td>То же поле. Хорошо ложится на SEO, плохо на видео</td></tr>
+    <tr><td><strong>Vio.com</strong></td><td class="num">40–64% revshare</td><td class="num">$8–30</td><td>Отели. Revshare от маржи, чек высокий, есть app-трекинг</td></tr>
+    <tr><td><strong>T-bank</strong></td><td class="num">$14–50 фикс</td><td class="num">$14–50</td><td>CPA за оформленную карту. Не зависит от чека — редкий случай</td></tr>
+    <tr><td><strong>Youtravel</strong></td><td class="num">4–10%</td><td class="num">4 000–20 000 ₽</td><td>Авторские туры, чек 80–250к ₽. Cookie 90 дней</td></tr>
+    <tr><td><strong>Tripster</strong></td><td class="num">4–10%</td><td class="num">300–2 500 ₽</td><td>Экскурсии RU, чек средний, но частота покупок высокая</td></tr>
+    <tr><td><strong>Kruiz.online</strong></td><td class="num">3,3%</td><td class="num">5 000–25 000 ₽</td><td>Круизы. Чек огромный, но цикл решения 3–6 месяцев</td></tr>
+    <tr><td><strong>LaVoyage</strong></td><td class="num">0,75–3%</td><td class="num">2 000–15 000 ₽</td><td>Круизы, cookie 120 дней — компенсирует длинный цикл</td></tr>
+    <tr><td><strong>Cherehapa</strong></td><td class="num">до 30%</td><td class="num">200–900 ₽</td><td>Страховки RU. Чек маленький, берёт объёмом и повторяемостью</td></tr>
+    <tr><td><strong>EKTA</strong></td><td class="num">25%</td><td class="num">$3–15</td><td>Страховки для бурж-аудитории и релокантов</td></tr>
+  </tbody>
+</table>
+
+<div class="box warn">
+  <span class="t">Офферы-ловушки: не берите на старте</span>
+  <ul>
+    <li><strong>Aviasales — 1,1–1,3%.</strong> Авиабилеты почти не платят: маржа агрегатора копеечная. Классическая ошибка новичка — начать с самого узнаваемого бренда и получить $2 с продажи билета за $400.</li>
+    <li><strong>Vrbo — 1,8% + cookie 7 дней.</strong> Низкая ставка и окно, в которое не влезает цикл выбора жилья.</li>
+    <li><strong>Ticketmaster — 0–4,15%.</strong> Нижняя граница ноль: часть заказов не оплачивается вовсе.</li>
+    <li><strong>Busbud — 5% + cookie 7 дней.</strong> Автобусные билеты, чек $10–40, окно почти нулевое.</li>
+    <li><strong>BikesBooking — 4%.</strong> Внутри той же категории DiscoverCars даёт в разы больше.</li>
+  </ul>
+</div>
+
+<!-- ============ 4 ============ -->
+<div class="h2wrap"><h2><span class="num">4</span>Что берём в реальный запуск</h2></div>
+
+<h3>Ядро — 80% усилий, 4 оффера</h3>
+<table>
+  <thead>
+    <tr><th style="width:24%">Оффер</th><th style="width:22%">Роль в связке</th><th>Зачем именно он</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>DiscoverCars</strong></td><td><span class="tag a">Деньги</span></td><td>Основной доход. Высокая ставка и годовой cookie дают накопительный эффект</td></tr>
+    <tr><td><strong>Airalo / Yesim</strong></td><td><span class="tag b">Частота</span></td><td>Быстрые конверсии = быстрая обратная связь по креативам. Без этого не понять, какие хуки работают</td></tr>
+    <tr><td><strong>AirHelp</strong></td><td><span class="tag b">Охват</span></td><td>Вирусный сюжет, тянет просмотры и подписки в Telegram</td></tr>
+    <tr><td><strong>GetYourGuide</strong></td><td><span class="tag b">Контент</span></td><td>Даёт бесконечные визуальные поводы для роликов — экскурсии, места, билеты</td></tr>
+  </tbody>
+</table>
+
+<h3>Довесок под RU-трафик</h3>
+<p>Подключается вторым эшелоном, когда есть база в Telegram и понятно, какая доля аудитории русскоязычная:<br>
+<strong>Travelata</strong> (самый дорогой чек в списке) · <strong>Tripster</strong> и <strong>Sputnik8</strong> (экскурсии) · <strong>Cherehapa</strong> (страховки) · <strong>Localrent</strong> (аренда авто по РФ и ближнему зарубежью) · <strong>Ostrovok</strong> и <strong>Яндекс.Путешествия</strong> (отели).</p>
+
+<div class="box">
+  <span class="t">Логика связки</span>
+  <p>DiscoverCars зарабатывает, eSIM даёт быстрый отклик для оптимизации, AirHelp приводит людей, GetYourGuide кормит контент-план. Каждый оффер закрывает свою функцию — это не «список из четырёх штук наугад», а рабочая схема, где уход любого элемента ломает конкретный механизм.</p>
+</div>
+
+<!-- ============ 5 ============ -->
+<div class="h2wrap newpage"><h2><span class="num">5</span>Трафик: YouTube Shorts и Reels</h2></div>
+
+<div class="box warn">
+  <span class="t">Жёсткая правда о коротком видео в travel</span>
+  <p>Схема «шортс → партнёрская ссылка» почти не работает. Две причины:</p>
+  <ul>
+    <li><strong>CTR из био или описания шортса — 0,1–0,3% от просмотров.</strong> Не 3%, не 1%. Миллион просмотров даёт 1 000–3 000 переходов.</li>
+    <li><strong>Cookie 30 дней короче цикла решения о поездке (1–3 месяца).</strong> Ты платишь охватом за конверсии, которые истекают до того, как человек купит.</li>
+  </ul>
+</div>
+
+<h3>Следствие: архитектура воронки</h3>
+<p>Шортсы льют не в оффер, а в <strong>Telegram-канал или бота</strong>. Там ты собираешь базу и монетизируешь её многократно, а не один раз в пределах cookie. Без этой прослойки контент-завод в travel убыточен по затраченному времени.</p>
+
+<div class="funnel">Шортс / Reels  ──►  Telegram-канал  ──►  Прогрев контентом  ──►  Оффер
+   охват              актив, живёт        снимает ограничение      конверсия
+ 0,1–0,3% CTR         годами              cookie в 30 дней         1–3%
+
+Без Telegram:  Шортс ──► Оффер  ──►  cookie истёк  ──►  0
+</div>
+
+<h3>Что реально конвертит</h3>
+<p>Работают не «красивые виды», а формула <strong>конкретный лайфхак → конкретный инструмент</strong>:</p>
+
+<table>
+  <thead><tr><th style="width:8%"></th><th style="width:52%">Сюжет</th><th>Оффер</th></tr></thead>
+  <tbody>
+    <tr><td><span class="tag a">Да</span></td><td>«Не покупай симку в аэропорту — вот почему»</td><td>Airalo / Yesim</td></tr>
+    <tr><td><span class="tag a">Да</span></td><td>«Скрытые платежи при аренде авто, которые тебе не покажут»</td><td>DiscoverCars</td></tr>
+    <tr><td><span class="tag a">Да</span></td><td>«Рейс задержали на 3 часа? Тебе должны €600»</td><td>AirHelp</td></tr>
+    <tr><td><span class="tag a">Да</span></td><td>«Выселился в 11, самолёт в 21 — что делать с чемоданом»</td><td>Radical Storage</td></tr>
+    <tr><td><span class="tag c">Нет</span></td><td>«Топ-10 красивых мест Италии» — охват есть, конверсии нет</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h3>Разделение площадок</h3>
+<table>
+  <thead><tr><th style="width:20%">Площадка</th><th style="width:20%">Функция</th><th>Особенности</th></tr></thead>
+  <tbody>
+    <tr><td><strong>YouTube Shorts</strong></td><td><span class="tag a">Деньги</span></td><td>Аудитория с намерением, заходят «how-to» и денежные темы. Плюс шортсы подтягивают длинные видео, а в их описании ссылки реально кликают</td></tr>
+    <tr><td><strong>Instagram Reels</strong></td><td><span class="tag b">Охват</span></td><td>Гео-визуал. Для RU-аудитории ограничен — замещай VK Клипами</td></tr>
+    <tr><td><strong>TikTok</strong></td><td><span class="tag b">Охват</span></td><td>Обязателен для бурж-гео, самый дешёвый охват на рынке</td></tr>
+  </tbody>
+</table>
+
+<h3>Объём контент-завода</h3>
+<p>Минимум для статистически значимого вывода: <strong>3–5 роликов в день на канал, 3 канала, 60 дней</strong> — это 500–900 роликов. Один сценарий разрезается на 3 ролика: разный хук, один и тот же корпус. <strong>Шаблоны, а не креатив</strong> — креатив не масштабируется, шаблон масштабируется.</p>
+
+<!-- ============ 6 ============ -->
+<div class="h2wrap"><h2><span class="num">6</span>Какие материалы размещать</h2></div>
+
+<h3>Видео: пять форматов, закрывающих 90% потребности</h3>
+<table>
+  <thead><tr><th style="width:5%">#</th><th style="width:26%">Формат</th><th style="width:34%">Пример</th><th>Профиль</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><strong>Ошибка / предупреждение</strong></td><td>«3 ошибки при аренде авто за границей»</td><td>Лучший CTR. Работает на страхе потери денег</td></tr>
+    <tr><td>2</td><td><strong>Деньги в кармане</strong></td><td>«Как вернуть деньги за задержанный рейс»</td><td>Самый вирусный, но низкий intent — обязателен догрев</td></tr>
+    <tr><td>3</td><td><strong>Сравнение цен на экране</strong></td><td>«Сравнил страховку в 4 сервисах, разница 3 500 ₽»</td><td>Высокий intent, низкий охват. Скринкаст</td></tr>
+    <tr><td>4</td><td><strong>Гео-гайд с конкретикой</strong></td><td>«Тбилиси на 3 дня, бюджет 20к — по дням»</td><td>Даёт и охват, и переходы в Telegram</td></tr>
+    <tr><td>5</td><td><strong>Разбор чека</strong></td><td>«Аренда авто в Черногории — во что реально обошлось»</td><td>Строит доверие, допускает прямую ссылку</td></tr>
+  </tbody>
+</table>
+
+<h3>Сайт на дропе: типы страниц</h3>
+<p>Строй под <strong>транзакционные и коммерческие</strong> запросы, не под информационку. Причина: AI Overviews в Google и нейроответы в Яндексе съели клики по информационным travel-запросам — «что посмотреть в Риме» теперь отвечается прямо в выдаче, без перехода на сайт.</p>
+
+<table>
+  <thead><tr><th style="width:46%">Шаблон запроса</th><th>Оффер на странице</th></tr></thead>
+  <tbody>
+    <tr><td><code>аренда авто [город] без депозита</code></td><td>DiscoverCars / Localrent</td></tr>
+    <tr><td><code>трансфер из аэропорта [X] цена</code></td><td>Kiwitaxi / GetTransfer</td></tr>
+    <tr><td><code>esim [страна] какую выбрать</code></td><td>Airalo / Yesim</td></tr>
+    <tr><td><code>страховка для визы [страна] требования</code></td><td>Cherehapa / EKTA</td></tr>
+    <tr><td><code>[достопримечательность] билеты без очереди</code></td><td>GetYourGuide / Tiqets</td></tr>
+    <tr><td><code>компенсация за задержку рейса [авиакомпания]</code></td><td>AirHelp / Compensair</td></tr>
+  </tbody>
+</table>
+
+<div class="box good">
+  <span class="t">Что AI-ответ не заменяет</span>
+  <p>Калькуляторы, интерактивные сравнительные таблицы, актуальные цены, персональный опыт с фотографиями и чеками. Это и есть защищённый от нейровыдачи контент — вкладывайся туда, а не в переписанные путеводители.</p>
+</div>
+
+<!-- ============ 7 ============ -->
+<div class="h2wrap newpage"><h2><span class="num">7</span>Дроп-домены</h2></div>
+
+<div class="box warn">
+  <span class="t">Главный риск, который надо знать до покупки</span>
+  <p>В марте 2024 Google официально внёс <strong>Expired Domain Abuse</strong> в spam policy. Покупка дропа под смену тематики — это прямо описанное в политике нарушение, за которое прилетает ручная санкция.</p>
+  <p><strong>Практический вывод: бери только тематически совпадающие дропы.</strong> Был travel-блог — делай travel-сайт. Нетематический дроп с жирным ссылочным профилем — это не актив, а мина замедленного действия.</p>
+</div>
+
+<h3>Чек-лист перед покупкой</h3>
+<ol>
+  <li><strong>Web.archive</strong> — что было на домене последние 3–5 лет. Совпадение тематики обязательно, а не желательно.</li>
+  <li><strong>Ссылочный профиль</strong> (Ahrefs / Majestic) — соотношение TF/CF, доля спамных анкоров, гео доноров. Перекос CF над TF в разы — признак накрутки.</li>
+  <li><strong>Проверка на фильтр</strong> — <code>site:домен</code> в обоих поисковиках. Сразу после покупки добавь в Search Console и Яндекс.Вебмастер и посмотри раздел ручных санкций.</li>
+  <li><strong>История WHOIS</strong> — если домен дропался 3 и более раз, он уже отработан сетками и выжат.</li>
+  <li><strong>Портфель, а не один домен.</strong> Бери 5–10. Часть проснётся под фильтром через 2–3 месяца — это нормальный процент брака, закладывай его в бюджет.</li>
+</ol>
+
+<div class="grid">
+  <div class="card">
+    <div class="lbl">Яндекс</div>
+    <div class="big">2–4 мес.</div>
+    <div class="cap">До первых позиций на дропе с историей. Лояльнее к дропам, чем Google.</div>
+  </div>
+  <div class="card">
+    <div class="lbl">Google</div>
+    <div class="big">4–8 мес.</div>
+    <div class="cap">Сейчас агрессивен к дропам. Требует тематического совпадения и живого контента.</div>
+  </div>
+  <div class="card">
+    <div class="lbl">Бюджет</div>
+    <div class="big">30–80к ₽</div>
+    <div class="cap">Ориентир на портфель из 5 доменов среднего качества.</div>
+  </div>
+</div>
+
+<div class="box good">
+  <span class="t">Сильный приём: восстановление структуры</span>
+  <p>Подними старую структуру URL из веб-архива и поставь 301 на новые разделы — или воссоздай ключевые страницы по содержанию архива. Так возвращается часть исторического трафика и трастовости, а не только ссылочный вес. Разница в скорости выхода — месяцы.</p>
+</div>
+
+<h3>Где искать</h3>
+<p>expireddomains.net (агрегатор, бесплатный уровень достаточен для старта) · дроп-аукционы регистраторов и бэкордер-сервисы для зоны .ru · списки Majestic по тематическим категориям.</p>
+
+<!-- ============ 8 ============ -->
+<div class="h2wrap"><h2><span class="num">8</span>Мутаген: честная оценка</h2></div>
+
+<div class="grid">
+  <div class="card" style="border-color:#1d6b45;">
+    <div class="lbl">Для Яндекса</div>
+    <div class="big" style="color:#1d6b45;">7 / 10</div>
+    <div class="cap">Рабочий и очень дешёвый первичный фильтр. Оправдывает себя на объёме.</div>
+  </div>
+  <div class="card" style="border-color:#b03a12;">
+    <div class="lbl">Для Google и бурж</div>
+    <div class="big" style="color:#b03a12;">0 / 10</div>
+    <div class="cap">Неприменим в принципе. Метрика считается только по выдаче Яндекса.</div>
+  </div>
+</div>
+
+<h3>Где реально полезен</h3>
+<ul>
+  <li><strong>Дёшево.</strong> Десятки копеек за проверку плюс бесплатный дневной лимит — можно прогнать тысячи ключей за сумму, которая не влияет на бюджет.</li>
+  <li><strong>Метрика не бессмысленная.</strong> Показатель конкуренции ≤5–8 действительно коррелирует с возможностью выйти в топ Яндекса молодым сайтом. Не идеально, но статистически работает.</li>
+  <li><strong>Закрывает базу без Keys.so.</strong> Встроенный подбор ключей и кластеризатор снимают необходимость в более дорогих сервисах на старте.</li>
+</ul>
+
+<h3>Где ломается — и в travel это критично</h3>
+<table>
+  <thead><tr><th style="width:5%">#</th><th style="width:28%">Ограничение</th><th>Что это значит на практике</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><strong>Только Яндекс</strong></td><td>Для Google и любого бурж-трафика бесполезен полностью. Если часть проекта на английском — там Мутаген не даёт вообще ничего</td></tr>
+    <tr><td>2</td><td><strong>Метрика формальная</strong></td><td>Считается по вхождениям в title, возрасту доменов и похожим признакам. Не учитывает поведенческие и коммерческость. <strong>В travel выдача забита агрегаторами</strong> (Яндекс Путешествия, Тонкости туризма, Tripadvisor) — Мутаген покажет «конкуренция 4» там, где топ-10 физически не подвинуть</td></tr>
+    <tr><td>3</td><td><strong>Кэш устаревает</strong></td><td>Часть проверок отдаётся по данным недельной или месячной давности, а выдача меняется быстрее</td></tr>
+    <tr><td>4</td><td><strong>Не показывает сезонность</strong></td><td>В travel это половина дела. Ключ с частотой 2 000 может быть 8 000 в июне и 200 в ноябре. Историю смотри в Wordstat отдельно</td></tr>
+  </tbody>
+</table>
+
+<h3>Правильная связка для RU</h3>
+<div class="funnel">Wordstat / Keys.so / Букварикс   ──►  сбор семантики (3 000–5 000 ключей)
+Мутаген, порог ≤5                ──►  дешёвый первичный отсев
+Ручной просмотр топ-10           ──►  ГЛАВНЫЙ фильтр, его не заменить
+Мутаген / KeyAssort              ──►  кластеризация в структуру сайта
+</div>
+
+<div class="box">
+  <span class="t">Ручной просмотр важнее любой цифры</span>
+  <p>Смотришь топ-10: есть ли там форумы, UGC, Дзен, сайты младше двух лет, страницы без точного вхождения ключа?</p>
+  <ul>
+    <li><strong>Если да</strong> — ключ берёшь, независимо от того, что сказал Мутаген.</li>
+    <li><strong>Если весь топ — агрегаторы и сервисы самого Яндекса</strong> — пропускаешь даже при «конкуренции 2».</li>
+  </ul>
+</div>
+
+<div class="box good">
+  <span class="t">Поправка на дроп</span>
+  <p>Домен с историей и ссылочным профилем тянет более высокую конкуренцию, чем новый сайт. <strong>Порог по Мутагену поднимай с 5 до 10–12</strong> — иначе отсеешь именно те ключи, которые дроп способен взять, и потеряешь основное преимущество, за которое заплатил.</p>
+</div>
+
+<h3>Чем заменить на бурж-части</h3>
+<p>Мутагену там нет замены — нужен другой набор:<br>
+<strong>Low-Fruits.io</strong> — специально ищет выдачу со слабыми результатами (Reddit, Quora, форумы), ближайший аналог по смыслу · <strong>Ahrefs KD</strong> плюс обязательная ручная проверка SERP · <strong>Keyword Insights</strong> для кластеризации.</p>
+
+<!-- ============ 9 ============ -->
+<div class="h2wrap newpage"><h2><span class="num">9</span>План на 90 дней</h2></div>
+
+<div class="phase">
+  <div class="when"><b>1–14</b><span>дни</span></div>
+  <div class="what">
+    <h4>Фундамент</h4>
+    <ul>
+      <li>Регистрация и одобрение в 6 офферах ядра</li>
+      <li>Покупка 5 дроп-доменов по чек-листу из раздела 7 (бюджет 30–80к ₽)</li>
+      <li>Сбор семантики: 3 000–5 000 ключей → Мутаген → 300–500 рабочих</li>
+      <li>Настройка 3 каналов (YouTube Shorts, Reels/VK Клипы, TikTok) и Telegram-канала</li>
+      <li>Сборка 5 шаблонов роликов из раздела 6</li>
+    </ul>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="when"><b>15–45</b><span>дни</span></div>
+  <div class="what">
+    <h4>Завод на полную мощность</h4>
+    <ul>
+      <li>5 роликов в день, все ведут в Telegram — не напрямую в офферы</li>
+      <li>Параллельно 60–80 страниц на дропах по готовым кластерам</li>
+      <li>Восстановление старой структуры URL из веб-архива, 301-редиректы</li>
+      <li>Первая проверка ручных санкций в Search Console и Вебмастере</li>
+    </ul>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="when"><b>46–90</b><span>дни</span></div>
+  <div class="what">
+    <h4>Отсечение и масштабирование</h4>
+    <ul>
+      <li>Появляются первые данные по EPC в кабинете — это момент истины</li>
+      <li>Убиваешь офферы с EPC ниже медианы по портфелю, без сожалений</li>
+      <li>Масштабируешь два лучших: больше роликов, больше страниц, больше гео</li>
+      <li>Яндекс начинает отдавать первый трафик с дропов</li>
+    </ul>
+  </div>
+</div>
+
+<div class="box warn">
+  <span class="t">Честный прогноз</span>
+  <p>Первые значимые <strong>выплаты</strong> — месяц 4–6. Раньше будет только растущий холд и позиции, которые ещё не конвертируют. <strong>Если план строится на доходе с первого месяца, он не сработает ни при какой конфигурации офферов</strong> — дело не в выборе программ, а в механике холдов и в скорости индексации. Это структурное свойство ниши, а не ошибка исполнения.</p>
+</div>
+
+<!-- ============ 10 ============ -->
+<div class="h2wrap"><h2><span class="num">10</span>Чек-листы</h2></div>
+
+<div class="grid">
+  <div class="card">
+    <div class="lbl">Перед запуском</div>
+    <ul class="check" style="margin-top:2mm;">
+      <li>Определено гео: RU или бурж</li>
+      <li>Одобрены 6 офферов ядра</li>
+      <li>Telegram-канал создан и оформлен</li>
+      <li>5 шаблонов роликов готовы</li>
+      <li>Заложен кассовый разрыв 4 месяца</li>
+      <li>Сверены реальные EPC в кабинете</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="lbl">По каждому дропу</div>
+    <ul class="check" style="margin-top:2mm;">
+      <li>Тематика архива совпадает</li>
+      <li>TF/CF проверены, спама нет</li>
+      <li>Дропался не более 2 раз</li>
+      <li>Ручных санкций нет</li>
+      <li>Старая структура URL выгружена</li>
+      <li>301-редиректы настроены</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card" style="margin-top:4mm;">
+  <div class="lbl">Еженедельная сверка</div>
+  <ul class="check" style="margin-top:2mm;columns:2;column-gap:8mm;">
+    <li>EPC по каждому офферу за неделю</li>
+    <li>CTR из видео в Telegram</li>
+    <li>Прирост подписчиков Telegram</li>
+    <li>Индексация новых страниц дропов</li>
+    <li>Позиции по 20 контрольным ключам</li>
+    <li>Баланс «в ожидании» против выплаченного</li>
+    <li>Стоимость часа на один ролик</li>
+    <li>Доля роликов с охватом выше медианы</li>
+  </ul>
+</div>
+
+<footer class="disc">
+  <strong>Ограничения документа.</strong> Ставки вознаграждения приведены по каталогу программ Travelpayouts и являются верхней границей условий, а не гарантированной выплатой. Оценки дохода с конверсии, CTR и сроков выхода в поиск основаны на типичных для вертикали значениях и носят ориентировочный характер — фактические показатели проверяются по колонкам EPC и CR в личном кабинете Travelpayouts и по собственной статистике после запуска. Условия партнёрских программ, размеры комиссий, сроки cookie и правила холдирования меняются партнёрами без предварительного уведомления. Политики поисковых систем в отношении доменов с истёкшей регистрацией также обновляются — перед покупкой дропов сверяйтесь с актуальными редакциями spam policy Google и рекомендаций Яндекса.
+</footer>
+
+</body>
+</html>
