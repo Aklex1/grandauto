@@ -21,6 +21,21 @@ class GS_Webmaster {
     const OPT_CACHE  = 'gs_webmaster_cache';
     const CACHE_TTL  = 900;
 
+    public static function boot() {
+        add_action('admin_post_gs_webmaster_recrawl', array(__CLASS__, 'handle_recrawl'));
+    }
+
+    public static function handle_recrawl() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_webmaster_recrawl');
+        $res = self::recrawl_recent(0);
+        set_transient('gs_webmaster_notice', $res, 60);
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-webmaster');
+        exit;
+    }
+
     public static function token() {
         return trim((string) get_option(self::OPT_TOKEN, ''));
     }
@@ -71,6 +86,11 @@ class GS_Webmaster {
             return array('ok' => false, 'body' => $body, 'message' => 'Вебмастер ответил ошибкой: ' . $why);
         }
         return array('ok' => true, 'body' => $body, 'message' => '');
+    }
+
+    /** Разбор ответов вручную: токен при этом наружу не выходит. */
+    public static function probe($path, $method = 'GET', $payload = null) {
+        return self::call($path, strtoupper($method), $payload);
     }
 
     /** Идентификаторы пользователя и сайта меняются редко — держим в кеше. */
@@ -149,21 +169,28 @@ class GS_Webmaster {
             return array('ok' => false, 'problems' => array(), 'message' => $res['message']);
         }
 
+        // Вебмастер отдаёт проверки объектом «код => состояние», а не списком.
         $out = array();
-        foreach ((array) ($res['body']['problems'] ?? array()) as $problem) {
+        $checked = 0;
+        foreach ((array) ($res['body']['problems'] ?? array()) as $type => $problem) {
+            $checked++;
             $state = (string) ($problem['state'] ?? '');
             if ($state === 'ABSENT') {
-                continue; // замечания нет — показывать нечего
+                continue; // проверка пройдена — показывать нечего
             }
             $out[] = array(
-                'type'     => (string) ($problem['problem_type'] ?? ''),
-                'title'    => self::human_problem((string) ($problem['problem_type'] ?? '')),
+                'type'     => (string) $type,
+                'title'    => self::human_problem((string) $type),
                 'severity' => self::human_severity((string) ($problem['severity'] ?? '')),
-                'state'    => $state,
+                'state'    => self::human_state($state),
+                'weight'   => self::weight((string) ($problem['severity'] ?? '')),
                 'since'    => (string) ($problem['last_state_update'] ?? ''),
             );
         }
-        return array('ok' => true, 'problems' => $out, 'message' => '');
+        usort($out, function ($a, $b) {
+            return $a['weight'] - $b['weight'];
+        });
+        return array('ok' => true, 'problems' => $out, 'checked' => $checked, 'message' => '');
     }
 
     /** Сколько страниц в поиске и в обходе — короткая сводка. */
@@ -230,6 +257,74 @@ class GS_Webmaster {
     /* ---------------------------------------------------------------------
      * Перевод
      * ------------------------------------------------------------------ */
+
+    /** Сколько запросов на переобход осталось на сегодня. */
+    public static function quota() {
+        $ids = self::host_path('/recrawl/quota/');
+        if (!$ids['ok']) {
+            return array('ok' => false, 'left' => 0, 'total' => 0, 'message' => $ids['message']);
+        }
+        $res = self::call($ids['path']);
+        if (!$res['ok']) {
+            return array('ok' => false, 'left' => 0, 'total' => 0, 'message' => $res['message']);
+        }
+        return array(
+            'ok'      => true,
+            'left'    => (int) ($res['body']['quota_remainder'] ?? 0),
+            'total'   => (int) ($res['body']['daily_quota'] ?? 0),
+            'message' => '',
+        );
+    }
+
+    /**
+     * Отправляет на переобход самые свежие страницы — столько, сколько
+     * позволяет дневная квота.
+     */
+    public static function recrawl_recent($limit = 0) {
+        $quota = self::quota();
+        $left = $quota['ok'] ? $quota['left'] : 0;
+        if ($left <= 0) {
+            return array('ok' => false, 'sent' => 0, 'failed' => 0, 'message' => 'Дневная квота на переобход исчерпана');
+        }
+        $limit = $limit > 0 ? min($limit, $left) : $left;
+
+        $urls = array(home_url('/'));
+        $posts = get_posts(array(
+            'post_type'        => array('post', 'page'),
+            'post_status'      => 'publish',
+            'numberposts'      => $limit,
+            'orderby'          => 'modified',
+            'order'            => 'DESC',
+            'fields'           => 'ids',
+            'suppress_filters' => true,
+        ));
+        foreach ($posts as $id) {
+            $url = get_permalink($id);
+            if ($url) {
+                $urls[] = $url;
+            }
+        }
+        $urls = array_slice(array_values(array_unique($urls)), 0, $limit);
+        return self::recrawl($urls);
+    }
+
+    public static function human_state($state) {
+        switch (strtoupper($state)) {
+            case 'PRESENT':   return 'есть';
+            case 'ABSENT':    return 'нет';
+            case 'UNDEFINED': return 'не проверено';
+        }
+        return mb_strtolower($state);
+    }
+
+    private static function weight($severity) {
+        switch (strtoupper($severity)) {
+            case 'FATAL':            return 0;
+            case 'CRITICAL':         return 1;
+            case 'POSSIBLE_PROBLEM': return 2;
+        }
+        return 3;
+    }
 
     public static function human_severity($severity) {
         switch (strtoupper($severity)) {

@@ -175,19 +175,47 @@ class GS_Admin {
         ob_start();
         ?>
         <h2 id="gs-webmaster">Яндекс.Вебмастер</h2>
+        <?php $notice = get_transient('gs_webmaster_notice'); ?>
+        <?php if (is_array($notice)): ?>
+            <?php delete_transient('gs_webmaster_notice'); ?>
+            <p class="notice notice-<?php echo !empty($notice['ok']) ? 'success' : 'warning'; ?>" style="padding:10px;max-width:900px">
+                Отправлено на переобход: <?php echo (int) $notice['sent']; ?>,
+                отказов: <?php echo (int) $notice['failed']; ?>.
+                <?php echo esc_html($notice['message']); ?>
+            </p>
+        <?php endif; ?>
         <?php if (!GS_Webmaster::ready()): ?>
             <p class="description" style="max-width:900px">
                 Токен не задан. Без него замечания придётся смотреть в интерфейсе Вебмастера вручную.
             </p>
         <?php else: ?>
+            <?php $quota = GS_Webmaster::quota(); ?>
+            <?php if ($quota['ok']): ?>
+                <p>
+                    Переобход: осталось <strong><?php echo (int) $quota['left']; ?></strong>
+                    из <?php echo (int) $quota['total']; ?> запросов на сегодня.
+                </p>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
+                    <?php wp_nonce_field('gs_webmaster_recrawl'); ?>
+                    <input type="hidden" name="action" value="gs_webmaster_recrawl">
+                    <?php submit_button('Отправить свежие страницы на переобход', 'secondary', 'submit', false); ?>
+                </form>
+            <?php endif; ?>
+
             <?php $diag = GS_Webmaster::diagnostics(); ?>
             <?php if (!$diag['ok']): ?>
                 <p class="notice notice-warning" style="padding:10px;max-width:900px">
                     <?php echo esc_html($diag['message']); ?>
                 </p>
             <?php elseif (!$diag['problems']): ?>
-                <p class="description">Замечаний нет — Вебмастер ничего не нашёл.</p>
+                <p class="description">
+                    Замечаний нет: пройдено проверок — <?php echo (int) ($diag['checked'] ?? 0); ?>.
+                </p>
             <?php else: ?>
+                <p class="description">
+                    Пройдено проверок: <?php echo (int) ($diag['checked'] ?? 0); ?>,
+                    требуют внимания: <?php echo count($diag['problems']); ?>.
+                </p>
                 <table class="widefat striped" style="max-width:900px">
                     <thead><tr><th>Замечание</th><th>Важность</th><th>Состояние</th><th>Код</th></tr></thead>
                     <tbody>

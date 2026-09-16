@@ -151,6 +151,14 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Разбор ответов Вебмастера: маршруты у него разные, а токен должен
+        // остаться на сервере. Только для администратора.
+        register_rest_route(self::NS, '/webmaster/probe', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_webmaster_probe'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/voice/archive', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_voice_archive'),
@@ -1358,6 +1366,18 @@ class GS_Rest {
         }
         $removed = GS_Songs::remove((string) ($params['id'] ?? ''));
         return rest_ensure_response(array('success' => $removed, 'total' => GS_Songs::count()));
+    }
+
+    public static function handle_webmaster_probe($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        return rest_ensure_response(GS_Webmaster::probe(
+            (string) ($params['path'] ?? '/user/'),
+            (string) ($params['method'] ?? 'GET'),
+            isset($params['payload']) ? $params['payload'] : null
+        ));
     }
 
     public static function handle_voice_archive($request) {
