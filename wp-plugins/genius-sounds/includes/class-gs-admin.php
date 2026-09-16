@@ -132,6 +132,23 @@ class GS_Admin {
                 'default'           => '',
             ));
         }
+        // Токен Вебмастера: пустое значение при сохранении не должно стирать
+        // уже записанный — форма приходит без полей, которых на ней нет.
+        register_setting('gs_settings_group', GS_Webmaster::OPT_TOKEN, array(
+            'type'              => 'string',
+            'sanitize_callback' => function ($value) {
+                if ($value === null) {
+                    return (string) get_option(GS_Webmaster::OPT_TOKEN, '');
+                }
+                $value = trim(sanitize_text_field((string) $value));
+                if ($value !== '') {
+                    GS_Webmaster::forget(); // сменился токен — сбрасываем кеш идентификаторов
+                }
+                return $value;
+            },
+            'default'           => '',
+        ));
+
         register_setting('gs_settings_group', GS_Index::OPT_ENABLED, array(
             'type'              => 'string',
             'sanitize_callback' => function ($value) {
@@ -148,6 +165,62 @@ class GS_Admin {
             },
             'default'           => 15,
         ));
+    }
+
+    /**
+     * Замечания Яндекс.Вебмастера. Копировать их руками из интерфейса долго
+     * и легко упустить, поэтому забираем сами и показываем рядом с настройками.
+     */
+    public static function render_webmaster() {
+        ob_start();
+        ?>
+        <h2 id="gs-webmaster">Яндекс.Вебмастер</h2>
+        <?php if (!GS_Webmaster::ready()): ?>
+            <p class="description" style="max-width:900px">
+                Токен не задан. Без него замечания придётся смотреть в интерфейсе Вебмастера вручную.
+            </p>
+        <?php else: ?>
+            <?php $diag = GS_Webmaster::diagnostics(); ?>
+            <?php if (!$diag['ok']): ?>
+                <p class="notice notice-warning" style="padding:10px;max-width:900px">
+                    <?php echo esc_html($diag['message']); ?>
+                </p>
+            <?php elseif (!$diag['problems']): ?>
+                <p class="description">Замечаний нет — Вебмастер ничего не нашёл.</p>
+            <?php else: ?>
+                <table class="widefat striped" style="max-width:900px">
+                    <thead><tr><th>Замечание</th><th>Важность</th><th>Состояние</th><th>Код</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($diag['problems'] as $problem): ?>
+                            <tr>
+                                <td><?php echo esc_html($problem['title']); ?></td>
+                                <td><?php echo esc_html($problem['severity']); ?></td>
+                                <td><?php echo esc_html($problem['state']); ?></td>
+                                <td><code><?php echo esc_html($problem['type']); ?></code></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+
+            <?php $broken = GS_Webmaster::broken_links(20); ?>
+            <?php if (!empty($broken['links'])): ?>
+                <h3>Битые внутренние ссылки</h3>
+                <table class="widefat striped" style="max-width:900px">
+                    <thead><tr><th>Страница</th><th>Куда ведёт</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($broken['links'] as $link): ?>
+                            <tr>
+                                <td><code><?php echo esc_html(mb_substr((string) ($link['source_url'] ?? ''), 0, 70)); ?></code></td>
+                                <td><code><?php echo esc_html(mb_substr((string) ($link['destination_url'] ?? ''), 0, 70)); ?></code></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        <?php endif; ?>
+        <?php
+        return ob_get_clean();
     }
 
     /**
@@ -588,6 +661,19 @@ class GS_Admin {
                                 <label><input type="checkbox" name="<?php echo esc_attr(GS_Index::OPT_ENABLED); ?>" value="1" <?php checked(GS_Index::enabled()); ?>>
                                     сообщать Яндексу и Bing о новых страницах сразу (IndexNow)</label>
                             </p>
+                            <p>
+                                <label>Токен API Яндекс.Вебмастера<br>
+                                    <input name="<?php echo esc_attr(GS_Webmaster::OPT_TOKEN); ?>" type="password" autocomplete="off"
+                                           value="<?php echo esc_attr(get_option(GS_Webmaster::OPT_TOKEN, '')); ?>" class="regular-text">
+                                </label>
+                            </p>
+                            <p class="description">
+                                С токеном сайт сам забирает замечания Вебмастера и умеет отправлять страницы
+                                на переобход — список появится ниже. Токен выдаётся на
+                                <a href="https://oauth.yandex.ru" target="_blank" rel="noopener">oauth.yandex.ru</a>
+                                с правами <code>webmaster:hostinfo</code> и <code>webmaster:verify</code>,
+                                живёт полгода и отзывается в настройках аккаунта.
+                            </p>
                             <p class="description">
                                 Ключ подтверждения лежит по адресу
                                 <a href="<?php echo esc_url(GS_Index::key_url()); ?>" target="_blank" rel="noopener"><?php echo esc_html(GS_Index::key_url()); ?></a>
@@ -623,6 +709,8 @@ class GS_Admin {
             <?php echo self::render_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_index_tools(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_webmaster(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <p>
                 Страницы:
