@@ -146,6 +146,12 @@ python comfy_agent.py --server {{ server_url }} --token {{ agent_token }}</pre>
     появится понятная причина, а не отказ ComfyUI.
   </p>
   <p class="small muted">
+    Кратность длины важнее, чем кажется: видеомодели принимают не любое число
+    кадров. WAN и Hunyuan хотят 4n+1, LTX — 8n+1, и 120 кадров вместо 121 такая
+    модель либо отвергает, либо молча считает другой отрезок. Завод сам подгонит
+    <code>%FRAMES%</code> под ближайшее подходящее число.
+  </p>
+  <p class="small muted">
     Обязательна только <code>%PROMPT%</code> — без неё заводу некуда положить текст
     кадра. Метку можно вписать целиком в поле (тогда значение придёт числом, если это
     число) или внутрь строки: <code>кинематографично, %PROMPT%, 35мм</code>.
@@ -155,6 +161,12 @@ python comfy_agent.py --server {{ server_url }} --token {{ agent_token }}</pre>
     <label>Название<input name="name" maxlength="200" placeholder="WAN 2.2 вертикаль"></label>
     <label>Кадров в секунду — из этого считается <code>%FRAMES%</code>
       <input name="fps" type="number" min="1" max="60" value="30"></label>
+    <label>Кратность длины — сколько кадров модель вообще принимает
+      <select name="frame_step">
+        <option value="1">любая длина</option>
+        <option value="4">4n+1 — WAN, Hunyuan</option>
+        <option value="8">8n+1 — LTX-Video</option>
+      </select></label>
     <label>Файл графа (.json)<input type="file" name="file" accept=".json,application/json"></label>
     <label style="grid-column:1/-1">…или вставьте JSON сюда
       <textarea name="graph" rows="6" placeholder='{"3": {"inputs": {...}, "class_type": "..."}}'></textarea></label>
@@ -178,7 +190,8 @@ python comfy_agent.py --server {{ server_url }} --token {{ agent_token }}</pre>
       <td class="small"><code>{{ wf.placeholders }}</code></td>
       <td class="small muted">{{ (wf_nodes.get(wf.id) or [])[:6] | join(', ') }}{%
         if (wf_nodes.get(wf.id) or []) | length > 6 %} и ещё {{ (wf_nodes.get(wf.id) | length) - 6 }}{% endif %}</td>
-      <td class="small">{{ wf.fps }}</td>
+      <td class="small">{{ wf.fps }}{% if (wf.frame_step or 1) > 1 %}
+        <div class="muted">{{ wf.frame_step }}n+1</div>{% endif %}</td>
       <td class="small muted">{{ wf.note }}</td>
       <td>
         <form method="post" action="/comfy/workflows/{{ wf.id }}/drop"

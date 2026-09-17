@@ -290,7 +290,8 @@ def comfy_agent_next(session: Session = Depends(get_session), token: str = "",
                             seconds=float(task.seconds or 5.0),
                             width=int(task.width or 720),
                             height=int(task.height or 1280),
-                            fps=int(workflow.fps or 30)),
+                            fps=int(workflow.fps or 30),
+                            frame_step=int(workflow.frame_step or 1)),
     }})
 
 
@@ -452,6 +453,7 @@ async def comfy_workflow_add(request: Request, session: Session = Depends(get_se
     name = str(form.get("name") or "").strip()[:200]
     note = str(form.get("note") or "").strip()[:2000]
     fps = int(float(form.get("fps") or 30))
+    frame_step = int(float(form.get("frame_step") or 1))
     raw = str(form.get("graph") or "").strip()
 
     upload = form.get("file")
@@ -478,7 +480,8 @@ async def comfy_workflow_add(request: Request, session: Session = Depends(get_se
     row = ComfyWorkflow(
         name=name or f"Граф {len(graph)} нод", note=note,
         graph=json.dumps(graph, ensure_ascii=False),
-        placeholders=", ".join(marks)[:300], fps=max(1, min(60, fps)))
+        placeholders=", ".join(marks)[:300], fps=max(1, min(60, fps)),
+        frame_step=max(1, min(16, frame_step)))
     session.add(row)
     session.commit()
     session.add(Event(level="info", stage="comfy",

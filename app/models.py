@@ -427,6 +427,10 @@ class ComfyWorkflow(Base):
     # что именно завод сможет подставить.
     placeholders: Mapped[str] = mapped_column(String(300), default="")
     fps: Mapped[int] = mapped_column(Integer, default=30)
+    # Кратность длины: видеомодели принимают не любое число кадров. WAN и
+    # Hunyuan хотят 4n+1, LTX — 8n+1, и 120 кадров вместо 121 такую модель либо
+    # роняет, либо тихо меняет длину клипа. Единица — ограничения нет.
+    frame_step: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 

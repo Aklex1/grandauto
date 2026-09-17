@@ -872,7 +872,7 @@ def _comfy_clip(setup, dest: Path, *, prompt: str, seconds: float,
     client, graph, row, timeout = setup
     return client.render(graph, dest, prompt=prompt, seconds=seconds,
                          width=size[0], height=size[1], fps=row.fps or 30,
-                         timeout=timeout)
+                         frame_step=row.frame_step or 1, timeout=timeout)
 
 
 def _image_task(session: Session, client: KieClient, channel: Channel, prompt: str,

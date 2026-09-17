@@ -46,8 +46,22 @@ class ComfyError(RuntimeError):
     pass
 
 
+def frame_count(seconds: float, fps: int, step: int = 1) -> int:
+    """Сколько кадров просить у модели.
+
+    Видеомодели принимают не любую длину: WAN и Hunyuan хотят 4n+1, LTX — 8n+1.
+    Просто округлить секунды на fps мало — 120 кадров вместо 121 такая модель
+    либо отвергнет, либо молча посчитает другой отрезок.
+    """
+    raw = max(1, int(round(seconds * max(1, fps))))
+    if step <= 1:
+        return raw
+    return max(1, int(round((raw - 1) / step)) * step + 1)
+
+
 def fill(workflow: Any, *, prompt: str, seconds: float, width: int, height: int,
-         fps: int = 30, negative: str = "", seed: Optional[int] = None) -> Any:
+         fps: int = 30, negative: str = "", seed: Optional[int] = None,
+         frame_step: int = 1) -> Any:
     """Подставляем значения вместо плейсхолдеров во всём графе.
 
     Обходим структуру целиком: метка может стоять и в строке, и внутри числа
@@ -57,7 +71,7 @@ def fill(workflow: Any, *, prompt: str, seconds: float, width: int, height: int,
         "%PROMPT%": prompt,
         "%NEGATIVE%": negative,
         "%SECONDS%": seconds,
-        "%FRAMES%": max(1, int(round(seconds * fps))),
+        "%FRAMES%": frame_count(seconds, fps, frame_step),
         "%WIDTH%": int(width),
         "%HEIGHT%": int(height),
         "%SEED%": int(seed if seed is not None else random.randint(1, 2**31 - 1)),
@@ -265,10 +279,11 @@ class ComfyClient:
     def render(self, workflow: Any, dest: Path, *, prompt: str, seconds: float,
                width: int, height: int, fps: int = 30, negative: str = "",
                seed: Optional[int] = None, timeout: float = 1800.0,
-               poll: float = 3.0) -> Path:
+               poll: float = 3.0, frame_step: int = 1) -> Path:
         """Полный цикл: подставить, отправить, дождаться, скачать видео."""
         graph = fill(workflow, prompt=prompt, seconds=seconds, width=width,
-                     height=height, fps=fps, negative=negative, seed=seed)
+                     height=height, fps=fps, negative=negative, seed=seed,
+                     frame_step=frame_step)
         missing, doubts = self.preflight(graph)
         for line in doubts:
             log.warning("ComfyUI, под вопросом: %s", line)
