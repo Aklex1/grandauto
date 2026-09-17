@@ -76,6 +76,9 @@
     <pre class="small" style="white-space:pre-wrap;user-select:all">curl -fsSL {{ server_url }}/comfy/agent.py -o comfy_agent.py
 python comfy_agent.py --server {{ server_url }} --token {{ agent_token }} --check
 python comfy_agent.py --server {{ server_url }} --token {{ agent_token }}</pre>
+    <p class="small muted">Посмотреть, что стоит в вашей сборке — ноды, чекпойнты,
+      LoRA — можно отдельно, серверу для этого ничего не нужно:</p>
+    <pre class="small" style="white-space:pre-wrap;user-select:all">python comfy_agent.py --comfy http://127.0.0.1:8188 --inspect</pre>
     <p class="small muted">Первая команда забирает скрипт, вторая проверяет связь и
       ничего не считает, третья запускает работу. Если ComfyUI слушает не
       <code>127.0.0.1:8188</code>, добавьте <code>--comfy http://адрес:порт</code>.
@@ -133,6 +136,16 @@ python comfy_agent.py --server {{ server_url }} --token {{ agent_token }}</pre>
     </tbody>
   </table>
   <p class="small muted">
+    Искать ноды в вашей сборке завод не пытается: граф вы выгружаете из своего же
+    ComfyUI, значит номера нод в нём уже ваши и всё связано так, как вы собрали.
+    Заводу остаётся положить текст в помеченное поле. Что стоит на вашем
+    компьютере, можно посмотреть командой
+    <code>python comfy_agent.py --inspect</code> — она покажет список нод и
+    названия моделей ровно в том виде, в каком их ждёт граф. Перед каждым
+    запуском граф сверяется с этим списком: если ноды или модели нет, в очереди
+    появится понятная причина, а не отказ ComfyUI.
+  </p>
+  <p class="small muted">
     Обязательна только <code>%PROMPT%</code> — без неё заводу некуда положить текст
     кадра. Метку можно вписать целиком в поле (тогда значение придёт числом, если это
     число) или внутрь строки: <code>кинематографично, %PROMPT%, 35мм</code>.
@@ -156,12 +169,15 @@ python comfy_agent.py --server {{ server_url }} --token {{ agent_token }}</pre>
   <p class="muted">Пока ни одного. Без графа локальная генерация не включится.</p>
 {% else %}
 <table class="table">
-  <thead><tr><th>Название</th><th>Метки в графе</th><th>fps</th><th>Заметка</th><th></th></tr></thead>
+  <thead><tr><th>Название</th><th>Метки в графе</th><th>Что должно стоять</th>
+    <th>fps</th><th>Заметка</th><th></th></tr></thead>
   <tbody>
   {% for wf in workflows %}
     <tr>
       <td><b>{{ wf.name }}</b><div class="small muted">id {{ wf.id }}</div></td>
       <td class="small"><code>{{ wf.placeholders }}</code></td>
+      <td class="small muted">{{ (wf_nodes.get(wf.id) or [])[:6] | join(', ') }}{%
+        if (wf_nodes.get(wf.id) or []) | length > 6 %} и ещё {{ (wf_nodes.get(wf.id) | length) - 6 }}{% endif %}</td>
       <td class="small">{{ wf.fps }}</td>
       <td class="small muted">{{ wf.note }}</td>
       <td>

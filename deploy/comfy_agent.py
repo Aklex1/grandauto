@@ -109,21 +109,114 @@ def explain(exc: Exception) -> str:
         return f"HTTP {exc.code} {exc.reason} {detail}".strip()
     if isinstance(exc, urllib.error.URLError):
         return f"нет связи: {exc.reason}"
+    if isinstance(exc, RuntimeError):
+        # Свои ошибки уже написаны по-человечески — название класса тут лишнее.
+        return str(exc)
     return f"{type(exc).__name__}: {exc}"
 
 
 # ------------------------------------------------------------------ ComfyUI
 
+# Ноды-загрузчики, по которым интересно посмотреть, какие модели вообще стоят.
+MODEL_FIELDS = (
+    ("CheckpointLoaderSimple", "ckpt_name", "чекпойнты"),
+    ("UNETLoader", "unet_name", "UNET"),
+    ("LoraLoader", "lora_name", "LoRA"),
+    ("VAELoader", "vae_name", "VAE"),
+    ("CLIPLoader", "clip_name", "CLIP"),
+    ("CLIPVisionLoader", "clip_name", "CLIP Vision"),
+)
+
+
 class Comfy:
     def __init__(self, base: str) -> None:
         self.base = base.rstrip("/")
         self.client_id = str(uuid.uuid4())
+        self._objects = None
 
     def url(self, path: str) -> str:
         return f"{self.base}/{path.lstrip('/')}"
 
     def ping(self) -> dict:
         return get_json(self.url("/system_stats"), timeout=20.0)
+
+    def object_info(self) -> dict:
+        """Что вообще установлено в этой сборке ComfyUI: ноды и их поля.
+
+        Ответ большой (мегабайты) и за время работы не меняется, поэтому
+        спрашиваем один раз и держим у себя.
+        """
+        if self._objects is None:
+            self._objects = get_json(self.url("/object_info"), timeout=180.0) or {}
+        return self._objects
+
+    @staticmethod
+    def _choices(spec: dict) -> dict:
+        """Поля ноды, у которых значение выбирается из списка (модели, сэмплеры)."""
+        found = {}
+        inputs = spec.get("input") or {}
+        for group in ("required", "optional"):
+            for name, decl in (inputs.get(group) or {}).items():
+                options = None
+                if isinstance(decl, list) and decl:
+                    if isinstance(decl[0], list):
+                        options = decl[0]
+                    elif isinstance(decl[0], dict):
+                        options = decl[0].get("options")
+                if options:
+                    found[name] = [str(o) for o in options]
+        return found
+
+    def models(self) -> dict:
+        """Какие модели видит ComfyUI — по типам загрузчиков."""
+        known = self.object_info()
+        out = {}
+        for class_type, field, label in MODEL_FIELDS:
+            spec = known.get(class_type)
+            if not spec:
+                continue
+            options = self._choices(spec).get(field)
+            if options:
+                out[label] = options
+        return out
+
+    def preflight(self, graph: dict) -> tuple:
+        """Сверяем граф с тем, что стоит: (чего нет совсем, что вызывает сомнения).
+
+        Смысл — объяснить причину до запуска, а не после. ComfyUI и сам отвергнет
+        такой граф, но его ответ надо ещё расшифровать, а сюда попадает понятная
+        строка, которая уходит в панель завода как причина неудачи.
+        """
+        try:
+            known = self.object_info()
+        except Exception as exc:  # noqa: BLE001 — проверка не должна мешать работе
+            log(f"  список нод не прочитан ({explain(exc)}) — проверку пропускаю")
+            return [], []
+        if not known:
+            return [], []
+
+        missing, doubts = [], []
+        for node_id, node in (graph or {}).items():
+            if not isinstance(node, dict):
+                continue
+            class_type = node.get("class_type")
+            spec = known.get(class_type)
+            if spec is None:
+                missing.append(f"ноды «{class_type}» нет в этой сборке "
+                               f"(узел {node_id})")
+                continue
+            choices = self._choices(spec)
+            for name, value in (node.get("inputs") or {}).items():
+                options = choices.get(name)
+                # Связь с другой нодой приходит списком [узел, слот] — это не
+                # значение поля, проверять нечего.
+                if not options or not isinstance(value, str):
+                    continue
+                if value not in options:
+                    near = ", ".join(options[:5]) or "ничего"
+                    doubts.append(f"у «{class_type}» (узел {node_id}) в поле "
+                                  f"{name} стоит «{value}», а есть: {near}")
+        return missing, doubts
 
     def submit(self, graph: dict) -> str:
         data = post_json(self.url("/prompt"),
@@ -226,7 +319,14 @@ class Agent:
             f"{task.get('width')}x{task.get('height')}, граф «{task.get('workflow')}»")
         log(f"  промпт: {str(task.get('prompt') or '')[:120]}")
         try:
-            prompt_id = self.comfy.submit(task.get("graph") or {})
+            graph = task.get("graph") or {}
+            missing, doubts = self.comfy.preflight(graph)
+            for line in doubts:
+                log(f"  под вопросом: {line}")
+            if missing:
+                raise RuntimeError("граф не совпал с вашей сборкой ComfyUI: "
+                                   + "; ".join(missing[:4]))
+            prompt_id = self.comfy.submit(graph)
             log(f"  ComfyUI принял: {prompt_id}")
             entry = self.comfy.wait(prompt_id)
             items = self.comfy.outputs(entry)
@@ -300,14 +400,37 @@ def main(argv: list) -> int:
                         help="взять одно задание и выйти — удобно для проверки")
     parser.add_argument("--check", action="store_true",
                         help="только проверить связь с ComfyUI и заводом")
+    parser.add_argument("--inspect", action="store_true",
+                        help="показать, какие ноды и модели стоят в вашем ComfyUI")
     args = parser.parse_args(argv)
 
-    if not args.server or not args.token:
+    # Осмотр своей же сборки — дело локальное, завод для него не нужен.
+    if not args.inspect and (not args.server or not args.token):
         parser.error("нужны --server и --token (или переменные CF_SERVER и CF_TOKEN)")
 
     comfy = Comfy(args.comfy)
     work_dir = Path(args.work_dir) if args.work_dir else \
         Path.home() / ".contentfactory" / "comfy"
+
+    if args.inspect:
+        # Ровно тот список, по которому ComfyUI сверяет граф: имена нод и
+        # значения полей-выпадашек. Из него и берутся названия для графа.
+        try:
+            known = comfy.object_info()
+        except Exception as exc:  # noqa: BLE001
+            log(f"ComfyUI недоступен по адресу {comfy.base}: {explain(exc)}")
+            return 1
+        log(f"нод установлено: {len(known)}")
+        for label, options in comfy.models().items():
+            log(f"{label} ({len(options)}): {', '.join(options[:12])}"
+                + (" …" if len(options) > 12 else ""))
+        if args.work_dir:
+            dump = Path(args.work_dir) / "object_info.json"
+            dump.parent.mkdir(parents=True, exist_ok=True)
+            dump.write_text(json.dumps(known, ensure_ascii=False, indent=1),
+                            encoding="utf-8")
+            log(f"полный список нод сохранён: {dump}")
+        return 0
 
     if args.check:
         ok = True

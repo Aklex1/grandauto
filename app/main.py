@@ -385,9 +385,17 @@ def comfy_page(request: Request, session: Session = Depends(get_session),
                             .limit(15)).scalars().all()
     waiting = session.execute(select(func.count(ComfyTask.id))
                               .where(ComfyTask.status == "pending")).scalar() or 0
+    # Что каждый граф просит из установленного — чтобы было с чем сверять вывод
+    # «--inspect» на домашнем компьютере.
+    wf_nodes = {}
+    for row in rows:
+        try:
+            wf_nodes[row.id] = comfy.node_types(json.loads(row.graph or "{}"))
+        except ValueError:
+            wf_nodes[row.id] = []
     return templates.TemplateResponse("comfy.html", base_context(
         request, session, workflows=rows, comfy_channels=channels,
-        placeholders=comfy.PLACEHOLDERS,
+        placeholders=comfy.PLACEHOLDERS, wf_nodes=wf_nodes,
         comfy_url=st.get(session, "comfy_url", ""),
         comfy_mode=pipeline.comfy_mode(session), comfy_modes=pipeline.COMFY_MODES,
         agent_token=_agent_token(session), comfy_tasks=tasks, comfy_waiting=waiting,
@@ -415,10 +423,16 @@ def comfy_check(session: Session = Depends(get_session), _user: str = Depends(re
     if not url:
         return RedirectResponse("/comfy?check=no-url", status_code=303)
     try:
-        stats = comfy.ComfyClient(url, timeout=20.0).ping()
+        client = comfy.ComfyClient(url, timeout=20.0)
+        stats = client.ping()
         device = ((stats.get("devices") or [{}])[0].get("name") or "?")[:80]
+        try:
+            installed = len(client.object_info())
+        except Exception:  # noqa: BLE001 — связь есть, а список нод не обязателен
+            installed = 0
         session.add(Event(level="info", stage="comfy",
-                          message=f"ComfyUI отвечает: {device}"))
+                          message=f"ComfyUI отвечает: {device}"
+                                  + (f", нод установлено {installed}" if installed else "")))
         session.commit()
         return RedirectResponse("/comfy?check=ok", status_code=303)
     except Exception as exc:  # noqa: BLE001

@@ -84,6 +84,19 @@ def fill(workflow: Any, *, prompt: str, seconds: float, width: int, height: int,
     return walk(workflow)
 
 
+def node_types(workflow: Any) -> list[str]:
+    """Какие ноды просит граф — чтобы в панели было видно, что должно стоять."""
+    if not isinstance(workflow, dict):
+        return []
+    seen: list[str] = []
+    for node in workflow.values():
+        if isinstance(node, dict):
+            name = str(node.get("class_type") or "").strip()
+            if name and name not in seen:
+                seen.append(name)
+    return seen
+
+
 def used_placeholders(workflow: Any) -> list[str]:
     """Какие метки реально встречаются в workflow — для подсказки в панели."""
     blob = json.dumps(workflow, ensure_ascii=False)
@@ -100,6 +113,7 @@ class ComfyClient:
             raise ComfyError("не задан адрес ComfyUI")
         self.timeout = timeout
         self.client_id = client_id or str(uuid.uuid4())
+        self._objects: Optional[dict] = None
 
     def _url(self, path: str) -> str:
         return f"{self.base}/{path.lstrip('/')}"
@@ -110,6 +124,71 @@ class ComfyClient:
             resp = client.get(self._url("/system_stats"))
             resp.raise_for_status()
             return resp.json()
+
+    def object_info(self) -> dict:
+        """Что установлено в этой сборке ComfyUI: ноды и их поля.
+
+        Ответ большой и за время сборки не меняется — спрашиваем один раз.
+        """
+        if self._objects is None:
+            with httpx.Client(timeout=max(self.timeout, 180.0)) as client:
+                resp = client.get(self._url("/object_info"))
+                resp.raise_for_status()
+                self._objects = resp.json() or {}
+        return self._objects
+
+    @staticmethod
+    def _choices(spec: dict) -> dict:
+        """Поля ноды, значение которых выбирается из списка (модели, сэмплеры)."""
+        found: dict[str, list[str]] = {}
+        inputs = spec.get("input") or {}
+        for group in ("required", "optional"):
+            for name, decl in (inputs.get(group) or {}).items():
+                options = None
+                if isinstance(decl, list) and decl:
+                    if isinstance(decl[0], list):
+                        options = decl[0]
+                    elif isinstance(decl[0], dict):
+                        options = decl[0].get("options")
+                if options:
+                    found[name] = [str(o) for o in options]
+        return found
+
+    def preflight(self, workflow: Any) -> tuple[list[str], list[str]]:
+        """Сверяем граф с установленным: (чего нет совсем, что под вопросом).
+
+        Смысл — объяснить причину до запуска. ComfyUI и сам отвергнет такой граф,
+        но его ответ надо расшифровывать, а тут получается понятная строка.
+        """
+        try:
+            known = self.object_info()
+        except Exception as exc:  # noqa: BLE001 — проверка не должна мешать работе
+            log.warning("Список нод ComfyUI не прочитан, проверку пропускаю: %s", exc)
+            return [], []
+        if not known or not isinstance(workflow, dict):
+            return [], []
+
+        missing: list[str] = []
+        doubts: list[str] = []
+        for node_id, node in workflow.items():
+            if not isinstance(node, dict):
+                continue
+            class_type = node.get("class_type")
+            spec = known.get(class_type)
+            if spec is None:
+                missing.append(f"ноды «{class_type}» нет в этой сборке (узел {node_id})")
+                continue
+            choices = self._choices(spec)
+            for name, value in (node.get("inputs") or {}).items():
+                options = choices.get(name)
+                # Связь с другой нодой приходит списком [узел, слот] — не значение.
+                if not options or not isinstance(value, str):
+                    continue
+                if value not in options:
+                    near = ", ".join(options[:5]) or "ничего"
+                    doubts.append(f"у «{class_type}» (узел {node_id}) в поле {name} "
+                                  f"стоит «{value}», а есть: {near}")
+        return missing, doubts
 
     def submit(self, workflow: Any) -> str:
         body = {"prompt": workflow, "client_id": self.client_id}
@@ -190,6 +269,12 @@ class ComfyClient:
         """Полный цикл: подставить, отправить, дождаться, скачать видео."""
         graph = fill(workflow, prompt=prompt, seconds=seconds, width=width,
                      height=height, fps=fps, negative=negative, seed=seed)
+        missing, doubts = self.preflight(graph)
+        for line in doubts:
+            log.warning("ComfyUI, под вопросом: %s", line)
+        if missing:
+            raise ComfyError("граф не совпал с вашей сборкой ComfyUI: "
+                             + "; ".join(missing[:4]))
         prompt_id = self.submit(graph)
         log.info("ComfyUI принял задачу %s (%.1f с, %dx%d)", prompt_id, seconds,
                  width, height)
