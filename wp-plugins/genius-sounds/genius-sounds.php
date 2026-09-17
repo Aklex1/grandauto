@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.80.0');
+define('GS_VERSION', '1.83.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -172,6 +172,8 @@ class Genius_Sounds_Plugin {
         if ($neurohub) {
             // Промт из статьи подставляем в поле нейрохаба — см. скрипт.
             wp_enqueue_script('genius-sounds-nhprompt', GS_PLUGIN_URL . 'assets/js/neurohub-prompt.js', array(), GS_VERSION, true);
+            // Кнопка загрузки своего снимка ничем не выделена — подсвечиваем её.
+            wp_enqueue_script('genius-sounds-nhupload', GS_PLUGIN_URL . 'assets/js/neurohub-upload-hint.js', array(), GS_VERSION, true);
             wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
             wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
             wp_enqueue_style('genius-sounds-api', GS_PLUGIN_URL . 'assets/css/api.css', array('genius-sounds-studio'), GS_VERSION);

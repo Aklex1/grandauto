@@ -445,3 +445,119 @@ body.kie-neurohub-body select:focus {
     line-height: 1.5;
     color: #cbd5e1;
 }
+
+/* ------------------------------------------------- загрузка своего снимка
+   Кнопка «Выбрать файлы» стоит под заголовком про URL и читается как
+   служебное поле. Стрелка ведёт взгляд к ней, текст рядом объясняет,
+   зачем она нужна, а мигание гаснет после первого обращения: подсказка
+   должна помочь один раз, а не жить в интерфейсе вечно. */
+
+body.kie-neurohub-body .gs-nh-upload {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    margin-top: 4px;
+}
+
+body.kie-neurohub-body .gs-nh-upload__btn {
+    position: relative;
+    z-index: 1;
+    border-radius: 10px;
+}
+
+body.kie-neurohub-body .gs-nh-upload__point {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #22d3ee;
+}
+
+body.kie-neurohub-body .gs-nh-arrow {
+    flex: 0 0 auto;
+    width: 62px;
+    height: 32px;
+    color: #22d3ee;
+}
+
+body.kie-neurohub-body .gs-nh-upload__text {
+    max-width: 30em;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #cbd5e1;
+}
+
+/* Пока кнопкой не пользовались — она обведена и мигает. Обводка держится
+   всегда, мигание только привлекает взгляд: без обводки в момент паузы
+   анимации кнопка снова выглядит обычной. */
+body.kie-neurohub-body .gs-nh-upload.is-new .gs-nh-upload__btn {
+    outline: 2px solid #22d3ee;
+    outline-offset: 1px;
+    animation: gs-nh-pulse 2.2s ease-out infinite;
+}
+
+body.kie-neurohub-body .gs-nh-upload.is-new .gs-nh-arrow {
+    animation: gs-nh-nudge 2.2s ease-in-out infinite;
+}
+
+@keyframes gs-nh-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.55); }
+    70%  { box-shadow: 0 0 0 12px rgba(34, 211, 238, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
+}
+
+@keyframes gs-nh-nudge {
+    0%, 100% { transform: translateX(0); }
+    50%      { transform: translateX(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.kie-neurohub-body .gs-nh-upload.is-new .gs-nh-upload__btn,
+    body.kie-neurohub-body .gs-nh-upload.is-new .gs-nh-arrow {
+        animation: none;
+    }
+
+    body.kie-neurohub-body .gs-nh-upload.is-new .gs-nh-upload__btn {
+        box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.45);
+    }
+}
+
+/* Кнопка растянута на всю строку — подсказка встаёт под ней, и стрелка
+   разворачивается вверх, чтобы по-прежнему указывать на кнопку. */
+body.kie-neurohub-body .gs-nh-upload.is-stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+
+body.kie-neurohub-body .gs-nh-upload.is-stacked .gs-nh-upload__point {
+    align-items: flex-start;
+    padding-left: 14px;
+}
+
+body.kie-neurohub-body .gs-nh-upload.is-stacked .gs-nh-arrow {
+    width: 32px;
+    height: 40px;
+    margin-top: -2px;
+    transform: rotate(90deg);
+}
+
+body.kie-neurohub-body .gs-nh-upload.is-stacked.is-new .gs-nh-arrow {
+    animation: gs-nh-nudge-up 2.2s ease-in-out infinite;
+}
+
+@keyframes gs-nh-nudge-up {
+    0%, 100% { transform: rotate(90deg) translateX(0); }
+    50%      { transform: rotate(90deg) translateX(-6px); }
+}
+
+@media (max-width: 640px) {
+    body.kie-neurohub-body .gs-nh-upload {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    body.kie-neurohub-body .gs-nh-upload__text {
+        font-size: 12.5px;
+    }
+}
