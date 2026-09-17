@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import hmac
 import logging
 import shutil
+import secrets
 from pathlib import Path
 from typing import Optional
 
@@ -209,27 +211,198 @@ def dashboard(request: Request, session: Session = Depends(get_session),
 
 # --------------------------------------------------------------------------- каналы
 
+# --------------------------------------------------------------- агент ComfyUI
+# Второй способ работы: агент на домашнем компьютере сам спрашивает работу и
+# приносит результат. Ничего открывать наружу не нужно — соединение идёт изнутри.
+
+def _agent_token(session: Session) -> str:
+    return st.get(session, "comfy_agent_token", "").strip()
+
+
+def _check_agent(session: Session, token: str) -> None:
+    """Пускаем только со своим токеном.
+
+    Ручки агента живут вне сессии администратора — иначе скрипту пришлось бы
+    держать куки. Значит проверка тут обязательна и своя.
+    """
+    expected = _agent_token(session)
+    if not expected:
+        raise HTTPException(status_code=503, detail="Агент не настроен: нет токена")
+    # Сравнение постоянного времени: по скорости ответа иначе можно подобрать
+    # токен посимвольно.
+    if not hmac.compare_digest(token or "", expected):
+        raise HTTPException(status_code=403, detail="Неверный токен агента")
+
+
+@app.get("/api/comfy/next")
+def comfy_agent_next(session: Session = Depends(get_session), token: str = "",
+                     agent: str = "", peek: int = 0):
+    """Следующее задание для агента. Пусто — значит работы нет.
+
+    С peek=1 только смотрим очередь и ничего не забираем: так агент проверяет
+    связь, не съедая чужое задание.
+    """
+    from .models import ComfyTask, ComfyWorkflow
+
+    _check_agent(session, token)
+    # Задание, зависшее у агента, возвращаем в очередь: агент мог выключиться.
+    stale = utcnow() - dt.timedelta(minutes=30)
+    for row in session.execute(select(ComfyTask).where(
+            ComfyTask.status == "taken", ComfyTask.taken_at < stale)).scalars():
+        row.status = "pending"
+        row.error = "агент не ответил за 30 минут, задание вернулось в очередь"
+    session.commit()
+
+    task = session.execute(select(ComfyTask).where(ComfyTask.status == "pending")
+                           .order_by(ComfyTask.id)).scalars().first()
+    if task is None:
+        return JSONResponse({"task": None})
+    if peek:
+        return JSONResponse({"task": None, "waiting": True, "id": task.id})
+
+    workflow = session.get(ComfyWorkflow, task.workflow_id or 0)
+    if workflow is None or not workflow.is_active:
+        task.status = "failed"
+        task.error = "граф ComfyUI не найден"
+        session.commit()
+        return JSONResponse({"task": None})
+
+    try:
+        graph = json.loads(workflow.graph or "{}")
+    except ValueError as exc:
+        task.status = "failed"
+        task.error = f"граф не разобран: {exc}"[:2000]
+        session.commit()
+        return JSONResponse({"task": None})
+
+    task.status = "taken"
+    task.taken_at = utcnow()
+    task.attempts = (task.attempts or 0) + 1
+    task.agent = (agent or "")[:120]
+    session.commit()
+    # Метки подставляем здесь, а не в агенте: правила подстановки живут в одном
+    # месте, и скрипт на домашнем компьютере не надо обновлять при их правке.
+    return JSONResponse({"task": {
+        "id": task.id, "prompt": task.prompt, "seconds": task.seconds,
+        "width": task.width, "height": task.height,
+        "fps": workflow.fps or 30, "workflow": workflow.name,
+        "graph": comfy.fill(graph, prompt=task.prompt or "",
+                            seconds=float(task.seconds or 5.0),
+                            width=int(task.width or 720),
+                            height=int(task.height or 1280),
+                            fps=int(workflow.fps or 30)),
+    }})
+
+
+@app.post("/api/comfy/{task_id}/result")
+async def comfy_agent_result(task_id: int, request: Request,
+                             session: Session = Depends(get_session)):
+    """Агент принёс готовый клип."""
+    from .models import ComfyTask
+
+    form = await request.form()
+    _check_agent(session, str(form.get("token") or ""))
+    task = session.get(ComfyTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+
+    upload = form.get("file")
+    if not isinstance(upload, UploadFile) or not upload.filename:
+        raise HTTPException(status_code=400, detail="Нет файла")
+    data = await upload.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Пустой файл")
+
+    dest = config.MEDIA_DIR / "_comfy" / f"task_{task.id:06d}{Path(upload.filename).suffix or '.mp4'}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    # Файл от агента приходит без проверки со стороны сети, поэтому смотрим, что
+    # это вообще читаемое видео, а не обрезок.
+    if storage.media_duration(dest) <= 0:
+        dest.unlink(missing_ok=True)
+        task.status = "failed"
+        task.error = "агент прислал файл, который не читается как видео"
+        session.commit()
+        raise HTTPException(status_code=400, detail=task.error)
+
+    task.result_path = storage.rel(dest)
+    task.status = "done"
+    task.error = ""
+    task.finished_at = utcnow()
+    session.commit()
+    return JSONResponse({"ok": True, "size": len(data)})
+
+
+@app.post("/api/comfy/{task_id}/error")
+async def comfy_agent_error(task_id: int, request: Request,
+                            session: Session = Depends(get_session)):
+    """Агент не смог — записываем причину, чтобы она была видна в панели."""
+    from .models import ComfyTask
+
+    form = await request.form()
+    _check_agent(session, str(form.get("token") or ""))
+    task = session.get(ComfyTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+    task.status = "failed"
+    task.error = str(form.get("error") or "")[:2000]
+    task.finished_at = utcnow()
+    session.commit()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/comfy/agent-token")
+def comfy_agent_token_set(session: Session = Depends(get_session),
+                          _user: str = Depends(require_user)):
+    """Выдать новый токен агента. Старый сразу перестаёт работать."""
+    st.set_value(session, "comfy_agent_token", secrets.token_urlsafe(32))
+    session.commit()
+    return RedirectResponse("/comfy", status_code=303)
+
+
+AGENT_SCRIPT = Path(__file__).resolve().parent.parent / "deploy" / "comfy_agent.py"
+
+
+@app.get("/comfy/agent.py")
+def comfy_agent_script():
+    """Скрипт агента одним файлом — чтобы его можно было забрать curl-ом."""
+    if not AGENT_SCRIPT.exists():
+        raise HTTPException(status_code=404, detail="Скрипт агента не найден")
+    return FileResponse(AGENT_SCRIPT, media_type="text/x-python",
+                        filename="comfy_agent.py")
+
+
 @app.get("/comfy", response_class=HTMLResponse)
 def comfy_page(request: Request, session: Session = Depends(get_session),
                _user: str = Depends(require_user)):
-    """Локальный ComfyUI: адрес, графы, проверка связи."""
-    from .models import ComfyWorkflow
+    """Локальный ComfyUI: способ связи, адрес, графы, очередь агента."""
+    from .models import ComfyTask, ComfyWorkflow
 
     rows = session.execute(select(ComfyWorkflow).where(ComfyWorkflow.is_active.is_(True))
                            .order_by(ComfyWorkflow.id.desc())).scalars().all()
     channels = session.execute(select(Channel).order_by(Channel.id)).scalars().all()
+    tasks = session.execute(select(ComfyTask).order_by(ComfyTask.id.desc())
+                            .limit(15)).scalars().all()
+    waiting = session.execute(select(func.count(ComfyTask.id))
+                              .where(ComfyTask.status == "pending")).scalar() or 0
     return templates.TemplateResponse("comfy.html", base_context(
         request, session, workflows=rows, comfy_channels=channels,
         placeholders=comfy.PLACEHOLDERS,
         comfy_url=st.get(session, "comfy_url", ""),
+        comfy_mode=pipeline.comfy_mode(session), comfy_modes=pipeline.COMFY_MODES,
+        agent_token=_agent_token(session), comfy_tasks=tasks, comfy_waiting=waiting,
+        server_url=str(request.base_url).rstrip("/"),
         video_sources=pipeline.VIDEO_SOURCES))
 
 
 @app.post("/comfy/settings")
 def comfy_settings(session: Session = Depends(get_session), _user: str = Depends(require_user),
-                   comfy_url: str = Form(""), comfy_timeout: float = Form(1800.0)):
+                   comfy_url: str = Form(""), comfy_timeout: float = Form(1800.0),
+                   comfy_mode: str = Form("agent")):
     st.set_value(session, "comfy_url", comfy_url.strip().rstrip("/")[:300])
     st.set_value(session, "comfy_timeout", max(60.0, min(7200.0, comfy_timeout)))
+    if comfy_mode in pipeline.COMFY_MODES:
+        st.set_value(session, "comfy_mode", comfy_mode)
     # set_value только флашит запись — без коммита настройка не переживёт запрос.
     session.commit()
     return RedirectResponse("/comfy", status_code=303)
@@ -538,8 +711,6 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
     channel.video_source = video_source if video_source in pipeline.VIDEO_SOURCES else "kie"
     channel.comfy_workflow_id = comfy_workflow_id or None
     channel.posts_per_day = max(0.1, min(10.0, posts_per_day))
-    channel.video_source = video_source if video_source in pipeline.VIDEO_SOURCES else "kie"
-    channel.comfy_workflow_id = comfy_workflow_id or None
     channel.description = description
     channel.chat_model = chat_model.strip()
     channel.video_model = video_model.strip()
@@ -943,8 +1114,11 @@ def video_page(video_id: int, request: Request, session: Session = Depends(get_s
         regen_jobs=regen_jobs, busy_scenes=busy_scenes,
         short_formats=pipeline.SHORT_FORMATS, font_list=fonts.available(),
         video_sources=pipeline.VIDEO_SOURCES,
-        comfy_ready=bool(st.get(session, "comfy_url", "").strip()) and bool(
-            session.execute(select(ComfyWorkflow).where(
+        # Для агента адрес не нужен — нужен токен; для прямого режима наоборот.
+        comfy_ready=bool(
+            (_agent_token(session) if pipeline.comfy_mode(session) == "agent"
+             else st.get(session, "comfy_url", "").strip())
+            and session.execute(select(ComfyWorkflow).where(
                 ComfyWorkflow.is_active.is_(True))).scalars().first()),
         outro_sources=pipeline.OUTRO_SOURCES,
         outro_builtin=pipeline.OUTRO_FALLBACK))

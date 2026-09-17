@@ -5,6 +5,7 @@ import json
 import logging
 import shutil
 import threading
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -19,7 +20,7 @@ from .db import session_scope
 from . import kie as kie_module
 from .kie import (KieClient, KieError, extract_urls,
                   video_input)
-from .models import (ComfyWorkflow, Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
+from .models import (ComfyTask, ComfyWorkflow, Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
                      Scene, Short, Video, utcnow)
 from . import settings_store as st
 
@@ -379,11 +380,21 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
         log_event(session, video.id,
                   f"Из библиотеки нарезано фрагментов: {len(library_clips)}", stage="visuals")
 
-    comfy_setup = _comfy_setup(session, channel)
-    if comfy_setup is not None:
+    # В режиме агента прямое подключение не нужно: задания кладутся в очередь,
+    # и скрипт на домашнем компьютере забирает их сам.
+    wants_comfy = (channel.video_source or "kie") == "comfy"
+    agent_mode = comfy_mode(session) == "agent"
+    comfy_setup = None if (not wants_comfy or agent_mode) else _comfy_setup(session, channel)
+    agent_ready = agent_mode and _comfy_agent_ready(session, channel)
+    use_comfy = wants_comfy and (comfy_setup is not None or agent_ready)
+    if use_comfy:
+        how = "через агента" if comfy_setup is None else "напрямую"
         log_event(session, video.id,
-                  f"Видеоряд считает локальный ComfyUI (граф «{comfy_setup[2].name}»)",
-                  stage="visuals")
+                  f"Видеоряд считает локальный ComfyUI ({how})", stage="visuals")
+    elif wants_comfy:
+        log_event(session, video.id,
+                  "Канал просит локальный ComfyUI, но он не настроен — "
+                  "считаю через облако", stage="visuals", level="warn")
 
     def work(task: tuple[int, int, str, str]):
         scene_id, part, prompt, origin = task
@@ -391,11 +402,18 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
         if ready is not None:
             return scene_id, part, ready, 0.0, "", "library"
 
-        if comfy_setup is not None:
+        if use_comfy:
             dest = clips_dir / f"scene_{scene_id:04d}_{part:02d}.mp4"
             try:
-                made = _comfy_clip(comfy_setup, dest, prompt=prompt,
-                                   seconds=float(channel.clip_duration), size=size)
+                if comfy_setup is not None:
+                    made = _comfy_clip(comfy_setup, dest, prompt=prompt,
+                                       seconds=float(channel.clip_duration), size=size)
+                else:
+                    made = _comfy_agent_clip(video.id, channel.comfy_workflow_id,
+                                             scene_id=scene_id, part=part,
+                                             prompt=prompt,
+                                             seconds=float(channel.clip_duration),
+                                             size=size, dest=dest)
                 return scene_id, part, made, 0.0, "", "comfy"
             except Exception as exc:  # noqa: BLE001 — одна сцена не роняет ролик
                 log.warning("ComfyUI не отдал клип %s/%s: %s", scene_id, part, exc)
@@ -748,6 +766,80 @@ VIDEO_SOURCES = {
     "kie": "Облако KIE — платно, ничего настраивать не нужно",
     "comfy": "Локальный ComfyUI — считает ваша видеокарта, кадры бесплатны",
 }
+
+# Как завод добирается до ComfyUI:
+#   direct — сервер сам ходит на ваш компьютер (нужен туннель или проброс порта);
+#   agent  — скрипт на компьютере сам забирает работу (открывать ничего не надо).
+COMFY_MODES = {
+    "agent": "Через агента — скрипт на компьютере сам забирает задания",
+    "direct": "Напрямую — сервер ходит на ваш ComfyUI по адресу",
+}
+
+# Сколько ждём агента на один кадр. Он может быть выключен, и вечно висеть нельзя.
+COMFY_AGENT_WAIT = 1800.0
+
+
+def comfy_mode(session: Session) -> str:
+    mode = st.get(session, "comfy_mode", "agent").strip()
+    return mode if mode in COMFY_MODES else "agent"
+
+
+def _comfy_agent_ready(session: Session, channel: Channel) -> bool:
+    """Есть ли всё для работы через агента.
+
+    Проверяем заранее: иначе задание уйдёт в очередь, полчаса подождёт агента и
+    только потом выяснится, что ему нечего было считать.
+    """
+    if not st.get(session, "comfy_agent_token", "").strip():
+        log.warning("Канал %s просит ComfyUI через агента, но токен не выдан",
+                    channel.slug)
+        return False
+    row = session.get(ComfyWorkflow, channel.comfy_workflow_id or 0)
+    if row is None or not row.is_active:
+        log.warning("Канал %s просит ComfyUI, но граф не выбран", channel.slug)
+        return False
+    return True
+
+
+def _comfy_agent_clip(video_id: int, workflow_id: Optional[int], *,
+                      scene_id: Optional[int], part: int, prompt: str,
+                      seconds: float, size: tuple[int, int], dest: Path,
+                      wait: float = COMFY_AGENT_WAIT) -> Path:
+    """Кадр руками агента: кладём задание и ждём, пока он принесёт файл.
+
+    Работаем своей сессией, а не сессией вызывающего: кадры считаются в
+    нескольких потоках, а сессия SQLAlchemy на потоки не рассчитана.
+    """
+    with session_scope() as s:
+        task = ComfyTask(video_id=video_id, scene_id=scene_id, part=part,
+                         workflow_id=workflow_id, prompt=prompt, seconds=seconds,
+                         width=size[0], height=size[1])
+        s.add(task)
+        s.commit()
+        task_id = task.id
+
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        time.sleep(3.0)
+        # Агент пишет результат в другом процессе, поэтому каждый раз читаем
+        # заново: иначе мы бы вечно видели прежнее состояние объекта.
+        with session_scope() as s:
+            row = s.get(ComfyTask, task_id)
+            if row is None:
+                raise RuntimeError("задание для агента пропало из очереди")
+            status, result_path, error = row.status, row.result_path, row.error
+        if status == "done" and result_path:
+            src_path = storage.abspath(result_path)
+            if not src_path.exists():
+                raise RuntimeError("агент отчитался, но файла нет на диске")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src_path, dest.with_suffix(src_path.suffix))
+            return dest.with_suffix(src_path.suffix)
+        if status == "failed":
+            raise RuntimeError(f"агент не справился: {error or 'без причины'}")
+
+    raise RuntimeError(f"агент не принёс кадр за {wait:.0f} с — проверьте, "
+                       f"запущен ли скрипт на компьютере")
 
 
 def _comfy_setup(session: Session, channel: Channel):

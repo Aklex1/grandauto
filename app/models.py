@@ -431,6 +431,40 @@ class ComfyWorkflow(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class ComfyTask(Base):
+    """Задание на кадр для локального агента.
+
+    Второй способ работы с ComfyUI. В прямом режиме сервер сам ходит на ваш
+    компьютер, и для этого ComfyUI приходится открывать наружу. Здесь наоборот:
+    агент на компьютере сам спрашивает у сервера работу и приносит результат,
+    поэтому ничего открывать не нужно — соединение идёт изнутри.
+    """
+
+    __tablename__ = "comfy_tasks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    video_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("videos.id", ondelete="CASCADE"), nullable=True, index=True)
+    scene_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    part: Mapped[int] = mapped_column(Integer, default=0)
+    workflow_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    seconds: Mapped[float] = mapped_column(Float, default=5.0)
+    width: Mapped[int] = mapped_column(Integer, default=1080)
+    height: Mapped[int] = mapped_column(Integer, default=1920)
+
+    # pending — ждёт агента, taken — агент взял, done — готово, failed — не вышло
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    result_path: Mapped[str] = mapped_column(String(500), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    agent: Mapped[str] = mapped_column(String(120), default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    taken_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class Reference(Base):
     """Свой референс канала: образец стиля для генераций.
 

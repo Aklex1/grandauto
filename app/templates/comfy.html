@@ -24,16 +24,28 @@
 {% if err == 'empty' %}<p class="badge" style="background:#5b2222">Пустой граф.</p>{% endif %}
 
 <div class="card tight">
-  <h2 style="margin-top:0">Адрес</h2>
+  <h2 style="margin-top:0">Как завод доберётся до ComfyUI</h2>
   <p class="small muted">
-    Завод стоит на сервере, а ComfyUI — у вас на компьютере, поэтому сам себя он не
-    найдёт: нужен адрес, по которому сервер сможет до него достучаться. Подойдёт
-    туннель (cloudflared, ngrok), проброшенный порт роутера или общая VPN-сеть.
-    Локальные адреса вида <code>127.0.0.1:8188</code> тут не сработают — это
-    «сам сервер», а не ваш компьютер.
+    Завод стоит на сервере, а видеокарта — у вас дома. Соединить их можно с двух
+    сторон, и это принципиально разные вещи.
   </p>
+  <ul class="small muted">
+    <li><b>Через агента</b> — на компьютере крутится маленький скрипт: он сам
+      спрашивает у завода работу, отдаёт её своему ComfyUI и присылает готовый
+      клип обратно. Наружу не открывается ничего, потому что соединение всегда
+      начинается изнутри. Ни туннеля, ни белого IP, ни проброса портов.</li>
+    <li><b>Напрямую</b> — сервер сам стучится в ваш ComfyUI по адресу. Быстрее в
+      настройке, но ComfyUI при этом смотрит в интернет, и адрес придётся откуда-то
+      взять: туннель, проброшенный порт или общая VPN-сеть.</li>
+  </ul>
   <form method="post" action="/comfy/settings" class="grid cols-3">
-    <label style="grid-column:1/3">Адрес ComfyUI
+    <label style="grid-column:1/-1">Способ связи
+      <select name="comfy_mode">
+        {% for key, what in comfy_modes.items() %}
+        <option value="{{ key }}" {% if comfy_mode == key %}selected{% endif %}>{{ what }}</option>
+        {% endfor %}
+      </select></label>
+    <label style="grid-column:1/3">Адрес ComfyUI — только для способа «напрямую»
       <input name="comfy_url" value="{{ comfy_url }}"
              placeholder="https://comfy-ваш-туннель.trycloudflare.com"></label>
     <label>Ждать клип, с
@@ -45,8 +57,60 @@
   </form>
   <form method="post" action="/comfy/check" style="margin-top:8px">
     <button class="btn btn-sm">Проверить связь</button>
-    <span class="small muted">Спросит у ComfyUI сведения о системе — ничего не генерирует.</span>
+    <span class="small muted">Спросит у ComfyUI сведения о системе — ничего не
+      генерирует. Работает для способа «напрямую»; агента проверяйте командой
+      <code>--check</code> на самом компьютере.</span>
   </form>
+</div>
+
+<div class="card tight" style="margin-top:16px">
+  <h2 style="margin-top:0">Агент на вашем компьютере</h2>
+  {% if not agent_token %}
+    <p class="small muted">Токена ещё нет. Без него агент не подключится — выдайте.</p>
+  {% else %}
+    <p class="small muted">Токен агента — это ключ от очереди заданий. Держите его
+      при себе; если он куда-то утёк, выдайте новый, старый сразу перестанет работать.</p>
+    <p><code style="user-select:all;font-size:15px">{{ agent_token }}</code></p>
+    <p class="small muted">На компьютере с ComfyUI (нужен только Python 3.9+, ставить
+      ничего не надо):</p>
+    <pre class="small" style="white-space:pre-wrap;user-select:all">curl -fsSL {{ server_url }}/comfy/agent.py -o comfy_agent.py
+python comfy_agent.py --server {{ server_url }} --token {{ agent_token }} --check
+python comfy_agent.py --server {{ server_url }} --token {{ agent_token }}</pre>
+    <p class="small muted">Первая команда забирает скрипт, вторая проверяет связь и
+      ничего не считает, третья запускает работу. Если ComfyUI слушает не
+      <code>127.0.0.1:8188</code>, добавьте <code>--comfy http://адрес:порт</code>.
+      Пока окно с агентом открыто, завод может слать ему кадры; закроете — задания
+      просто подождут в очереди.</p>
+  {% endif %}
+  <form method="post" action="/comfy/agent-token" style="margin-top:8px"
+        onsubmit="return confirm('Выдать новый токен? Запущенные агенты со старым отключатся.')">
+    <button class="btn btn-sm">{{ 'Выдать токен' if not agent_token else 'Выдать новый токен' }}</button>
+  </form>
+</div>
+
+<div class="card tight" style="margin-top:16px">
+  <h2 style="margin-top:0">Очередь агента</h2>
+  {% if not comfy_tasks %}
+    <p class="muted small">Пока пусто. Задания появятся, когда канал с источником
+      «локальный ComfyUI» пойдёт в сборку.</p>
+  {% else %}
+  <p class="small muted">Ждут агента: <b>{{ comfy_waiting }}</b></p>
+  <table class="table">
+    <thead><tr><th>#</th><th>Что</th><th>Состояние</th><th>Агент</th><th>Причина</th></tr></thead>
+    <tbody>
+    {% for t in comfy_tasks %}
+      <tr>
+        <td>{{ t.id }}</td>
+        <td class="small">{{ '%.1f'|format(t.seconds or 0) }} с, {{ t.width }}×{{ t.height }}
+          <div class="muted">{{ (t.prompt or '')[:70] }}</div></td>
+        <td class="small">{{ t.status }}{% if (t.attempts or 0) > 1 %} ({{ t.attempts }}-я попытка){% endif %}</td>
+        <td class="small muted">{{ t.agent or '—' }}</td>
+        <td class="small muted">{{ (t.error or '')[:90] }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </div>
 
 <div class="card tight" style="margin-top:16px">
