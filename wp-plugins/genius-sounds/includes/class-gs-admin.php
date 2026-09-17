@@ -298,6 +298,14 @@ class GS_Admin {
             <?php if (!empty($stats['stuck'])): ?>
                 <span style="color:#b32d2e">Сдались после трёх попыток: <?php echo (int) $stats['stuck']; ?>.</span>
             <?php endif; ?>
+            <?php if (!empty($stats['error'])): ?>
+                <br><span class="description">Последний отказ поставщика: <?php echo esc_html($stats['error']); ?></span>
+            <?php endif; ?>
+            <?php if (!empty($stats['paused']) && $stats['paused'] > time()): ?>
+                <br><span class="description">Запуск новых примеров на паузе до
+                <?php echo esc_html(date_i18n('H:i', $stats['paused'] + (int) (get_option('gmt_offset') * HOUR_IN_SECONDS))); ?>
+                — счёт у поставщика пуст. Кнопка ниже снимает паузу.</span>
+            <?php endif; ?>
             <?php if ($stats['next']): ?>
                 Следующий сбор: <?php echo esc_html(date_i18n('d.m, H:i', $stats['next'] + (int) (get_option('gmt_offset') * HOUR_IN_SECONDS))); ?>.
             <?php else: ?>
@@ -309,11 +317,11 @@ class GS_Admin {
             <input type="hidden" name="action" value="gs_promt_collect">
             <?php submit_button('Собрать готовые примеры сейчас', 'secondary', 'submit', false); ?>
         </form>
-        <?php if (!empty($stats['stuck'])): ?>
+        <?php if (!empty($stats['stuck']) || (!empty($stats['paused']) && $stats['paused'] > time())): ?>
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
                 <?php wp_nonce_field('gs_promt_retry'); ?>
                 <input type="hidden" name="action" value="gs_promt_retry">
-                <?php submit_button('Попробовать ещё раз у сдавшихся', 'secondary', 'submit', false); ?>
+                <?php submit_button('Счёт пополнен — дорисовать примеры', 'secondary', 'submit', false); ?>
             </form>
         <?php endif; ?>
         <?php

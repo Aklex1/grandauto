@@ -700,3 +700,26 @@ body.gs-post-page .gs-promt__links p:last-child {
         width: 100%;
     }
 }
+
+body.gs-post-page .gs-promt__shots {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin: 0 0 26px;
+}
+
+body.gs-post-page .gs-promt__shots figure {
+    margin: 0;
+}
+
+body.gs-post-page .gs-promt__shots img {
+    width: 100%;
+    height: auto;
+    border-radius: var(--gs-radius-sm);
+}
+
+@media (max-width: 640px) {
+    body.gs-post-page .gs-promt__shots {
+        grid-template-columns: 1fr;
+    }
+}

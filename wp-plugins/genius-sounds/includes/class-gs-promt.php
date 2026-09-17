@@ -32,6 +32,9 @@ class GS_Promt {
     /** Когда запущены текущие задачи — от этого считается терпение. */
     const META_STARTED = '_gs_promt_started';
     const MAX_TRIES   = 3;
+    /** Пауза после отказа по деньгам: долбиться в пустой счёт незачем. */
+    const OPT_PAUSE   = 'gs_promt_paused_until';
+    const PAUSE_TTL   = 1800;
 
     /** Место, куда встаёт пример. */
     const MARKER = '<!--gs-promt-example-->';
@@ -99,6 +102,7 @@ class GS_Promt {
             delete_post_meta($post->ID, self::META_TRIES);
             delete_post_meta($post->ID, self::META_DONE);
         }
+        delete_option(self::OPT_PAUSE);
         self::collect();
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-promt');
         exit;
@@ -131,8 +135,20 @@ class GS_Promt {
             'waiting' => $waiting,
             'done'    => $done,
             'stuck'   => $stuck,
+            'error'   => self::last_error(),
+            'paused'  => (int) get_option(self::OPT_PAUSE),
             'next'    => wp_next_scheduled(self::HOOK),
         );
+    }
+
+    /** Последняя причина отказа — чтобы не гадать, промт виноват или деньги. */
+    public static function last_error() {
+        $posts = get_posts(array(
+            'post_type' => 'post', 'post_status' => 'publish', 'numberposts' => 1,
+            'meta_key' => self::META_ERROR, 'orderby' => 'modified', 'order' => 'DESC',
+            'fields' => 'ids', 'suppress_filters' => true,
+        ));
+        return $posts ? (string) get_post_meta($posts[0], self::META_ERROR, true) : '';
     }
 
     public static function add_schedule($schedules) {
@@ -146,7 +162,16 @@ class GS_Promt {
         $auth = function () {
             return current_user_can('edit_posts');
         };
-        foreach (array(self::META_PROMPT => 'string', self::META_SHOTS => 'integer') as $key => $type) {
+        // Причина отказа и счётчик попыток видны в REST намеренно: без них
+        // разбираться, почему статья вышла без примера, приходится по логам
+        // сервера, куда доступ есть не всегда.
+        $fields = array(
+            self::META_PROMPT => 'string',
+            self::META_SHOTS  => 'integer',
+            self::META_ERROR  => 'string',
+            self::META_TRIES  => 'integer',
+        );
+        foreach ($fields as $key => $type) {
             register_post_meta('post', $key, array(
                 'type'          => $type,
                 'single'        => true,
@@ -188,9 +213,6 @@ class GS_Promt {
         $shots = (int) get_post_meta($post->ID, self::META_SHOTS, true);
         $shots = max(1, min(2, $shots ?: 1));
 
-        update_post_meta($post->ID, self::META_TRIES,
-            (int) get_post_meta($post->ID, self::META_TRIES, true) + 1);
-
         $res = array();
         $tasks = array();
         for ($i = 0; $i < $shots; $i++) {
@@ -203,12 +225,31 @@ class GS_Promt {
         if (!$tasks) {
             // Поставщик не принял — статья выходит без примера, и это
             // лучше, чем задержать публикацию до его выздоровления.
-            $why = isset($res['error']) ? (string) $res['error'] : 'причина неизвестна';
+            // Ключ отказа у адаптера — message: по нему видно, лежит ли
+            // поставщик или кончились деньги, а это разные решения.
+            $why = trim((string) ($res['message'] ?? ''));
+            if ($why === '') {
+                $why = 'причина неизвестна';
+            }
             error_log('genius-sounds: пример к статье ' . $post->ID . ' не запущен: ' . $why);
             update_post_meta($post->ID, self::META_ERROR, $why);
+
+            // Пустой счёт — не вина статьи: попытку не засчитываем, иначе
+            // за вечер без денег все статьи исчерпают лимит и останутся
+            // без примеров навсегда. Вместо этого встаём на паузу.
+            if (self::is_money($why)) {
+                update_option(self::OPT_PAUSE, time() + self::PAUSE_TTL, false);
+                return false;
+            }
+
+            update_post_meta($post->ID, self::META_TRIES,
+                (int) get_post_meta($post->ID, self::META_TRIES, true) + 1);
             return false;
         }
+        update_post_meta($post->ID, self::META_TRIES,
+            (int) get_post_meta($post->ID, self::META_TRIES, true) + 1);
         delete_post_meta($post->ID, self::META_ERROR);
+        delete_option(self::OPT_PAUSE);
         update_post_meta($post->ID, self::META_TASKS, $tasks);
         update_post_meta($post->ID, self::META_STARTED, time());
         return true;
@@ -221,7 +262,22 @@ class GS_Promt {
      * бесплатно, и разом запускать полсотни генераций из-за одного
      * сбоя не нужно.
      */
+    /** Отказ из-за денег, а не из-за промта или сбоя. */
+    private static function is_money($why) {
+        $why = mb_strtolower((string) $why);
+        foreach (array('средств', 'баланс', 'credit', 'insufficient', 'quota', 'оплат') as $word) {
+            if (mb_strpos($why, $word) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static function start_missing($limit = 3) {
+        if ((int) get_option(self::OPT_PAUSE) > time()) {
+            return;
+        }
+
         $posts = get_posts(array(
             'post_type'        => 'post',
             'post_status'      => 'publish',
@@ -341,6 +397,13 @@ class GS_Promt {
 
         if ($figures === '') {
             return;
+        }
+
+        // Два вертикальных кадра подряд — это два экрана прокрутки между
+        // промтом и разбором. Рядом они читаются как пара вариантов, ради
+        // чего их и рисуют.
+        if (count($urls) > 1) {
+            $figures = '<div class="gs-promt__shots">' . $figures . '</div>';
         }
 
         // Примеры ставим сразу после блока с промтом: человек читает промт
