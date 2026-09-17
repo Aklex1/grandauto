@@ -50,6 +50,9 @@ BUSY_POLL = 3.0
 RENDER_TIMEOUT = 1800.0
 # После сетевой ошибки ждём дольше: сервер мог перезапускаться.
 ERROR_PAUSE = 15.0
+# Как часто говорить заводу «кадр ещё считается». Без этого он через полчаса
+# решит, что нас выключили, и отдаст задание заново.
+HEARTBEAT_EVERY = 60.0
 
 
 def log(message: str) -> None:
@@ -226,9 +229,14 @@ class Comfy:
             raise RuntimeError(f"ComfyUI не вернул prompt_id: {json.dumps(data)[:300]}")
         return str(prompt_id)
 
-    def wait(self, prompt_id: str, *, timeout: float = RENDER_TIMEOUT) -> dict:
+    def wait(self, prompt_id: str, *, timeout: float = RENDER_TIMEOUT,
+             heartbeat=None) -> dict:
         deadline = time.time() + timeout
+        last_beat = time.time()
         while time.time() < deadline:
+            if heartbeat and time.time() - last_beat >= HEARTBEAT_EVERY:
+                last_beat = time.time()
+                heartbeat()
             data = get_json(self.url(f"/history/{prompt_id}")) or {}
             entry = data.get(prompt_id)
             if entry:
@@ -306,6 +314,14 @@ class Agent:
         post_form(f"{self.server}/api/comfy/{task_id}/result",
                   {"token": self.token}, file=path)
 
+    def send_ping(self, task_id: int) -> None:
+        """Кадр ещё считается — иначе завод решит, что нас выключили."""
+        try:
+            post_form(f"{self.server}/api/comfy/{task_id}/ping",
+                      {"token": self.token}, timeout=30.0)
+        except Exception as exc:  # noqa: BLE001 — из-за сердцебиения кадр не бросаем
+            log(f"  сердцебиение не дошло: {explain(exc)}")
+
     def send_error(self, task_id: int, message: str) -> None:
         try:
             post_form(f"{self.server}/api/comfy/{task_id}/error",
@@ -328,7 +344,8 @@ class Agent:
                                    + "; ".join(missing[:4]))
             prompt_id = self.comfy.submit(graph)
             log(f"  ComfyUI принял: {prompt_id}")
-            entry = self.comfy.wait(prompt_id)
+            entry = self.comfy.wait(prompt_id,
+                                    heartbeat=lambda: self.send_ping(task_id))
             items = self.comfy.outputs(entry)
             if not items:
                 raise RuntimeError("ComfyUI отработал, но не отдал ни одного файла — "

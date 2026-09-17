@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import (comfy, config, fonts, footage, loops, media, music, prompts,
@@ -383,10 +383,7 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
     # В режиме агента прямое подключение не нужно: задания кладутся в очередь,
     # и скрипт на домашнем компьютере забирает их сам.
     wants_comfy = (channel.video_source or "kie") == "comfy"
-    agent_mode = comfy_mode(session) == "agent"
-    comfy_setup = None if (not wants_comfy or agent_mode) else _comfy_setup(session, channel)
-    agent_ready = agent_mode and _comfy_agent_ready(session, channel)
-    use_comfy = wants_comfy and (comfy_setup is not None or agent_ready)
+    use_comfy, comfy_setup = comfy_plan(session, channel)
     if use_comfy:
         how = "через агента" if comfy_setup is None else "напрямую"
         log_event(session, video.id,
@@ -405,15 +402,11 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
         if use_comfy:
             dest = clips_dir / f"scene_{scene_id:04d}_{part:02d}.mp4"
             try:
-                if comfy_setup is not None:
-                    made = _comfy_clip(comfy_setup, dest, prompt=prompt,
-                                       seconds=float(channel.clip_duration), size=size)
-                else:
-                    made = _comfy_agent_clip(video.id, channel.comfy_workflow_id,
-                                             scene_id=scene_id, part=part,
-                                             prompt=prompt,
-                                             seconds=float(channel.clip_duration),
-                                             size=size, dest=dest)
+                made = comfy_clip(comfy_setup, video_id=video.id,
+                                  workflow_id=channel.comfy_workflow_id,
+                                  scene_id=scene_id, part=part, prompt=prompt,
+                                  seconds=float(channel.clip_duration),
+                                  size=size, dest=dest)
                 return scene_id, part, made, 0.0, "", "comfy"
             except Exception as exc:  # noqa: BLE001 — одна сцена не роняет ролик
                 log.warning("ComfyUI не отдал клип %s/%s: %s", scene_id, part, exc)
@@ -775,13 +768,46 @@ COMFY_MODES = {
     "direct": "Напрямую — сервер ходит на ваш ComfyUI по адресу",
 }
 
-# Сколько ждём агента на один кадр. Он может быть выключен, и вечно висеть нельзя.
+# Сколько ждём агента без единого признака жизни. Считаем не с постановки
+# задания, а с последнего движения в очереди: на одной видеокарте кадры
+# считаются по очереди, и десятое задание честно ждёт своего хода часами — это
+# не зависание, а работа. Зависание — это когда в очереди вообще ничего не
+# происходит: ни сердцебиения по текущему кадру, ни готовых соседних.
 COMFY_AGENT_WAIT = 1800.0
+# Общий потолок на один кадр: страховка на случай, когда агент бодро работает,
+# но до нашего задания дело так и не доходит.
+COMFY_AGENT_TOTAL = 24 * 3600.0
 
 
 def comfy_mode(session: Session) -> str:
     mode = st.get(session, "comfy_mode", "agent").strip()
     return mode if mode in COMFY_MODES else "agent"
+
+
+def comfy_plan(session: Session, channel: Channel):
+    """Считать ли видеоряд локально и как: (использовать, прямое подключение).
+
+    Возвращаем пару, потому что режима два: при прямом нужен клиент ComfyUI, при
+    агентском — ничего, задания просто ложатся в очередь. None во втором месте
+    как раз и означает «через агента».
+    """
+    wants = (channel.video_source or "kie") == "comfy"
+    if not wants:
+        return False, None
+    agent = comfy_mode(session) == "agent"
+    setup = None if agent else _comfy_setup(session, channel)
+    ready = setup is not None or (agent and _comfy_agent_ready(session, channel))
+    return ready, setup
+
+
+def comfy_clip(setup, *, video_id: int, workflow_id: Optional[int],
+               scene_id: Optional[int], part: int, prompt: str, seconds: float,
+               size: tuple[int, int], dest: Path) -> Path:
+    """Один кадр локальной генерацией — что прямым подключением, что агентом."""
+    if setup is not None:
+        return _comfy_clip(setup, dest, prompt=prompt, seconds=seconds, size=size)
+    return _comfy_agent_clip(video_id, workflow_id, scene_id=scene_id, part=part,
+                             prompt=prompt, seconds=seconds, size=size, dest=dest)
 
 
 def _comfy_agent_ready(session: Session, channel: Channel) -> bool:
@@ -804,7 +830,8 @@ def _comfy_agent_ready(session: Session, channel: Channel) -> bool:
 def _comfy_agent_clip(video_id: int, workflow_id: Optional[int], *,
                       scene_id: Optional[int], part: int, prompt: str,
                       seconds: float, size: tuple[int, int], dest: Path,
-                      wait: float = COMFY_AGENT_WAIT) -> Path:
+                      wait: float = COMFY_AGENT_WAIT,
+                      total: float = COMFY_AGENT_TOTAL) -> Path:
     """Кадр руками агента: кладём задание и ждём, пока он принесёт файл.
 
     Работаем своей сессией, а не сессией вызывающего: кадры считаются в
@@ -818,8 +845,10 @@ def _comfy_agent_clip(video_id: int, workflow_id: Optional[int], *,
         s.commit()
         task_id = task.id
 
-    deadline = time.time() + wait
-    while time.time() < deadline:
+    started = time.time()
+    last_move = time.time()
+    pulse = None
+    while True:
         time.sleep(3.0)
         # Агент пишет результат в другом процессе, поэтому каждый раз читаем
         # заново: иначе мы бы вечно видели прежнее состояние объекта.
@@ -828,6 +857,9 @@ def _comfy_agent_clip(video_id: int, workflow_id: Optional[int], *,
             if row is None:
                 raise RuntimeError("задание для агента пропало из очереди")
             status, result_path, error = row.status, row.result_path, row.error
+            beat = s.execute(select(func.max(ComfyTask.taken_at),
+                                    func.max(ComfyTask.finished_at))).one()
+
         if status == "done" and result_path:
             src_path = storage.abspath(result_path)
             if not src_path.exists():
@@ -838,8 +870,19 @@ def _comfy_agent_clip(video_id: int, workflow_id: Optional[int], *,
         if status == "failed":
             raise RuntimeError(f"агент не справился: {error or 'без причины'}")
 
-    raise RuntimeError(f"агент не принёс кадр за {wait:.0f} с — проверьте, "
-                       f"запущен ли скрипт на компьютере")
+        # Любое движение в очереди — признак, что агент жив: он прислал
+        # сердцебиение по нашему кадру или закрыл соседний.
+        if beat != pulse:
+            pulse = beat
+            last_move = time.time()
+        if time.time() - last_move > wait:
+            raise RuntimeError(
+                f"агент молчит {wait / 60:.0f} мин — проверьте, запущен ли скрипт "
+                f"на компьютере и не упёрся ли ComfyUI в нехватку видеопамяти")
+        if time.time() - started > total:
+            raise RuntimeError(
+                f"кадр не дождался своей очереди за {total / 3600:.0f} ч — "
+                f"агент работает, но заданий перед ним слишком много")
 
 
 def _comfy_setup(session: Session, channel: Channel):
@@ -1514,6 +1557,25 @@ def _bridge_clip(session: Session, client: KieClient, video: Video, channel: Cha
             except Exception as exc:  # noqa: BLE001
                 log.warning("Фрагмент библиотеки для связки не вырезан: %s", exc)
 
+    # Связка — такой же кадр, как все остальные: если канал считает локально,
+    # незачем ему одному ехать в облако посреди локальной сборки.
+    use_comfy, comfy_setup = comfy_plan(session, channel)
+    if use_comfy:
+        dest = bridges_dir / f"bridge_{bridge.id:03d}_clip.mp4"
+        try:
+            made = comfy_clip(comfy_setup, video_id=video.id,
+                              workflow_id=channel.comfy_workflow_id,
+                              scene_id=None, part=0,
+                              prompt=bridge.visual_prompt or bridge.narration[:200],
+                              seconds=float(channel.clip_duration), size=size,
+                              dest=dest)
+            bridge.clip_path = storage.rel(made)
+            session.commit()
+            return made
+        except Exception as exc:  # noqa: BLE001 — без связки ролик всё равно соберётся
+            log.warning("Клип связки не посчитан локально: %s", exc)
+            return None
+
     payload = video_input(
         channel.video_model,
         prompt=bridge.visual_prompt or bridge.narration[:200],
@@ -2002,8 +2064,37 @@ def _regen_clips(session: Session, client: KieClient, video: Video, channel: Cha
     concurrency = max(1, st.get_int(session, "scene_concurrency", 3))
     stamp = int(utcnow().timestamp())
 
+    # Пересборка сцены — та же генерация кадров, значит и источник тот же, что у
+    # обычной сборки. Без этого выбор «локальный ComfyUI» в форме пересборки
+    # сохранялся бы в канале, а кадры всё равно считались бы в облаке.
+    size = media.target_size(channel.resolution, channel.aspect_ratio)
+    use_comfy, comfy_setup = comfy_plan(session, channel)
+    if use_comfy:
+        how = "через агента" if comfy_setup is None else "напрямую"
+        log_event(session, video.id,
+                  f"Сцена {scene.idx + 1}: видеоряд считает локальный ComfyUI ({how})",
+                  stage="regen")
+    elif (channel.video_source or "kie") == "comfy":
+        log_event(session, video.id,
+                  f"Сцена {scene.idx + 1}: просили локальный ComfyUI, но он не "
+                  f"настроен — считаю через облако", stage="regen", level="warn")
+
     def work(part: int) -> tuple[int, Optional[Path], float, str]:
         text = prompt if part == 0 else f"{prompt}. Alternative angle {part + 1}"
+        if use_comfy:
+            dest = clips_dir / f"scene_{scene.id:04d}_r{stamp}_{part:02d}.mp4"
+            try:
+                made = comfy_clip(comfy_setup, video_id=video.id,
+                                  workflow_id=channel.comfy_workflow_id,
+                                  scene_id=scene.id, part=part, prompt=text,
+                                  seconds=float(channel.clip_duration),
+                                  size=size, dest=dest)
+                return part, made, 0.0, ""
+            except Exception as exc:  # noqa: BLE001 — один кадр не роняет пересборку
+                log.warning("Пересборка сцены %s: ComfyUI не отдал кадр %s: %s",
+                            scene.id, part, exc)
+                return part, None, 0.0, str(exc)[:300]
+
         payload = video_input(model, prompt=text, aspect_ratio=channel.aspect_ratio,
                               resolution=resolution, duration=int(channel.clip_duration))
         try:

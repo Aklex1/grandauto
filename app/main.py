@@ -334,6 +334,29 @@ async def comfy_agent_result(task_id: int, request: Request,
     return JSONResponse({"ok": True, "size": len(data)})
 
 
+@app.post("/api/comfy/{task_id}/ping")
+async def comfy_agent_ping(task_id: int, request: Request,
+                           session: Session = Depends(get_session)):
+    """Сердцебиение: кадр ещё считается.
+
+    Без него сервер через полчаса счёл бы агента мёртвым и вернул задание в
+    очередь — а на небыстрой видеокарте полчаса на кадр это норма работы, а не
+    поломка. Заодно это единственный признак жизни, по которому сборка отличает
+    «агент думает» от «агента выключили».
+    """
+    from .models import ComfyTask
+
+    form = await request.form()
+    _check_agent(session, str(form.get("token") or ""))
+    task = session.get(ComfyTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+    if task.status == "taken":
+        task.taken_at = utcnow()
+        session.commit()
+    return JSONResponse({"ok": True, "status": task.status})
+
+
 @app.post("/api/comfy/{task_id}/error")
 async def comfy_agent_error(task_id: int, request: Request,
                             session: Session = Depends(get_session)):
