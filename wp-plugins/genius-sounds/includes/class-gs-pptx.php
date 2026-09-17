@@ -52,19 +52,22 @@ class GS_Pptx {
         }
 
         // Картинки нумеруем заранее: на них ссылаются и слайд, и его rels,
-        // и общий список типов содержимого.
+        // и общий список типов содержимого. На слайде их может быть две —
+        // фон и иллюстрация рядом с текстом, — поэтому имена сквозные.
         $media = array();
+        $n = 0;
         foreach ($slides as $i => $slide) {
-            $file = (string) ($slide['image'] ?? '');
-            if ($file !== '' && is_readable($file)) {
-                $media[$i] = array(
-                    'name' => 'image' . ($i + 1) . '.jpg',
-                    'file' => $file,
-                );
+            $media[$i] = array();
+            foreach (array('image', 'illustration') as $role) {
+                $file = (string) ($slide[$role] ?? '');
+                if ($file !== '' && is_readable($file)) {
+                    $n++;
+                    $media[$i][$role] = array('name' => 'image' . $n . '.jpg', 'file' => $file);
+                }
             }
         }
 
-        $zip->addFromString('[Content_Types].xml', self::content_types(count($slides), (bool) $media));
+        $zip->addFromString('[Content_Types].xml', self::content_types(count($slides), (bool) array_filter($media)));
         $zip->addFromString('_rels/.rels', self::root_rels());
         $zip->addFromString('docProps/core.xml', self::core($meta));
         $zip->addFromString('docProps/app.xml', self::app(count($slides)));
@@ -78,12 +81,15 @@ class GS_Pptx {
         $zip->addFromString('ppt/slideLayouts/_rels/slideLayout1.xml.rels', self::layout_rels());
 
         foreach ($slides as $i => $slide) {
-            $n = $i + 1;
-            $image = isset($media[$i]) ? $media[$i]['name'] : '';
-            $zip->addFromString('ppt/slides/slide' . $n . '.xml', self::slide($slide, $i === 0, $image !== ''));
-            $zip->addFromString('ppt/slides/_rels/slide' . $n . '.xml.rels', self::slide_rels($image));
-            if ($image !== '') {
-                $zip->addFile($media[$i]['file'], 'ppt/media/' . $image);
+            $num = $i + 1;
+            $bg = $media[$i]['image']['name'] ?? '';
+            $il = $media[$i]['illustration']['name'] ?? '';
+            $zip->addFromString('ppt/slides/slide' . $num . '.xml',
+                self::slide($slide, $i === 0, $bg !== '', $il !== ''));
+            $zip->addFromString('ppt/slides/_rels/slide' . $num . '.xml.rels',
+                self::slide_rels($bg, $il));
+            foreach ($media[$i] as $item) {
+                $zip->addFile($item['file'], 'ppt/media/' . $item['name']);
             }
         }
 
@@ -101,7 +107,7 @@ class GS_Pptx {
      * Титульный слайд отличается от обычного только размером и положением
      * текста, поэтому отдельного макета под него не заводим.
      */
-    private static function slide($slide, $is_title, $has_image) {
+    private static function slide($slide, $is_title, $has_image, $has_illustration = false) {
         $title = self::esc((string) ($slide['title'] ?? ''));
         $bullets = array_values(array_filter(array_map('strval', (array) ($slide['bullets'] ?? array())))); 
 
@@ -125,6 +131,25 @@ class GS_Pptx {
 
         $pad = round(self::CM * 2.2);
         $width = self::W - $pad * 2;
+
+        // Иллюстрация занимает правую часть слайда, текст ужимается влево.
+        if ($has_illustration && !$is_title) {
+            $ill_w = round(self::W * 0.36);
+            $ill_x = self::W - $pad - $ill_w;
+            $ill_y = round(self::CM * 4.6);
+            $ill_h = round(self::H - $ill_y - self::CM * 2.2);
+            $shapes .= '<p:pic><p:nvPicPr><p:cNvPr id="' . $id . '" name="Иллюстрация"/>'
+                . '<p:cNvPicPr/><p:nvPr/></p:nvPicPr>'
+                . '<p:blipFill><a:blip r:embed="' . ($has_image ? 'rId3' : 'rId2') . '"/>'
+                . '<a:srcRect l="8000" r="8000"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
+                . '<p:spPr><a:xfrm><a:off x="' . $ill_x . '" y="' . $ill_y . '"/>'
+                . '<a:ext cx="' . $ill_w . '" cy="' . $ill_h . '"/></a:xfrm>'
+                . '<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 6000"/></a:avLst></a:prstGeom>'
+                . '<a:ln w="12700"><a:solidFill><a:srgbClr val="6366F1"><a:alpha val="45000"/></a:srgbClr></a:solidFill></a:ln>'
+                . '</p:spPr></p:pic>';
+            $id++;
+            $width = $ill_x - $pad - round(self::CM * 0.8);
+        }
 
         if ($is_title) {
             $shapes .= self::text($id, $pad, round(self::CM * 5.4), $width, round(self::CM * 4),
@@ -199,10 +224,15 @@ class GS_Pptx {
             . $paras . '</p:txBody></p:sp>';
     }
 
-    private static function slide_rels($image) {
+    private static function slide_rels($background, $illustration = '') {
         $rels = '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>';
-        if ($image !== '') {
-            $rels .= '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/' . $image . '"/>';
+        $next = 2;
+        foreach (array($background, $illustration) as $image) {
+            if ($image === '') {
+                continue;
+            }
+            $rels .= '<Relationship Id="rId' . $next . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/' . $image . '"/>';
+            $next++;
         }
         return self::rels($rels);
     }

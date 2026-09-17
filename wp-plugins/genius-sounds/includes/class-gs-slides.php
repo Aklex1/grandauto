@@ -81,11 +81,13 @@ class GS_Slides {
      *
      * @return array{ok:bool,message:string,deck:array}
      */
-    public static function outline($topic, $count, $audience = '', $tone = '') {
+    public static function outline($topic, $count, $audience = '', $tone = '', $source = '') {
         $count = max(self::MIN_SLIDES, min(self::MAX_SLIDES, (int) $count));
+        $source = trim((string) $source);
+        $from_text = $source !== '';
 
-        $system = implode(' ', array(
-            'Ты — редактор презентаций. Твоя задача — разложить тему на слайды.',
+        $rules = array(
+            'Ты — редактор презентаций. Твоя задача — разложить материал на слайды.',
             'Отвечай строго одним JSON-объектом, без markdown, без пояснений, без ```.',
             'Формат: {"title":"заголовок презентации","subtitle":"подзаголовок в 3-6 слов",',
             '"slides":[{"title":"заголовок слайда","bullets":["пункт","пункт"],"image":"english description of an abstract background"}]}',
@@ -93,16 +95,42 @@ class GS_Slides {
             'титул собирается из title и subtitle отдельно.',
             'На слайде 2-4 пункта, каждый — законченная мысль до 90 символов, без вводных слов.',
             'Пиши по-русски, конкретно, без канцелярита и без обещаний результата.',
-            'Не выдумывай цифры, названия компаний и даты: если факта нет, пиши по существу без него.',
             'Поле image — короткое описание АБСТРАКТНОГО фона на английском, без текста, людей и логотипов.',
-        ));
+        );
 
-        $user = 'Тема презентации: ' . $topic . '.';
-        if (trim($audience) !== '') {
-            $user .= ' Аудитория: ' . $audience . '.';
+        if ($from_text) {
+            // Когда материал принесли, выдумывать нечего: всё, чего нет
+            // в тексте, окажется в презентации враньём от имени автора.
+            $rules[] = 'Материал даёт пользователь. Опирайся ТОЛЬКО на него: не добавляй фактов, цифр,';
+            $rules[] = 'названий и выводов, которых в тексте нет. Если материала не хватает на заданное';
+            $rules[] = 'число слайдов, делай меньше слайдов, но не придумывай содержание.';
+            $rules[] = 'Сохраняй порядок и логику исходника, формулировки сокращай до тезисов.';
+        } else {
+            $rules[] = 'Не выдумывай цифры, названия компаний и даты: если факта нет, пиши по существу без него.';
         }
-        if (trim($tone) !== '') {
-            $user .= ' Тон: ' . $tone . '.';
+
+        $system = implode(' ', $rules);
+
+        if ($from_text) {
+            $user = "Сделай презентацию по этому материалу.";
+            if (trim($topic) !== '') {
+                $user .= ' Уточнение от автора: ' . $topic . '.';
+            }
+            if (trim($audience) !== '') {
+                $user .= ' Аудитория: ' . $audience . '.';
+            }
+            if (trim($tone) !== '') {
+                $user .= ' Тон: ' . $tone . '.';
+            }
+            $user .= "\n\nМАТЕРИАЛ:\n" . $source;
+        } else {
+            $user = 'Тема презентации: ' . $topic . '.';
+            if (trim($audience) !== '') {
+                $user .= ' Аудитория: ' . $audience . '.';
+            }
+            if (trim($tone) !== '') {
+                $user .= ' Тон: ' . $tone . '.';
+            }
         }
 
         $res = self::chat($system, $user);
@@ -170,34 +198,62 @@ class GS_Slides {
      *
      * @return array<int,string> Позиция слайда => идентификатор задачи
      */
-    public static function start_images($deck, $style_id) {
+    public static function start_images($deck, $style_id, $illustrations = array()) {
         $style = self::style($style_id);
         $tasks = array();
 
-        // Титул рисуем по теме презентации, остальные — по описанию слайда.
-        $prompts = array(-1 => (string) $deck['title']);
+        // Фон рисуем на титул и на каждый слайд. Ключи строковые: рядом с
+        // фоном на том же слайде может стоять иллюстрация, и различать их
+        // по одному числовому индексу уже не выйдет.
+        $tasks += self::queue_image('bg:-1', $style, (string) $deck['title'], false);
         foreach ($deck['slides'] as $i => $slide) {
-            $prompts[$i] = $slide['image'] !== '' ? $slide['image'] : (string) $slide['title'];
-        }
-
-        foreach ($prompts as $i => $hint) {
-            $prompt = $style['image'] . ', ' . $hint
-                . ', wide 16:9 presentation background, no text, no letters, no logos, no people, '
-                . 'composition leaves the left and centre area calm for text';
-            $res = self::post(self::API_JOBS, array(
-                'model' => self::IMG_MODEL,
-                'input' => array(
-                    'prompt'        => $prompt,
-                    'output_format' => 'png',
-                    'image_size'    => '16:9',
-                ),
-            ));
-            $task = (string) ($res['body']['data']['taskId'] ?? '');
-            if ($task !== '') {
-                $tasks[$i] = $task;
+            $hint = $slide['image'] !== '' ? $slide['image'] : (string) $slide['title'];
+            $tasks += self::queue_image('bg:' . $i, $style, $hint, false);
+            if (in_array($i, (array) $illustrations, true)) {
+                $subject = self::illustration_hint($slide);
+                $tasks += self::queue_image('il:' . $i, $style, $subject, true);
             }
         }
         return $tasks;
+    }
+
+    /**
+     * Что рисовать рядом с текстом.
+     *
+     * Фону достаточно настроения, а иллюстрация должна быть про содержание
+     * слайда — иначе она просто вторая абстракция и ничего не добавляет.
+     */
+    private static function illustration_hint($slide) {
+        $parts = array($slide['title']);
+        foreach ((array) $slide['bullets'] as $bullet) {
+            $parts[] = $bullet;
+        }
+        return mb_substr(implode('. ', $parts), 0, 300);
+    }
+
+    private static function queue_image($key, $style, $hint, $is_illustration) {
+        if ($is_illustration) {
+            $prompt = $style['image'] . ', a single clear symbolic object illustrating this idea: ' . $hint
+                . ', centred composition, vertical 3:4 frame, generous empty space around the object, '
+                . 'no text, no letters, no logos, no faces';
+            $size = '3:4';
+        } else {
+            $prompt = $style['image'] . ', ' . $hint
+                . ', wide 16:9 presentation background, no text, no letters, no logos, no people, '
+                . 'composition leaves the left and centre area calm for text';
+            $size = '16:9';
+        }
+
+        $res = self::post(self::API_JOBS, array(
+            'model' => self::IMG_MODEL,
+            'input' => array(
+                'prompt'        => $prompt,
+                'output_format' => 'png',
+                'image_size'    => $size,
+            ),
+        ));
+        $task = (string) ($res['body']['data']['taskId'] ?? '');
+        return $task !== '' ? array($key => $task) : array();
     }
 
     /**
@@ -208,13 +264,13 @@ class GS_Slides {
     public static function collect_images($tasks) {
         $images = array();
         $done = true;
-        foreach ($tasks as $i => $task) {
+        foreach ($tasks as $key => $task) {
             $res = self::get(self::API_INFO, array('taskId' => $task));
             $state = (string) ($res['body']['data']['state'] ?? '');
             if ($state === 'success') {
                 $urls = self::result_urls($res['body']['data']);
                 if ($urls) {
-                    $images[$i] = $urls[0];
+                    $images[$key] = $urls[0];
                 }
                 continue;
             }
@@ -279,13 +335,14 @@ class GS_Slides {
         $slides[] = array(
             'title'   => $deck['title'],
             'bullets' => $deck['subtitle'] !== '' ? array($deck['subtitle']) : array(),
-            'image'   => $fetch($images[-1] ?? ''),
+            'image'   => $fetch($images['bg:-1'] ?? ''),
         );
         foreach ($deck['slides'] as $i => $slide) {
             $slides[] = array(
-                'title'   => $slide['title'],
-                'bullets' => $slide['bullets'],
-                'image'   => $fetch($images[$i] ?? ''),
+                'title'        => $slide['title'],
+                'bullets'      => $slide['bullets'],
+                'image'        => $fetch($images['bg:' . $i] ?? ''),
+                'illustration' => $fetch($images['il:' . $i] ?? ''),
             );
         }
 
@@ -369,6 +426,11 @@ class GS_Slides {
                 array('role' => 'user', 'content' => $user),
             ),
         );
+
+        // Причину отказа нужно донести до вызывающего: сообщение
+        // «поставщик не ответил» одинаково для сети, лимита и неверного
+        // ключа, и по нему невозможно понять, что чинить.
+        $last = 'поставщик не ответил';
         foreach (array(0, 5, 15) as $pause) {
             if ($pause > 0) {
                 sleep($pause);
@@ -379,18 +441,58 @@ class GS_Slides {
                 'body'    => wp_json_encode($payload),
             ));
             if (is_wp_error($response)) {
+                $last = $response->get_error_message();
                 continue;
             }
-            $body = json_decode((string) wp_remote_retrieve_body($response), true);
+
+            $code = (int) wp_remote_retrieve_response_code($response);
+            $raw = (string) wp_remote_retrieve_body($response);
+            $body = json_decode($raw, true);
             if (!is_array($body)) {
+                $last = 'неразборчивый ответ (HTTP ' . $code . ')';
                 continue;
             }
-            $content = (string) ($body['choices'][0]['message']['content'] ?? '');
-            if (trim($content) !== '') {
-                return array('ok' => true, 'message' => '', 'content' => $content);
+
+            $inner = isset($body['code']) ? (int) $body['code'] : 200;
+            if ($inner !== 200 || $code >= 400) {
+                $last = (string) ($body['msg'] ?? ($body['error']['message'] ?? ('HTTP ' . $code)));
+                continue;
             }
+
+            $content = (string) ($body['choices'][0]['message']['content'] ?? '');
+            if (trim($content) === '') {
+                $last = 'пустой ответ модели';
+                continue;
+            }
+            return array('ok' => true, 'message' => '', 'content' => $content);
         }
-        return array('ok' => false, 'message' => 'Поставщик не ответил — попробуйте ещё раз', 'content' => '');
+        return array('ok' => false, 'message' => self::human_error($last), 'content' => '');
+    }
+
+    /**
+     * Ответ поставщика — человеку.
+     *
+     * Он пишет на английском и о своей инфраструктуре: «Network error» здесь
+     * означает, что у него не отвечает модель, а не что у человека плохой
+     * интернет. Если не перевести, посетитель будет чинить свой вайфай.
+     */
+    private static function human_error($raw) {
+        $low = mb_strtolower((string) $raw);
+        if (strpos($low, 'network error') !== false || strpos($low, 'internal') !== false
+            || strpos($low, 'try again') !== false || strpos($low, 'timeout') !== false
+            || strpos($low, 'maintain') !== false || strpos($low, 'unavailable') !== false) {
+            return 'Сервис генерации сейчас недоступен на стороне поставщика. Деньги не списаны — попробуйте через несколько минут.';
+        }
+        if (strpos($low, 'unauthorized') !== false || strpos($low, 'api key') !== false) {
+            return 'Генерация временно недоступна: не настроен доступ к сервису.';
+        }
+        if (strpos($low, 'rate limit') !== false || strpos($low, 'too many') !== false) {
+            return 'Слишком много запросов подряд. Подождите минуту и попробуйте снова.';
+        }
+        if (strpos($low, 'пустой ответ') !== false) {
+            return 'Модель вернула пустой ответ. Уточните тему и попробуйте ещё раз.';
+        }
+        return 'Не удалось собрать структуру: ' . $raw;
     }
 
     private static function post($url, $payload) {

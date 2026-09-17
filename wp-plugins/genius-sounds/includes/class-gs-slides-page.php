@@ -18,8 +18,10 @@ class GS_Slides_Page {
     const SLUG        = 'sozdat-prezentaciyu';
     const OPT_PAGE    = 'gs_slides_page';
     const OPT_COST    = 'gs_slides_cost';
+    const OPT_PIC     = 'gs_slides_pic_cost';
     const OPT_PAGES   = 'gs_slides_alt_pages';
     const DEFAULT_COST = 49;
+    const DEFAULT_PIC  = 10;
 
     const SEO_TITLE = 'Нейросеть для генерации презентаций — Genius Slides';
     const SEO_DESC  = 'Нейросеть для генерации презентаций: опишите тему — сервис соберёт структуру слайдов, нарисует фоны и отдаст готовый файл PPTX. Презентацию можно доработать в PowerPoint или Google Slides.';
@@ -27,6 +29,17 @@ class GS_Slides_Page {
     public static function cost() {
         $cost = get_option(self::OPT_COST, null);
         return $cost === null ? self::DEFAULT_COST : max(0, (float) $cost);
+    }
+
+    /** Доплата за одну иллюстрацию рядом с текстом слайда. */
+    public static function pic_cost() {
+        $cost = get_option(self::OPT_PIC, null);
+        return $cost === null ? self::DEFAULT_PIC : max(0, (float) $cost);
+    }
+
+    public static function pic_hint() {
+        $cost = self::pic_cost();
+        return $cost <= 0 ? 'бесплатно' : '+' . number_format_i18n($cost, 0) . ' ₽';
     }
 
     /** Подпись цены: у сервиса свой тариф, не привязанный к GS_Lab. */
@@ -269,7 +282,10 @@ class GS_Slides_Page {
                     и отдаст готовый файл PPTX. Дальше правьте в PowerPoint, Google Slides или
                     любом бесплатном редакторе: это обычная презентация, а не картинки.
                 </p>
-                <p class="gs-hero__price"><?php echo esc_html(self::price_hint()); ?> за презентацию</p>
+                <p class="gs-hero__price">
+                    <?php echo esc_html(self::price_hint()); ?> за презентацию
+                    <span class="gs-hero__price-add"><?php echo esc_html(self::pic_hint()); ?> за картинку на слайде</span>
+                </p>
             </header>
 
             <?php if (!$logged): ?>
@@ -278,12 +294,33 @@ class GS_Slides_Page {
                     <a class="gs-btn gs-btn--primary gs-btn--lg" href="<?php echo esc_url(wp_login_url(self::get_url())); ?>">Войти</a>
                 </div>
             <?php else: ?>
+                <div class="gs-slides__bar">
+                    <span class="gs-slides__balance">
+                        На балансе <strong id="gs-slides-balance"><?php echo esc_html(number_format_i18n(GS_SFX::get_balance(get_current_user_id()), 2)); ?></strong> ₽
+                    </span>
+                    <button type="button" class="gs-btn gs-btn--ghost" data-gs-topup>Пополнить</button>
+                </div>
+
                 <form class="gs-panel gs-form gs-slides__form" id="gs-slides-form" novalidate>
                     <div class="gs-field">
                         <label class="gs-label" for="gs-slides-topic">Тема презентации <span class="gs-req">*</span></label>
                         <textarea id="gs-slides-topic" class="gs-textarea" rows="3" maxlength="600"
                                   placeholder="Например: внедрение нейросетей в отдел маркетинга небольшой компании — что это даёт, сколько стоит, с чего начать"></textarea>
                         <p class="gs-hint">Чем конкретнее тема, тем меньше общих слов на слайдах.</p>
+                    </div>
+
+                    <div class="gs-field gs-slides__upload">
+                        <label class="gs-label" for="gs-slides-file">Или свой текст файлом</label>
+                        <input id="gs-slides-file" class="gs-slides__file" type="file"
+                               accept="<?php echo esc_attr(GS_Doctext::accept()); ?>">
+                        <label class="gs-slides__filebtn" for="gs-slides-file">Выбрать файл</label>
+                        <span class="gs-slides__filename" id="gs-slides-filename">Файл не выбран</span>
+                        <button type="button" class="gs-slides__fileclear" id="gs-slides-fileclear" hidden>убрать</button>
+                        <p class="gs-hint">
+                            TXT, DOCX, MD или RTF до 5 МБ. Презентация будет собрана по вашему тексту — без
+                            додумывания фактов, которых в нём нет. Тему тогда можно не заполнять или
+                            написать в неё уточнение.
+                        </p>
                     </div>
 
                     <div class="gs-slides__row">
@@ -311,9 +348,9 @@ class GS_Slides_Page {
 
                     <div class="gs-form__foot">
                         <button class="gs-btn gs-btn--primary gs-btn--lg" type="submit" id="gs-slides-go">
-                            Собрать презентацию
+                            Собрать структуру
                         </button>
-                        <span class="gs-form__cost"><?php echo esc_html(self::price_hint()); ?></span>
+                        <span class="gs-form__cost">бесплатно — платите только за готовый файл</span>
                     </div>
                     <p class="gs-form__note" id="gs-slides-note" role="status" aria-live="polite"></p>
                 </form>
@@ -389,10 +426,6 @@ class GS_Slides_Page {
                 <h1 class="gs-hero__title"><?php echo esc_html($alt['h1']); ?></h1>
                 <p class="gs-hero__lead"><?php echo esc_html($alt['lead']); ?></p>
                 <p class="gs-hero__price"><?php echo esc_html(self::price_hint()); ?> за презентацию</p>
-                <p class="gs-slides__disclaimer">
-                    <?php echo esc_html($alt['brand']); ?> — продукт стороннего разработчика, к Genius-bot отношения не имеет.
-                    Название упомянуто для сравнения.
-                </p>
             </header>
 
             <section class="gs-course__block">

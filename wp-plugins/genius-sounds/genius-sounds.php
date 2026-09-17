@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.67.0');
+define('GS_VERSION', '1.68.2');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -32,6 +32,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-songs.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-course.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-404.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-doctext.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-pptx.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-slides.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-slides-page.php';

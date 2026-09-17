@@ -159,16 +159,22 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
-        // Презентации: структура и фоны считаются минутами, поэтому
-        // запуск и получение результата разнесены, как у остальных сервисов.
-        register_rest_route(self::NS, '/slides/create', array(
+        // Презентации разбиты на два шага: сначала бесплатная структура,
+        // потом платная отрисовка. Иначе нельзя дать выбрать иллюстрации
+        // по слайдам — их не из чего выбирать, пока слайдов нет.
+        register_rest_route(self::NS, '/slides/outline', array(
             'methods'             => 'POST',
-            'callback'            => array(__CLASS__, 'handle_slides_create'),
+            'callback'            => array(__CLASS__, 'handle_slides_outline'),
             'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
-        register_rest_route(self::NS, '/slides/(?P<task_id>[a-zA-Z0-9_-]+)', array(
-            'methods'             => 'GET',
-            'callback'            => array(__CLASS__, 'handle_slides_status'),
+        register_rest_route(self::NS, '/slides/upload', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_slides_upload'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/slides/render', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_slides_render'),
             'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
         register_rest_route(self::NS, '/slides/history', array(
@@ -176,14 +182,10 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_slides_history'),
             'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
-
-        // Разовая настройка лендинга: картинки в шапку и блоки. Отдельным
-        // маршрутом, а не полем в форме настроек — адреса ставятся один раз
-        // при заливке в медиатеку и руками их никто не правит.
-        register_rest_route(self::NS, '/course/images', array(
-            'methods'             => 'POST',
-            'callback'            => array(__CLASS__, 'handle_course_images'),
-            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        register_rest_route(self::NS, '/slides/(?P<task_id>[a-zA-Z0-9_-]+)', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_slides_status'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
 
         // Заявка с лендинга обучения. Открыта для гостей — это её смысл;
@@ -1419,7 +1421,12 @@ class GS_Rest {
      * Презентации
      * ------------------------------------------------------------------ */
 
-    public static function handle_slides_create(WP_REST_Request $request) {
+    /**
+     * Шаг 1: структура. Бесплатно — один вызов языковой модели стоит копейки,
+     * а брать деньги за то, что человек ещё не видел, нечестно. От перебора
+     * защищает счётчик: он же не даёт случайно сжечь лимит поставщика.
+     */
+    public static function handle_slides_outline(WP_REST_Request $request) {
         $user_id = get_current_user_id();
         $params = $request->get_json_params();
         if (!is_array($params)) {
@@ -1427,16 +1434,113 @@ class GS_Rest {
         }
 
         $topic = trim(sanitize_textarea_field((string) ($params['topic'] ?? '')));
-        if (mb_strlen($topic) < 5) {
-            return new WP_Error('gs_slides_topic', 'Опишите тему презентации — хотя бы несколькими словами', array('status' => 400));
+        $source_key = sanitize_text_field((string) ($params['source_id'] ?? ''));
+        $source = '';
+        if ($source_key !== '') {
+            $stored = get_transient('gs_slides_src_' . $source_key);
+            if (!is_array($stored) || (int) ($stored['user_id'] ?? 0) !== $user_id) {
+                return new WP_Error('gs_slides_source', 'Загруженный файл не найден — загрузите его заново', array('status' => 400));
+            }
+            $source = (string) $stored['text'];
         }
 
-        $count = (int) ($params['count'] ?? 8);
-        $style = sanitize_key((string) ($params['style'] ?? 'business'));
-        $audience = trim(sanitize_text_field((string) ($params['audience'] ?? '')));
-        $tone = trim(sanitize_text_field((string) ($params['tone'] ?? '')));
+        if ($source === '' && mb_strlen($topic) < 5) {
+            return new WP_Error('gs_slides_topic', 'Опишите тему или загрузите файл с текстом', array('status' => 400));
+        }
 
-        $cost = GS_Slides_Page::cost();
+        $gate = 'gs_slides_rate_' . $user_id;
+        if ((int) get_transient($gate) >= 20) {
+            return new WP_Error('gs_slides_rate', 'Слишком много запросов подряд. Подождите немного.', array('status' => 429));
+        }
+        set_transient($gate, (int) get_transient($gate) + 1, HOUR_IN_SECONDS);
+
+        try {
+            $outline = GS_Slides::outline(
+                $topic,
+                (int) ($params['count'] ?? 8),
+                trim(sanitize_text_field((string) ($params['audience'] ?? ''))),
+                trim(sanitize_text_field((string) ($params['tone'] ?? ''))),
+                $source
+            );
+        } catch (Throwable $e) {
+            error_log('genius-sounds: структура презентации — ' . $e->getMessage());
+            return new WP_Error('gs_slides_failed', 'Не получилось собрать структуру. Попробуйте ещё раз.', array('status' => 500));
+        }
+        if (empty($outline['ok'])) {
+            return new WP_Error('gs_slides_failed', $outline['message'], array('status' => 502));
+        }
+
+        $draft_id = wp_generate_password(20, false, false);
+        set_transient('gs_slides_draft_' . $draft_id, array(
+            'user_id' => $user_id,
+            'deck'    => $outline['deck'],
+        ), 2 * HOUR_IN_SECONDS);
+
+        return rest_ensure_response(array(
+            'draft_id' => $draft_id,
+            'outline'  => $outline['deck'],
+            'base'     => GS_Slides_Page::cost(),
+            'pic'      => GS_Slides_Page::pic_cost(),
+            'balance'  => GS_SFX::get_balance($user_id),
+        ));
+    }
+
+    /** Приём файла с текстом. Сам файл не храним — только извлечённый текст. */
+    public static function handle_slides_upload(WP_REST_Request $request) {
+        $files = $request->get_file_params();
+        $file = $files['file'] ?? null;
+        if (!is_array($file) || empty($file['tmp_name'])) {
+            return new WP_Error('gs_slides_nofile', 'Файл не пришёл', array('status' => 400));
+        }
+        if (!empty($file['error'])) {
+            return new WP_Error('gs_slides_upload', 'Файл не загрузился — попробуйте ещё раз', array('status' => 400));
+        }
+
+        $res = GS_Doctext::extract((string) $file['tmp_name'], (string) $file['name']);
+        if (empty($res['ok'])) {
+            return new WP_Error('gs_slides_parse', $res['message'], array('status' => 400));
+        }
+
+        $source_id = wp_generate_password(20, false, false);
+        set_transient('gs_slides_src_' . $source_id, array(
+            'user_id' => get_current_user_id(),
+            'text'    => $res['text'],
+        ), 2 * HOUR_IN_SECONDS);
+
+        return rest_ensure_response(array(
+            'source_id' => $source_id,
+            'name'      => sanitize_file_name((string) $file['name']),
+            'chars'     => mb_strlen($res['text']),
+        ));
+    }
+
+    /** Шаг 2: отрисовка. Здесь и снимаются деньги — за фоны и иллюстрации. */
+    public static function handle_slides_render(WP_REST_Request $request) {
+        $user_id = get_current_user_id();
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        $draft_id = sanitize_text_field((string) ($params['draft_id'] ?? ''));
+        $draft = get_transient('gs_slides_draft_' . $draft_id);
+        if (!is_array($draft) || (int) ($draft['user_id'] ?? 0) !== $user_id) {
+            return new WP_Error('gs_slides_draft', 'Структура устарела — соберите её заново', array('status' => 400));
+        }
+
+        $deck = $draft['deck'];
+        $style = sanitize_key((string) ($params['style'] ?? 'business'));
+
+        // Номера слайдов приходят от браузера — берём только существующие.
+        $illustrations = array();
+        foreach ((array) ($params['illustrations'] ?? array()) as $index) {
+            $index = (int) $index;
+            if (isset($deck['slides'][$index]) && !in_array($index, $illustrations, true)) {
+                $illustrations[] = $index;
+            }
+        }
+
+        $cost = GS_Slides_Page::cost() + count($illustrations) * GS_Slides_Page::pic_cost();
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
         }
@@ -1444,11 +1548,10 @@ class GS_Rest {
         // Деньги сняты до запуска, поэтому любая неожиданность ниже —
         // включая ошибку в самом коде — обязана вернуть их на баланс.
         try {
-            $outline = GS_Slides::outline($topic, $count, $audience, $tone);
-            if (empty($outline['ok'])) {
-                throw new RuntimeException($outline['message']);
+            $tasks = GS_Slides::start_images($deck, $style, $illustrations);
+            if (!$tasks) {
+                throw new RuntimeException('поставщик не принял ни одной картинки');
             }
-            $tasks = GS_Slides::start_images($outline['deck'], $style);
         } catch (Throwable $e) {
             if ($cost > 0) {
                 GS_SFX::refund($user_id, $cost);
@@ -1456,7 +1559,7 @@ class GS_Rest {
             error_log('genius-sounds: презентация — ' . $e->getMessage());
             return new WP_Error(
                 'gs_slides_failed',
-                'Не получилось собрать презентацию: ' . $e->getMessage() . ' Деньги вернулись на баланс.',
+                'Не получилось запустить отрисовку: ' . $e->getMessage() . '. Деньги вернулись на баланс.',
                 array('status' => 502)
             );
         }
@@ -1466,18 +1569,17 @@ class GS_Rest {
             'user_id' => $user_id,
             'cost'    => $cost,
             'at'      => time(),
-            'deck'    => $outline['deck'],
+            'deck'    => $deck,
             'style'   => $style,
             'tasks'   => $tasks,
         ), false);
+        delete_transient('gs_slides_draft_' . $draft_id);
 
         return rest_ensure_response(array(
             'task_id' => $task_id,
             'status'  => 'pending',
-            'slides'  => count($outline['deck']['slides']) + 1,
-            'title'   => $outline['deck']['title'],
-            'outline' => $outline['deck'],
             'cost'    => $cost,
+            'pics'    => count($illustrations),
             'balance' => GS_SFX::get_balance($user_id),
         ));
     }

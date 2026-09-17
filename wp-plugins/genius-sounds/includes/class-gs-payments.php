@@ -51,6 +51,9 @@ class GS_Payments {
                 $source = (string) $landing['id'];
             }
         }
+        if ($source === '' && class_exists('GS_Slides_Page') && GS_Slides_Page::is_page()) {
+            $source = 'slides';
+        }
         if ($source === '' && class_exists('GS_Pages') && GS_Pages::is_studio_request()) {
             $source = 'sfx';
         }
@@ -70,6 +73,9 @@ class GS_Payments {
             return true;
         }
         if (class_exists('GS_Landing') && GS_Landing::current()) {
+            return true;
+        }
+        if (class_exists('GS_Slides_Page') && GS_Slides_Page::is_page()) {
             return true;
         }
         if (class_exists('GS_Pages') && GS_Pages::is_studio_request()) {
@@ -135,6 +141,7 @@ class GS_Payments {
             'stt'      => 'расшифровка записи',
             'ytaudio'  => 'звук из видео',
             'voicesong'=> 'песня своим голосом',
+            'slides'   => 'генерация презентаций',
         );
     }
 
