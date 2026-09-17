@@ -44,14 +44,78 @@ class GS_Sitemap {
         return home_url('/sounds-sitemap-' . (int) $n . '.xml');
     }
 
+    /**
+     * Строки Sitemap в robots.txt.
+     *
+     * Карты объявляют несколько плагинов сразу, и в итоге в robots.txt
+     * оказываются дубль одной и той же карты и адрес, отвечающий редиректом.
+     * Робот такие строки терпит, но каждая — лишний повод не начать обход,
+     * поэтому список нормализуем: убираем повторы и заменяем адреса,
+     * ведущие на редирект, конечными.
+     */
     public static function filter_robots_txt($output, $public) {
         if (!$public) {
             return $output;
         }
-        if (strpos($output, 'sounds-sitemap.xml') !== false) {
-            return $output;
+
+        $lines = preg_split('/\R/', $output);
+        $kept = array();
+        $maps = array();
+
+        foreach ($lines as $line) {
+            if (!preg_match('/^\s*Sitemap:\s*(\S+)\s*$/i', $line, $m)) {
+                $kept[] = $line;
+                continue;
+            }
+            $maps[] = self::tidy_map_url($m[1]);
         }
-        return $output . "\nSitemap: " . self::index_url() . "\n";
+
+        $maps[] = self::index_url();
+
+        // Пустые строки на хвосте убираем, иначе после склейки их станет больше.
+        while ($kept && trim(end($kept)) === '') {
+            array_pop($kept);
+        }
+
+        foreach (array_unique($maps) as $map) {
+            $kept[] = 'Sitemap: ' . $map;
+        }
+
+        return implode("\n", $kept) . "\n";
+    }
+
+    /**
+     * Адрес карты без заведомого редиректа.
+     *
+     * Сайт работает со слешем на конце, и `/tts-sitemap.xml` отвечает 301 на
+     * `/tts-sitemap.xml/`. Ставим сразу конечный адрес.
+     */
+    private static function tidy_map_url($url) {
+        $url = trim($url);
+        if ($url === '' || strpos($url, home_url('/')) !== 0) {
+            return $url;
+        }
+        // Одна и та же карта объявлена и как `/sitemap.xml`, и как
+        // `/?sitemap=xml`. Оставляем путь: именно он зарегистрирован
+        // в Вебмастере, и по нему же приходит робот.
+        $query = (string) wp_parse_url($url, PHP_URL_QUERY);
+        if ($query !== '') {
+            parse_str($query, $args);
+            if (($args['sitemap'] ?? '') === 'xml' && count($args) === 1) {
+                return home_url('/sitemap.xml');
+            }
+            return $url;
+        }
+
+        $path = (string) wp_parse_url($url, PHP_URL_PATH);
+        if ($path === '' || substr($path, -1) === '/') {
+            return $url;
+        }
+        // Наши собственные карты отдаются без слеша — их не трогаем.
+        if (preg_match('~/(sounds-sitemap(-\d+)?|wp-sitemap[^/]*|sitemap)\.xml$~', $path)) {
+            return $url;
+        }
+        return $url . '/';
     }
 
     /* ---------------------------------------------------------------------
