@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.66.2');
+define('GS_VERSION', '1.67.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -32,6 +32,9 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-songs.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-course.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-404.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-pptx.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-slides.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-slides-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-leads.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-schedule.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
@@ -88,6 +91,7 @@ class Genius_Sounds_Plugin {
         GS_Songs::boot();
         GS_Course::boot();
         GS_404::boot();
+        GS_Slides_Page::boot();
         GS_Leads::boot();
         GS_Schedule::boot();
         GS_Links::boot();
@@ -111,6 +115,7 @@ class Genius_Sounds_Plugin {
         GS_Landing::ensure_pages();
         GS_Songs::ensure_page();
         GS_Course::ensure_page();
+        GS_Slides_Page::ensure_pages();
         GS_Api_Page::ensure_page();
         flush_rewrite_rules();
     }
@@ -128,6 +133,7 @@ class Genius_Sounds_Plugin {
         GS_Voice_Page::register_shortcodes();
         GS_Songs::register_shortcodes();
         GS_Course::register_shortcodes();
+        GS_Slides_Page::register_shortcodes();
         GS_Api_Page::register_shortcodes();
 
         // Разовая инициализация после обновления версии плагина.
@@ -144,6 +150,7 @@ class Genius_Sounds_Plugin {
                 GS_Landing::ensure_pages();
                 GS_Songs::ensure_page();
                 GS_Course::ensure_page();
+                GS_Slides_Page::ensure_pages();
                 GS_Api_Page::ensure_page();
                 add_action('shutdown', 'flush_rewrite_rules');
             } catch (Throwable $e) {
@@ -168,7 +175,7 @@ class Genius_Sounds_Plugin {
         $dashboard = GS_Dashboard::enabled() && GS_Dashboard::is_page();
         $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
             || GS_Pages::is_studio_request() || GS_Lab::current_service() || GS_Landing::current()
-            || GS_Songs::is_page() || GS_Course::is_page() || GS_404::is_page() || $blog || $api || $dashboard;
+            || GS_Songs::is_page() || GS_Course::is_page() || GS_404::is_page() || GS_Slides_Page::is_any() || $blog || $api || $dashboard;
         if ($ours) {
             // Перекрашиваем шапку и подвал темы под тёмные страницы плагина.
             wp_enqueue_style('genius-sounds-chrome', GS_PLUGIN_URL . 'assets/css/chrome.css', array(), GS_VERSION);
@@ -220,6 +227,20 @@ class Genius_Sounds_Plugin {
                 'restUrl' => esc_url_raw(rest_url('tts/v1/')),
                 'nonce'   => wp_create_nonce('wp_rest'),
             ));
+        }
+
+        if (GS_Slides_Page::is_any()) {
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
+            wp_enqueue_style('genius-sounds-course', GS_PLUGIN_URL . 'assets/css/course.css', array('genius-sounds-studio'), GS_VERSION);
+            wp_enqueue_style('genius-sounds-slides', GS_PLUGIN_URL . 'assets/css/slides.css', array('genius-sounds-course'), GS_VERSION);
+            if (GS_Slides_Page::is_page()) {
+                wp_enqueue_script('genius-sounds-slides', GS_PLUGIN_URL . 'assets/js/slides.js', array(), GS_VERSION, true);
+                wp_localize_script('genius-sounds-slides', 'GS_SLIDES', array(
+                    'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),
+                    'nonce'   => wp_create_nonce('wp_rest'),
+                ));
+            }
         }
 
         if (GS_404::is_page()) {

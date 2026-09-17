@@ -159,6 +159,24 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Презентации: структура и фоны считаются минутами, поэтому
+        // запуск и получение результата разнесены, как у остальных сервисов.
+        register_rest_route(self::NS, '/slides/create', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_slides_create'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/slides/(?P<task_id>[a-zA-Z0-9_-]+)', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_slides_status'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/slides/history', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_slides_history'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+
         // Разовая настройка лендинга: картинки в шапку и блоки. Отдельным
         // маршрутом, а не полем в форме настроек — адреса ставятся один раз
         // при заливке в медиатеку и руками их никто не правит.
@@ -1395,6 +1413,135 @@ class GS_Rest {
             (string) ($params['method'] ?? 'GET'),
             isset($params['payload']) ? $params['payload'] : null
         ));
+    }
+
+    /* ---------------------------------------------------------------------
+     * Презентации
+     * ------------------------------------------------------------------ */
+
+    public static function handle_slides_create(WP_REST_Request $request) {
+        $user_id = get_current_user_id();
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        $topic = trim(sanitize_textarea_field((string) ($params['topic'] ?? '')));
+        if (mb_strlen($topic) < 5) {
+            return new WP_Error('gs_slides_topic', 'Опишите тему презентации — хотя бы несколькими словами', array('status' => 400));
+        }
+
+        $count = (int) ($params['count'] ?? 8);
+        $style = sanitize_key((string) ($params['style'] ?? 'business'));
+        $audience = trim(sanitize_text_field((string) ($params['audience'] ?? '')));
+        $tone = trim(sanitize_text_field((string) ($params['tone'] ?? '')));
+
+        $cost = GS_Slides_Page::cost();
+        if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
+            return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
+        }
+
+        // Деньги сняты до запуска, поэтому любая неожиданность ниже —
+        // включая ошибку в самом коде — обязана вернуть их на баланс.
+        try {
+            $outline = GS_Slides::outline($topic, $count, $audience, $tone);
+            if (empty($outline['ok'])) {
+                throw new RuntimeException($outline['message']);
+            }
+            $tasks = GS_Slides::start_images($outline['deck'], $style);
+        } catch (Throwable $e) {
+            if ($cost > 0) {
+                GS_SFX::refund($user_id, $cost);
+            }
+            error_log('genius-sounds: презентация — ' . $e->getMessage());
+            return new WP_Error(
+                'gs_slides_failed',
+                'Не получилось собрать презентацию: ' . $e->getMessage() . ' Деньги вернулись на баланс.',
+                array('status' => 502)
+            );
+        }
+
+        $task_id = 'slides' . wp_generate_password(20, false, false);
+        update_option('gs_slides_' . $task_id, array(
+            'user_id' => $user_id,
+            'cost'    => $cost,
+            'at'      => time(),
+            'deck'    => $outline['deck'],
+            'style'   => $style,
+            'tasks'   => $tasks,
+        ), false);
+
+        return rest_ensure_response(array(
+            'task_id' => $task_id,
+            'status'  => 'pending',
+            'slides'  => count($outline['deck']['slides']) + 1,
+            'title'   => $outline['deck']['title'],
+            'outline' => $outline['deck'],
+            'cost'    => $cost,
+            'balance' => GS_SFX::get_balance($user_id),
+        ));
+    }
+
+    public static function handle_slides_status(WP_REST_Request $request) {
+        $task_id = sanitize_text_field((string) $request['task_id']);
+        $key = 'gs_slides_' . $task_id;
+        $meta = get_option($key, array());
+        if (!is_array($meta) || empty($meta['user_id'])) {
+            return new WP_Error('gs_slides_unknown', 'Задача не найдена', array('status' => 404));
+        }
+        if ((int) $meta['user_id'] !== get_current_user_id()) {
+            return new WP_Error('gs_slides_foreign', 'Это чужая задача', array('status' => 403));
+        }
+        if (!empty($meta['url'])) {
+            return rest_ensure_response(array('status' => 'completed', 'url' => $meta['url'], 'title' => $meta['deck']['title']));
+        }
+
+        $got = GS_Slides::collect_images((array) $meta['tasks']);
+
+        // Фоны иногда зависают у поставщика. Ждать бесконечно нельзя:
+        // по истечении срока собираем что есть, а деньги возвращаем.
+        $overdue = (time() - (int) $meta['at']) > GS_Slides::TIMEOUT;
+        if (!$got['done'] && !$overdue) {
+            return rest_ensure_response(array(
+                'status' => 'pending',
+                'ready'  => count($got['images']),
+                'total'  => count((array) $meta['tasks']),
+            ));
+        }
+
+        $built = GS_Slides::build($meta['deck'], $got['images'], (int) $meta['user_id']);
+        if (empty($built['ok'])) {
+            if (!empty($meta['cost'])) {
+                GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
+            }
+            delete_option($key);
+            return new WP_Error('gs_slides_build', $built['message'] . ' Деньги вернулись на баланс.', array('status' => 500));
+        }
+
+        if ($overdue && !$got['done'] && !empty($meta['cost'])) {
+            // Часть фонов не дождались — честнее вернуть деньги, файл отдать.
+            GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
+        }
+
+        $meta['url'] = $built['url'];
+        update_option($key, $meta, false);
+        GS_Slides::remember((int) $meta['user_id'], array(
+            'at'     => current_time('mysql'),
+            'title'  => $meta['deck']['title'],
+            'slides' => count($meta['deck']['slides']) + 1,
+            'url'    => $built['url'],
+        ));
+
+        return rest_ensure_response(array(
+            'status'  => 'completed',
+            'url'     => $built['url'],
+            'title'   => $meta['deck']['title'],
+            'balance' => GS_SFX::get_balance((int) $meta['user_id']),
+        ));
+    }
+
+    public static function handle_slides_history() {
+        return rest_ensure_response(array('items' => GS_Slides::own_decks(get_current_user_id())));
     }
 
     public static function handle_course_images(WP_REST_Request $request) {
