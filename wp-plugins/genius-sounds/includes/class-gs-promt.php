@@ -27,6 +27,12 @@ class GS_Promt {
     const META_DONE   = '_gs_promt_done';
     /** Почему пример не запустился — чтобы не гадать по логам. */
     const META_ERROR  = '_gs_promt_error';
+    /** Сколько раз пробовали: бесконечно повторять нельзя. */
+    const META_TRIES  = '_gs_promt_tries';
+    const MAX_TRIES   = 3;
+
+    /** Место, куда встаёт пример. */
+    const MARKER = '<!--gs-promt-example-->';
 
     const DIR  = 'promt';
     const HOOK = 'gs_promt_collect';
@@ -68,17 +74,31 @@ class GS_Promt {
 
     /** Сколько статей ждёт примера и сколько его получило. */
     public static function stats() {
-        $waiting = get_posts(array(
+        $posts = get_posts(array(
             'post_type' => 'post', 'post_status' => 'publish', 'numberposts' => -1,
-            'fields' => 'ids', 'meta_key' => self::META_TASKS, 'suppress_filters' => true,
+            'meta_key' => self::META_PROMPT, 'suppress_filters' => true,
         ));
-        $done = get_posts(array(
-            'post_type' => 'post', 'post_status' => 'publish', 'numberposts' => -1,
-            'fields' => 'ids', 'meta_key' => self::META_DONE, 'suppress_filters' => true,
-        ));
+
+        // Считаем по тексту статьи, а не по метке «готово»: метка
+        // означает только, что задачу перестали ждать, а вышла картинка
+        // или нет — видно по маркеру.
+        $done = $waiting = $stuck = 0;
+        foreach ($posts as $post) {
+            if (strpos((string) $post->post_content, self::MARKER) === false) {
+                $done++;
+            } elseif (get_post_meta($post->ID, self::META_TASKS, true)) {
+                $waiting++;
+            } elseif ((int) get_post_meta($post->ID, self::META_TRIES, true) >= self::MAX_TRIES) {
+                $stuck++;
+            } else {
+                $waiting++;
+            }
+        }
+
         return array(
-            'waiting' => count($waiting),
-            'done'    => count($done),
+            'waiting' => $waiting,
+            'done'    => $done,
+            'stuck'   => $stuck,
             'next'    => wp_next_scheduled(self::HOOK),
         );
     }
@@ -112,8 +132,7 @@ class GS_Promt {
         if ($new !== 'publish' || $old === 'publish' || !($post instanceof WP_Post) || $post->post_type !== 'post') {
             return;
         }
-        $prompt = trim((string) get_post_meta($post->ID, self::META_PROMPT, true));
-        if ($prompt === '' || get_post_meta($post->ID, self::META_DONE, true)) {
+        if (strpos((string) $post->post_content, self::MARKER) === false) {
             return;
         }
 
@@ -136,6 +155,9 @@ class GS_Promt {
 
         $shots = (int) get_post_meta($post->ID, self::META_SHOTS, true);
         $shots = max(1, min(2, $shots ?: 1));
+
+        update_post_meta($post->ID, self::META_TRIES,
+            (int) get_post_meta($post->ID, self::META_TRIES, true) + 1);
 
         $res = array();
         $tasks = array();
@@ -170,16 +192,32 @@ class GS_Promt {
         $posts = get_posts(array(
             'post_type'        => 'post',
             'post_status'      => 'publish',
-            'numberposts'      => (int) $limit,
+            'numberposts'      => (int) $limit * 4,
             'suppress_filters' => true,
             'meta_query'       => array(
                 array('key' => self::META_PROMPT, 'compare' => 'EXISTS'),
-                array('key' => self::META_DONE, 'compare' => 'NOT EXISTS'),
                 array('key' => self::META_TASKS, 'compare' => 'NOT EXISTS'),
             ),
         ));
+
+        $started = 0;
         foreach ($posts as $post) {
-            self::start($post);
+            if ($started >= $limit) {
+                break;
+            }
+            // Метка «готово» сама по себе ничего не гарантирует: задача
+            // могла завершиться отказом, и тогда в тексте так и остался
+            // маркер, а картинки нет. Считаем работу сделанной только
+            // тогда, когда маркер из текста ушёл.
+            if (strpos((string) $post->post_content, self::MARKER) === false) {
+                continue;
+            }
+            if ((int) get_post_meta($post->ID, self::META_TRIES, true) >= self::MAX_TRIES) {
+                continue;
+            }
+            if (self::start($post)) {
+                $started++;
+            }
         }
     }
 
@@ -265,9 +303,8 @@ class GS_Promt {
         // Примеры ставим сразу после блока с промтом: человек читает промт
         // и тут же видит результат, не пролистывая статью.
         $content = (string) $post->post_content;
-        $marker = '<!--gs-promt-example-->';
-        if (strpos($content, $marker) !== false) {
-            $content = str_replace($marker, $figures, $content);
+        if (strpos($content, self::MARKER) !== false) {
+            $content = str_replace(self::MARKER, $figures, $content);
         } else {
             $content .= $figures;
         }

@@ -295,6 +295,9 @@ class GS_Admin {
         <p>
             Ждут картинку: <strong><?php echo (int) $stats['waiting']; ?></strong>,
             уже с примером: <strong><?php echo (int) $stats['done']; ?></strong>.
+            <?php if (!empty($stats['stuck'])): ?>
+                <span style="color:#b32d2e">Сдались после трёх попыток: <?php echo (int) $stats['stuck']; ?>.</span>
+            <?php endif; ?>
             <?php if ($stats['next']): ?>
                 Следующий сбор: <?php echo esc_html(date_i18n('d.m, H:i', $stats['next'] + (int) (get_option('gmt_offset') * HOUR_IN_SECONDS))); ?>.
             <?php else: ?>
