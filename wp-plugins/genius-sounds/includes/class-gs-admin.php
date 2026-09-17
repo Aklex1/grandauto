@@ -276,6 +276,40 @@ class GS_Admin {
     }
 
     /** Журнал заявок: последняя строка показывает, дошло ли сообщение до бота. */
+    /**
+     * Примеры к статьям раздела промтов.
+     *
+     * Картинка рисуется в момент публикации, а забирается кроном: между
+     * этими событиями статья какое-то время живёт без примера, и панель
+     * показывает, сколько таких статей сейчас в ожидании.
+     */
+    public static function render_promt() {
+        if (!class_exists('GS_Promt')) {
+            return '';
+        }
+        $stats = GS_Promt::stats();
+
+        ob_start();
+        ?>
+        <h2 id="gs-promt">Примеры к статьям с промтами</h2>
+        <p>
+            Ждут картинку: <strong><?php echo (int) $stats['waiting']; ?></strong>,
+            уже с примером: <strong><?php echo (int) $stats['done']; ?></strong>.
+            <?php if ($stats['next']): ?>
+                Следующий сбор: <?php echo esc_html(date_i18n('d.m, H:i', $stats['next'] + (int) (get_option('gmt_offset') * HOUR_IN_SECONDS))); ?>.
+            <?php else: ?>
+                <span style="color:#b32d2e">Задача сбора не запланирована.</span>
+            <?php endif; ?>
+        </p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
+            <?php wp_nonce_field('gs_promt_collect'); ?>
+            <input type="hidden" name="action" value="gs_promt_collect">
+            <?php submit_button('Собрать готовые примеры сейчас', 'secondary', 'submit', false); ?>
+        </form>
+        <?php
+        return ob_get_clean();
+    }
+
     public static function render_leads() {
         $rows = GS_Leads::log_rows();
         $notice = get_transient('gs_leads_notice');
@@ -932,6 +966,8 @@ class GS_Admin {
             <?php echo self::render_provider(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo GS_Schedule::render_panel(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_promt(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_leads(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 

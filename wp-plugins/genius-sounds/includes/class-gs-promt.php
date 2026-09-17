@@ -25,6 +25,8 @@ class GS_Promt {
     const META_TASKS  = '_gs_promt_tasks';
     /** Готово — чтобы не рисовать второй раз при любой правке. */
     const META_DONE   = '_gs_promt_done';
+    /** Почему пример не запустился — чтобы не гадать по логам. */
+    const META_ERROR  = '_gs_promt_error';
 
     const DIR  = 'promt';
     const HOOK = 'gs_promt_collect';
@@ -35,13 +37,50 @@ class GS_Promt {
     const MAX_CHANNEL = 'https://max.ru/join/Ba2dnqkVMbJlRI3BlvIWp95Grn7SzFESG7HxtazTosw';
 
     public static function boot() {
+        // Фильтр расписаний — раньше всего остального: wp_schedule_event
+        // проверяет интервал по уже зарегистрированному списку и молча
+        // отказывается, если фильтр навешен позже. Из-за этого задача
+        // сбора не вставала вовсе.
+        add_filter('cron_schedules', array(__CLASS__, 'add_schedule'));
         add_action('init', array(__CLASS__, 'register_meta'));
+        add_action('init', array(__CLASS__, 'ensure_cron'));
         add_action('transition_post_status', array(__CLASS__, 'on_publish'), 10, 3);
         add_action(self::HOOK, array(__CLASS__, 'collect'));
+        add_action('admin_post_gs_promt_collect', array(__CLASS__, 'handle_collect'));
+    }
+
+    public static function ensure_cron() {
         if (!wp_next_scheduled(self::HOOK)) {
-            wp_schedule_event(time() + 120, 'gs_five_minutes', self::HOOK);
+            wp_schedule_event(time() + 60, 'gs_five_minutes', self::HOOK);
         }
-        add_filter('cron_schedules', array(__CLASS__, 'add_schedule'));
+    }
+
+    /** Ручной прогон сбора — когда ждать пять минут незачем. */
+    public static function handle_collect() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_promt_collect');
+        self::collect();
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-promt');
+        exit;
+    }
+
+    /** Сколько статей ждёт примера и сколько его получило. */
+    public static function stats() {
+        $waiting = get_posts(array(
+            'post_type' => 'post', 'post_status' => 'publish', 'numberposts' => -1,
+            'fields' => 'ids', 'meta_key' => self::META_TASKS, 'suppress_filters' => true,
+        ));
+        $done = get_posts(array(
+            'post_type' => 'post', 'post_status' => 'publish', 'numberposts' => -1,
+            'fields' => 'ids', 'meta_key' => self::META_DONE, 'suppress_filters' => true,
+        ));
+        return array(
+            'waiting' => count($waiting),
+            'done'    => count($done),
+            'next'    => wp_next_scheduled(self::HOOK),
+        );
     }
 
     public static function add_schedule($schedules) {
@@ -78,9 +117,27 @@ class GS_Promt {
             return;
         }
 
+        self::start($post);
+    }
+
+    /**
+     * Запускает генерацию примеров к статье.
+     *
+     * Отдельным методом, потому что запуск нужен и при публикации, и при
+     * доборе: если в момент выхода статьи поставщик молчал, статья так и
+     * останется без примера, пока её кто-нибудь не перевыпустит. Добор
+     * снимает эту зависимость от удачного стечения обстоятельств.
+     */
+    public static function start($post) {
+        $prompt = trim((string) get_post_meta($post->ID, self::META_PROMPT, true));
+        if ($prompt === '') {
+            return false;
+        }
+
         $shots = (int) get_post_meta($post->ID, self::META_SHOTS, true);
         $shots = max(1, min(2, $shots ?: 1));
 
+        $res = array();
         $tasks = array();
         for ($i = 0; $i < $shots; $i++) {
             $res = GS_Provider::job('image', array('prompt' => $prompt, 'ratio' => '3:4'));
@@ -92,10 +149,38 @@ class GS_Promt {
         if (!$tasks) {
             // Поставщик не принял — статья выходит без примера, и это
             // лучше, чем задержать публикацию до его выздоровления.
-            error_log('genius-sounds: пример к статье ' . $post->ID . ' не запущен');
-            return;
+            $why = isset($res['error']) ? (string) $res['error'] : 'причина неизвестна';
+            error_log('genius-sounds: пример к статье ' . $post->ID . ' не запущен: ' . $why);
+            update_post_meta($post->ID, self::META_ERROR, $why);
+            return false;
         }
+        delete_post_meta($post->ID, self::META_ERROR);
         update_post_meta($post->ID, self::META_TASKS, $tasks);
+        return true;
+    }
+
+    /**
+     * Статьи, вышедшие без примера, — добираем по нескольку за прогон.
+     *
+     * Ограничение в три штуки намеренное: поставщик берёт задачи не
+     * бесплатно, и разом запускать полсотни генераций из-за одного
+     * сбоя не нужно.
+     */
+    private static function start_missing($limit = 3) {
+        $posts = get_posts(array(
+            'post_type'        => 'post',
+            'post_status'      => 'publish',
+            'numberposts'      => (int) $limit,
+            'suppress_filters' => true,
+            'meta_query'       => array(
+                array('key' => self::META_PROMPT, 'compare' => 'EXISTS'),
+                array('key' => self::META_DONE, 'compare' => 'NOT EXISTS'),
+                array('key' => self::META_TASKS, 'compare' => 'NOT EXISTS'),
+            ),
+        ));
+        foreach ($posts as $post) {
+            self::start($post);
+        }
     }
 
     /* ---------------------------------------------------------------------
@@ -103,6 +188,8 @@ class GS_Promt {
      * ------------------------------------------------------------------ */
 
     public static function collect() {
+        self::start_missing();
+
         $posts = get_posts(array(
             'post_type'        => 'post',
             'post_status'      => 'publish',
