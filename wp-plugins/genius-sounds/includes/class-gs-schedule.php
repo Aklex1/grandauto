@@ -1,6 +1,6 @@
 <?php
 /**
- * Очередь публикаций: по два лонгрида в день.
+ * Очередь публикаций: своя скорость у каждого раздела.
  *
  * Готовые статьи лежат черновиками, а сайт сам выпускает их по расписанию.
  * Собственная очередь вместо штатной отложенной публикации выбрана потому,
@@ -17,6 +17,7 @@ class GS_Schedule {
 
     const OPT        = 'gs_schedule';
     const META_ORDER = '_gs_queue_order';
+    const META_LANE  = '_gs_queue_lane';
     const META_KEY   = '_gs_queue_key';
     const META_COMP  = '_gs_queue_comp';
     const HOOK       = 'gs_schedule_tick';
@@ -33,19 +34,58 @@ class GS_Schedule {
      * Настройки
      * ------------------------------------------------------------------ */
 
-    public static function settings() {
-        $saved = get_option(self::OPT, array());
-        return wp_parse_args(is_array($saved) ? $saved : array(), array(
-            'enabled' => 1,
-            'per_day' => 2,
-            'hours'   => array(10, 18),
-        ));
+    /**
+     * Потоки очереди.
+     *
+     * Раздел промтов выходит по четыре статьи в день, лонгриды блога — по
+     * две. Одной общей скоростью это не описать: подняв её до четырёх, мы
+     * выплюнули бы за неделю все лонгриды, а опустив до двух — растянули
+     * двести промтов на три месяца. Поэтому у каждого потока свой темп, а
+     * статья помечается меткой потока при заливке.
+     */
+    public static function lanes() {
+        return array(
+            ''      => 'Блог: лонгриды',
+            'promt' => 'Раздел промтов',
+        );
     }
 
-    public static function save_settings($values) {
-        $now = self::settings();
+    public static function lane_defaults() {
+        return array(
+            ''      => array('enabled' => 1, 'per_day' => 2, 'hours' => array(10, 18)),
+            'promt' => array('enabled' => 1, 'per_day' => 4, 'hours' => array(9, 13, 17, 21)),
+        );
+    }
+
+    /** Настройки основного потока — для обратной совместимости вызовов. */
+    public static function settings($lane = '') {
+        $saved = get_option(self::OPT, array());
+        $saved = is_array($saved) ? $saved : array();
+
+        // Старый формат: одни настройки на всё. Считаем их настройками блога.
+        $legacy = array();
+        if (isset($saved['per_day']) || isset($saved['hours'])) {
+            $legacy = array(
+                'enabled' => isset($saved['enabled']) ? (int) $saved['enabled'] : 1,
+                'per_day' => (int) ($saved['per_day'] ?? 2),
+                'hours'   => (array) ($saved['hours'] ?? array(10, 18)),
+            );
+        }
+
+        $defaults = self::lane_defaults();
+        $lane = array_key_exists($lane, $defaults) ? $lane : '';
+        $base = $defaults[$lane];
+        if ($lane === '' && $legacy) {
+            $base = wp_parse_args($legacy, $base);
+        }
+        $own = isset($saved['lanes'][$lane]) && is_array($saved['lanes'][$lane]) ? $saved['lanes'][$lane] : array();
+        return wp_parse_args($own, $base);
+    }
+
+    public static function save_settings($values, $lane = '') {
+        $now = self::settings($lane);
         $now['enabled'] = !empty($values['enabled']) ? 1 : 0;
-        $now['per_day'] = max(1, min(10, (int) ($values['per_day'] ?? 2)));
+        $now['per_day'] = max(1, min(12, (int) ($values['per_day'] ?? $now['per_day'])));
 
         $hours = array();
         foreach ((array) ($values['hours'] ?? array()) as $hour) {
@@ -55,8 +95,15 @@ class GS_Schedule {
             }
         }
         sort($hours);
-        $now['hours'] = $hours ? array_values(array_unique($hours)) : array(10, 18);
-        update_option(self::OPT, $now, false);
+        if ($hours) {
+            $now['hours'] = array_values(array_unique($hours));
+        }
+
+        $saved = get_option(self::OPT, array());
+        $saved = is_array($saved) ? $saved : array();
+        $saved['lanes'] = isset($saved['lanes']) && is_array($saved['lanes']) ? $saved['lanes'] : array();
+        $saved['lanes'][$lane] = $now;
+        update_option(self::OPT, $saved, false);
         return $now;
     }
 
@@ -68,7 +115,13 @@ class GS_Schedule {
         $auth = function () {
             return current_user_can('edit_posts');
         };
-        foreach (array(self::META_ORDER => 'integer', self::META_KEY => 'string', self::META_COMP => 'integer') as $key => $type) {
+        $fields = array(
+            self::META_ORDER => 'integer',
+            self::META_KEY   => 'string',
+            self::META_COMP  => 'integer',
+            self::META_LANE  => 'string',
+        );
+        foreach ($fields as $key => $type) {
             register_post_meta('post', $key, array(
                 'type'          => $type,
                 'single'        => true,
@@ -93,7 +146,25 @@ class GS_Schedule {
      *
      * @return array<int,WP_Post>
      */
-    public static function queue($limit = 500) {
+    /**
+     * Условие принадлежности потоку.
+     *
+     * У статей блога метки потока нет вовсе — они залиты до того, как
+     * потоки появились. Поэтому основной поток — это «метки нет или она
+     * пустая», а не «метка равна пустой строке».
+     */
+    private static function lane_query($lane) {
+        if ((string) $lane === '') {
+            return array(
+                'relation' => 'OR',
+                array('key' => self::META_LANE, 'compare' => 'NOT EXISTS'),
+                array('key' => self::META_LANE, 'value' => '', 'compare' => '='),
+            );
+        }
+        return array(array('key' => self::META_LANE, 'value' => (string) $lane, 'compare' => '='));
+    }
+
+    public static function queue($limit = 500, $lane = '') {
         return get_posts(array(
             'post_type'        => 'post',
             'post_status'      => 'draft',
@@ -101,24 +172,26 @@ class GS_Schedule {
             'meta_key'         => self::META_ORDER,
             'orderby'          => 'meta_value_num',
             'order'            => 'ASC',
+            'meta_query'       => self::lane_query($lane),
             'suppress_filters' => true,
         ));
     }
 
-    public static function queue_size() {
+    public static function queue_size($lane = '') {
         $posts = get_posts(array(
             'post_type'        => 'post',
             'post_status'      => 'draft',
             'numberposts'      => -1,
             'fields'           => 'ids',
             'meta_key'         => self::META_ORDER,
+            'meta_query'       => self::lane_query($lane),
             'suppress_filters' => true,
         ));
         return count($posts);
     }
 
-    /** Сколько статей из очереди уже вышло сегодня. */
-    public static function published_today() {
+    /** Сколько статей потока уже вышло сегодня. */
+    public static function published_today($lane = '') {
         $today = get_posts(array(
             'post_type'        => 'post',
             'post_status'      => 'publish',
@@ -126,6 +199,7 @@ class GS_Schedule {
             'fields'           => 'ids',
             'date_query'       => array(array('after' => 'today midnight', 'inclusive' => true)),
             'meta_key'         => self::META_ORDER,
+            'meta_query'       => self::lane_query($lane),
             'suppress_filters' => true,
         ));
         return count($today);
@@ -137,25 +211,27 @@ class GS_Schedule {
      * на сайте час догоняется следующим же обращением.
      */
     public static function tick() {
-        $set = self::settings();
-        if (empty($set['enabled'])) {
-            return;
-        }
-
-        $hour = (int) current_time('G');
-        $due = 0;
-        foreach ((array) $set['hours'] as $slot) {
-            if ($hour >= (int) $slot) {
-                $due++;
+        foreach (array_keys(self::lanes()) as $lane) {
+            $set = self::settings($lane);
+            if (empty($set['enabled'])) {
+                continue;
             }
-        }
-        $due = min($due, (int) $set['per_day']);
-        $left = $due - self::published_today();
-        if ($left <= 0) {
-            return;
-        }
 
-        self::publish_next($left);
+            $hour = (int) current_time('G');
+            $due = 0;
+            foreach ((array) $set['hours'] as $slot) {
+                if ($hour >= (int) $slot) {
+                    $due++;
+                }
+            }
+            $due = min($due, (int) $set['per_day']);
+            $left = $due - self::published_today($lane);
+            if ($left <= 0) {
+                continue;
+            }
+
+            self::publish_next($left, $lane);
+        }
     }
 
     /**
@@ -163,8 +239,8 @@ class GS_Schedule {
      *
      * @return int Сколько вышло.
      */
-    public static function publish_next($count = 1) {
-        $posts = self::queue((int) $count);
+    public static function publish_next($count = 1, $lane = '') {
+        $posts = self::queue((int) $count, $lane);
         $done = 0;
         foreach ($posts as $post) {
             $ok = wp_update_post(array(
@@ -181,12 +257,12 @@ class GS_Schedule {
     }
 
     /** Когда, по расчёту, выйдет статья на позиции $index (с нуля). */
-    public static function planned_date($index) {
-        $set = self::settings();
+    public static function planned_date($index, $lane = '') {
+        $set = self::settings($lane);
         $per = max(1, (int) $set['per_day']);
         $hours = (array) $set['hours'];
 
-        $done_today = self::published_today();
+        $done_today = self::published_today($lane);
         $left_today = max(0, $per - $done_today);
 
         if ($index < $left_today) {
@@ -213,12 +289,15 @@ class GS_Schedule {
      * @param string $key   Запрос, под который написана статья.
      * @param int    $comp  Конкуренция запроса — для наглядности в панели.
      */
-    public static function enqueue($post_id, $order, $key = '', $comp = 0) {
+    public static function enqueue($post_id, $order, $key = '', $comp = 0, $lane = '') {
         update_post_meta($post_id, self::META_ORDER, (int) $order);
         if ($key !== '') {
             update_post_meta($post_id, self::META_KEY, sanitize_text_field($key));
         }
         update_post_meta($post_id, self::META_COMP, (int) $comp);
+        if ($lane !== '') {
+            update_post_meta($post_id, self::META_LANE, sanitize_key($lane));
+        }
     }
 
     public static function meta($post_id) {
@@ -226,6 +305,7 @@ class GS_Schedule {
             'order' => (int) get_post_meta($post_id, self::META_ORDER, true),
             'key'   => (string) get_post_meta($post_id, self::META_KEY, true),
             'comp'  => (int) get_post_meta($post_id, self::META_COMP, true),
+            'lane'  => (string) get_post_meta($post_id, self::META_LANE, true),
         );
     }
 
@@ -239,6 +319,11 @@ class GS_Schedule {
         }
         check_admin_referer('gs_schedule_save');
 
+        $lane = sanitize_key((string) ($_POST['lane'] ?? ''));
+        if (!array_key_exists($lane, self::lanes())) {
+            $lane = '';
+        }
+
         $hours = array();
         foreach (explode(',', (string) ($_POST['hours'] ?? '')) as $piece) {
             $piece = trim($piece);
@@ -248,9 +333,9 @@ class GS_Schedule {
         }
         self::save_settings(array(
             'enabled' => !empty($_POST['enabled']),
-            'per_day' => $_POST['per_day'] ?? 2,
+            'per_day' => $_POST['per_day'] ?? null,
             'hours'   => $hours,
-        ));
+        ), $lane);
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-schedule');
         exit;
     }
@@ -260,16 +345,17 @@ class GS_Schedule {
             wp_die('Недостаточно прав');
         }
         check_admin_referer('gs_schedule_now');
-        $done = self::publish_next(1);
+        $lane = sanitize_key((string) ($_POST['lane'] ?? ''));
+        if (!array_key_exists($lane, self::lanes())) {
+            $lane = '';
+        }
+        $done = self::publish_next(1, $lane);
         set_transient('gs_schedule_notice', $done, 60);
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-schedule');
         exit;
     }
 
     public static function render_panel() {
-        $set = self::settings();
-        $queue = self::queue(40);
-        $total = self::queue_size();
         $notice = get_transient('gs_schedule_notice');
 
         ob_start();
@@ -283,35 +369,53 @@ class GS_Schedule {
             </p>
         <?php endif; ?>
 
+        <?php foreach (self::lanes() as $lane => $label): ?>
+            <?php echo self::render_lane($lane, $label); ?>
+        <?php endforeach; ?>
+        <?php
+        return ob_get_clean();
+    }
+
+    private static function render_lane($lane, $label) {
+        $set = self::settings($lane);
+        $queue = self::queue(30, $lane);
+        $total = self::queue_size($lane);
+
+        ob_start();
+        ?>
+        <h3 style="margin-top:22px"><?php echo esc_html($label); ?></h3>
+
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:14px">
             <?php wp_nonce_field('gs_schedule_save'); ?>
             <input type="hidden" name="action" value="gs_schedule_save">
+            <input type="hidden" name="lane" value="<?php echo esc_attr($lane); ?>">
             <label style="margin-right:16px">
                 <input type="checkbox" name="enabled" value="1" <?php checked(!empty($set['enabled'])); ?>>
                 публиковать по расписанию
             </label>
             <label style="margin-right:16px">
                 статей в день
-                <input type="number" name="per_day" min="1" max="10" value="<?php echo (int) $set['per_day']; ?>" class="small-text">
+                <input type="number" name="per_day" min="1" max="12" value="<?php echo (int) $set['per_day']; ?>" class="small-text">
             </label>
             <label style="margin-right:16px">
                 часы выхода
                 <input type="text" name="hours" value="<?php echo esc_attr(implode(', ', (array) $set['hours'])); ?>" class="small-text">
             </label>
-            <?php submit_button('Сохранить расписание', 'secondary', 'submit', false); ?>
+            <?php submit_button('Сохранить', 'secondary', 'submit', false); ?>
         </form>
 
         <p>
             В очереди: <strong><?php echo (int) $total; ?></strong>,
-            сегодня вышло: <?php echo (int) self::published_today(); ?> из <?php echo (int) $set['per_day']; ?>.
+            сегодня вышло: <?php echo (int) self::published_today($lane); ?> из <?php echo (int) $set['per_day']; ?>.
             <?php if ($total > 0): ?>
-                Очередь закончится примерно <?php echo esc_html(self::planned_date($total - 1)); ?>.
+                Очередь закончится примерно <?php echo esc_html(self::planned_date($total - 1, $lane)); ?>.
             <?php endif; ?>
         </p>
 
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
             <?php wp_nonce_field('gs_schedule_now'); ?>
             <input type="hidden" name="action" value="gs_schedule_now">
+            <input type="hidden" name="lane" value="<?php echo esc_attr($lane); ?>">
             <?php submit_button('Опубликовать следующую сейчас', 'secondary', 'submit', false); ?>
         </form>
 
@@ -326,7 +430,7 @@ class GS_Schedule {
                             <td><a href="<?php echo esc_url(get_edit_post_link($post->ID)); ?>"><?php echo esc_html($post->post_title); ?></a></td>
                             <td><?php echo esc_html($meta['key']); ?></td>
                             <td><?php echo $meta['comp'] ? (int) $meta['comp'] : '—'; ?></td>
-                            <td><?php echo esc_html(self::planned_date($i)); ?></td>
+                            <td><?php echo esc_html(self::planned_date($i, $lane)); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>

@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.70.4');
+define('GS_VERSION', '1.72.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -39,6 +39,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-slides.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-slides-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-leads.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-schedule.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-promt.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-musicai.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-payments.php';
@@ -96,6 +97,7 @@ class Genius_Sounds_Plugin {
         GS_Slides_Page::boot();
         GS_Leads::boot();
         GS_Schedule::boot();
+        GS_Promt::boot();
         GS_Links::boot();
         GS_Lab::boot();
         GS_Manual::boot();
