@@ -431,7 +431,7 @@ class GS_Slides_Page {
             $links[] = array(self::alt_url($id), $alt['h1']);
         }
         $links[] = array(GS_Lab::get_url('avatar'), 'Говорящий аватар — видео-вступление к презентации');
-        $links[] = array(GS_Lab::get_url('tts'), 'Озвучка текста — аудиоверсия доклада');
+        $links[] = array(home_url('/tts-dashboard/'), 'Озвучка текста — аудиоверсия доклада');
 
         ob_start();
         ?>
