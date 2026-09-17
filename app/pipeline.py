@@ -1710,6 +1710,9 @@ def assemble_selected(session: Session, video: Video, channel: Channel,
     video.stage = "done"
     video.progress = 100
     video.finished_at = utcnow()
+    # Ролик дошёл до конца — счётчик попыток догенерации больше не нужен.
+    video.retry_count = 0
+    video.retry_at = None
     session.commit()
     shutil.rmtree(workdir, ignore_errors=True)
     bridge_count = sum(1 for kind, _ in ordered if kind == "bridge")

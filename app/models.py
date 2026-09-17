@@ -167,6 +167,12 @@ class Video(Base):
 
     # queued | scripting | voicing | visuals | subtitles | assembling | metadata | shorts | done | failed | cancelled
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    # Автоматическая догенерация: сколько раз завод уже пробовал дожать ролик
+    # после срыва и когда попробует снова. Срыв обычно временный — кончились
+    # кредиты, провайдер ответил 500, — и ролик достраивается сам, как только
+    # причина уходит.
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    retry_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
     stage: Mapped[str] = mapped_column(String(80), default="")
     progress: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(Text, default="")

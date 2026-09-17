@@ -29,6 +29,7 @@ import mimetypes
 import os
 import socket
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -300,6 +301,9 @@ class Agent:
         self.name = name
         self.work_dir = work_dir
         self.keep = keep
+        self._stop = threading.Event()
+        self._say = threading.Lock()
+        self._idle_said = False
 
     def next_task(self, *, peek: bool = False) -> dict:
         query = urllib.parse.urlencode({"token": self.token, "agent": self.name,
@@ -329,21 +333,21 @@ class Agent:
         except Exception as exc:  # noqa: BLE001 — об ошибке об ошибке только в журнал
             log(f"не удалось сообщить об ошибке: {explain(exc)}")
 
-    def run_task(self, task: dict) -> None:
+    def run_task(self, task: dict, *, tag: str = "") -> None:
         task_id = int(task["id"])
-        log(f"задание #{task_id}: {task.get('seconds')} с, "
+        log(f"{tag}задание #{task_id}: {task.get('seconds')} с, "
             f"{task.get('width')}x{task.get('height')}, граф «{task.get('workflow')}»")
-        log(f"  промпт: {str(task.get('prompt') or '')[:120]}")
+        log(f"{tag}  промпт: {str(task.get('prompt') or '')[:120]}")
         try:
             graph = task.get("graph") or {}
             missing, doubts = self.comfy.preflight(graph)
             for line in doubts:
-                log(f"  под вопросом: {line}")
+                log(f"{tag}  под вопросом: {line}")
             if missing:
                 raise RuntimeError("граф не совпал с вашей сборкой ComfyUI: "
                                    + "; ".join(missing[:4]))
             prompt_id = self.comfy.submit(graph)
-            log(f"  ComfyUI принял: {prompt_id}")
+            log(f"{tag}  ComfyUI принял: {prompt_id}")
             entry = self.comfy.wait(prompt_id,
                                     heartbeat=lambda: self.send_ping(task_id))
             items = self.comfy.outputs(entry)
@@ -354,47 +358,92 @@ class Agent:
             # выбираем явно, а не берём первое попавшееся.
             videos = [i for i in items
                       if str(i.get("filename", "")).lower().endswith(VIDEO_EXT)]
-            path = self.comfy.download((videos or items)[0], self.work_dir)
+            # Своя папка на задание: в несколько рук файлы с одинаковым именем
+            # из ComfyUI затирали бы друг друга.
+            path = self.comfy.download((videos or items)[0],
+                                       self.work_dir / f"task_{task_id}")
             size_mb = path.stat().st_size / (1 << 20)
-            log(f"  готово: {path.name}, {size_mb:.1f} МБ — отправляю на сервер")
+            log(f"{tag}  готово: {path.name}, {size_mb:.1f} МБ — отправляю на сервер")
             self.send_result(task_id, path)
-            log(f"  задание #{task_id} закрыто")
+            log(f"{tag}  задание #{task_id} закрыто")
         except Exception as exc:  # noqa: BLE001 — падать из-за одного кадра незачем
             message = explain(exc)
-            log(f"  задание #{task_id} не вышло: {message}")
+            log(f"{tag}  задание #{task_id} не вышло: {message}")
             self.send_error(task_id, message)
         finally:
             if not self.keep:
-                # Клип уже на сервере — держать копию незачем, диск дома не резиновый.
-                for leftover in self.work_dir.glob("*"):
+                # Клип уже на сервере — держать копию незачем, диск дома не
+                # резиновый. Убираем только за собой: рядом могут считаться
+                # соседние кадры, и чужой файл трогать нельзя.
+                mine = self.work_dir / f"task_{task_id}"
+                for leftover in mine.glob("*"):
                     if leftover.is_file():
                         leftover.unlink(missing_ok=True)
+                try:
+                    mine.rmdir()
+                except OSError:
+                    pass
 
-    def loop(self, *, once: bool = False) -> int:
-        log(f"агент «{self.name}» на связи: завод {self.server}, "
-            f"ComfyUI {self.comfy.base}")
+    def _work(self, *, once: bool, tag: str = "") -> None:
         idle_said = False
-        while True:
+        while not self._stop.is_set():
             try:
                 task = self.next_task()
             except Exception as exc:  # noqa: BLE001
-                log(f"завод не ответил: {explain(exc)} — повторю через {ERROR_PAUSE:.0f} с")
+                log(f"{tag}завод не ответил: {explain(exc)} — "
+                    f"повторю через {ERROR_PAUSE:.0f} с")
                 time.sleep(ERROR_PAUSE)
                 continue
 
             if not task:
-                if not idle_said:
-                    log("работы нет, жду")
+                # Про «работы нет» говорит только один поток: в несколько рук
+                # это была бы каша из одинаковых строк.
+                with self._say:
+                    if not idle_said and not self._idle_said:
+                        log("работы нет, жду")
+                        self._idle_said = True
                     idle_said = True
                 if once:
-                    return 0
+                    return
                 time.sleep(IDLE_POLL)
                 continue
 
             idle_said = False
-            self.run_task(task)
+            self._idle_said = False
+            self.run_task(task, tag=tag)
             if once:
-                return 0
+                return
+
+    def loop(self, *, once: bool = False, jobs: int = 1) -> int:
+        log(f"агент «{self.name}» на связи: завод {self.server}, "
+            f"ComfyUI {self.comfy.base}"
+            + (f", кадров за раз {jobs}" if jobs > 1 else ""))
+        self._stop = threading.Event()
+        self._say = threading.Lock()
+        self._idle_said = False
+
+        if jobs <= 1:
+            self._work(once=once)
+            return 0
+
+        # Несколько заданий сразу. Считать быстрее от этого одна видеокарта не
+        # станет — ComfyUI исполняет свою очередь по одному. Выигрыш в том, что
+        # пока мы скачиваем готовый клип и отправляем его на сервер, у ComfyUI
+        # уже лежит следующий кадр и карта не простаивает.
+        threads = []
+        for i in range(jobs):
+            worker = threading.Thread(target=self._work, daemon=True,
+                                      kwargs={"once": once, "tag": f"[{i + 1}] "})
+            worker.start()
+            threads.append(worker)
+            time.sleep(0.4)  # чтобы все разом не дёрнули завод за работой
+        try:
+            for worker in threads:
+                worker.join()
+        except KeyboardInterrupt:
+            self._stop.set()
+            raise
+        return 0
 
 
 def main(argv: list) -> int:
@@ -413,6 +462,8 @@ def main(argv: list) -> int:
     parser.add_argument("--work-dir", default="", help="куда складывать клипы перед отправкой")
     parser.add_argument("--keep", action="store_true",
                         help="не удалять скачанные клипы после отправки")
+    parser.add_argument("--jobs", type=int, default=1,
+                        help="сколько кадров брать одновременно (по умолчанию 1)")
     parser.add_argument("--once", action="store_true",
                         help="взять одно задание и выйти — удобно для проверки")
     parser.add_argument("--check", action="store_true",
@@ -474,7 +525,7 @@ def main(argv: list) -> int:
     agent = Agent(args.server, args.token, comfy, name=args.name,
                   work_dir=work_dir, keep=args.keep)
     try:
-        return agent.loop(once=args.once)
+        return agent.loop(once=args.once, jobs=max(1, min(4, args.jobs)))
     except KeyboardInterrupt:
         log("остановлен вручную")
         return 0

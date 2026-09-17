@@ -43,6 +43,14 @@
     <fieldset><legend>Конвейер</legend>
       <label><input type="checkbox" name="auto_run_schedule" style="width:auto"
         {% if settings.auto_run_schedule == '1' %}checked{% endif %}> Автозапуск по расписанию каналов</label>
+      <label><input type="checkbox" name="auto_retry" style="width:auto"
+        {% if settings.auto_retry != '0' %}checked{% endif %}> Догенерировать сорвавшиеся ролики</label>
+      <p class="small muted">Срыв обычно временный: кончились кредиты, провайдер ответил
+        500, оборвалась сеть. Завод сам вернётся к такому ролику и продолжит сборку с
+        места остановки — за уже готовые сцены, озвучку и кадры повторно не платит.
+        Пауза между попытками растёт с 10 минут до 6 часов, после 12 безуспешных
+        попыток ролик остаётся человеку. Ошибки настройки — кривой граф, несуществующая
+        модель — не повторяются: их повтор не лечит.</p>
       <label>Параллельных запросов на сцену
         <input name="scene_concurrency" type="number" min="1" max="8" value="{{ settings.scene_concurrency }}"></label>
       <label>Хвост в конце шортса, с

@@ -42,7 +42,12 @@
 </div>
 
 {% if video.status == 'failed' %}
-<div class="alert alert-error"><b>Сборка остановилась.</b><pre style="margin-top:8px">{{ video.error }}</pre></div>
+<div class="alert alert-error"><b>Сборка остановилась.</b><pre style="margin-top:8px">{{ video.error }}</pre>
+  {% if video.retry_at %}<div class="small">Завод вернётся к ролику сам
+    {{ video.retry_at.strftime('%d.%m в %H:%M') }} UTC — попытка {{ (video.retry_count or 0) + 1 }}.
+    Сборка продолжится с места остановки, за готовое повторно не платим.</div>
+  {% elif (video.retry_count or 0) %}<div class="small">Догенерация остановлена после
+    {{ video.retry_count }} попыток — нужен человек.</div>{% endif %}</div>
 {% elif video.status not in ['done','cancelled'] %}
 <div class="card tight">
   <div class="row between mb">

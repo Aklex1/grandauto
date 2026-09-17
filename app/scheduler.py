@@ -32,6 +32,20 @@ def _job_run_schedule() -> None:
         log.info("Расписание поставило роликов: %s", len(created))
 
 
+def _job_retry_failed() -> None:
+    """Догенерация сорвавшихся роликов.
+
+    Смысл в том, чтобы не терять ролик из-за временной беды: кончились кредиты,
+    провайдер прилёг. Повтор не платит за готовое — конвейер продолжает с места
+    срыва.
+    """
+    from . import recovery
+
+    sent = recovery.run_retries()
+    if sent:
+        log.info("Догенерация: роликов отправлено дожиматься %s", sent)
+
+
 def start() -> BackgroundScheduler:
     global _scheduler
     if _scheduler is not None:
@@ -43,6 +57,10 @@ def start() -> BackgroundScheduler:
     # Расписание каналов проверяем каждые 15 минут.
     sched.add_job(_job_run_schedule, CronTrigger(minute="*/15"), id="run_schedule",
                   replace_existing=True, misfire_grace_time=900)
+    # Сорвавшиеся ролики проверяем каждые 10 минут; пауза между попытками у
+    # каждого своя и растёт, так что частый обход API не долбит.
+    sched.add_job(_job_retry_failed, CronTrigger(minute="*/10"), id="retry_failed",
+                  replace_existing=True, misfire_grace_time=600)
     sched.start()
     _scheduler = sched
     log.info("Планировщик запущен")
