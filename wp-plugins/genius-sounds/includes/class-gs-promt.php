@@ -29,6 +29,8 @@ class GS_Promt {
     const META_ERROR  = '_gs_promt_error';
     /** Сколько раз пробовали: бесконечно повторять нельзя. */
     const META_TRIES  = '_gs_promt_tries';
+    /** Когда запущены текущие задачи — от этого считается терпение. */
+    const META_STARTED = '_gs_promt_started';
     const MAX_TRIES   = 3;
 
     /** Место, куда встаёт пример. */
@@ -53,6 +55,7 @@ class GS_Promt {
         add_action('transition_post_status', array(__CLASS__, 'on_publish'), 10, 3);
         add_action(self::HOOK, array(__CLASS__, 'collect'));
         add_action('admin_post_gs_promt_collect', array(__CLASS__, 'handle_collect'));
+        add_action('admin_post_gs_promt_retry', array(__CLASS__, 'handle_retry'));
     }
 
     public static function ensure_cron() {
@@ -67,6 +70,35 @@ class GS_Promt {
             wp_die('Недостаточно прав');
         }
         check_admin_referer('gs_promt_collect');
+        self::collect();
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-promt');
+        exit;
+    }
+
+    /**
+     * Снять счётчик попыток у сдавшихся статей.
+     *
+     * Три неудачи подряд бывают и не по вине промта: поставщик мог лежать
+     * весь вечер. Кнопка возвращает такие статьи в работу, не заставляя
+     * лезть в базу.
+     */
+    public static function handle_retry() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_promt_retry');
+
+        $posts = get_posts(array(
+            'post_type' => 'post', 'post_status' => 'publish', 'numberposts' => -1,
+            'meta_key' => self::META_PROMPT, 'suppress_filters' => true,
+        ));
+        foreach ($posts as $post) {
+            if (strpos((string) $post->post_content, self::MARKER) === false) {
+                continue;
+            }
+            delete_post_meta($post->ID, self::META_TRIES);
+            delete_post_meta($post->ID, self::META_DONE);
+        }
         self::collect();
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-promt');
         exit;
@@ -178,6 +210,7 @@ class GS_Promt {
         }
         delete_post_meta($post->ID, self::META_ERROR);
         update_post_meta($post->ID, self::META_TASKS, $tasks);
+        update_post_meta($post->ID, self::META_STARTED, time());
         return true;
     }
 
@@ -226,8 +259,6 @@ class GS_Promt {
      * ------------------------------------------------------------------ */
 
     public static function collect() {
-        self::start_missing();
-
         $posts = get_posts(array(
             'post_type'        => 'post',
             'post_status'      => 'publish',
@@ -259,8 +290,15 @@ class GS_Promt {
             }
 
             // Ждём, пока не готовы все, но не дольше часа: подвисшая задача
-            // не должна держать статью без картинки навсегда.
-            $stuck = (time() - get_post_time('U', true, $post)) > HOUR_IN_SECONDS;
+            // не должна держать статью без картинки навсегда. Час считается
+            // от запуска задач, а не от выхода статьи: у повторной попытки
+            // статья давно опубликована, и по её дате терпение кончалось бы
+            // раньше, чем поставщик успевал ответить.
+            $started = (int) get_post_meta($post->ID, self::META_STARTED, true);
+            if (!$started) {
+                $started = (int) get_post_time('U', true, $post);
+            }
+            $stuck = (time() - $started) > HOUR_IN_SECONDS;
             if ($waiting && !$stuck) {
                 continue;
             }
@@ -269,8 +307,13 @@ class GS_Promt {
                 self::attach($post, $urls);
             }
             delete_post_meta($post->ID, self::META_TASKS);
+            delete_post_meta($post->ID, self::META_STARTED);
             update_post_meta($post->ID, self::META_DONE, 1);
         }
+
+        // Добор идёт последним: запущенная только что задача не должна
+        // попасть в разбор этого же прогона — ей нужно время.
+        self::start_missing();
     }
 
     /** Кладём картинки в медиатеку и вставляем в текст статьи. */

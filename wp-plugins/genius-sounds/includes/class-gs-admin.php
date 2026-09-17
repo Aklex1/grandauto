@@ -309,6 +309,13 @@ class GS_Admin {
             <input type="hidden" name="action" value="gs_promt_collect">
             <?php submit_button('Собрать готовые примеры сейчас', 'secondary', 'submit', false); ?>
         </form>
+        <?php if (!empty($stats['stuck'])): ?>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
+                <?php wp_nonce_field('gs_promt_retry'); ?>
+                <input type="hidden" name="action" value="gs_promt_retry">
+                <?php submit_button('Попробовать ещё раз у сдавшихся', 'secondary', 'submit', false); ?>
+            </form>
+        <?php endif; ?>
         <?php
         return ob_get_clean();
     }
