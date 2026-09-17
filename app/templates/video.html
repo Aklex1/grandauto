@@ -257,6 +257,18 @@
                 переозвучить принудительно</label>
             </div>
 
+            <label class="small">Чем считать видеоряд
+              <select name="video_source" form="regen-{{ sc.id }}">
+                {% for key, label in video_sources.items() %}
+                <option value="{{ key }}"
+                  {% if (channel.video_source or 'kie') == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select></label>
+            {% if not comfy_ready %}
+            <div class="small muted">Локальный расчёт пока не настроен:
+              <a href="/comfy">задайте адрес ComfyUI и добавьте граф</a>.</div>
+            {% endif %}
+
             <label class="small">Формат шортса
               <select name="short_format" form="regen-{{ sc.id }}">
                 {% for key, label in short_formats.items() %}

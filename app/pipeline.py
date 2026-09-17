@@ -13,13 +13,13 @@ from typing import Callable, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import (config, fonts, footage, loops, media, music, prompts, references,
-               storage, subtitles, tts)
+from . import (comfy, config, fonts, footage, loops, media, music, prompts,
+               references, storage, subtitles, tts)
 from .db import session_scope
 from . import kie as kie_module
 from .kie import (KieClient, KieError, extract_urls,
                   video_input)
-from .models import (Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
+from .models import (ComfyWorkflow, Bridge as BridgeModel, Channel, Event, Footage as FootageModel, PlanItem,
                      Scene, Short, Video, utcnow)
 from . import settings_store as st
 
@@ -379,11 +379,28 @@ def generate_visuals(session: Session, client: KieClient, video: Video, channel:
         log_event(session, video.id,
                   f"Из библиотеки нарезано фрагментов: {len(library_clips)}", stage="visuals")
 
+    comfy_setup = _comfy_setup(session, channel)
+    if comfy_setup is not None:
+        log_event(session, video.id,
+                  f"Видеоряд считает локальный ComfyUI (граф «{comfy_setup[2].name}»)",
+                  stage="visuals")
+
     def work(task: tuple[int, int, str, str]):
         scene_id, part, prompt, origin = task
         ready = library_clips.get((scene_id, part))
         if ready is not None:
             return scene_id, part, ready, 0.0, "", "library"
+
+        if comfy_setup is not None:
+            dest = clips_dir / f"scene_{scene_id:04d}_{part:02d}.mp4"
+            try:
+                made = _comfy_clip(comfy_setup, dest, prompt=prompt,
+                                   seconds=float(channel.clip_duration), size=size)
+                return scene_id, part, made, 0.0, "", "comfy"
+            except Exception as exc:  # noqa: BLE001 — одна сцена не роняет ролик
+                log.warning("ComfyUI не отдал клип %s/%s: %s", scene_id, part, exc)
+                return scene_id, part, None, 0.0, str(exc)[:500], "comfy"
+
         payload = video_input(channel.video_model, prompt=prompt,
                               aspect_ratio=channel.aspect_ratio, resolution=resolution,
                               duration=int(channel.clip_duration))
@@ -725,6 +742,45 @@ SHORT_FORMATS = {
 
 def normalize_format(value: str) -> str:
     return value if value in SHORT_FORMATS else "full"
+
+
+VIDEO_SOURCES = {
+    "kie": "Облако KIE — платно, ничего настраивать не нужно",
+    "comfy": "Локальный ComfyUI — считает ваша видеокарта, кадры бесплатны",
+}
+
+
+def _comfy_setup(session: Session, channel: Channel):
+    """Клиент и граф для локальной генерации. None — если не настроено."""
+    if (channel.video_source or "kie") != "comfy":
+        return None
+    url = st.get(session, "comfy_url", "").strip()
+    if not url:
+        log.warning("Канал %s просит ComfyUI, но адрес не задан", channel.slug)
+        return None
+    row = session.get(ComfyWorkflow, channel.comfy_workflow_id or 0)
+    if row is None or not row.is_active:
+        log.warning("Канал %s просит ComfyUI, но граф не выбран", channel.slug)
+        return None
+    try:
+        graph = json.loads(row.graph or "{}")
+    except ValueError as exc:
+        log.warning("Граф ComfyUI «%s» не разобран: %s", row.name, exc)
+        return None
+    if not graph:
+        return None
+    timeout = st.get_float(session, "comfy_timeout", 1800.0)
+    return comfy.ComfyClient(url, timeout=st.get_float(session, "comfy_http_timeout", 60.0)), \
+        graph, row, timeout
+
+
+def _comfy_clip(setup, dest: Path, *, prompt: str, seconds: float,
+                size: tuple[int, int]) -> Path:
+    """Один клип локальной генерацией."""
+    client, graph, row, timeout = setup
+    return client.render(graph, dest, prompt=prompt, seconds=seconds,
+                         width=size[0], height=size[1], fps=row.fps or 30,
+                         timeout=timeout)
 
 
 def _image_task(session: Session, client: KieClient, channel: Channel, prompt: str,
@@ -1942,6 +1998,12 @@ def _regen_scene_locked(scene_id: int, options: dict) -> None:
             value = (options.get(key) or "").strip()
             if value:
                 setattr(channel, key, value)
+        # Источник видеоряда из формы: разовая проба, не трогая настройки канала
+        # навсегда, — но в самом канале мы его всё же сохраняем, иначе следующая
+        # пересборка молча вернулась бы к прежнему.
+        picked_source = (options.get("video_source") or "").strip()
+        if picked_source in VIDEO_SOURCES:
+            channel.video_source = picked_source
         source = (options.get("outro_source") or "").strip()
         if source in OUTRO_SOURCES:
             channel.outro_source = source

@@ -512,6 +512,27 @@
         <label>Аудитория
           <input name="audience" maxlength="300" value="{{ channel.audience }}"
                  placeholder="мужчины 25–45 лет"></label>
+        <label>Чем считать видеоряд
+          <select name="video_source">
+            {% for key, label in video_sources.items() %}
+            <option value="{{ key }}"
+              {% if (channel.video_source or 'kie') == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select></label>
+        {% if comfy_workflows %}
+        <label>Граф ComfyUI — нужен, когда выбран локальный расчёт
+          <select name="comfy_workflow_id">
+            <option value="0">— не выбран —</option>
+            {% for wf in comfy_workflows %}
+            <option value="{{ wf.id }}"
+              {% if channel.comfy_workflow_id == wf.id %}selected{% endif %}>{{ wf.name }}</option>
+            {% endfor %}
+          </select></label>
+        {% else %}
+        <p class="small muted">Графов ComfyUI пока нет —
+          <a href="/comfy">добавьте на вкладке ComfyUI</a>, иначе локальный расчёт
+          включить не получится.</p>
+        {% endif %}
         <label>На основе чего генерировать контент
           <select name="content_source">
             {% for key, label in content_sources.items() %}

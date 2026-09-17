@@ -107,6 +107,10 @@ class Channel(Base):
     # берёт: у него в схеме нет поля под изображения.
     image_edit_model: Mapped[str] = mapped_column(
         String(120), default="google/nano-banana-edit")
+    # Чем считать видеоряд: "kie" — облако, "comfy" — локальный ComfyUI.
+    # Озвучка, обложки и сценарий в обоих случаях идут через KIE.
+    video_source: Mapped[str] = mapped_column(String(16), default="kie")
+    comfy_workflow_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Кому канал адресован — идёт в промпт плана вместо догадки по названию.
     audience: Mapped[str] = mapped_column(String(300), default="")
     # Сколько роликов в день выпускаем: из этого считается длина плана на период.
@@ -405,6 +409,26 @@ class MusicTrack(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
     channel: Mapped[Optional[Channel]] = relationship()
+
+
+class ComfyWorkflow(Base):
+    """Сохранённый граф ComfyUI в API-формате.
+
+    Храним как есть, вместе с текстом: править его удобнее в панели, а не
+    перезаливая файл после каждой мелкой правки.
+    """
+
+    __tablename__ = "comfy_workflows"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    graph: Mapped[str] = mapped_column(Text, default="{}")
+    # Какие метки нашлись в графе — показываем в панели, чтобы было видно,
+    # что именно завод сможет подставить.
+    placeholders: Mapped[str] = mapped_column(String(300), default="")
+    fps: Mapped[int] = mapped_column(Integer, default=30)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Reference(Base):

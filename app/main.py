@@ -19,10 +19,10 @@ from sqlalchemy.orm import Session
 from . import (bootstrap, config, estimate, fonts, footage, pipeline, planner, prompts,
                queue, scheduler, stock, storage, subtitles, sync, webutil)
 from . import settings_store as st
-from . import references
+from . import comfy, references
 from .db import get_session, session_scope
 from .kie import KieClient
-from .models import (Channel, Event, Footage, Job, ModelPath, PlanItem, PriceItem,
+from .models import (Channel, ComfyWorkflow, Event, Footage, Job, ModelPath, PlanItem, PriceItem,
                      ScheduleRule, Scene, Short, Video, Voice, utcnow)
 from .security import make_session, read_session, verify_password
 
@@ -209,6 +209,110 @@ def dashboard(request: Request, session: Session = Depends(get_session),
 
 # --------------------------------------------------------------------------- каналы
 
+@app.get("/comfy", response_class=HTMLResponse)
+def comfy_page(request: Request, session: Session = Depends(get_session),
+               _user: str = Depends(require_user)):
+    """Локальный ComfyUI: адрес, графы, проверка связи."""
+    from .models import ComfyWorkflow
+
+    rows = session.execute(select(ComfyWorkflow).where(ComfyWorkflow.is_active.is_(True))
+                           .order_by(ComfyWorkflow.id.desc())).scalars().all()
+    channels = session.execute(select(Channel).order_by(Channel.id)).scalars().all()
+    return templates.TemplateResponse("comfy.html", base_context(
+        request, session, workflows=rows, comfy_channels=channels,
+        placeholders=comfy.PLACEHOLDERS,
+        comfy_url=st.get(session, "comfy_url", ""),
+        video_sources=pipeline.VIDEO_SOURCES))
+
+
+@app.post("/comfy/settings")
+def comfy_settings(session: Session = Depends(get_session), _user: str = Depends(require_user),
+                   comfy_url: str = Form(""), comfy_timeout: float = Form(1800.0)):
+    st.set_value(session, "comfy_url", comfy_url.strip().rstrip("/")[:300])
+    st.set_value(session, "comfy_timeout", max(60.0, min(7200.0, comfy_timeout)))
+    # set_value только флашит запись — без коммита настройка не переживёт запрос.
+    session.commit()
+    return RedirectResponse("/comfy", status_code=303)
+
+
+@app.post("/comfy/check")
+def comfy_check(session: Session = Depends(get_session), _user: str = Depends(require_user)):
+    """Проверка связи с ComfyUI — самый частый вопрос «а видит ли он его вообще»."""
+    url = st.get(session, "comfy_url", "").strip()
+    if not url:
+        return RedirectResponse("/comfy?check=no-url", status_code=303)
+    try:
+        stats = comfy.ComfyClient(url, timeout=20.0).ping()
+        device = ((stats.get("devices") or [{}])[0].get("name") or "?")[:80]
+        session.add(Event(level="info", stage="comfy",
+                          message=f"ComfyUI отвечает: {device}"))
+        session.commit()
+        return RedirectResponse("/comfy?check=ok", status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        session.add(Event(level="warn", stage="comfy",
+                          message=f"ComfyUI недоступен по {url}: {str(exc)[:300]}"))
+        session.commit()
+        return RedirectResponse("/comfy?check=fail", status_code=303)
+
+
+@app.post("/comfy/workflows")
+async def comfy_workflow_add(request: Request, session: Session = Depends(get_session),
+                             _user: str = Depends(require_user)):
+    """Загрузка графа в API-формате (Save (API Format) в самом ComfyUI)."""
+    from .models import ComfyWorkflow
+
+    form = await request.form()
+    name = str(form.get("name") or "").strip()[:200]
+    note = str(form.get("note") or "").strip()[:2000]
+    fps = int(float(form.get("fps") or 30))
+    raw = str(form.get("graph") or "").strip()
+
+    upload = form.get("file")
+    if isinstance(upload, UploadFile) and upload.filename:
+        raw = (await upload.read()).decode("utf-8", errors="replace")
+        name = name or Path(upload.filename).stem[:200]
+
+    try:
+        graph = json.loads(raw or "{}")
+    except ValueError as exc:
+        return RedirectResponse(f"/comfy?error=bad-json&detail={str(exc)[:80]}",
+                                status_code=303)
+    if not isinstance(graph, dict) or not graph:
+        return RedirectResponse("/comfy?error=empty", status_code=303)
+    # В UI-формате графа есть ключ "nodes" со списком; API-формат — это словарь
+    # нод по их номерам. Перепутать легко, а ошибка всплывёт только при запуске.
+    if "nodes" in graph and isinstance(graph.get("nodes"), list):
+        return RedirectResponse("/comfy?error=ui-format", status_code=303)
+
+    marks = comfy.used_placeholders(graph)
+    if "%PROMPT%" not in marks:
+        return RedirectResponse("/comfy?error=no-prompt", status_code=303)
+
+    row = ComfyWorkflow(
+        name=name or f"Граф {len(graph)} нод", note=note,
+        graph=json.dumps(graph, ensure_ascii=False),
+        placeholders=", ".join(marks)[:300], fps=max(1, min(60, fps)))
+    session.add(row)
+    session.commit()
+    session.add(Event(level="info", stage="comfy",
+                      message=f"Добавлен граф ComfyUI «{row.name}» ({len(graph)} нод, "
+                              f"метки: {row.placeholders})"))
+    session.commit()
+    return RedirectResponse("/comfy?added=1", status_code=303)
+
+
+@app.post("/comfy/workflows/{workflow_id}/drop")
+def comfy_workflow_drop(workflow_id: int, session: Session = Depends(get_session),
+                        _user: str = Depends(require_user)):
+    from .models import ComfyWorkflow
+
+    row = session.get(ComfyWorkflow, workflow_id)
+    if row is not None:
+        row.is_active = False
+        session.commit()
+    return RedirectResponse("/comfy", status_code=303)
+
+
 @app.get("/channels", response_class=HTMLResponse)
 def channels_page(request: Request, session: Session = Depends(get_session),
                   _user: str = Depends(require_user)):
@@ -352,6 +456,10 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         subtitle_styles=subtitles.SUBTITLE_STYLES, font_list=fonts.available(),
         short_formats=pipeline.SHORT_FORMATS, **stock_ctx,
         content_sources=prompts.CONTENT_SOURCES,
+        video_sources=pipeline.VIDEO_SOURCES,
+        comfy_workflows=session.execute(
+            select(ComfyWorkflow).where(ComfyWorkflow.is_active.is_(True))
+            .order_by(ComfyWorkflow.id.desc())).scalars().all(),
         reference_kinds=references.KINDS,
         reference_limit=references.MAX_INPUT_IMAGES,
         references_list=references.for_channel(session, channel.id),
@@ -403,6 +511,7 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
                      name: str = Form(...), topic: str = Form(""), description: str = Form(""),
                      audience: str = Form(""), content_source: str = Form("books"),
                      posts_per_day: float = Form(1.0),
+                     video_source: str = Form("kie"), comfy_workflow_id: int = Form(0),
                      chat_model: str = Form(...), video_model: str = Form(...),
                      image_model: str = Form(...), tts_model: str = Form(...),
                      voice_id: str = Form(...), voice_name: str = Form(""),
@@ -426,7 +535,11 @@ def channel_settings(channel_id: int, request: Request, session: Session = Depen
     channel.audience = audience.strip()[:300]
     channel.content_source = (content_source
                               if content_source in prompts.CONTENT_SOURCES else 'books')
+    channel.video_source = video_source if video_source in pipeline.VIDEO_SOURCES else "kie"
+    channel.comfy_workflow_id = comfy_workflow_id or None
     channel.posts_per_day = max(0.1, min(10.0, posts_per_day))
+    channel.video_source = video_source if video_source in pipeline.VIDEO_SOURCES else "kie"
+    channel.comfy_workflow_id = comfy_workflow_id or None
     channel.description = description
     channel.chat_model = chat_model.strip()
     channel.video_model = video_model.strip()
@@ -829,6 +942,10 @@ def video_page(video_id: int, request: Request, session: Session = Depends(get_s
         clean_path=clean_path, models=models, voices=voices,
         regen_jobs=regen_jobs, busy_scenes=busy_scenes,
         short_formats=pipeline.SHORT_FORMATS, font_list=fonts.available(),
+        video_sources=pipeline.VIDEO_SOURCES,
+        comfy_ready=bool(st.get(session, "comfy_url", "").strip()) and bool(
+            session.execute(select(ComfyWorkflow).where(
+                ComfyWorkflow.is_active.is_(True))).scalars().first()),
         outro_sources=pipeline.OUTRO_SOURCES,
         outro_builtin=pipeline.OUTRO_FALLBACK))
 
@@ -841,7 +958,8 @@ def scene_regenerate(scene_id: int, session: Session = Depends(get_session),
                      voice_id: str = Form(""), clips: int = Form(0),
                      redo_voice: str = Form(""), make_short: str = Form(""),
                      short_title: str = Form(""), short_format: str = Form("full"),
-                     title_font: str = Form(""), add_outro: str = Form(""),
+                     title_font: str = Form(""), video_source: str = Form(""),
+                     add_outro: str = Form(""),
                      outro_url: str = Form(""), outro_title: str = Form(""),
                      outro_text: str = Form(""), outro_about: str = Form(""),
                      outro_source: str = Form("")):
@@ -865,6 +983,7 @@ def scene_regenerate(scene_id: int, session: Session = Depends(get_session),
         "short_title": short_title.strip()[:200],
         "short_format": pipeline.normalize_format(short_format),
         "title_font": fonts.normalize(title_font),
+        "video_source": video_source.strip(),
         "add_outro": bool(add_outro),
         "outro_url": outro_url.strip()[:300],
         "outro_title": outro_title.strip()[:120],

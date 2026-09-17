@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Локальный ComfyUI</h1>
+<p class="small muted">
+  Видеоряд можно считать не в облаке, а на вашей видеокарте. Завод отправляет в
+  ComfyUI готовый промпт, ждёт результат, забирает клип и дальше собирает шортс как
+  обычно — через ffmpeg. Озвучка, обложки и сценарий остаются на KIE: локально
+  считается только видео.
+</p>
+
+{% set check = request.query_params.get('check') %}
+{% if check == 'ok' %}<p class="badge">ComfyUI отвечает. Подробности — в журнале.</p>{% endif %}
+{% if check == 'fail' %}<p class="badge" style="background:#5b2222">ComfyUI не отвечает.
+  Причина записана в журнал.</p>{% endif %}
+{% if check == 'no-url' %}<p class="badge" style="background:#5b2222">Сначала укажите адрес.</p>{% endif %}
+{% if request.query_params.get('added') %}<p class="badge">Граф добавлен.</p>{% endif %}
+{% set err = request.query_params.get('error') %}
+{% if err == 'bad-json' %}<p class="badge" style="background:#5b2222">Это не JSON:
+  {{ request.query_params.get('detail', '') }}</p>{% endif %}
+{% if err == 'ui-format' %}<p class="badge" style="background:#5b2222">Похоже, это граф в
+  обычном формате. Нужен <b>API-формат</b>: в ComfyUI меню → Workflow → Export (API).</p>{% endif %}
+{% if err == 'no-prompt' %}<p class="badge" style="background:#5b2222">В графе нет метки
+  <code>%PROMPT%</code> — заводу некуда подставить текст.</p>{% endif %}
+{% if err == 'empty' %}<p class="badge" style="background:#5b2222">Пустой граф.</p>{% endif %}
+
+<div class="card tight">
+  <h2 style="margin-top:0">Адрес</h2>
+  <p class="small muted">
+    Завод стоит на сервере, а ComfyUI — у вас на компьютере, поэтому сам себя он не
+    найдёт: нужен адрес, по которому сервер сможет до него достучаться. Подойдёт
+    туннель (cloudflared, ngrok), проброшенный порт роутера или общая VPN-сеть.
+    Локальные адреса вида <code>127.0.0.1:8188</code> тут не сработают — это
+    «сам сервер», а не ваш компьютер.
+  </p>
+  <form method="post" action="/comfy/settings" class="grid cols-3">
+    <label style="grid-column:1/3">Адрес ComfyUI
+      <input name="comfy_url" value="{{ comfy_url }}"
+             placeholder="https://comfy-ваш-туннель.trycloudflare.com"></label>
+    <label>Ждать клип, с
+      <input name="comfy_timeout" type="number" min="60" max="7200"
+             value="{{ settings.comfy_timeout or 1800 }}"></label>
+    <div style="grid-column:1/-1">
+      <button class="btn btn-primary">Сохранить</button>
+    </div>
+  </form>
+  <form method="post" action="/comfy/check" style="margin-top:8px">
+    <button class="btn btn-sm">Проверить связь</button>
+    <span class="small muted">Спросит у ComfyUI сведения о системе — ничего не генерирует.</span>
+  </form>
+</div>
+
+<div class="card tight" style="margin-top:16px">
+  <h2 style="margin-top:0">Граф</h2>
+  <p class="small muted">
+    Нужен граф в <b>API-формате</b>: в ComfyUI меню → Workflow → Export (API). Обычный
+    экспорт не подойдёт — у него другая структура.
+  </p>
+  <p class="small muted">
+    Куда подставлять значения, завод не угадывает: номера нод у всех разные и меняются
+    при любой правке. Вместо этого расставьте в графе метки — что найдётся, то и будет
+    подставлено:
+  </p>
+  <table class="table">
+    <tbody>
+    {% for mark, what in placeholders.items() %}
+      <tr><td style="width:130px"><code>{{ mark }}</code></td>
+        <td class="small muted">{{ what }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="small muted">
+    Обязательна только <code>%PROMPT%</code> — без неё заводу некуда положить текст
+    кадра. Метку можно вписать целиком в поле (тогда значение придёт числом, если это
+    число) или внутрь строки: <code>кинематографично, %PROMPT%, 35мм</code>.
+  </p>
+
+  <form method="post" action="/comfy/workflows" enctype="multipart/form-data" class="grid cols-3">
+    <label>Название<input name="name" maxlength="200" placeholder="WAN 2.2 вертикаль"></label>
+    <label>Кадров в секунду — из этого считается <code>%FRAMES%</code>
+      <input name="fps" type="number" min="1" max="60" value="30"></label>
+    <label>Файл графа (.json)<input type="file" name="file" accept=".json,application/json"></label>
+    <label style="grid-column:1/-1">…или вставьте JSON сюда
+      <textarea name="graph" rows="6" placeholder='{"3": {"inputs": {...}, "class_type": "..."}}'></textarea></label>
+    <label style="grid-column:1/-1">Заметка — чем этот граф хорош и для чего
+      <input name="note" maxlength="2000"></label>
+    <div><button class="btn btn-primary">Добавить граф</button></div>
+  </form>
+</div>
+
+<h2>Загруженные графы</h2>
+{% if not workflows %}
+  <p class="muted">Пока ни одного. Без графа локальная генерация не включится.</p>
+{% else %}
+<table class="table">
+  <thead><tr><th>Название</th><th>Метки в графе</th><th>fps</th><th>Заметка</th><th></th></tr></thead>
+  <tbody>
+  {% for wf in workflows %}
+    <tr>
+      <td><b>{{ wf.name }}</b><div class="small muted">id {{ wf.id }}</div></td>
+      <td class="small"><code>{{ wf.placeholders }}</code></td>
+      <td class="small">{{ wf.fps }}</td>
+      <td class="small muted">{{ wf.note }}</td>
+      <td>
+        <form method="post" action="/comfy/workflows/{{ wf.id }}/drop"
+              onsubmit="return confirm('Убрать граф «{{ wf.name }}»?')">
+          <button class="btn btn-sm btn-ghost">Убрать</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<div class="card tight" style="margin-top:16px">
+  <h2 style="margin-top:0">Что где выбирается</h2>
+  <p class="small muted">
+    Источник видеоряда и граф задаются <b>в настройках канала</b> — тогда по ним пойдут и
+    расписание, и обычная сборка. Для разовой пробы источник можно переключить прямо в
+    форме пересборки сцены, не трогая настройки канала.
+  </p>
+  <ul class="small muted">
+    {% for ch in comfy_channels %}
+    <li><a href="/channels/{{ ch.id }}?tab=settings">{{ ch.name }}</a> —
+      сейчас {{ video_sources.get(ch.video_source or 'kie', ch.video_source) }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}
