@@ -346,3 +346,68 @@
         margin: 8px 0 0;
     }
 }
+
+/* --- Генерация фото по промту ---------------------------------------- */
+
+.gs-photo {
+    padding-bottom: 72px;
+}
+
+.gs-photo__result,
+.gs-photo__history {
+    margin: 36px 0 48px;
+}
+
+.gs-photo__shot {
+    margin: 0 0 20px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    overflow: hidden;
+    background: var(--gs-surface-2);
+}
+
+.gs-photo__shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.gs-photo__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+}
+
+.gs-photo__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+}
+
+.gs-photo__thumb {
+    display: block;
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    overflow: hidden;
+    transition: border-color 0.18s var(--gs-ease);
+}
+
+.gs-photo__thumb:hover {
+    border-color: var(--gs-border-strong);
+}
+
+.gs-photo__thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+@media (max-width: 640px) {
+    .gs-photo__actions .gs-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}

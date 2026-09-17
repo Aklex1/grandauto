@@ -434,3 +434,14 @@ body.kie-neurohub-body select:focus {
     color: #f1f5f9 !important;
     -webkit-text-fill-color: #f1f5f9 !important;
 }
+
+/* Подсказка, что промт пришёл из статьи. */
+.gs-nh-hint {
+    margin: 8px 0 0;
+    padding: 9px 12px;
+    border-left: 2px solid #22d3ee;
+    background: rgba(34, 211, 238, 0.08);
+    font-size: 13px;
+    line-height: 1.5;
+    color: #cbd5e1;
+}
