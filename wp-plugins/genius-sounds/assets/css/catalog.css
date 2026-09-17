@@ -1034,16 +1034,6 @@ body.gs-topup-open {
     background: var(--gs-surface-hover);
 }
 
-.gs-topup__row {
-    display: flex;
-    gap: 8px;
-    margin-top: 6px;
-}
-
-.gs-topup__row .gs-input {
-    flex: 1;
-}
-
 .gs-topup__note {
     margin: 16px 0 0;
     min-height: 20px;

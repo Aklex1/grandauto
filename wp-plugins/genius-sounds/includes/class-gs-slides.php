@@ -20,11 +20,6 @@ if (!defined('ABSPATH')) {
 
 class GS_Slides {
 
-    const CHAT     = 'https://api.kie.ai/gemini-2.5-flash/v1/chat/completions';
-    const MODEL    = 'gemini-2.5-flash';
-    const API_JOBS = 'https://api.kie.ai/api/v1/jobs/createTask';
-    const API_INFO = 'https://api.kie.ai/api/v1/jobs/recordInfo';
-    const IMG_MODEL = 'google/nano-banana';
 
     const META_DECKS = 'gs_slides_decks';
     const DECKS_KEEP = 30;
@@ -234,26 +229,18 @@ class GS_Slides {
     private static function queue_image($key, $style, $hint, $is_illustration) {
         if ($is_illustration) {
             $prompt = $style['image'] . ', a single clear symbolic object illustrating this idea: ' . $hint
-                . ', centred composition, vertical 3:4 frame, generous empty space around the object, '
+                . ', centred composition, generous empty space around the object, '
                 . 'no text, no letters, no logos, no faces';
-            $size = '3:4';
+            $ratio = '3:4';
         } else {
             $prompt = $style['image'] . ', ' . $hint
-                . ', wide 16:9 presentation background, no text, no letters, no logos, no people, '
+                . ', wide presentation background, no text, no letters, no logos, no people, '
                 . 'composition leaves the left and centre area calm for text';
-            $size = '16:9';
+            $ratio = '16:9';
         }
 
-        $res = self::post(self::API_JOBS, array(
-            'model' => self::IMG_MODEL,
-            'input' => array(
-                'prompt'        => $prompt,
-                'output_format' => 'png',
-                'image_size'    => $size,
-            ),
-        ));
-        $task = (string) ($res['body']['data']['taskId'] ?? '');
-        return $task !== '' ? array($key => $task) : array();
+        $res = GS_Provider::job('image', array('prompt' => $prompt, 'ratio' => $ratio));
+        return !empty($res['ok']) ? array($key => $res['task']) : array();
     }
 
     /**
@@ -265,34 +252,24 @@ class GS_Slides {
         $images = array();
         $done = true;
         foreach ($tasks as $key => $task) {
-            $res = self::get(self::API_INFO, array('taskId' => $task));
-            $state = (string) ($res['body']['data']['state'] ?? '');
-            if ($state === 'success') {
-                $urls = self::result_urls($res['body']['data']);
-                if ($urls) {
-                    $images[$key] = $urls[0];
+            $res = GS_Provider::job_state($task);
+            if (empty($res['ok'])) {
+                $done = false;
+                continue;
+            }
+            if ($res['state'] === 'success') {
+                if ($res['urls']) {
+                    $images[$key] = $res['urls'][0];
                 }
                 continue;
             }
-            if ($state === 'fail') {
-                // Фон не обязателен: слайд соберётся и без него.
+            if ($res['state'] === 'fail') {
+                // Фон необязателен: слайд соберётся и без него.
                 continue;
             }
             $done = false;
         }
         return array('done' => $done, 'images' => $images);
-    }
-
-    private static function result_urls($data) {
-        $raw = $data['resultJson'] ?? ($data['result'] ?? '');
-        if (is_string($raw)) {
-            $raw = json_decode($raw, true);
-        }
-        if (!is_array($raw)) {
-            return array();
-        }
-        $urls = $raw['resultUrls'] ?? ($raw['result_urls'] ?? array());
-        return array_values(array_filter((array) $urls, 'is_string'));
     }
 
     /* ---------------------------------------------------------------------
@@ -409,129 +386,13 @@ class GS_Slides {
      * Вызовы поставщика
      * ------------------------------------------------------------------ */
 
-    private static function key() {
-        return trim((string) get_option('kie_tts_api_key', ''));
-    }
-
+    /** Текст просим у адаптера: он сам решит, какая модель сейчас жива. */
     private static function chat($system, $user) {
-        $key = self::key();
-        if ($key === '') {
-            return array('ok' => false, 'message' => 'Сервис не настроен', 'content' => '');
-        }
-        $payload = array(
-            'model'    => self::MODEL,
-            'stream'   => false,
-            'messages' => array(
-                array('role' => 'system', 'content' => $system),
-                array('role' => 'user', 'content' => $user),
-            ),
+        $res = GS_Provider::chat($system, $user);
+        return array(
+            'ok'      => !empty($res['ok']),
+            'message' => (string) $res['message'],
+            'content' => (string) $res['content'],
         );
-
-        // Причину отказа нужно донести до вызывающего: сообщение
-        // «поставщик не ответил» одинаково для сети, лимита и неверного
-        // ключа, и по нему невозможно понять, что чинить.
-        $last = 'поставщик не ответил';
-        foreach (array(0, 5, 15) as $pause) {
-            if ($pause > 0) {
-                sleep($pause);
-            }
-            $response = wp_remote_post(self::CHAT, array(
-                'timeout' => 180,
-                'headers' => array('Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json'),
-                'body'    => wp_json_encode($payload),
-            ));
-            if (is_wp_error($response)) {
-                $last = $response->get_error_message();
-                continue;
-            }
-
-            $code = (int) wp_remote_retrieve_response_code($response);
-            $raw = (string) wp_remote_retrieve_body($response);
-            $body = json_decode($raw, true);
-            if (!is_array($body)) {
-                $last = 'неразборчивый ответ (HTTP ' . $code . ')';
-                continue;
-            }
-
-            $inner = isset($body['code']) ? (int) $body['code'] : 200;
-            if ($inner !== 200 || $code >= 400) {
-                $last = (string) ($body['msg'] ?? ($body['error']['message'] ?? ('HTTP ' . $code)));
-                continue;
-            }
-
-            $content = (string) ($body['choices'][0]['message']['content'] ?? '');
-            if (trim($content) === '') {
-                $last = 'пустой ответ модели';
-                continue;
-            }
-            return array('ok' => true, 'message' => '', 'content' => $content);
-        }
-        return array('ok' => false, 'message' => self::human_error($last), 'content' => '');
-    }
-
-    /**
-     * Ответ поставщика — человеку.
-     *
-     * Он пишет на английском и о своей инфраструктуре: «Network error» здесь
-     * означает, что у него не отвечает модель, а не что у человека плохой
-     * интернет. Если не перевести, посетитель будет чинить свой вайфай.
-     */
-    private static function human_error($raw) {
-        $low = mb_strtolower((string) $raw);
-        if (strpos($low, 'network error') !== false || strpos($low, 'internal') !== false
-            || strpos($low, 'try again') !== false || strpos($low, 'timeout') !== false
-            || strpos($low, 'maintain') !== false || strpos($low, 'unavailable') !== false) {
-            return 'Сервис генерации сейчас недоступен на стороне поставщика. Деньги не списаны — попробуйте через несколько минут.';
-        }
-        if (strpos($low, 'unauthorized') !== false || strpos($low, 'api key') !== false) {
-            return 'Генерация временно недоступна: не настроен доступ к сервису.';
-        }
-        if (strpos($low, 'rate limit') !== false || strpos($low, 'too many') !== false) {
-            return 'Слишком много запросов подряд. Подождите минуту и попробуйте снова.';
-        }
-        if (strpos($low, 'пустой ответ') !== false) {
-            return 'Модель вернула пустой ответ. Уточните тему и попробуйте ещё раз.';
-        }
-        return 'Не удалось собрать структуру: ' . $raw;
-    }
-
-    private static function post($url, $payload) {
-        $key = self::key();
-        if ($key === '') {
-            return array('ok' => false, 'message' => 'Сервис не настроен', 'body' => array());
-        }
-        $response = wp_remote_post($url, array(
-            'timeout' => 60,
-            'headers' => array('Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json'),
-            'body'    => wp_json_encode($payload),
-        ));
-        return self::unpack($response);
-    }
-
-    private static function get($url, $args) {
-        $key = self::key();
-        if ($key === '') {
-            return array('ok' => false, 'message' => 'Сервис не настроен', 'body' => array());
-        }
-        $response = wp_remote_get(add_query_arg($args, $url), array(
-            'timeout' => 45,
-            'headers' => array('Authorization' => 'Bearer ' . $key),
-        ));
-        return self::unpack($response);
-    }
-
-    private static function unpack($response) {
-        if (is_wp_error($response)) {
-            return array('ok' => false, 'message' => $response->get_error_message(), 'body' => array());
-        }
-        $body = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($body)) {
-            return array('ok' => false, 'message' => 'Неразборчивый ответ поставщика', 'body' => array());
-        }
-        $code = (int) ($body['code'] ?? wp_remote_retrieve_response_code($response));
-        if ($code !== 200) {
-            return array('ok' => false, 'message' => (string) ($body['msg'] ?? 'Отказ поставщика'), 'body' => $body);
-        }
-        return array('ok' => true, 'message' => '', 'body' => $body);
     }
 }

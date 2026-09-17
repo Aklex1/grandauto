@@ -194,6 +194,67 @@ class GS_Admin {
      * Замечания Яндекс.Вебмастера. Копировать их руками из интерфейса долго
      * и легко упустить, поэтому забираем сами и показываем рядом с настройками.
      */
+    /**
+     * Маршруты поставщиков: что сейчас живо и что адаптер отключил.
+     *
+     * Когда сервис «не работает», первый вопрос — упал ли поставщик. Здесь
+     * это видно сразу, вместе с причиной и временем возврата маршрута.
+     */
+    public static function render_provider() {
+        $rows = GS_Provider::status();
+        $log = GS_Provider::log_rows();
+
+        ob_start();
+        ?>
+        <h2 id="gs-provider">Маршруты поставщиков</h2>
+        <p class="description" style="max-width:900px">
+            Сервисы не знают, к какой модели идти, — это решает адаптер. Если модель
+            отвечает отказом со своей стороны, маршрут временно исключается, а запрос
+            уходит на запасной. Через пять минут маршрут снова допускается к работе.
+        </p>
+
+        <table class="widefat striped" style="max-width:1000px">
+            <thead><tr><th>Возможность</th><th>Маршрут</th><th>Модель</th><th>Роль</th><th>Состояние</th></tr></thead>
+            <tbody>
+                <?php foreach ($rows as $row): ?>
+                    <tr>
+                        <td><?php echo esc_html($row['capability']); ?></td>
+                        <td><code><?php echo esc_html($row['id']); ?></code></td>
+                        <td><?php echo esc_html($row['model']); ?></td>
+                        <td><?php echo $row['primary'] ? 'основной' : 'запасной'; ?></td>
+                        <td>
+                            <?php if ($row['down']): ?>
+                                <span style="color:#b32d2e">отключён</span>
+                                — <?php echo esc_html($row['why']); ?>
+                                <br><span class="description">вернётся <?php echo esc_html(date_i18n('H:i', $row['until'])); ?></span>
+                            <?php else: ?>
+                                <span style="color:#1a7f37">в работе</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+
+        <?php if ($log): ?>
+            <h3>Последние переключения</h3>
+            <table class="widefat striped" style="max-width:1000px">
+                <thead><tr><th>Когда</th><th>Маршрут</th><th>Что случилось</th></tr></thead>
+                <tbody>
+                    <?php foreach (array_slice($log, 0, 20) as $row): ?>
+                        <tr>
+                            <td><?php echo esc_html($row['at']); ?></td>
+                            <td><code><?php echo esc_html($row['route']); ?></code></td>
+                            <td><?php echo esc_html($row['note']); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+        <?php
+        return ob_get_clean();
+    }
+
     /** Журнал заявок: последняя строка показывает, дошло ли сообщение до бота. */
     public static function render_leads() {
         $rows = GS_Leads::log_rows();
@@ -831,6 +892,8 @@ class GS_Admin {
             <?php echo self::render_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_index_tools(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_provider(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo GS_Schedule::render_panel(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 

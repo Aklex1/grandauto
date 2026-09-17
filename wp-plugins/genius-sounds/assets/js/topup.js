@@ -16,7 +16,6 @@
 
     var note = document.getElementById('gs-topup-note');
     var go = document.getElementById('gs-topup-go');
-    var own = document.getElementById('gs-topup-own');
     var lastFocus = null;
 
     function say(text, kind) {
@@ -91,9 +90,6 @@
             request(sum.getAttribute('data-gs-topup-sum'));
             return;
         }
-        if (e.target.closest('[data-gs-topup-own]')) {
-            request(own ? own.value : 0);
-        }
     });
 
     document.addEventListener('keydown', function (e) {
@@ -102,12 +98,4 @@
         }
     });
 
-    if (own) {
-        own.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                request(own.value);
-            }
-        });
-    }
 })();

@@ -64,6 +64,19 @@ class GS_Payments {
         $_COOKIE[self::COOKIE] = $source;
     }
 
+    /**
+     * Суммы пополнения.
+     *
+     * Список обязан совпадать с тем, что принимает платёжный маршрут
+     * tts/v1/topup: он проверяет сумму по своему перечню и на всё остальное
+     * отвечает отказом. Раньше кнопки и этот перечень разошлись — окно
+     * предлагало 1000 ₽, а оплата её не принимала. Поэтому список живёт
+     * в одном месте и меняется вместе с платёжным плагином.
+     */
+    public static function amounts() {
+        return apply_filters('gs_topup_amounts', array(200, 300, 400, 500));
+    }
+
     /** Нужно ли окно пополнения на этой странице. */
     public static function needs_modal() {
         if (!is_user_logged_in()) {
@@ -103,19 +116,11 @@ class GS_Payments {
                 <p class="gs-topup__lead">Баланс общий для всех инструментов. Оплата картой через ЮMoney.</p>
 
                 <div class="gs-topup__amounts">
-                    <?php foreach (array(200, 300, 500, 1000) as $sum): ?>
+                    <?php foreach (self::amounts() as $sum): ?>
                         <button type="button" class="gs-topup__sum" data-gs-topup-sum="<?php echo (int) $sum; ?>">
                             <?php echo esc_html(number_format_i18n($sum)); ?> ₽
                         </button>
                     <?php endforeach; ?>
-                </div>
-
-                <div class="gs-topup__own">
-                    <label class="gs-label" for="gs-topup-own">Своя сумма</label>
-                    <div class="gs-topup__row">
-                        <input id="gs-topup-own" class="gs-input" type="number" min="50" max="100000" step="50" placeholder="от 50 ₽">
-                        <button type="button" class="gs-btn gs-btn--ghost" data-gs-topup-own>Получить ссылку</button>
-                    </div>
                 </div>
 
                 <p class="gs-topup__note" id="gs-topup-note" role="status" aria-live="polite"></p>

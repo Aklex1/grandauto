@@ -1026,28 +1026,22 @@ class GS_Lab {
             return array('ok' => false, 'task_id' => '', 'message' => 'Инструмент сейчас недоступен');
         }
 
+        // Модель и её параметры знает адаптер: если она ляжет, он сам
+        // уведёт запрос на запасную, не трогая этот код.
         if ($id === 'avatar') {
-            $res = self::post_json(self::API_JOBS, array(
-                'model'       => 'kling/ai-avatar-pro',
-                'callBackUrl' => $callback,
-                'input'       => array(
-                    'image_url' => (string) $params['image_url'],
-                    'audio_url' => (string) $params['audio_url'],
-                    'prompt'    => (string) ($params['prompt'] ?? ''),
-                ),
-            ));
-            $task = $res['ok'] ? (string) ($res['body']['data']['taskId'] ?? '') : '';
-            return array('ok' => $res['ok'] && $task !== '', 'task_id' => $task, 'message' => $res['message']);
+            $res = GS_Provider::job('avatar', array(
+                'image_url' => (string) $params['image_url'],
+                'audio_url' => (string) $params['audio_url'],
+                'prompt'    => (string) ($params['prompt'] ?? ''),
+            ), array('callback' => $callback));
+            return array('ok' => !empty($res['ok']), 'task_id' => (string) $res['task'], 'message' => (string) $res['message']);
         }
 
         if ($id === 'denoise') {
-            $res = self::post_json(self::API_JOBS, array(
-                'model'       => 'elevenlabs/audio-isolation',
-                'callBackUrl' => $callback,
-                'input'       => array('audio_url' => (string) $params['audio_url']),
-            ));
-            $task = $res['ok'] ? (string) ($res['body']['data']['taskId'] ?? '') : '';
-            return array('ok' => $res['ok'] && $task !== '', 'task_id' => $task, 'message' => $res['message']);
+            $res = GS_Provider::job('denoise', array(
+                'audio_url' => (string) $params['audio_url'],
+            ), array('callback' => $callback));
+            return array('ok' => !empty($res['ok']), 'task_id' => (string) $res['task'], 'message' => (string) $res['message']);
         }
 
         if ($id === 'stt') {
