@@ -1,0 +1,277 @@
+/**
+ * Страница 404.
+ *
+ * Строится поверх catalog.css и studio.css: токены, кнопки и поля берутся
+ * оттуда, здесь только собственная сетка.
+ */
+
+.gs-404 {
+    padding-bottom: 72px;
+}
+
+/* --- Шапка ------------------------------------------------------------ */
+
+.gs-404__head {
+    position: relative;
+    margin: 8px 0 52px;
+    padding: 56px 44px;
+    border: 1px solid var(--gs-border);
+    border-radius: calc(var(--gs-radius) + 8px);
+    background:
+        radial-gradient(120% 150% at 100% 0%, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0) 62%),
+        var(--gs-surface);
+    box-shadow: var(--gs-shadow);
+    overflow: hidden;
+}
+
+/* Крупная цифра — фоном, чтобы не спорить с заголовком за внимание. */
+.gs-404__code {
+    position: absolute;
+    top: 50%;
+    right: 40px;
+    transform: translateY(-50%);
+    font-size: clamp(110px, 17vw, 210px);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: rgba(129, 140, 248, 0.12);
+    pointer-events: none;
+    user-select: none;
+}
+
+.gs-404__title {
+    position: relative;
+    margin: 0;
+    font-size: clamp(28px, 4vw, 44px);
+    line-height: 1.14;
+    letter-spacing: -0.02em;
+    color: var(--gs-text);
+}
+
+.gs-404__lead {
+    position: relative;
+    max-width: 560px;
+    margin: 14px 0 0;
+    font-size: clamp(15px, 1.6vw, 18px);
+    line-height: 1.6;
+    color: var(--gs-muted);
+}
+
+.gs-404__search {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    max-width: 520px;
+    margin-top: 26px;
+}
+
+.gs-wrap .gs-404__search .gs-input {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+/* --- Блоки ------------------------------------------------------------ */
+
+.gs-404__block {
+    margin-bottom: 52px;
+}
+
+.gs-404__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 18px;
+}
+
+.gs-404__card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+    overflow: hidden;
+    transition: border-color 0.18s var(--gs-ease), transform 0.18s var(--gs-ease);
+}
+
+.gs-404__card:hover {
+    border-color: var(--gs-border-strong);
+    transform: translateY(-2px);
+}
+
+.gs-404__cover {
+    display: block;
+    aspect-ratio: 16 / 9;
+    background: var(--gs-surface-2);
+    overflow: hidden;
+}
+
+.gs-404__cover img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Обложка есть не у каждой статьи — вместо пустоты мягкий градиент. */
+.gs-404__cover.is-empty {
+    background:
+        radial-gradient(120% 140% at 20% 0%, rgba(99, 102, 241, 0.32) 0%, rgba(99, 102, 241, 0) 60%),
+        linear-gradient(140deg, var(--gs-surface-2) 0%, var(--gs-surface) 100%);
+}
+
+.gs-404__card-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 18px 20px;
+}
+
+.gs-wrap a.gs-404__cat {
+    align-self: flex-start;
+    padding: 4px 10px;
+    border: 1px solid var(--gs-border);
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1.3;
+    color: var(--gs-muted);
+    text-decoration: none;
+}
+
+.gs-wrap a.gs-404__cat:hover {
+    border-color: var(--gs-border-strong);
+    color: var(--gs-primary-light);
+}
+
+.gs-404__card-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.38;
+}
+
+.gs-wrap .gs-404__card-title a {
+    color: var(--gs-text);
+    text-decoration: none;
+}
+
+.gs-wrap .gs-404__card-title a:hover {
+    color: var(--gs-primary-light);
+}
+
+.gs-404__more {
+    margin: 22px 0 0;
+}
+
+/* --- Микросервисы ----------------------------------------------------- */
+
+.gs-404__tools {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 14px;
+}
+
+.gs-wrap a.gs-404__tool {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 20px 20px 18px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: linear-gradient(160deg, var(--gs-surface-2) 0%, var(--gs-surface) 100%);
+    text-decoration: none;
+    transition: border-color 0.18s var(--gs-ease), transform 0.18s var(--gs-ease);
+}
+
+.gs-wrap a.gs-404__tool:hover {
+    border-color: var(--gs-border-strong);
+    transform: translateY(-2px);
+}
+
+.gs-404__tool-name {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--gs-text);
+}
+
+.gs-404__tool-text {
+    flex: 1 1 auto;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--gs-muted);
+}
+
+.gs-404__tool-go {
+    margin-top: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gs-primary-light);
+}
+
+.gs-wrap a.gs-404__tool:hover .gs-404__tool-go {
+    color: var(--gs-accent);
+}
+
+/* На узком экране шесть карточек в столбик дают слишком длинную страницу:
+   ставим по две — обложка меньше, но весь блок виден за один экран. */
+@media (max-width: 640px) {
+    .gs-404__grid,
+    .gs-404__tools {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .gs-404__cover {
+        aspect-ratio: 4 / 3;
+    }
+
+    .gs-404__card-body {
+        gap: 6px;
+        padding: 12px 13px 15px;
+    }
+
+    .gs-404__card-title {
+        font-size: 14px;
+        line-height: 1.34;
+    }
+
+    .gs-wrap a.gs-404__cat {
+        padding: 3px 8px;
+        font-size: 11px;
+    }
+
+    .gs-wrap a.gs-404__tool {
+        padding: 15px 15px 14px;
+    }
+
+    .gs-404__tool-name {
+        font-size: 15px;
+    }
+
+    .gs-404__tool-text,
+    .gs-404__tool-go {
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 720px) {
+    .gs-404__head {
+        padding: 36px 22px;
+    }
+
+    /* На узком экране цифра оказывается прямо под заголовком — уводим её
+       выше и делаем бледнее, чтобы она осталась фоном, а не помехой. */
+    .gs-404__code {
+        top: -10px;
+        right: -6px;
+        transform: none;
+        font-size: 84px;
+        color: rgba(129, 140, 248, 0.09);
+    }
+
+    .gs-404__search .gs-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}

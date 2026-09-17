@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.65.4');
+define('GS_VERSION', '1.66.2');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -31,6 +31,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-voice.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-songs.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-course.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-404.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-leads.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-schedule.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
@@ -86,6 +87,7 @@ class Genius_Sounds_Plugin {
         GS_Landing::boot();
         GS_Songs::boot();
         GS_Course::boot();
+        GS_404::boot();
         GS_Leads::boot();
         GS_Schedule::boot();
         GS_Links::boot();
@@ -166,7 +168,7 @@ class Genius_Sounds_Plugin {
         $dashboard = GS_Dashboard::enabled() && GS_Dashboard::is_page();
         $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
             || GS_Pages::is_studio_request() || GS_Lab::current_service() || GS_Landing::current()
-            || GS_Songs::is_page() || GS_Course::is_page() || $blog || $api || $dashboard;
+            || GS_Songs::is_page() || GS_Course::is_page() || GS_404::is_page() || $blog || $api || $dashboard;
         if ($ours) {
             // Перекрашиваем шапку и подвал темы под тёмные страницы плагина.
             wp_enqueue_style('genius-sounds-chrome', GS_PLUGIN_URL . 'assets/css/chrome.css', array(), GS_VERSION);
@@ -218,6 +220,12 @@ class Genius_Sounds_Plugin {
                 'restUrl' => esc_url_raw(rest_url('tts/v1/')),
                 'nonce'   => wp_create_nonce('wp_rest'),
             ));
+        }
+
+        if (GS_404::is_page()) {
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
+            wp_enqueue_style('genius-sounds-404', GS_PLUGIN_URL . 'assets/css/e404.css', array('genius-sounds-studio'), GS_VERSION);
         }
 
         if (GS_Course::is_page()) {
