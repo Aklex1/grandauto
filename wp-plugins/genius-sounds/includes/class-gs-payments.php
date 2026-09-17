@@ -74,7 +74,24 @@ class GS_Payments {
      * в одном месте и меняется вместе с платёжным плагином.
      */
     public static function amounts() {
-        return apply_filters('gs_topup_amounts', array(200, 300, 400, 500));
+        return apply_filters('gs_topup_amounts', self::allowed());
+    }
+
+    /**
+     * Суммы, которые принимает платёжный маршрут.
+     *
+     * Базовый список зашит в платёжном плагине, и точки расширения у него
+     * нет. Поэтому добавленные там суммы дублируются здесь настройкой:
+     * показывать кнопку, которой платёжный маршрут не знает, нельзя —
+     * кнопка, ведущая в отказ, хуже отсутствующей.
+     */
+    public static function allowed() {
+        $base = array(200, 300, 400, 500);
+        $extra = (array) get_option(self::OPT_EXTRA, array());
+        $all = array_map('intval', array_merge($extra, $base));
+        $all = array_values(array_unique(array_filter($all)));
+        sort($all);
+        return $all;
     }
 
     /** Нужно ли окно пополнения на этой странице. */
@@ -132,6 +149,9 @@ class GS_Payments {
     }
 
     /** Человеческие названия сервисов для назначения платежа. */
+    /** Суммы сверх зашитых в платёжном плагине — если он их принял. */
+    const OPT_EXTRA = 'gs_topup_extra_amounts';
+
     public static function sources() {
         return array(
             'sfx'      => 'генератор звуков',

@@ -172,6 +172,26 @@ class GS_Admin {
             'default'           => '',
         ));
 
+        // Суммы сверх зашитых в платёжном плагине: включать их можно только
+        // после того, как они там разрешены, иначе кнопка ведёт в отказ.
+        register_setting('gs_settings_group', GS_Payments::OPT_EXTRA, array(
+            'type'              => 'array',
+            'sanitize_callback' => function ($value) {
+                if ($value === null) {
+                    return (array) get_option(GS_Payments::OPT_EXTRA, array());
+                }
+                $out = array();
+                foreach (explode(',', (string) $value) as $piece) {
+                    $sum = (int) trim($piece);
+                    if ($sum > 0) {
+                        $out[] = $sum;
+                    }
+                }
+                return array_values(array_unique($out));
+            },
+            'default'           => array(),
+        ));
+
         register_setting('gs_settings_group', GS_Index::OPT_ENABLED, array(
             'type'              => 'string',
             'sanitize_callback' => function ($value) {
@@ -840,6 +860,22 @@ class GS_Admin {
                                 <a href="<?php echo esc_url(GS_Index::key_url()); ?>" target="_blank" rel="noopener"><?php echo esc_html(GS_Index::key_url()); ?></a>
                                 — он создаётся сам и менять его не нужно. Мета-теги выводятся только на главной: этого хватает
                                 обоим вебмастерам. Без подтверждения прав ни отчёты, ни переобход недоступны.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Дополнительные суммы пополнения</th>
+                        <td>
+                            <p>
+                                <input name="<?php echo esc_attr(GS_Payments::OPT_EXTRA); ?>" type="text"
+                                       value="<?php echo esc_attr(implode(', ', (array) get_option(GS_Payments::OPT_EXTRA, array()))); ?>"
+                                       class="regular-text" placeholder="например: 100">
+                            </p>
+                            <p class="description">
+                                Через запятую. Платёжный маршрут сейчас принимает
+                                <?php echo esc_html(implode(', ', array(200, 300, 400, 500))); ?> ₽ — этот список зашит
+                                в плагине озвучки, и точки расширения у него нет. Добавляйте сюда сумму только
+                                после того, как она разрешена там: иначе кнопка появится, а оплата вернёт отказ.
                             </p>
                         </td>
                     </tr>
