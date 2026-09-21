@@ -84,16 +84,22 @@ class GS_Admin {
             }
         }
 
-        // Пробный баланс при выпуске ключа API: ноль выключает подарок.
-        register_setting('gs_settings_group', GS_Api_Keys::OPT_TRIAL, array(
-            'type'              => 'number',
-            'sanitize_callback' => function ($value) {
-                if ($value === null || $value === '') {
-                    return (float) get_option(GS_Api_Keys::OPT_TRIAL, GS_Api_Keys::TRIAL_DEFAULT);
-                }
-                return max(0.0, (float) $value);
-            },
-        ));
+        // Пробный баланс при выпуске ключа API: ноль выключает подарок,
+        // рядом — месячный предел на все подарки вместе.
+        foreach (array(
+            GS_Api_Keys::OPT_TRIAL        => GS_Api_Keys::TRIAL_DEFAULT,
+            GS_Api_Keys::OPT_TRIAL_BUDGET => GS_Api_Keys::TRIAL_BUDGET_DEFAULT,
+        ) as $option => $default) {
+            register_setting('gs_settings_group', $option, array(
+                'type'              => 'number',
+                'sanitize_callback' => function ($value) use ($option, $default) {
+                    if ($value === null || $value === '') {
+                        return (float) get_option($option, $default);
+                    }
+                    return max(0.0, (float) $value);
+                },
+            ));
+        }
 
         // Приём платежей: секрет для проверки подписи и адрес пересылки чужих.
         register_setting('gs_settings_group', GS_Yoomoney::OPT_SECRET, array(
@@ -1015,13 +1021,32 @@ class GS_Admin {
                             <p>
                                 <input name="<?php echo esc_attr(GS_Api_Keys::OPT_TRIAL); ?>" type="number"
                                        step="10" min="0" class="small-text"
-                                       value="<?php echo esc_attr(GS_Api_Keys::trial_amount()); ?>"> ₽
+                                       value="<?php echo esc_attr(GS_Api_Keys::trial_amount()); ?>"> ₽ на аккаунт,
+                                не больше
+                                <input name="<?php echo esc_attr(GS_Api_Keys::OPT_TRIAL_BUDGET); ?>" type="number"
+                                       step="100" min="0" class="small-text"
+                                       value="<?php echo esc_attr(GS_Api_Keys::trial_budget()); ?>"> ₽ за месяц на всех
                             </p>
                             <p class="description">
-                                Начисляется один раз на аккаунт при выпуске первого ключа API.
-                                Разработчик не станет платить, чтобы проверить работоспособность, —
-                                он возьмёт сервис, где можно попробовать даром. Ноль выключает подарок.
-                                Отметка стоит на аккаунте, поэтому второй ключ денег не приносит.
+                                Начисляется один раз на аккаунт при выпуске первого ключа API: разработчик
+                                не станет платить, чтобы проверить работоспособность. Отметка стоит на
+                                аккаунте, поэтому второй ключ денег не приносит. Ноль в первом поле
+                                выключает подарок совсем, ноль во втором снимает месячный предел.
+                            </p>
+                            <p class="description">
+                                50 ₽ — это круг проверок: картинка (9 ₽), звук (9 ₽), расшифровка (10 ₽),
+                                озвучка (18 ₽). Видео за 119 ₽ на пробный баланс не купить, и это намеренно:
+                                в самом дорогом для нас случае подарок стоит 10–15 ₽ настоящих денег
+                                у поставщика. Опасность не в сумме, а в количестве — аккаунты бесплатны,
+                                поэтому месячный предел и держит расход, сколько бы регистраций ни пришло.
+                            </p>
+                            <p class="description">
+                                <strong>В этом месяце отдано:
+                                <?php echo esc_html(number_format_i18n(GS_Api_Keys::trial_spent(), 0)); ?> ₽</strong><?php
+                                $budget = GS_Api_Keys::trial_budget();
+                                echo $budget > 0 ? ' из ' . esc_html(number_format_i18n($budget, 0)) . ' ₽.' : '.';
+                                ?>
+                                Когда предел исчерпан, ключи выдаются по-прежнему, но уже без подарка.
                             </p>
                         </td>
                     </tr>

@@ -18,10 +18,26 @@ class GS_Api_Keys {
     const PREFIX    = 'gb_';
     const MAX_PER_USER = 5;
 
-    /** Сколько дарим на пробу при первом ключе; ноль — не дарить. */
+    /**
+     * Пробный баланс при первом ключе.
+     *
+     * 50 ₽ — это круг проверок: картинка (9 ₽), звук (9 ₽), расшифровка
+     * (10 ₽), озвучка (18 ₽). Видео за 119 ₽ на пробный баланс не купить,
+     * и это намеренно: в самом дорогом для нас случае подарок стоит
+     * 10-15 ₽ настоящих денег у поставщика.
+     *
+     * Опасность не в сумме, а в количестве: аккаунты бесплатны, поэтому
+     * рядом стоит месячный предел на все подарки вместе — он и держит
+     * расход, сколько бы регистраций ни пришло со статей.
+     */
     const OPT_TRIAL  = 'gs_api_trial';
     const TRIAL_META = 'gs_api_trial_given';
-    const TRIAL_DEFAULT = 100;
+    const TRIAL_DEFAULT = 50;
+
+    /** Сколько всего отдаём на пробы за месяц; ноль — без предела. */
+    const OPT_TRIAL_BUDGET = 'gs_api_trial_budget';
+    const TRIAL_BUDGET_DEFAULT = 3000;
+    const OPT_TRIAL_SPENT  = 'gs_api_trial_spent';
 
     /** @return array<string,array> хеш => запись */
     public static function index() {
@@ -104,13 +120,53 @@ class GS_Api_Keys {
         if (!class_exists('GS_SFX') || !GS_SFX::balance_available()) {
             return 0.0;
         }
+        if (!self::trial_budget_left($amount)) {
+            // Месячный предел исчерпан. Ключ всё равно выдаём: человек
+            // пришёл работать, а не за подарком.
+            return 0.0;
+        }
         // Отметку ставим до начисления: если начисление не пройдёт, повтор
         // случится по обращению человека, а не сам по себе пять раз.
         update_user_meta($user_id, self::TRIAL_META, current_time('mysql'));
         if (!GS_SFX::refund($user_id, $amount)) {
             return 0.0;
         }
+        self::trial_spend($amount);
         return $amount;
+    }
+
+    /** Месячный предел на подарки: ноль в настройке — предела нет. */
+    public static function trial_budget() {
+        $value = get_option(self::OPT_TRIAL_BUDGET, null);
+        if ($value === null || $value === '') {
+            return (float) self::TRIAL_BUDGET_DEFAULT;
+        }
+        return max(0.0, (float) $value);
+    }
+
+    /** Сколько подарков уже отдано в текущем месяце. */
+    public static function trial_spent() {
+        $row = get_option(self::OPT_TRIAL_SPENT, array());
+        $month = current_time('Y-m');
+        if (!is_array($row) || ($row['month'] ?? '') !== $month) {
+            return 0.0;
+        }
+        return (float) ($row['sum'] ?? 0);
+    }
+
+    private static function trial_budget_left($amount) {
+        $budget = self::trial_budget();
+        if ($budget <= 0) {
+            return true;
+        }
+        return (self::trial_spent() + $amount) <= $budget;
+    }
+
+    private static function trial_spend($amount) {
+        $month = current_time('Y-m');
+        $row = get_option(self::OPT_TRIAL_SPENT, array());
+        $sum = (is_array($row) && ($row['month'] ?? '') === $month) ? (float) ($row['sum'] ?? 0) : 0.0;
+        update_option(self::OPT_TRIAL_SPENT, array('month' => $month, 'sum' => $sum + $amount), false);
     }
 
     public static function revoke($user_id, $prefix) {
