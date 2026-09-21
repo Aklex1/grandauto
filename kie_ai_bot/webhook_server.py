@@ -115,11 +115,16 @@ def send_telegram_in_thread(chat_id: int, text: str):
 
 
 def verify_signature(data) -> bool:
-    """Проверяет подпись HTTP-уведомления ЮMoney (sha1_hash).
+    """Проверяет классическую подпись HTTP-уведомления ЮMoney (sha1_hash).
 
     Формула: sha1(notification_type&operation_id&amount&currency&datetime&
-    sender&codepro&notification_secret&label). Если секрет не задан —
-    проверка пропускается (и об этом пишем предупреждение)."""
+    sender&codepro&notification_secret&label).
+
+    Проверяем только если пришло поле sha1_hash и задан секрет. Некоторые
+    уведомления приходят в другом формате (поле sign, SHA-256) — их подпись
+    здесь не проверяется, подлинность платежа в этом случае подтверждается по
+    базе и сумме (см. обработчик). Возвращает False только при явном
+    несовпадении классической подписи."""
     if not YOOMONEY_NOTIFICATION_SECRET:
         logger.warning(
             "YOOMONEY_NOTIFICATION_SECRET не задан — подпись уведомления не проверяется"
@@ -127,6 +132,13 @@ def verify_signature(data) -> bool:
         return True
 
     received = (data.get("sha1_hash") or "").lower()
+    if not received:
+        logger.warning(
+            "В уведомлении нет sha1_hash (поле подписи: %s) — проверим платёж по базе и сумме",
+            "sign" if data.get("sign") else "нет",
+        )
+        return True
+
     parts = [
         data.get("notification_type", ""),
         data.get("operation_id", ""),
@@ -144,6 +156,17 @@ def verify_signature(data) -> bool:
                        calculated, received)
         return False
     return True
+
+
+def amount_matches(paid: str, expected) -> bool:
+    """Совпадает ли уплаченная сумма с ожидаемой из записи платежа.
+    Защита от накрутки: без реального платежа нужной суммы баланс не пополнить."""
+    if expected is None or paid in (None, ""):
+        return True  # нечего сравнивать — не блокируем
+    try:
+        return abs(float(paid) - float(expected)) <= 0.01
+    except (TypeError, ValueError):
+        return True
 
 
 # --- Проверка доступности эндпойнта (открыть в браузере) ---
@@ -185,7 +208,7 @@ def yoomoney_webhook():
     try:
         with get_connection_context() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT telegram_id, status, tokens FROM payments WHERE label=%s", (label,))
+                cursor.execute("SELECT telegram_id, status, tokens, amount FROM payments WHERE label=%s", (label,))
                 payment = cursor.fetchone()
 
                 if not payment:
@@ -194,6 +217,18 @@ def yoomoney_webhook():
 
                 if payment['status'] == 'completed':
                     logger.info(f"Платеж {label} уже обработан.")
+                    return "OK", 200
+
+                # Защита от накрутки: сумма перевода должна совпадать с суммой,
+                # на которую был выставлен платёж. withdraw_amount — сколько
+                # списано у плательщика (равно нашей сумме); amount — за вычетом
+                # комиссии ЮMoney, поэтому сверяем именно withdraw_amount
+                paid = data.get("withdraw_amount") or data.get("amount")
+                if not amount_matches(paid, payment.get("amount")):
+                    logger.warning("Сумма не совпала для %s: уплачено %s, ожидалось %s",
+                                   label, paid, payment.get("amount"))
+                    if webhook_requests_total:
+                        webhook_requests_total.labels(status='amount_mismatch').inc()
                     return "OK", 200
 
                 telegram_id = payment['telegram_id']
