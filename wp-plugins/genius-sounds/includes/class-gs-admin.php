@@ -84,6 +84,17 @@ class GS_Admin {
             }
         }
 
+        // Пробный баланс при выпуске ключа API: ноль выключает подарок.
+        register_setting('gs_settings_group', GS_Api_Keys::OPT_TRIAL, array(
+            'type'              => 'number',
+            'sanitize_callback' => function ($value) {
+                if ($value === null || $value === '') {
+                    return (float) get_option(GS_Api_Keys::OPT_TRIAL, GS_Api_Keys::TRIAL_DEFAULT);
+                }
+                return max(0.0, (float) $value);
+            },
+        ));
+
         // Приём платежей: секрет для проверки подписи и адрес пересылки чужих.
         register_setting('gs_settings_group', GS_Yoomoney::OPT_SECRET, array(
             'type'              => 'string',
@@ -995,6 +1006,22 @@ class GS_Admin {
                                 <a href="<?php echo esc_url(GS_Index::key_url()); ?>" target="_blank" rel="noopener"><?php echo esc_html(GS_Index::key_url()); ?></a>
                                 — он создаётся сам и менять его не нужно. Мета-теги выводятся только на главной: этого хватает
                                 обоим вебмастерам. Без подтверждения прав ни отчёты, ни переобход недоступны.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Пробный баланс для API</th>
+                        <td>
+                            <p>
+                                <input name="<?php echo esc_attr(GS_Api_Keys::OPT_TRIAL); ?>" type="number"
+                                       step="10" min="0" class="small-text"
+                                       value="<?php echo esc_attr(GS_Api_Keys::trial_amount()); ?>"> ₽
+                            </p>
+                            <p class="description">
+                                Начисляется один раз на аккаунт при выпуске первого ключа API.
+                                Разработчик не станет платить, чтобы проверить работоспособность, —
+                                он возьмёт сервис, где можно попробовать даром. Ноль выключает подарок.
+                                Отметка стоит на аккаунте, поэтому второй ключ денег не приносит.
                             </p>
                         </td>
                     </tr>

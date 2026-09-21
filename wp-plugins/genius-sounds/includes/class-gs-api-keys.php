@@ -18,6 +18,11 @@ class GS_Api_Keys {
     const PREFIX    = 'gb_';
     const MAX_PER_USER = 5;
 
+    /** Сколько дарим на пробу при первом ключе; ноль — не дарить. */
+    const OPT_TRIAL  = 'gs_api_trial';
+    const TRIAL_META = 'gs_api_trial_given';
+    const TRIAL_DEFAULT = 100;
+
     /** @return array<string,array> хеш => запись */
     public static function index() {
         $index = get_option(self::OPT_INDEX, array());
@@ -61,7 +66,51 @@ class GS_Api_Keys {
         $index[self::hash($key)] = $record;
         self::save_index($index);
 
-        return array('ok' => true, 'key' => $key, 'record' => $record, 'message' => '');
+        return array(
+            'ok'      => true,
+            'key'     => $key,
+            'record'  => $record,
+            'trial'   => self::grant_trial($user_id),
+            'message' => '',
+        );
+    }
+
+    /** Сколько дарим на пробу — ноль выключает подарок совсем. */
+    public static function trial_amount() {
+        $value = get_option(self::OPT_TRIAL, null);
+        if ($value === null || $value === '') {
+            return (float) self::TRIAL_DEFAULT;
+        }
+        return max(0.0, (float) $value);
+    }
+
+    /**
+     * Пробный баланс при первом ключе.
+     *
+     * Разработчик не станет платить, чтобы проверить, работает ли сервис:
+     * он возьмёт тот, где можно попробовать даром. Поэтому дарим сразу при
+     * выпуске ключа, а не «по запросу в поддержку».
+     *
+     * Отметка стоит на пользователе, а не на ключе: иначе выпуск второго
+     * ключа принёс бы ещё сотню, и так до пяти.
+     *
+     * @return float сколько начислили (ноль — не начисляли)
+     */
+    public static function grant_trial($user_id) {
+        $amount = self::trial_amount();
+        if ($amount <= 0 || get_user_meta($user_id, self::TRIAL_META, true)) {
+            return 0.0;
+        }
+        if (!class_exists('GS_SFX') || !GS_SFX::balance_available()) {
+            return 0.0;
+        }
+        // Отметку ставим до начисления: если начисление не пройдёт, повтор
+        // случится по обращению человека, а не сам по себе пять раз.
+        update_user_meta($user_id, self::TRIAL_META, current_time('mysql'));
+        if (!GS_SFX::refund($user_id, $amount)) {
+            return 0.0;
+        }
+        return $amount;
     }
 
     public static function revoke($user_id, $prefix) {

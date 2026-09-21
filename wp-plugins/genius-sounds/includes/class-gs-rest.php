@@ -774,6 +774,10 @@ class GS_Rest {
             'success' => true,
             'key'     => $issued['key'],
             'secret'  => $issued['record']['secret'],
+            // Сколько подарили на пробу: интерфейсу надо об этом сказать,
+            // иначе человек не поймёт, откуда взялся баланс.
+            'trial'   => (float) ($issued['trial'] ?? 0),
+            'balance' => class_exists('GS_SFX') ? GS_SFX::get_balance(get_current_user_id()) : 0,
             'keys'    => GS_Api_Keys::for_user(get_current_user_id()),
         ));
     }

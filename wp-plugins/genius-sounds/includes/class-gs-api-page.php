@@ -327,8 +327,15 @@ class GS_Api_Page {
     private static function render_keys($logged, $keys) {
         ob_start();
         ?>
+        <?php $trial = class_exists('GS_Api_Keys') ? GS_Api_Keys::trial_amount() : 0; ?>
         <section class="gs-panel gs-api__keys" id="keys">
             <h2 class="gs-section-title">Ключ доступа</h2>
+            <?php if ($trial > 0): ?>
+                <p class="gs-api__text">
+                    <strong><?php echo esc_html(number_format_i18n($trial, 0)); ?> ₽ на пробу</strong>
+                    начисляем при выпуске первого ключа — хватит проверить все операции, ничего не платя.
+                </p>
+            <?php endif; ?>
             <?php if (!$logged): ?>
                 <p class="gs-api__text">
                     Ключ выдаётся в аккаунте: он привязан к балансу, с которого списывается оплата.
