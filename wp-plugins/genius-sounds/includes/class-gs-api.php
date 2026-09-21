@@ -791,9 +791,16 @@ class GS_Api {
         if ($key === '') {
             return array('ok' => false, 'message' => 'Нет ключа доступа');
         }
+        // Ключ уходит только поставщику. Пробником пользуются и для
+        // проверки своих адресов, а ключ доступа там не нужен — отдать
+        // его чужой машине, да ещё по открытому http, нельзя.
+        $host = strtolower((string) wp_parse_url((string) $url, PHP_URL_HOST));
+        $mine = $host === 'api.kie.ai' || substr($host, -8) === '.kie.ai';
         $args = array(
             'timeout' => 180,
-            'headers' => array('Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json'),
+            'headers' => $mine
+                ? array('Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json')
+                : array('Content-Type' => 'application/json'),
         );
         if (strtoupper((string) $method) === 'GET') {
             $response = wp_remote_get((string) $url, $args);
