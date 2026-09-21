@@ -866,13 +866,13 @@ class GS_Admin {
                                     <span class="description">(0 — бесплатно и без регистрации)</span>,
                                     <?php else: ?>
                                     — минимум
-                                    <input name="gs_lab_min_<?php echo esc_attr($lab_id); ?>" type="number" step="1" min="1"
+                                    <input name="gs_lab_min_<?php echo esc_attr($lab_id); ?>" type="number" step="1" min="0"
                                            value="<?php echo esc_attr(GS_Lab::get_cost($lab_id)); ?>" class="small-text"> ₽,
-                                    <?php endif; ?>
                                     ставка
-                                    <input name="gs_lab_rate_<?php echo esc_attr($lab_id); ?>" type="number" step="1" min="1"
+                                    <input name="gs_lab_rate_<?php echo esc_attr($lab_id); ?>" type="number" step="1" min="0"
                                            value="<?php echo esc_attr(GS_Lab::rate($lab_id)); ?>" class="small-text"> ₽
                                     за <?php echo GS_Lab::pricing($lab_id, 'unit') === 'second' ? 'секунду' : 'минуту'; ?>,
+                                    <?php endif; ?>
                                     предел
                                     <input name="gs_lab_max_seconds_<?php echo esc_attr($lab_id); ?>" type="number" step="10" min="0"
                                            value="<?php echo esc_attr(GS_Lab::max_seconds($lab_id)); ?>" class="small-text"> сек

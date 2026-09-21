@@ -564,6 +564,21 @@ class GS_Lab {
             && !(class_exists('GS_MusicAI') && GS_MusicAI::ready($id));
     }
 
+    /**
+     * Число из настроек, где ноль — осмысленный ответ, а не «не задано».
+     *
+     * Раньше ноль всюду подменялся значением по умолчанию, и сделать
+     * операцию бесплатной через админку было нельзя: сохраняешь 0, а
+     * возвращается прежняя цена. Отличаем «пусто» от «ноль».
+     */
+    private static function saved_number($option, $default) {
+        $value = get_option($option, null);
+        if ($value === null || $value === '') {
+            return (float) $default;
+        }
+        return max(0.0, (float) $value);
+    }
+
     public static function get_cost($id) {
         $service = self::get_service($id);
         if (!$service) {
@@ -573,13 +588,12 @@ class GS_Lab {
         // фиксированной ценой её быть не должно: иначе случайно сохранённое
         // значение делает платной операцию, которая ничего не стоит.
         if ((string) self::pricing($id, 'unit') !== 'fixed') {
-            $min = (float) get_option('gs_lab_min_' . $id, self::pricing($id, 'min'));
+            $min = self::saved_number('gs_lab_min_' . $id, self::pricing($id, 'min'));
             if ($min > 0) {
                 return round($min, 2);
             }
         }
-        $cost = (float) get_option($service['cost_option'], $service['cost']);
-        return $cost > 0 ? round($cost, 2) : (float) $service['cost'];
+        return round(self::saved_number($service['cost_option'], $service['cost']), 2);
     }
 
     /* ---------------------------------------------------------------------
@@ -599,13 +613,16 @@ class GS_Lab {
     }
 
     public static function rate($id) {
-        $rate = (float) get_option('gs_lab_rate_' . $id, self::pricing($id, 'rate'));
-        return $rate > 0 ? $rate : (float) self::pricing($id, 'rate');
+        // У сервиса с фиксированной ценой ставки нет вовсе, и случайно
+        // сохранённое значение не должно делать его платным.
+        if ((string) self::pricing($id, 'unit') === 'fixed') {
+            return 0.0;
+        }
+        return round(self::saved_number('gs_lab_rate_' . $id, self::pricing($id, 'rate')), 2);
     }
 
     public static function max_seconds($id) {
-        $max = (int) get_option('gs_lab_max_seconds_' . $id, self::pricing($id, 'max_seconds'));
-        return $max > 0 ? $max : (int) self::pricing($id, 'max_seconds');
+        return (int) self::saved_number('gs_lab_max_seconds_' . $id, self::pricing($id, 'max_seconds'));
     }
 
     /**
