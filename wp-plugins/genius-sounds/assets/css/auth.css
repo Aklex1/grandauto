@@ -1,0 +1,272 @@
+/**
+ * Форма входа: цвет текста и своё окно.
+ *
+ * Тема перекрашивает любое поле при фокусе своим правилом с !important,
+ * рассчитанным на светлую страницу. На тёмной форме входа это значило:
+ * пока не трогаешь поле — текст виден, начал печатать — исчез. Поэтому
+ * здесь правила той же силы, но с более точным селектором.
+ */
+
+body input.karm-input,
+body input.karm-input:focus,
+body input.karm-input:hover,
+body input.karm-input:active,
+body textarea.karm-input,
+body textarea.karm-input:focus,
+body input.karm-code-input,
+body input.karm-code-input:focus {
+    color: #f1f5f9 !important;
+    -webkit-text-fill-color: #f1f5f9 !important;
+    caret-color: #818cf8 !important;
+    background-color: #0f1520 !important;
+}
+
+body input.karm-input::placeholder,
+body textarea.karm-input::placeholder {
+    color: #64748b !important;
+    -webkit-text-fill-color: #64748b !important;
+    opacity: 1;
+}
+
+/* Автозаполнение браузера подменяет фон и текст своими цветами.
+   Перебить можно только длинной заливкой тенью — свойства background
+   в этом состоянии не применяются. */
+body input.karm-input:-webkit-autofill,
+body input.karm-input:-webkit-autofill:focus,
+body input.karm-code-input:-webkit-autofill {
+    -webkit-text-fill-color: #f1f5f9 !important;
+    -webkit-box-shadow: 0 0 0 1000px #0f1520 inset !important;
+    box-shadow: 0 0 0 1000px #0f1520 inset !important;
+    caret-color: #818cf8 !important;
+}
+
+/* ------------------------------------------------------------- своё окно
+   На страницах сервисов вход открывается здесь же, а не уводит на
+   отдельную страницу: человек заполнил форму, и терять её из-за входа
+   он не должен. */
+
+.gs-auth {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.gs-auth[hidden] {
+    display: none;
+}
+
+.gs-auth__veil {
+    position: absolute;
+    inset: 0;
+    background: rgba(2, 6, 16, 0.78);
+    backdrop-filter: blur(3px);
+}
+
+.gs-auth__box {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    padding: 28px 26px 24px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 18px;
+    background: #131b2b;
+    box-shadow: 0 30px 80px rgba(2, 6, 16, 0.6);
+    color: #f1f5f9;
+}
+
+.gs-auth__x {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    font-size: 24px;
+    line-height: 1;
+    color: #94a3b8;
+    cursor: pointer;
+}
+
+.gs-auth__x:hover {
+    color: #f1f5f9;
+    background: rgba(148, 163, 184, 0.12);
+}
+
+.gs-auth__title {
+    margin: 0 0 6px;
+    font-size: 21px;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.gs-auth__lead {
+    margin: 0 0 18px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #94a3b8;
+}
+
+.gs-auth__label {
+    display: block;
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #cbd5e1;
+}
+
+/* Селектор длиннее, чем нужно для внешнего вида: короткий проигрывает
+   правилу темы, которое красит любое поле при фокусе своим !important. */
+body input.gs-auth__input,
+body input.gs-auth__input:focus,
+body input.gs-auth__input:hover,
+body input.gs-auth__input:active {
+    color: #f1f5f9 !important;
+    -webkit-text-fill-color: #f1f5f9 !important;
+    caret-color: #818cf8 !important;
+    background-color: #0f1520 !important;
+}
+
+body input.gs-auth__input:-webkit-autofill,
+body input.gs-auth__input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #f1f5f9 !important;
+    -webkit-box-shadow: 0 0 0 1000px #0f1520 inset !important;
+    box-shadow: 0 0 0 1000px #0f1520 inset !important;
+}
+
+.gs-auth__input {
+    width: 100%;
+    min-height: 46px;
+    padding: 12px 14px;
+    border: 1.5px solid rgba(148, 163, 184, 0.22);
+    border-radius: 10px;
+    background: #0f1520 !important;
+    font-size: 15px;
+    color: #f1f5f9 !important;
+    -webkit-text-fill-color: #f1f5f9 !important;
+    caret-color: #818cf8;
+    box-sizing: border-box;
+    outline: none;
+}
+
+.gs-auth__input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+.gs-auth__input::placeholder {
+    color: #64748b;
+    -webkit-text-fill-color: #64748b;
+}
+
+.gs-auth__code {
+    letter-spacing: 0.35em;
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.gs-auth__go {
+    width: 100%;
+    margin-top: 14px;
+    padding: 13px 20px;
+    border: 0;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    cursor: pointer;
+}
+
+.gs-auth__go:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.gs-auth__note {
+    margin: 12px 0 0;
+    min-height: 1.4em;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #94a3b8;
+}
+
+.gs-auth__note.is-bad {
+    color: #fca5a5;
+}
+
+.gs-auth__note.is-ok {
+    color: #34d399;
+}
+
+.gs-auth__back {
+    margin: 10px 0 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 13px;
+    color: #818cf8;
+    cursor: pointer;
+}
+
+.gs-auth__or {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0 14px;
+    font-size: 12.5px;
+    color: #64748b;
+}
+
+.gs-auth__or::before,
+.gs-auth__or::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(148, 163, 184, 0.16);
+}
+
+.gs-auth__social {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.gs-auth__social a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff !important;
+    text-decoration: none !important;
+}
+
+.gs-auth__social a.is-tg {
+    background: #2aabee;
+}
+
+.gs-auth__social a.is-vk {
+    background: #0077ff;
+}
+
+body.gs-auth-open {
+    overflow: hidden;
+}
+
+@media (max-width: 480px) {
+    .gs-auth__box {
+        padding: 24px 18px 20px;
+    }
+}

@@ -291,7 +291,8 @@ class GS_Slides_Page {
             <?php if (!$logged): ?>
                 <div class="gs-panel gs-slides__guest">
                     <p>Чтобы собрать презентацию, войдите — файл сохранится в вашей истории.</p>
-                    <a class="gs-btn gs-btn--primary gs-btn--lg" href="<?php echo esc_url(wp_login_url(self::get_url())); ?>">Войти</a>
+                    <a class="gs-btn gs-btn--primary gs-btn--lg" data-gs-auth
+                       href="<?php echo esc_url(GS_Auth::login_url()); ?>">Войти</a>
                 </div>
             <?php else: ?>
                 <div class="gs-slides__bar">

@@ -67,7 +67,8 @@ class GS_Voice_Page {
                         Голос сохраняется в вашем кабинете: один раз создали — и дальше поёте им любые песни.
                         Поэтому без аккаунта не обойтись.
                     </p>
-                    <a class="gs-btn gs-btn--primary gs-btn--lg" href="<?php echo esc_url($login); ?>">Войти и создать голос</a>
+                    <a class="gs-btn gs-btn--primary gs-btn--lg" data-gs-auth
+                       href="<?php echo esc_url($login); ?>">Войти и создать голос</a>
                 </section>
             <?php else: ?>
 

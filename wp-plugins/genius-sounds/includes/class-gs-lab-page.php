@@ -202,7 +202,8 @@ class GS_Lab_Page {
                                 <?php echo esc_html(self::submit_label($service)); ?>
                             </button>
                         <?php else: ?>
-                            <a class="gs-btn gs-btn--primary gs-btn--lg" href="<?php echo esc_url($login); ?>">Войти и продолжить</a>
+                            <a class="gs-btn gs-btn--primary gs-btn--lg" data-gs-auth
+                               href="<?php echo esc_url($login); ?>">Войти и продолжить</a>
                         <?php endif; ?>
                     </div>
 

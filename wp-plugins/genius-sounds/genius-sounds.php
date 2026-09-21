@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.89.0');
+define('GS_VERSION', '1.91.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -43,6 +43,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-promt.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-musicai.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-payments.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-auth.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-yoomoney.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-dashboard.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-keywords.php';
@@ -104,6 +105,7 @@ class Genius_Sounds_Plugin {
         GS_Neurohub::boot();
         GS_Dashboard::boot();
         GS_Payments::boot();
+        GS_Auth::boot();
         GS_Yoomoney::boot();
         GS_Blog::boot();
         GS_Tts_Fallback::boot();
@@ -161,6 +163,12 @@ class Genius_Sounds_Plugin {
                 error_log('genius-sounds: инициализация не удалась — ' . $e->getMessage());
             }
         }
+    }
+
+    /** Штатная страница входа платёжного плагина. */
+    private static function is_login_page() {
+        $page = (int) get_option('kie_tts_auth_page_id');
+        return ($page > 0 && is_page($page)) || is_page('tts-login');
     }
 
     /**
@@ -228,6 +236,21 @@ class Genius_Sounds_Plugin {
 
         // Посадочная под коммерческий запрос показывает тот же инструмент,
         // значит ей нужны те же стили и тот же скрипт.
+        // Вход на месте: окно вместо ухода на отдельную страницу.
+        if (GS_Auth::needed()) {
+            wp_enqueue_style('genius-sounds-auth', GS_PLUGIN_URL . 'assets/css/auth.css', array(), GS_VERSION);
+            wp_enqueue_script('genius-sounds-auth', GS_PLUGIN_URL . 'assets/js/auth.js', array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-auth', 'GS_AUTH', array(
+                'restUrl' => esc_url_raw(rest_url('tts/v1/')),
+            ));
+        }
+
+        // Штатная страница входа: тема перекрашивает её поля при фокусе,
+        // и текст пропадает — лечится теми же стилями.
+        if (self::is_login_page()) {
+            wp_enqueue_style('genius-sounds-auth', GS_PLUGIN_URL . 'assets/css/auth.css', array(), GS_VERSION);
+        }
+
         // Пополнение на месте: одно окно на все страницы сервисов.
         if (GS_Payments::needs_modal()) {
             wp_enqueue_script('genius-sounds-topup', GS_PLUGIN_URL . 'assets/js/topup.js', array(), GS_VERSION, true);
