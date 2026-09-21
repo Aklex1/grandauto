@@ -20,11 +20,119 @@ class GS_Payments {
     const COOKIE    = 'gs_pay_src';
     const TTL       = 3600;
 
+    /** Секрет HTTP-уведомлений ЮMoney — пока пуст, подпись не проверяется. */
+    const OPT_SECRET = 'gs_yoomoney_secret';
+    /** Маршрут, на который ЮMoney шлёт уведомления об оплате. */
+    const HOOK_ROUTE = '/tts/v1/yoomoney-webhook';
+
     public static function boot() {
         add_action('init', array(__CLASS__, 'remember_source'), 5);
         add_action('template_redirect', array(__CLASS__, 'remember_page_source'), 1);
         add_action('wp_footer', array(__CLASS__, 'print_modal'));
         add_filter('rest_request_after_callbacks', array(__CLASS__, 'mark_payment'), 20, 3);
+        add_filter('rest_pre_dispatch', array(__CLASS__, 'guard_notification'), 10, 3);
+        add_action('admin_post_gs_payment_credit', array(__CLASS__, 'handle_credit'));
+    }
+
+    /* ---------------------------------------------------------------------
+     * Уведомление об оплате
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Проверка подписи уведомления ЮMoney.
+     *
+     * Платёжный маршрут зачисляет баланс по одной лишь метке платежа, а
+     * метка складывается из номера пользователя и времени — подобрать её
+     * может кто угодно. Пока секрет не задан, ломать приём уведомлений
+     * нельзя: без него магазин просто не получит денег. Поэтому проверка
+     * включается ровно тогда, когда секрет появился в настройках.
+     */
+    public static function guard_notification($result, $server, $request) {
+        if (!($request instanceof WP_REST_Request) || $request->get_route() !== self::HOOK_ROUTE) {
+            return $result;
+        }
+        // Единая точка приёма уже проверила подпись и сейчас разбирает
+        // уведомление внутри сайта — второй раз проверять нечего.
+        if (class_exists('GS_Yoomoney') && GS_Yoomoney::is_forwarding()) {
+            return $result;
+        }
+        $secret = trim((string) get_option(self::OPT_SECRET, ''));
+        if ($secret === '') {
+            return $result;
+        }
+
+        $post = $request->get_body_params();
+        $post = is_array($post) ? $post : array();
+        if (!class_exists('GS_Yoomoney') || !GS_Yoomoney::signature_ok($post)) {
+            error_log('genius-sounds: уведомление ЮMoney с неверной подписью, метка '
+                . (isset($post['label']) ? (string) $post['label'] : '—'));
+            return new WP_REST_Response(array('status' => 'error', 'message' => 'bad signature'), 403);
+        }
+        return $result;
+    }
+
+    /* ---------------------------------------------------------------------
+     * Разбор застрявших платежей
+     * ------------------------------------------------------------------ */
+
+    /** Платежи, за которые деньги могли прийти, а баланс не пополнился. */
+    public static function pending_payments($limit = 40) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kie_tts_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return array();
+        }
+        return (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT id, user_id, label, amount, status, is_telegram, created_at
+               FROM {$table}
+              WHERE status <> 'completed'
+           ORDER BY created_at DESC
+              LIMIT %d",
+            (int) $limit
+        ), ARRAY_A);
+    }
+
+    public static function completed_count() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kie_tts_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return 0;
+        }
+        return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'completed'");
+    }
+
+    /** Последнее зачисление — по нему видно, когда уведомления перестали приходить. */
+    public static function last_completed() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kie_tts_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return '';
+        }
+        return (string) $wpdb->get_var("SELECT completed_at FROM {$table} WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 1");
+    }
+
+    /**
+     * Ручное зачисление.
+     *
+     * Нужно, когда деньги на кошелёк пришли, а уведомление — нет: без этой
+     * кнопки единственный способ помочь человеку — лезть в базу руками.
+     * Зачисление идёт через тот же метод платёжного плагина, что и
+     * обычное, поэтому история и статусы остаются согласованными.
+     */
+    public static function handle_credit() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_payment_credit');
+
+        $label = sanitize_text_field(wp_unslash((string) ($_POST['label'] ?? '')));
+        $done = false;
+        if ($label !== '' && class_exists('KIE_TTS_Payment')) {
+            $done = (bool) KIE_TTS_Payment::process_payment($label, 0);
+        }
+        set_transient('gs_payment_notice', $done ? 'ok:' . $label : 'fail:' . $label, 60);
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-payments');
+        exit;
     }
 
     /**
@@ -142,7 +250,10 @@ class GS_Payments {
 
                 <p class="gs-topup__note" id="gs-topup-note" role="status" aria-live="polite"></p>
                 <a class="gs-btn gs-btn--primary gs-btn--lg gs-topup__go" id="gs-topup-go" href="#" target="_blank" rel="noopener" hidden>Перейти к оплате</a>
-                <p class="gs-topup__hint">После оплаты баланс обновится сам — страницу закрывать не нужно.</p>
+                <p class="gs-topup__hint">
+                    После оплаты вернитесь на эту вкладку: баланс обновится сам, закрывать её не нужно.
+                    Если деньги списались, а баланс не изменился — напишите нам номер платежа, пополним вручную.
+                </p>
             </div>
         </div>
         <?php

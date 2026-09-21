@@ -10,6 +10,10 @@
  *   topup_telegram_… → он же, для пользователей из бота
  *   остальное        → пересылается дальше, на прежний адрес бота
  *
+ * Метки своих платежей узнаются по полному началу, а не по слову topup_:
+ * у бота свой формат, и однажды он уже попал под это правило — платежи
+ * уходили в кабинет озвучки, где такой метки нет, и терялись.
+ *
  * Попутно ведётся журнал: по метке в назначении платежа видно, с какого
  * сервиса пришли деньги, даже если баланс у пользователя один.
  */
@@ -23,6 +27,8 @@ class GS_Yoomoney {
     const OPT_SECRET  = 'gs_yoomoney_secret';
     const OPT_FORWARD = 'gs_yoomoney_forward';
     const OPT_LOG     = 'gs_yoomoney_log';
+    /** Пока уведомление разбирается внутри сайта, повторно проверять подпись незачем. */
+    private static $forwarding = false;
     const OPT_STATS   = 'gs_yoomoney_stats';
     const LOG_LIMIT   = 200;
 
@@ -41,6 +47,11 @@ class GS_Yoomoney {
         delete_option(self::OPT_STATS);
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-payments');
         exit;
+    }
+
+    /** Идёт ли сейчас внутренняя пересылка уведомления. */
+    public static function is_forwarding() {
+        return self::$forwarding;
     }
 
     public static function endpoint_url() {
@@ -84,14 +95,23 @@ class GS_Yoomoney {
             return self::reply($result['ok'], 'neurohub', $result['message']);
         }
 
-        if (strpos($label, 'topup_') === 0) {
+        if (strpos($label, 'topup_wp_') === 0 || strpos($label, 'topup_telegram_') === 0) {
             $result = self::forward_internal('/tts/v1/yoomoney-webhook', $params);
+            if (!$result['ok'] && stripos($result['message'], 'not found') !== false) {
+                // Метка похожа на нашу, а платежа с ней нет. Чем терять
+                // деньги, отдаём уведомление дальше — вдруг это бот.
+                $sent = self::forward_external($params);
+                self::remember($label, $amount, $sent['ok'] ? 'переслано' : 'ошибка',
+                    $result['message'] . '; ' . $sent['message'], $params, 'bot');
+                return self::reply(false, 'tts', $result['message']);
+            }
             self::remember($label, $amount, $result['ok'] ? 'зачислено' : 'ошибка', $result['message'], $params);
             return self::reply($result['ok'], 'tts', $result['message']);
         }
 
-        // Метка не наша: платёж заводил не сайт. Пересылаем, если задан адрес,
-        // и в любом случае честно говорим, что зачисления не было.
+        // Метка не наша: платёж заводил не сайт — скорее всего бот со своим
+        // форматом метки. Пересылаем, если задан адрес, и в любом случае
+        // честно говорим, что на сайте зачисления не было.
         $result = self::forward_external($params);
         self::remember($label, $amount, $result['ok'] ? 'переслано' : 'не наш платёж', $result['message'], $params, 'bot');
         return self::reply(false, 'unknown', $result['message']);
@@ -114,12 +134,32 @@ class GS_Yoomoney {
     /**
      * Подпись ЮMoney. Пока секрет не задан, проверять нечем — тогда
      * уведомления принимаются как раньше, но это видно в журнале.
+     *
+     * Подписей у них две: новая sign (HMAC-SHA256 по отсортированным
+     * полям) и устаревшая sha1_hash по фиксированному порядку. Какая
+     * придёт — зависит от настроек кошелька, поэтому принимаем обе:
+     * отказывать деньгам из-за формата подписи неправильно.
      */
-    private static function signature_ok($params) {
+    public static function signature_ok($params) {
         $secret = trim((string) get_option(self::OPT_SECRET, ''));
         if ($secret === '') {
             return true;
         }
+
+        if (!empty($params['sign'])) {
+            $fields = $params;
+            unset($fields['sign']);
+            ksort($fields);
+            $parts = array();
+            foreach ($fields as $key => $value) {
+                $parts[] = $key . '=' . rawurlencode((string) $value);
+            }
+            $calc = hash_hmac('sha256', implode('&', $parts), $secret);
+            if (hash_equals($calc, strtolower((string) $params['sign']))) {
+                return true;
+            }
+        }
+
         $provided = isset($params['sha1_hash']) ? strtolower((string) $params['sha1_hash']) : '';
         if ($provided === '') {
             return false;
@@ -144,7 +184,9 @@ class GS_Yoomoney {
         foreach ($params as $key => $value) {
             $request->set_param($key, $value);
         }
+        self::$forwarding = true;
         $response = rest_do_request($request);
+        self::$forwarding = false;
         $status = $response instanceof WP_REST_Response ? $response->get_status() : 0;
         $data = $response instanceof WP_REST_Response ? $response->get_data() : null;
 

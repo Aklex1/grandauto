@@ -328,6 +328,77 @@ class GS_Admin {
         return ob_get_clean();
     }
 
+    /**
+     * Платежи, за которые деньги пришли, а баланс не пополнился.
+     *
+     * Такое случается, когда уведомление от ЮMoney потерялось или ушло не
+     * туда. Без этой таблицы единственный способ помочь человеку — лезть
+     * в базу руками, а деньги у него уже списаны.
+     */
+    public static function render_stuck_payments() {
+        if (!class_exists('GS_Payments')) {
+            return '';
+        }
+        $rows = GS_Payments::pending_payments(40);
+        $notice = get_transient('gs_payment_notice');
+
+        ob_start();
+        ?>
+        <h2 id="gs-payments-stuck">Незакрытые пополнения</h2>
+
+        <?php if ($notice !== false): ?>
+            <?php delete_transient('gs_payment_notice'); ?>
+            <?php $ok = strpos((string) $notice, 'ok:') === 0; ?>
+            <p class="notice notice-<?php echo $ok ? 'success' : 'error'; ?>" style="padding:10px;max-width:900px">
+                <?php echo $ok
+                    ? 'Баланс пополнен по метке ' . esc_html(substr((string) $notice, 3))
+                    : 'Не удалось зачислить по метке ' . esc_html(substr((string) $notice, 5)); ?>
+            </p>
+        <?php endif; ?>
+
+        <p class="description" style="max-width:900px">
+            Ссылка на оплату заводит запись до перехода в ЮMoney, поэтому здесь оседают и
+            брошенные попытки. Зачисляйте только те, по которым деньги действительно пришли —
+            это видно в кошельке. Всего закрыто платежей:
+            <strong><?php echo (int) GS_Payments::completed_count(); ?></strong><?php
+            $last = GS_Payments::last_completed();
+            echo $last ? ', последнее ' . esc_html(date_i18n('d.m.Y H:i', strtotime($last))) : '';
+            ?>.
+        </p>
+
+        <?php if (!$rows): ?>
+            <p class="description">Незакрытых пополнений нет.</p>
+        <?php else: ?>
+            <table class="widefat striped" style="max-width:1000px">
+                <thead><tr><th>Когда</th><th>Метка</th><th>Кто</th><th>Сумма</th><th></th></tr></thead>
+                <tbody>
+                <?php foreach ($rows as $row): ?>
+                    <tr>
+                        <td><?php echo esc_html(date_i18n('d.m.Y H:i', strtotime((string) $row['created_at']))); ?></td>
+                        <td><code><?php echo esc_html((string) $row['label']); ?></code></td>
+                        <td><?php
+                            $user = get_userdata((int) $row['user_id']);
+                            echo esc_html($user ? $user->user_login : ('id ' . (int) $row['user_id']));
+                            echo !empty($row['is_telegram']) ? ' · бот' : '';
+                        ?></td>
+                        <td><?php echo esc_html(number_format_i18n((float) $row['amount'], 2)); ?> ₽</td>
+                        <td>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php wp_nonce_field('gs_payment_credit'); ?>
+                                <input type="hidden" name="action" value="gs_payment_credit">
+                                <input type="hidden" name="label" value="<?php echo esc_attr((string) $row['label']); ?>">
+                                <?php submit_button('Зачислить', 'secondary small', 'submit', false); ?>
+                            </form>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+        <?php
+        return ob_get_clean();
+    }
+
     public static function render_leads() {
         $rows = GS_Leads::log_rows();
         $notice = get_transient('gs_leads_notice');
@@ -986,6 +1057,8 @@ class GS_Admin {
             <?php echo GS_Schedule::render_panel(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_promt(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_stuck_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_leads(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 

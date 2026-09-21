@@ -17,6 +17,8 @@
     var note = document.getElementById('gs-topup-note');
     var go = document.getElementById('gs-topup-go');
     var lastFocus = null;
+    var watch = null;
+    var startBalance = null;
 
     function say(text, kind) {
         note.textContent = text || '';
@@ -36,7 +38,68 @@
         document.body.classList.remove('gs-topup-open');
         say('');
         go.hidden = true;
+        stopWatch();
         if (lastFocus) { lastFocus.focus(); }
+    }
+
+    /* ------------------------------------------------------------------ */
+
+    function balance() {
+        return fetch(cfg.restUrl + 'balance', {
+            credentials: 'same-origin',
+            headers: { 'X-WP-Nonce': cfg.nonce }
+        }).then(function (r) {
+            return r.ok ? r.json() : null;
+        }).then(function (d) {
+            return d && typeof d.balance !== 'undefined' ? Number(d.balance) : null;
+        }).catch(function () {
+            return null;
+        });
+    }
+
+    /** Показываем новое значение там, где оно нарисовано на странице. */
+    function paint(value) {
+        var shown = value.toLocaleString('ru-RU', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        }) + ' ₽';
+        ['gs-lab-balance', 'gs-sfx-balance', 'gs-slides-balance'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) { el.textContent = shown; }
+        });
+    }
+
+    function stopWatch() {
+        if (watch) {
+            clearInterval(watch);
+            watch = null;
+        }
+    }
+
+    /**
+     * Оплата уходит в чужую вкладку, и вернуться на страницу человек может
+     * когда угодно. Поэтому после перехода к оплате мы просто ждём, пока
+     * баланс не вырастет: уведомление от банка приходит на сервер само,
+     * а страница о нём узнаёт отсюда.
+     */
+    function startWatch() {
+        stopWatch();
+        var left = 120;                        // десять минут по пять секунд
+        watch = setInterval(function () {
+            if (--left <= 0) {
+                stopWatch();
+                say('Баланс пока не обновился. Если деньги списаны, напишите нам — '
+                    + 'пополним вручную.', 'error');
+                return;
+            }
+            balance().then(function (now) {
+                if (now === null || startBalance === null || now <= startBalance) {
+                    return;
+                }
+                stopWatch();
+                paint(now);
+                say('Баланс пополнен: ' + now.toFixed(2) + ' ₽', 'ok');
+            });
+        }, 5000);
     }
 
     function request(amount) {
@@ -65,6 +128,7 @@
             go.href = res.data.payment_link;
             go.textContent = 'Перейти к оплате ' + amount + ' ₽';
             go.hidden = false;
+            go.setAttribute('data-label', res.data.label || '');
             say('Ссылка готова. Оплата откроется в новой вкладке.', 'ok');
         }).catch(function () {
             say('Сеть не отвечает — попробуйте ещё раз', 'error');
@@ -89,6 +153,16 @@
         if (sum) {
             request(sum.getAttribute('data-gs-topup-sum'));
             return;
+        }
+        if (e.target.closest('#gs-topup-go')) {
+            // Запоминаем баланс до оплаты: только по росту видно, что
+            // деньги дошли — суммы бывают одинаковые, а платежей несколько.
+            balance().then(function (now) {
+                startBalance = now === null ? 0 : now;
+                var label = document.getElementById('gs-topup-go').getAttribute('data-label');
+                say('Ждём подтверждения оплаты…' + (label ? ' Номер платежа: ' + label : ''));
+                startWatch();
+            });
         }
     });
 
