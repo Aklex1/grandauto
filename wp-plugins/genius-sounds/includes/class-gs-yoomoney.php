@@ -96,7 +96,12 @@ class GS_Yoomoney {
         }
 
         if (strpos($label, 'topup_wp_') === 0 || strpos($label, 'topup_telegram_') === 0) {
+            // Повторное уведомление по уже закрытому платежу баланс не
+            // меняет — и это правильно. Сверять в таком случае нечего.
+            $repeat = self::already_completed($label);
+            $before = $repeat ? null : self::balance_by_label($label);
             $result = self::forward_internal('/tts/v1/yoomoney-webhook', $params);
+            $result = self::confirm_credit($label, $before, $result);
             if (!$result['ok'] && stripos($result['message'], 'not found') !== false) {
                 // Метка похожа на нашу, а платежа с ней нет. Чем терять
                 // деньги, отдаём уведомление дальше — вдруг это бот.
@@ -176,6 +181,69 @@ class GS_Yoomoney {
             (string) ($params['label'] ?? ''),
         );
         return hash_equals(sha1(implode('&', $parts)), $provided);
+    }
+
+    /** Платёж уже закрыт — значит, уведомление повторное. */
+    private static function already_completed($label) {
+        if (!class_exists('KIE_TTS_Payment')) {
+            return false;
+        }
+        $payment = KIE_TTS_Payment::get_payment_by_label($label);
+        return is_array($payment) && (string) ($payment['status'] ?? '') === 'completed';
+    }
+
+    /**
+     * Баланс плательщика по метке платежа.
+     *
+     * Нужен, чтобы проверить зачисление делом, а не на слово. У пользователей
+     * из бота баланс лежит в его базе, у остальных — в таблице сайта; какой
+     * случай, записано в самом платеже.
+     *
+     * @return float|null null — если посмотреть не получилось.
+     */
+    private static function balance_by_label($label) {
+        if (!class_exists('KIE_TTS_Payment') || !class_exists('KIE_TTS_DB')) {
+            return null;
+        }
+        $payment = KIE_TTS_Payment::get_payment_by_label($label);
+        if (!is_array($payment) || empty($payment['user_id'])) {
+            return null;
+        }
+        $is_telegram = !empty($payment['is_telegram']);
+        $who = (int) $payment['user_id'];
+        if ($is_telegram) {
+            $who = class_exists('KIE_TTS_Auth') ? (int) KIE_TTS_Auth::get_telegram_id($who) : 0;
+            if (!$who) {
+                return null;
+            }
+        }
+        return (float) KIE_TTS_DB::get_user_balance($who, $is_telegram);
+    }
+
+    /**
+     * Действительно ли баланс вырос.
+     *
+     * Платёжный маршрут отвечает «обработано» и тогда, когда запись в базу
+     * не удалась: возвращаемое значение он не проверяет. Для пользователей
+     * из бота баланс лежит в чужой базе, до которой сайт может и не
+     * достучаться, — и тогда деньги списаны, платёж помечен закрытым, а
+     * баланс прежний, и в журнале об этом ни слова. Поэтому сверяем сами.
+     */
+    private static function confirm_credit($label, $before, $result) {
+        if (!$result['ok'] || $before === null) {
+            return $result;
+        }
+        $after = self::balance_by_label($label);
+        if ($after === null || $after > $before + 0.001) {
+            return $result;
+        }
+        return array(
+            'ok' => false,
+            'message' => sprintf(
+                'платёж закрыт, но баланс не изменился (%s ₽ до и после) — зачислите вручную',
+                number_format($before, 2, ',', ' ')
+            ),
+        );
     }
 
     /** Передаём уведомление нужному обработчику внутри сайта. */
