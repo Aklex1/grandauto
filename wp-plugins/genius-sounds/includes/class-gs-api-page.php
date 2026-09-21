@@ -177,6 +177,28 @@ class GS_Api_Page {
                 <?php echo self::render_code('Ответ', self::sample_response()); ?>
             </section>
 
+            <section class="gs-api__section" id="openai">
+                <h2 class="gs-section-title">Совместимость с OpenAI</h2>
+                <p class="gs-api__text">
+                    Если у вас уже написан код под OpenAI, менять его не нужно: подставьте наш адрес
+                    и наш ключ. Остальное — как было, включая разбор ошибок библиотекой.
+                </p>
+                <?php echo self::render_code('Python, официальная библиотека openai', self::sample_openai_python($base)); ?>
+                <?php echo self::render_code('То же через curl', self::sample_openai_curl($base)); ?>
+                <p class="gs-api__text">
+                    Работают <code>POST /chat/completions</code> и <code>GET /models</code>. Имя модели
+                    принимаем любое — считает наш адаптер, который сам переключается на запасную модель,
+                    если основная у поставщика недоступна. В ответе, кроме обычных полей, есть
+                    <code>genius</code>: сколько списано, остаток баланса и какой маршрут сработал.
+                </p>
+                <p class="gs-api__text">
+                    Тариф: <strong><?php echo esc_html(GS_OpenAI::price_hint()); ?></strong>.
+                    Ответ на 1000 знаков — это около 350 токенов, то есть примерно 14 копеек.
+                    Потоковая отдача (<code>stream: true</code>) пока не поддерживается: придёт понятный
+                    отказ, а не пустой поток.
+                </p>
+            </section>
+
             <section class="gs-api__section" id="services">
                 <h2 class="gs-section-title">Что можно вызвать</h2>
                 <div class="gs-api__tablewrap">
@@ -602,6 +624,31 @@ CODE;
 CODE;
 
         return self::with_base(array('curl' => $curl, 'python' => $python, 'json' => $json), $base);
+    }
+
+    private static function sample_openai_python($base) {
+        // Библиотека сама добавляет /chat/completions к base_url, поэтому
+        // косая черта на конце даёт двойную — снимаем её.
+        $base = untrailingslashit($base);
+        return "from openai import OpenAI\n\n"
+             . "client = OpenAI(\n"
+             . "    api_key=\"gb_ваш_ключ\",\n"
+             . "    base_url=\"" . $base . "\",\n"
+             . ")\n\n"
+             . "answer = client.chat.completions.create(\n"
+             . "    model=\"genius-chat\",\n"
+             . "    messages=[{\"role\": \"user\", \"content\": \"Что такое липсинк?\"}],\n"
+             . ")\n"
+             . "print(answer.choices[0].message.content)";
+    }
+
+    private static function sample_openai_curl($base) {
+        $base = untrailingslashit($base);
+        return "curl -s " . $base . "/chat/completions \\\n"
+             . "  -H 'Authorization: Bearer gb_ваш_ключ' \\\n"
+             . "  -H 'Content-Type: application/json' \\\n"
+             . "  -d '{\"model\": \"genius-chat\", \"messages\": ["
+             . "{\"role\": \"user\", \"content\": \"Что такое липсинк?\"}]}'";
     }
 
     private static function sample_response() {

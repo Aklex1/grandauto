@@ -371,23 +371,51 @@ class GS_Provider {
      * @return array{ok:bool,content:string,route:string,message:string}
      */
     public static function chat($system, $user, $opts = array()) {
+        return self::chat_messages(array(
+            array('role' => 'system', 'content' => (string) $system),
+            array('role' => 'user',   'content' => (string) $user),
+        ), $opts);
+    }
+
+    /**
+     * Тот же чат, но переписка передаётся целиком.
+     *
+     * Нужно для маршрута в формате OpenAI: там приходит многоходовой
+     * диалог, и сворачивать его в пару «указание — вопрос» нельзя, иначе
+     * модель потеряет контекст беседы.
+     *
+     * @return array{ok:bool,content:string,route:string,message:string,usage:array}
+     */
+    public static function chat_messages($messages, $opts = array()) {
         $last = 'ни один маршрут не ответил';
         foreach (self::pick('chat') as $route) {
             $payload = array(
                 'model'    => $route['model'],
                 'stream'   => false,
-                'messages' => array(
-                    array('role' => 'system', 'content' => (string) $system),
-                    array('role' => 'user',   'content' => (string) $user),
-                ),
+                'messages' => array_values((array) $messages),
             );
+            foreach (array('temperature', 'max_tokens', 'top_p') as $extra) {
+                if (isset($opts[$extra]) && $opts[$extra] !== null) {
+                    $payload[$extra] = $opts[$extra];
+                }
+            }
             $res = self::send(sprintf(self::CHAT_URL, $route['model']), $payload, (int) ($opts['timeout'] ?? 180));
 
             if ($res['ok']) {
                 $content = (string) ($res['body']['choices'][0]['message']['content'] ?? '');
                 if (trim($content) !== '') {
                     self::mark_up($route['id']);
-                    return array('ok' => true, 'content' => $content, 'route' => $route['id'], 'message' => '');
+                    return array(
+                        'ok'      => true,
+                        'content' => $content,
+                        'route'   => $route['id'],
+                        'model'   => $route['model'],
+                        'message' => '',
+                        // Поставщик отдаёт счётчик токенов и потраченные
+                        // кредиты — считать цену по факту точнее, чем на глаз.
+                        'usage'   => (array) ($res['body']['usage'] ?? array()),
+                        'credits' => (float) ($res['body']['credits_consumed'] ?? 0),
+                    );
                 }
                 $res['message'] = 'пустой ответ модели';
             }
@@ -399,7 +427,8 @@ class GS_Provider {
             }
             self::mark_down($route['id'], $res['message']);
         }
-        return array('ok' => false, 'content' => '', 'route' => '', 'message' => self::human($last));
+        return array('ok' => false, 'content' => '', 'route' => '', 'model' => '',
+                     'message' => self::human($last), 'usage' => array(), 'credits' => 0.0);
     }
 
     /**

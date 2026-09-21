@@ -323,6 +323,16 @@ class GS_Api {
         return true;
     }
 
+    /**
+     * Чей ключ пришёл с запросом.
+     *
+     * Нужен соседним классам — маршруту в формате OpenAI, — чтобы списывать
+     * с того же баланса, а не заводить свою проверку ключа.
+     */
+    public static function caller_user_id() {
+        return (int) self::$caller['user_id'];
+    }
+
     /** Очередь чужих заказов доступна только ключу владельца сайта. */
     public static function check_owner_key($request) {
         $ok = self::check_key($request);

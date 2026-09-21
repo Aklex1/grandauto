@@ -84,6 +84,22 @@ class GS_Admin {
             }
         }
 
+        // Тариф чата в формате OpenAI: рублей за миллион токенов.
+        foreach (array(
+            GS_OpenAI::OPT_IN  => GS_OpenAI::IN_DEFAULT,
+            GS_OpenAI::OPT_OUT => GS_OpenAI::OUT_DEFAULT,
+        ) as $option => $default) {
+            register_setting('gs_settings_group', $option, array(
+                'type'              => 'number',
+                'sanitize_callback' => function ($value) use ($option, $default) {
+                    if ($value === null || $value === '') {
+                        return (float) get_option($option, $default);
+                    }
+                    return max(0.0, (float) $value);
+                },
+            ));
+        }
+
         // Пробный баланс при выпуске ключа API: ноль выключает подарок,
         // рядом — месячный предел на все подарки вместе.
         foreach (array(
@@ -1012,6 +1028,27 @@ class GS_Admin {
                                 <a href="<?php echo esc_url(GS_Index::key_url()); ?>" target="_blank" rel="noopener"><?php echo esc_html(GS_Index::key_url()); ?></a>
                                 — он создаётся сам и менять его не нужно. Мета-теги выводятся только на главной: этого хватает
                                 обоим вебмастерам. Без подтверждения прав ни отчёты, ни переобход недоступны.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Тариф чата (формат OpenAI)</th>
+                        <td>
+                            <p>
+                                ввод <input name="<?php echo esc_attr(GS_OpenAI::OPT_IN); ?>" type="number"
+                                       step="5" min="0" class="small-text"
+                                       value="<?php echo esc_attr(GS_OpenAI::rate('in')); ?>"> ₽,
+                                вывод <input name="<?php echo esc_attr(GS_OpenAI::OPT_OUT); ?>" type="number"
+                                       step="10" min="0" class="small-text"
+                                       value="<?php echo esc_attr(GS_OpenAI::rate('out')); ?>"> ₽
+                                за миллион токенов
+                            </p>
+                            <p class="description">
+                                Себестоимость у поставщика: 8 ₽ за млн токенов ввода и 67 ₽ вывода на
+                                основной модели. У запасной вывод стоит 315 ₽ — тариф должен оставаться
+                                прибыльным и на ней, иначе в час сбоя поставщика мы доплачиваем за каждый
+                                запрос. Для сравнения, российские шлюзы берут 40 ₽ за ввод и 2000 ₽
+                                за вывод на моделях сравнимого класса.
                             </p>
                         </td>
                     </tr>
