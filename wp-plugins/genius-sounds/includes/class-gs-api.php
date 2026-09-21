@@ -246,7 +246,8 @@ class GS_Api {
             return self::price($id) <= 0 ? 'бесплатно' : GS_Lab::price_hint($service['lab_id']);
         }
         if ($service['engine'] === 'tts') {
-            return '12 ₽ за 1000 знаков';
+            // Цену считает плагин озвучки; здесь только подпись для документации.
+            return '18 ₽ за 1000 знаков';
         }
         return number_format_i18n(self::price($id), 0) . ' ₽ за запуск';
     }
