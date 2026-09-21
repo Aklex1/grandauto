@@ -11,6 +11,10 @@ ExecStart=/usr/bin/python3 /opt/yoomoney-forwarder/forwarder.py \
     --target https://genius-bot.ru/wp-json/genius/v1/yoomoney
 Restart=always
 RestartSec=5
+
+# Непринятые уведомления складываются сюда; каталог создаёт systemd,
+# иначе ProtectSystem=strict не даст в него писать.
+StateDirectory=yoomoney-forwarder
 StandardOutput=journal
 StandardError=journal
 

@@ -22,8 +22,10 @@
 
 import argparse
 import logging
+import os
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -36,18 +38,63 @@ LOG = logging.getLogger("yoomoney-forwarder")
 # сторонке — медленный получатель не должен ронять быстрого.
 TIMEOUT = 20
 
+# Получатель бывает занят перезапуском ровно в ту секунду, когда пришли
+# деньги. Пробуем ещё несколько раз, разнося попытки во времени.
+RETRIES = (0, 5, 30, 120)
 
-def deliver(url, body, headers):
+# Куда складывать то, что не приняли. Раз ЮMoney мы уже ответили «принято»,
+# повторить она не может — значит, тело обязаны сохранить мы. Иначе платёж
+# восстанавливать не из чего: ровно так и потерялись 250 ₽ 21 сентября.
+SPOOL = os.environ.get("STATE_DIRECTORY", "").split(":")[0] or "/var/lib/yoomoney-forwarder"
+
+
+def spool_path(url):
+    safe = "".join(c if c.isalnum() else "-" for c in url)[-60:]
+    return os.path.join(SPOOL, "failed", "%d-%s.body" % (time.time() * 1000, safe))
+
+
+def keep(url, body, why):
+    """Сохранить непринятое уведомление, чтобы его можно было переотправить."""
+    try:
+        path = spool_path(url)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(body)
+        with open(path + ".meta", "w", encoding="utf-8") as f:
+            f.write("%s\n%s\n" % (url, why))
+        LOG.error("НЕ ПРИНЯТО %s (%s). Тело сохранено: %s", url, why, path)
+    except Exception as e:
+        LOG.error("НЕ ПРИНЯТО %s (%s), и сохранить не удалось: %s", url, why, e)
+
+
+def post(url, body, headers):
     request = urllib.request.Request(url, data=body, method="POST")
     for name, value in headers.items():
         request.add_header(name, value)
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            LOG.info("доставлено %s: код %s", url, response.status)
-    except urllib.error.HTTPError as e:
-        LOG.warning("отказ %s: код %s %s", url, e.code, e.read()[:200])
-    except Exception as e:  # сеть, таймаут, имя не разрешилось
-        LOG.warning("не доставлено %s: %s", url, e)
+    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        return response.status, response.read()[:200]
+
+
+def deliver(url, body, headers):
+    why = "причина неизвестна"
+    for attempt, pause in enumerate(RETRIES, start=1):
+        if pause:
+            time.sleep(pause)
+        try:
+            status, answer = post(url, body, headers)
+            LOG.info("доставлено %s: код %s%s", url, status,
+                     "" if attempt == 1 else " (с %d-й попытки)" % attempt)
+            return
+        except urllib.error.HTTPError as e:
+            why = "код %s %s" % (e.code, e.read()[:200])
+            # Отказ по сути запроса повторять бессмысленно: подпись или
+            # адрес не станут другими от ожидания.
+            if e.code in (400, 401, 403, 404, 405, 409, 422):
+                break
+        except Exception as e:  # сеть, таймаут, имя не разрешилось
+            why = str(e)
+        LOG.warning("не принято %s: %s (попытка %d)", url, why, attempt)
+    keep(url, body, why)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -82,21 +129,62 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         # Проверка живости: ЮMoney при сохранении адреса дёргает его.
+        # Заодно показываем, сколько уведомлений не приняли получатели, —
+        # иначе об этом узнаёшь, только когда придёт жаловаться человек.
+        failed = 0
+        try:
+            failed = len([n for n in os.listdir(os.path.join(SPOOL, "failed"))
+                          if n.endswith(".body")])
+        except OSError:
+            pass
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"yoomoney-forwarder\n")
+        self.wfile.write(("yoomoney-forwarder\nне принято: %d\n" % failed).encode())
 
     def log_message(self, fmt, *args):
         LOG.debug(fmt, *args)
 
 
+def replay():
+    """Переотправить всё, что не приняли. Принятое удаляем, остальное ждёт."""
+    folder = os.path.join(SPOOL, "failed")
+    names = sorted(n for n in os.listdir(folder)) if os.path.isdir(folder) else []
+    bodies = [n for n in names if n.endswith(".body")]
+    if not bodies:
+        LOG.info("переотправлять нечего")
+        return
+    for name in bodies:
+        path = os.path.join(folder, name)
+        url = ""
+        try:
+            with open(path + ".meta", encoding="utf-8") as f:
+                url = f.readline().strip()
+        except OSError:
+            LOG.warning("%s: нет записи об адресе, пропускаю", name)
+            continue
+        with open(path, "rb") as f:
+            body = f.read()
+        try:
+            status, answer = post(url, body, {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": "yoomoney-forwarder",
+            })
+            LOG.info("переотправлено %s -> %s: код %s %s", name, url, status, answer)
+            os.remove(path)
+            os.remove(path + ".meta")
+        except Exception as e:
+            LOG.warning("снова не принято %s -> %s: %s", name, url, e)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Раздатчик уведомлений ЮMoney")
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--port", type=int, default=8090)
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--target", action="append", required=True,
+    parser.add_argument("--target", action="append",
                         help="адрес получателя, можно указать несколько раз")
+    parser.add_argument("--replay", action="store_true",
+                        help="переотправить непринятые уведомления и выйти")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -104,6 +192,13 @@ def main():
         format="%(asctime)s %(levelname)s %(message)s",
         stream=sys.stdout,
     )
+
+    if args.replay:
+        replay()
+        return
+
+    if not args.target:
+        parser.error("нужен хотя бы один --target")
 
     Handler.targets = args.target
     LOG.info("слушаю %s:%d, получателей %d", args.host, args.port, len(args.target))
