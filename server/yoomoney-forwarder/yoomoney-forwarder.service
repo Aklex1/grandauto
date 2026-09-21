@@ -1,0 +1,25 @@
+[Unit]
+Description=Раздатчик уведомлений ЮMoney (бот + сайт)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/yoomoney-forwarder/forwarder.py \
+    --port 8080 \
+    --target http://127.0.0.1:8000/yoomoney-webhook \
+    --target https://genius-bot.ru/wp-json/genius/v1/yoomoney
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Служба принимает запросы из сети и больше ничего не делает — ни писать
+# на диск, ни читать чужие каталоги ей не нужно.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
