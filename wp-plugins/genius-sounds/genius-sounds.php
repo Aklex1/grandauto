@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 1.97.0
+ * Version: 1.98.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.97.0');
+define('GS_VERSION', '1.98.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -31,6 +31,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-voice.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-songs.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-course.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-cta.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-404.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-provider.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-doctext.php';
@@ -94,6 +95,7 @@ class Genius_Sounds_Plugin {
         GS_Landing::boot();
         GS_Songs::boot();
         GS_Course::boot();
+        GS_CTA::boot();
         GS_404::boot();
         GS_Slides_Page::boot();
         GS_Leads::boot();
