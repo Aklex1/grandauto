@@ -19,6 +19,17 @@
 
 Своей логики внутри нет намеренно: ни разбора меток, ни начислений.
 
+## Перед установкой: свободен ли порт
+
+На сервере уже живут другие службы, и 8080 у них популярен. Проверьте:
+
+```bash
+ss -tlnp | grep -E ':(8090|8080) ' || echo 'порт свободен'
+```
+
+Если занят — впишите свободный в `ExecStart` модуля и подставьте его во все
+команды ниже. По умолчанию здесь 8090.
+
 ## Установка на сервере 89.169.38.152
 
 ```bash
@@ -29,17 +40,17 @@ sudo curl -fsSL -o /etc/systemd/system/yoomoney-forwarder.service \
   https://raw.githubusercontent.com/Aklex1/grandauto/claude/sounds-catalog-upload-o2wogb/server/yoomoney-forwarder/yoomoney-forwarder.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now yoomoney-forwarder
-curl -s http://127.0.0.1:8080/
+curl -s http://127.0.0.1:8090/
 ```
 
 Последняя строка должна ответить `yoomoney-forwarder`.
 
-Если порт 8080 закрыт извне:
+Если порт закрыт извне:
 
 ```bash
-sudo ufw allow 8080/tcp    # ufw
+sudo ufw allow 8090/tcp    # ufw
 # или
-sudo firewall-cmd --add-port=8080/tcp --permanent && sudo firewall-cmd --reload
+sudo firewall-cmd --add-port=8090/tcp --permanent && sudo firewall-cmd --reload
 ```
 
 ## Переключение кошелька
@@ -47,7 +58,7 @@ sudo firewall-cmd --add-port=8080/tcp --permanent && sudo firewall-cmd --reload
 В ЮMoney → «Настройки» → «Уведомления о переводах» заменить адрес на:
 
 ```
-http://89.169.38.152:8080/yoomoney-webhook
+http://89.169.38.152:8090/yoomoney-webhook
 ```
 
 Секрет и галочку «Отправлять уведомления» не трогать: раздатчик передаёт

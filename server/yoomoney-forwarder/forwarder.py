@@ -110,7 +110,15 @@ def main():
     for url in args.target:
         LOG.info("  → %s", url)
 
-    ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
+    try:
+        server = ThreadingHTTPServer((args.host, args.port), Handler)
+    except OSError as e:
+        # Занятый порт — самая частая осечка при установке: на сервере уже
+        # живут другие службы. Говорим об этом словами, а не трассировкой.
+        LOG.error("не удалось занять %s:%d — %s", args.host, args.port, e)
+        LOG.error("посмотрите, кто там сидит: ss -tlnp | grep :%d", args.port)
+        sys.exit(1)
+    server.serve_forever()
 
 
 if __name__ == "__main__":
