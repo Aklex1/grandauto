@@ -25,7 +25,7 @@
     var fileName = document.getElementById('gs-slides-filename');
     var fileClear = document.getElementById('gs-slides-fileclear');
 
-    var state = { draft: null, source: null, base: 0, pic: 0, picked: {} };
+    var state = { draft: null, source: null, base: 0, pic: 0, picked: {}, own: {} };
 
     function say(text, kind) {
         note.textContent = text;
@@ -111,21 +111,86 @@
     /* --- структура и выбор иллюстраций --------------------------------- */
 
     function total() {
-        var pics = Object.keys(state.picked).filter(function (k) { return state.picked[k]; }).length;
+        // Свою картинку рисовать не нужно, значит и платить за неё не за что.
+        var pics = Object.keys(state.picked).filter(function (k) {
+            return state.picked[k] && !state.own[k];
+        }).length;
         return { pics: pics, sum: state.base + pics * state.pic };
     }
 
     function refreshPrice() {
         var t = total();
+        var own = Object.keys(state.own).length;
         var box = document.getElementById('gs-slides-total');
         if (!box) { return; }
         box.innerHTML = 'К оплате <strong>' + money(t.sum) + ' ₽</strong>' +
             '<span> — ' + money(state.base) + ' ₽ презентация' +
-            (t.pics ? ' + ' + t.pics + ' × ' + money(state.pic) + ' ₽ картинки' : '') + '</span>';
+            (t.pics ? ' + ' + t.pics + ' × ' + money(state.pic) + ' ₽ картинки' : '') +
+            (own ? ' + ' + own + ' своих бесплатно' : '') + '</span>';
+    }
+
+    /** Загружает свою картинку и привязывает её к слайду. */
+    function attachOwn(index, input) {
+        var chosen = input.files && input.files[0];
+        var card = input.closest('.gs-slides__card');
+        var label = card.querySelector('[data-own-name]');
+        if (!chosen) { return; }
+
+        label.textContent = 'Загружаем…';
+        var data = new FormData();
+        data.append('file', chosen);
+        data.append('kind', 'image');
+        data.append('service', 'slides');
+
+        fetch(cfg.restUrl + 'lab/upload', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'X-WP-Nonce': cfg.nonce },
+            body: data
+        }).then(function (r) {
+            return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+        }).then(function (res) {
+            if (!res.ok || !res.data || !res.data.url) {
+                label.textContent = (res.data && res.data.message) || 'Не удалось загрузить';
+                input.value = '';
+                return;
+            }
+            state.own[index] = res.data.url;
+            label.textContent = chosen.name;
+            card.classList.add('is-own');
+            // Своя картинка заменяет сгенерированную: отметка больше не нужна.
+            var tick = card.querySelector('[data-slide]');
+            if (tick) {
+                tick.checked = true;
+                tick.disabled = true;
+                state.picked[index] = true;
+            }
+            card.classList.add('is-picked');
+            refreshPrice();
+        }).catch(function () {
+            label.textContent = 'Сеть не отвечает';
+            input.value = '';
+        });
+    }
+
+    function dropOwn(index, card) {
+        delete state.own[index];
+        card.classList.remove('is-own');
+        card.querySelector('[data-own-name]').textContent = '';
+        card.querySelector('[data-own-file]').value = '';
+        var tick = card.querySelector('[data-slide]');
+        if (tick) {
+            tick.disabled = false;
+            tick.checked = false;
+            state.picked[index] = false;
+        }
+        card.classList.remove('is-picked');
+        refreshPrice();
     }
 
     function showOutline(deck) {
         state.picked = {};
+        state.own = {};
         var rows = deck.slides.map(function (s, i) {
             var items = (s.bullets || []).map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('');
             return '<article class="gs-slides__card"><span class="gs-slides__num">' + (i + 2) + '</span>' +
@@ -134,7 +199,14 @@
                 '<input type="checkbox" data-slide="' + i + '">' +
                 '<span>Картинка на слайде</span>' +
                 '<em>' + (state.pic > 0 ? '+' + money(state.pic) + ' ₽' : 'бесплатно') + '</em>' +
-                '</label></article>';
+                '</label>' +
+                '<div class="gs-slides__own">' +
+                '<label class="gs-slides__ownpick">' +
+                '<input type="file" accept="image/jpeg,image/png" data-own-file="' + i + '">' +
+                '<span>Загрузить свою</span></label>' +
+                '<span class="gs-slides__ownname" data-own-name></span>' +
+                '<button type="button" class="gs-slides__owndrop" data-own-drop="' + i + '">убрать</button>' +
+                '</div></article>';
         }).join('');
 
         result.hidden = false;
@@ -142,7 +214,8 @@
             '<h2 class="gs-section-title">' + esc(deck.title) + '</h2>' +
             '<p class="gs-slides__sub">' + esc(deck.subtitle || '') + '</p>' +
             '<p class="gs-slides__tip">Отметьте слайды, которым нужна картинка рядом с текстом. ' +
-            'Фон рисуется на каждом слайде и входит в базовую цену.</p>' +
+            'Фон рисуется на каждом слайде и входит в базовую цену. ' +
+            'Если картинка уже есть — загрузите свою, она бесплатна.</p>' +
             '<div class="gs-slides__deck">' + rows + '</div>' +
             '<div class="gs-slides__pay">' +
             '<p class="gs-slides__total" id="gs-slides-total"></p>' +
@@ -154,6 +227,16 @@
                 state.picked[box.getAttribute('data-slide')] = box.checked;
                 box.closest('.gs-slides__card').classList.toggle('is-picked', box.checked);
                 refreshPrice();
+            });
+        });
+        result.querySelectorAll('[data-own-file]').forEach(function (input) {
+            input.addEventListener('change', function () {
+                attachOwn(input.getAttribute('data-own-file'), input);
+            });
+        });
+        result.querySelectorAll('[data-own-drop]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                dropOwn(btn.getAttribute('data-own-drop'), btn.closest('.gs-slides__card'));
             });
         });
         document.getElementById('gs-slides-render').addEventListener('click', render);
@@ -169,10 +252,15 @@
         say('Запускаем отрисовку…');
 
         var picked = Object.keys(state.picked)
-            .filter(function (k) { return state.picked[k]; })
+            .filter(function (k) { return state.picked[k] && !state.own[k]; })
             .map(Number);
 
-        call('slides/render', { draft_id: state.draft, style: style.value, illustrations: picked })
+        call('slides/render', {
+            draft_id: state.draft,
+            style: style.value,
+            illustrations: picked,
+            own: state.own
+        })
             .then(function (res) {
                 if (!res.ok) {
                     say((res.data && res.data.message) || 'Не удалось запустить отрисовку', 'error');

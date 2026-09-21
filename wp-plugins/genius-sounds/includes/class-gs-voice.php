@@ -520,6 +520,14 @@ class GS_Voice {
         if ($low === '') {
             return 'Не получилось — попробуйте ещё раз';
         }
+        // Разбор идёт от частного к общему: у поставщика в тексте отказа
+        // почти всегда есть «try again», и если проверять его раньше, любая
+        // причина превращается в «сбой сервиса» — человек будет повторять
+        // одну и ту же негодную запись вместо того, чтобы перезаписать.
+        if (strpos($low, 'invalid voice input') !== false || strpos($low, 'check your audio') !== false) {
+            return 'Запись не подошла. Прочитайте фразу тем же голосом, что и в образце, '
+                . 'целиком и без музыки на фоне — проверочная запись сверяется с образцом.';
+        }
         if (strpos($low, 'not match') !== false || strpos($low, 'mismatch') !== false
             || strpos($low, 'verify') !== false || strpos($low, 'validat') !== false) {
             return 'Запись не совпала с проверочной фразой. Прочитайте её целиком, ближе к микрофону и без фоновой музыки.';
@@ -535,8 +543,9 @@ class GS_Voice {
         }
         // Сбой на стороне поставщика: человеку важно, что дело не в его записи
         // и что деньги уже вернулись, а не техническая формулировка.
-        if (strpos($low, 'internal error') !== false || strpos($low, 'try again') !== false
-            || strpos($low, 'timeout') !== false) {
+        if (strpos($low, 'internal error') !== false || strpos($low, 'server error') !== false
+            || strpos($low, 'timeout') !== false || strpos($low, 'unavailable') !== false
+            || strpos($low, 'try again later') !== false) {
             return 'Сервис создания голоса сейчас отвечает сбоем — дело не в вашей записи. Деньги вернулись на баланс, попробуйте через несколько минут.';
         }
         if (strpos($low, 'copyright') !== false || strpos($low, 'policy') !== false) {

@@ -95,9 +95,6 @@ class GS_Provider {
                 ),
             ),
 
-            // Ниже — сервисы, у которых запасной модели пока нет. Они здесь
-            // не ради отказоустойчивости, а чтобы маршрут был описан в одном
-            // месте: добавить запасной — одна строка, а не правка сервиса.
             'avatar' => array(
                 array(
                     'id' => 'avatar:kling', 'kind' => 'job', 'model' => 'kling/ai-avatar-pro',
@@ -109,8 +106,27 @@ class GS_Provider {
                         );
                     },
                 ),
+                array(
+                    // Тот же поставщик и тот же набор полей, только версия
+                    // попроще. Когда Pro отвечает сбоем, ролик лучше отдать
+                    // в стандартном качестве, чем не отдать вовсе.
+                    'id' => 'avatar:kling-standard', 'kind' => 'job', 'model' => 'kling/ai-avatar-standard',
+                    'shape' => function ($in) {
+                        return array(
+                            'image_url' => (string) $in['image_url'],
+                            'audio_url' => (string) $in['audio_url'],
+                            'prompt'    => (string) ($in['prompt'] ?? ''),
+                        );
+                    },
+                ),
             ),
 
+            // Запасного маршрута здесь нет, и это проверено, а не забыто:
+            // в каталоге поставщика вообще нет второй модели для очистки
+            // звука, а ai-music-api/separate-vocals работает только с
+            // треками, созданными им самим (просит audioId и отказывает
+            // на загруженный файл). Поэтому очистка держится на одной
+            // модели, а её кратковременные сбои гасятся повтором ниже.
             'denoise' => array(
                 array(
                     'id' => 'denoise:elevenlabs', 'kind' => 'job', 'model' => 'elevenlabs/audio-isolation',
@@ -272,8 +288,33 @@ class GS_Provider {
                 break;
             }
             self::mark_down($route['id'], $last);
+            $transient = true;
         }
+
+        // Все маршруты отпали по вине поставщика — значит, дело не в запросе,
+        // и через пару секунд он может ответить нормально. Для возможностей
+        // с единственной моделью это единственная защита: переключаться
+        // некуда, а сбой чаще всего мгновенный.
+        if (!empty($transient) && empty($opts['retried'])) {
+            sleep(2);
+            $opts['retried'] = true;
+            self::forget_down($capability);
+            return self::job($capability, $input, $opts);
+        }
+
         return array('ok' => false, 'task' => '', 'route' => '', 'message' => self::human($last));
+    }
+
+    /** Снимает пометку «не отвечает» со всех маршрутов возможности. */
+    private static function forget_down($capability) {
+        $health = get_option(self::OPT_HEALTH, array());
+        if (!is_array($health)) {
+            return;
+        }
+        foreach (self::routes()[$capability] ?? array() as $route) {
+            unset($health[$route['id']]);
+        }
+        update_option(self::OPT_HEALTH, $health, false);
     }
 
     /**

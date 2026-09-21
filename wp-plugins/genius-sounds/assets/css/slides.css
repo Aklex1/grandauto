@@ -411,3 +411,76 @@
         justify-content: center;
     }
 }
+
+/* ------------------------------------------------- своя картинка на слайд
+   Когда картинка уже есть — своя схема, скриншот, фотография товара —
+   рисовать заново незачем: это и дольше, и хуже, и стоит денег. */
+
+.gs-slides__own {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--gs-border);
+}
+
+.gs-slides__ownpick {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 12px;
+    border: 1px solid var(--gs-border-strong);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--gs-primary-light);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.gs-slides__ownpick:hover {
+    background: rgba(99, 102, 241, 0.12);
+}
+
+.gs-slides__ownpick input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.gs-slides__ownname {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 12.5px;
+    color: var(--gs-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gs-slides__owndrop {
+    display: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 12.5px;
+    color: var(--gs-muted);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.gs-slides__card.is-own .gs-slides__owndrop {
+    display: inline;
+}
+
+.gs-slides__card.is-own .gs-slides__ownpick {
+    border-color: var(--gs-border);
+    color: var(--gs-muted);
+}
+
+/* Отметка о генерации при своей картинке погашена: выбор уже сделан. */
+.gs-slides__card.is-own .gs-slides__pick {
+    opacity: 0.5;
+}

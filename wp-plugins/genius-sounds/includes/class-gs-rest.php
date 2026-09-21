@@ -1540,6 +1540,25 @@ class GS_Rest {
             }
         }
 
+        // Свои картинки: принимаем только адреса из нашей же папки загрузок.
+        // Чужой адрес означал бы, что сервер пойдёт качать произвольный URL
+        // по просьбе пользователя, — этого не нужно ни нам, ни ему.
+        $own = array();
+        foreach ((array) ($params['own'] ?? array()) as $index => $url) {
+            $index = (int) $index;
+            $url = esc_url_raw(trim((string) $url));
+            if (!isset($deck['slides'][$index]) || $url === '') {
+                continue;
+            }
+            if (GS_Lab::local_path($url) === '') {
+                return new WP_Error('gs_slides_own', 'Картинку нужно загрузить через форму', array('status' => 400));
+            }
+            $own[$index] = $url;
+        }
+
+        // За свою картинку денег не берём: рисовать нечего.
+        $illustrations = array_values(array_diff($illustrations, array_keys($own)));
+
         $cost = GS_Slides_Page::cost() + count($illustrations) * GS_Slides_Page::pic_cost();
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
@@ -1572,6 +1591,7 @@ class GS_Rest {
             'deck'    => $deck,
             'style'   => $style,
             'tasks'   => $tasks,
+            'own'     => $own,
         ), false);
         delete_transient('gs_slides_draft_' . $draft_id);
 
@@ -1580,6 +1600,7 @@ class GS_Rest {
             'status'  => 'pending',
             'cost'    => $cost,
             'pics'    => count($illustrations),
+            'own'     => count($own),
             'balance' => GS_SFX::get_balance($user_id),
         ));
     }
@@ -1611,7 +1632,14 @@ class GS_Rest {
             ));
         }
 
-        $built = GS_Slides::build($meta['deck'], $got['images'], (int) $meta['user_id']);
+        // Свои картинки не проходили через поставщика — подставляем их
+        // на те же места, куда встала бы сгенерированная иллюстрация.
+        $images = $got['images'];
+        foreach ((array) ($meta['own'] ?? array()) as $index => $url) {
+            $images['il:' . (int) $index] = (string) $url;
+        }
+
+        $built = GS_Slides::build($meta['deck'], $images, (int) $meta['user_id']);
         if (empty($built['ok'])) {
             if (!empty($meta['cost'])) {
                 GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);

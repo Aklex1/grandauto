@@ -75,21 +75,52 @@ class GS_Payments {
      * Разбор застрявших платежей
      * ------------------------------------------------------------------ */
 
-    /** Платежи, за которые деньги могли прийти, а баланс не пополнился. */
+    /**
+     * Платежи, за которые деньги могли прийти, а баланс не пополнился.
+     *
+     * Балансов на сайте два — кабинета озвучки и раздела «Нейросети», и
+     * платежи у них в разных таблицах. Разбираться с застрявшим платежом
+     * владельцу приходится в обоих случаях, поэтому и список общий.
+     */
     public static function pending_payments($limit = 40) {
         global $wpdb;
+        $rows = array();
+
         $table = $wpdb->prefix . 'kie_tts_payments';
-        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
-            return array();
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table) {
+            foreach ((array) $wpdb->get_results($wpdb->prepare(
+                "SELECT user_id, label, amount, status, is_telegram, created_at
+                   FROM {$table} WHERE status <> 'completed'
+               ORDER BY created_at DESC LIMIT %d", (int) $limit), ARRAY_A) as $row) {
+                $row['kind'] = 'tts';
+                $rows[] = $row;
+            }
         }
-        return (array) $wpdb->get_results($wpdb->prepare(
-            "SELECT id, user_id, label, amount, status, is_telegram, created_at
-               FROM {$table}
-              WHERE status <> 'completed'
-           ORDER BY created_at DESC
-              LIMIT %d",
-            (int) $limit
-        ), ARRAY_A);
+
+        $nh = $wpdb->prefix . 'kie_neurohub_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $nh)) === $nh) {
+            foreach ((array) $wpdb->get_results($wpdb->prepare(
+                "SELECT id, user_key, amount, status, created_at
+                   FROM {$nh} WHERE status <> 'completed'
+               ORDER BY created_at DESC LIMIT %d", (int) $limit), ARRAY_A) as $row) {
+                $rows[] = array(
+                    'kind'        => 'neurohub',
+                    'user_id'     => 0,
+                    'user_key'    => (string) $row['user_key'],
+                    'label'       => 'kie-neurohub|' . (int) $row['id'] . '|' . $row['user_key']
+                                     . '|' . number_format((float) $row['amount'], 2, '.', ''),
+                    'amount'      => $row['amount'],
+                    'status'      => $row['status'],
+                    'is_telegram' => 0,
+                    'created_at'  => $row['created_at'],
+                );
+            }
+        }
+
+        usort($rows, function ($a, $b) {
+            return strcmp((string) $b['created_at'], (string) $a['created_at']);
+        });
+        return array_slice($rows, 0, (int) $limit);
     }
 
     public static function completed_count() {
@@ -127,7 +158,17 @@ class GS_Payments {
 
         $label = sanitize_text_field(wp_unslash((string) ($_POST['label'] ?? '')));
         $done = false;
-        if ($label !== '' && class_exists('KIE_TTS_Payment')) {
+
+        if (strpos($label, 'kie-neurohub|') === 0) {
+            // У раздела «Нейросети» своя точка приёма — зовём её так же,
+            // как это сделало бы настоящее уведомление.
+            $request = new WP_REST_Request('POST', '/neurohub/v1/yoomoney-callback');
+            $request->set_param('label', $label);
+            $parts = explode('|', $label);
+            $request->set_param('amount', isset($parts[3]) ? $parts[3] : '0');
+            $response = rest_do_request($request);
+            $done = $response instanceof WP_REST_Response && $response->get_status() < 300;
+        } elseif ($label !== '' && class_exists('KIE_TTS_Payment')) {
             $done = (bool) KIE_TTS_Payment::process_payment($label, 0);
         }
         set_transient('gs_payment_notice', $done ? 'ok:' . $label : 'fail:' . $label, 60);

@@ -377,9 +377,13 @@ class GS_Admin {
                         <td><?php echo esc_html(date_i18n('d.m.Y H:i', strtotime((string) $row['created_at']))); ?></td>
                         <td><code><?php echo esc_html((string) $row['label']); ?></code></td>
                         <td><?php
-                            $user = get_userdata((int) $row['user_id']);
-                            echo esc_html($user ? $user->user_login : ('id ' . (int) $row['user_id']));
-                            echo !empty($row['is_telegram']) ? ' · бот' : '';
+                            if (($row['kind'] ?? '') === 'neurohub') {
+                                echo esc_html($row['user_key']) . ' · нейросети';
+                            } else {
+                                $user = get_userdata((int) $row['user_id']);
+                                echo esc_html($user ? $user->user_login : ('id ' . (int) $row['user_id']));
+                                echo !empty($row['is_telegram']) ? ' · бот' : '';
+                            }
                         ?></td>
                         <td><?php echo esc_html(number_format_i18n((float) $row['amount'], 2)); ?> ₽</td>
                         <td>
