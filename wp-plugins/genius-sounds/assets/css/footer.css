@@ -1,0 +1,153 @@
+/**
+ * Подвал сайта — порядок в вёрстке.
+ *
+ * Подвал собран конструктором темы, и его разметку мы не трогаем: правки
+ * в теме теряются при обновлении, а блоки конструктора нельзя изменить,
+ * не сломав их настройки в админке. Поэтому наводим порядок стилями,
+ * точечно по #page-footer.
+ *
+ * Что чинится:
+ *   — колонки разъезжались на 15vw, и посередине зияла дыра;
+ *   — ИНН набран жирным и спорил с меню, хотя это самая мелкая строка;
+ *   — «ИНН» и почта растягивались по краям строки как два чужих блока;
+ *   — справа одиноко висела иконка соцсети, оторванная от ссылок;
+ *   — на телефоне меню превращалось в лестницу с промежутками в 1.5rem,
+ *     и подвал уезжал на полтора экрана.
+ */
+
+/* Колонки: 15vw — это 190 пикселей на ноутбуке и 290 на большом мониторе.
+   Столько пустоты подвалу не нужно. */
+#page-footer .g-cols {
+    --gap: 56px !important;
+}
+
+/*
+ * Главная причина пустоты: тема прибивает секции подвала жёсткую высоту
+ * (height: 15rem !important — это 270 пикселей), хотя содержимого там на
+ * 133. Отсюда и незаконченный вид: строки прижаты к верху, а под ними
+ * полтора сантиметра ничего. Высоту отпускаем по содержимому, а отступы
+ * задаём сами — там же, где тема задаёт свои, иначе они складываются.
+ */
+#page-footer .l-section.height_custom {
+    height: auto !important;
+    min-height: 0 !important;
+    padding-top: 36px !important;
+    padding-bottom: 36px !important;
+}
+
+/* ------------------------------------------------------------------ Меню */
+
+/*
+ * У меню стоит раскладка spread — пункты расталкиваются по ширине колонки,
+ * и промежутки выходят разной величины: «Блог» жмётся к соседу, а первые
+ * два пункта разъезжаются. Ровный шаг читается лучше.
+ */
+#page-footer .w-menu ul.menu {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start !important;
+    gap: 10px 24px;
+    margin: 0 0 16px;
+    padding: 0;
+}
+
+#page-footer .w-menu ul.menu > li {
+    margin: 0 !important;
+}
+
+#page-footer .w-menu ul.menu > li > a {
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+/* --------------------------------------------------- Реквизиты и почта */
+
+/*
+ * align_justify раздвигает ИНН и почту к краям колонки. Для двух коротких
+ * строк это выглядит поломкой вёрстки, а не выравниванием.
+ */
+#page-footer .w-hwrapper.align_justify {
+    justify-content: flex-start !important;
+    flex-wrap: wrap;
+    gap: 4px 28px !important;
+}
+
+/* Реквизиты — самая мелкая строка подвала, а не заголовок. */
+#page-footer .w-hwrapper .w-text-value {
+    font-weight: 400 !important;
+    font-size: 13px;
+    line-height: 1.6;
+    opacity: 0.72;
+}
+
+/* ------------------------------------------------- Документы и соцсети */
+
+/*
+ * Под одну иконку блок отводил 58 пикселей высоты — задаём размер прямо.
+ */
+#page-footer .w-socials {
+    margin: 0 0 10px;
+}
+
+#page-footer .w-socials-list {
+    gap: 10px;
+}
+
+#page-footer .w-socials-item-link {
+    width: 32px;
+    height: 32px;
+    font-size: 17px;
+}
+
+/*
+ * В конце правой колонки стоят два пустых разделителя из конструктора —
+ * 108 пикселей пустоты, из-за которых подвал выглядел незаконченным.
+ * Убирать их из шаблона темы нельзя, поэтому просто складываем в ноль.
+ * Линии они не рисуют — это отбивки.
+ */
+#page-footer .w-separator.size_medium {
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+#page-footer .w-text a.w-text-h {
+    display: inline-block;
+    font-size: 14px;
+    line-height: 1.55;
+    padding: 2px 0;
+}
+
+/* ---------------------------------------------------------- Телефоны */
+
+@media (max-width: 600px) {
+    /*
+     * Тема в своём media-блоке ставит меню display:block и по 1.5rem на
+     * каждый пункт. Перебиваем: пункты помещаются в две строки, и подвал
+     * перестаёт быть отдельным экраном.
+     */
+    #page-footer .w-menu ul.menu {
+        display: flex !important;
+        justify-content: flex-start !important;
+        gap: 8px 18px;
+        margin-bottom: 14px;
+    }
+
+    #page-footer .w-menu ul.menu > li {
+        margin: 0 !important;
+    }
+
+    #page-footer .g-cols {
+        --gap: 26px !important;
+    }
+
+    #page-footer .l-section.height_custom {
+        padding-top: 26px !important;
+        padding-bottom: 26px !important;
+    }
+
+    #page-footer .w-hwrapper.align_justify {
+        gap: 4px 18px !important;
+    }
+}
