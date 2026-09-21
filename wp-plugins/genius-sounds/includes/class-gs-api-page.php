@@ -333,7 +333,8 @@ class GS_Api_Page {
                 <p class="gs-api__text">
                     Ключ выдаётся в аккаунте: он привязан к балансу, с которого списывается оплата.
                 </p>
-                <a class="gs-btn gs-btn--primary" href="<?php echo esc_url(GS_Pages::get_login_url(self::get_url())); ?>">Войти и получить ключ</a>
+                <a class="gs-btn gs-btn--primary" data-gs-auth
+                   href="<?php echo esc_url(GS_Pages::get_login_url(self::get_url())); ?>">Войти и получить ключ</a>
             <?php else: ?>
                 <p class="gs-api__text">
                     Ключ показывается один раз — сохраните его сразу. Потерянный ключ не восстанавливается,

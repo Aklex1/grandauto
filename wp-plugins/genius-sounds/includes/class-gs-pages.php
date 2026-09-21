@@ -368,7 +368,8 @@ class GS_Pages {
                                 Создать звук за <?php echo esc_html(number_format_i18n($cost, 0)); ?> ₽
                             </button>
                         <?php else: ?>
-                            <a class="gs-btn gs-btn--primary gs-btn--lg" href="<?php echo esc_url($login_url); ?>">Войти и создать звук</a>
+                            <a class="gs-btn gs-btn--primary gs-btn--lg" data-gs-auth
+                               href="<?php echo esc_url($login_url); ?>">Войти и создать звук</a>
                         <?php endif; ?>
                     </div>
 

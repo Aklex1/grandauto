@@ -120,8 +120,26 @@
         });
     }
 
+    /**
+     * Кнопку входа рисует не одно место, а каждая посадочная своим кодом.
+     * Ставить пометку вручную в каждой — значит однажды забыть: так и
+     * вышло со страницей генератора звуков, где вход снова уводил со
+     * страницы. Поэтому перехватываем и любую ссылку на страницу входа,
+     * кроме тех, что внутри самого окна: вход через ВК уводит на сторону
+     * по делу.
+     */
+    function isLogin(el) {
+        if (!el) { return false; }
+        if (el.closest('#gs-auth')) { return false; }
+        if (el.closest('[data-gs-auth]')) { return true; }
+        var link = el.closest('a[href]');
+        if (!link) { return false; }
+        var href = link.getAttribute('href') || '';
+        return href.indexOf('/tts-login') !== -1 && href.indexOf('vk_auth') === -1;
+    }
+
     document.addEventListener('click', function (e) {
-        if (e.target.closest('[data-gs-auth]')) {
+        if (isLogin(e.target)) {
             e.preventDefault();
             open();
             return;
