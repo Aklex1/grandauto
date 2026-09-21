@@ -14,8 +14,24 @@ if (!defined('ABSPATH')) {
 
 class GS_Gemini {
 
-    const ENDPOINT = 'https://api.kie.ai/gemini-2.5-flash/v1/chat/completions';
+    const ENDPOINT = 'https://api.kie.ai/%s/v1/chat/completions';
     const MODEL    = 'gemini-2.5-flash';
+
+    /**
+     * Чем расшифровываем, по порядку предпочтения.
+     *
+     * Запись передаётся ссылкой в поле image_url — так умеет вся эта
+     * семья моделей, поэтому запасные отличаются только именем. Пока
+     * модель была одна, её обслуживание у поставщика означало «сервис не
+     * работает», хотя соседние отвечали.
+     */
+    private static function models() {
+        return apply_filters('gs_transcribe_models', array(
+            self::MODEL,
+            'gemini-3-flash',
+            'gemini-2.5-pro',
+        ));
+    }
 
     /** Запись может быть длинной — ответ ждём терпеливо. */
     const TIMEOUT = 600;
@@ -80,54 +96,21 @@ class GS_Gemini {
             ),
         );
 
-        // Поставщик временами уходит на обслуживание — пробуем ещё раз.
+        // Поставщик временами уходит на обслуживание: сначала повторяем
+        // запрос, а если и повторы не помогли — идём к соседней модели.
         $body = null;
-        $code = 0;
         $last = '';
-        foreach (array(0, 6, 18) as $pause) {
-            if ($pause > 0) {
-                sleep($pause);
+        foreach (self::models() as $model) {
+            $payload['model'] = $model;
+            $attempt = self::ask(sprintf(self::ENDPOINT, $model), $payload, $key);
+            if (is_array($attempt['body'])) {
+                $body = $attempt['body'];
+                break;
             }
-            $response = wp_remote_post(self::ENDPOINT, array(
-                'timeout' => self::TIMEOUT,
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $key,
-                    'Content-Type'  => 'application/json',
-                ),
-                'body' => wp_json_encode($payload),
-            ));
-            if (is_wp_error($response)) {
-                $last = $response->get_error_message();
-                $body = null;
-                continue;
+            $last = $attempt['message'];
+            if (!empty($attempt['final'])) {
+                return self::fail($last);
             }
-
-            $code = (int) wp_remote_retrieve_response_code($response);
-            $body = json_decode((string) wp_remote_retrieve_body($response), true);
-            if (!is_array($body)) {
-                $last = 'Поставщик вернул неразборчивый ответ (HTTP ' . $code . ')';
-                $body = null;
-                continue;
-            }
-            // Ошибка приходит и с кодом 200 — смотрим на тело.
-            $inner = isset($body['code']) ? (int) $body['code'] : 200;
-            if ($inner !== 200 || $code >= 400) {
-                $msg = '';
-                if (isset($body['msg'])) {
-                    $msg = (string) $body['msg'];
-                } elseif (isset($body['error']['message'])) {
-                    $msg = (string) $body['error']['message'];
-                } else {
-                    $msg = 'HTTP ' . $code;
-                }
-                $last = self::human_error($msg);
-                if (!self::worth_retry($inner, $code, $msg)) {
-                    return self::fail($last);
-                }
-                $body = null;
-                continue;
-            }
-            break;
         }
         if (!is_array($body)) {
             return self::fail($last !== '' ? $last : 'Поставщик не ответил');
@@ -144,6 +127,59 @@ class GS_Gemini {
         $parsed = self::parse($content);
         $parsed['credits'] = isset($body['credits_consumed']) ? (float) $body['credits_consumed'] : 0.0;
         return $parsed;
+    }
+
+    /**
+     * Запрос к одной модели с повтором.
+     *
+     * final означает «дальше идти незачем»: поставщик отказал по сути
+     * запроса, и соседняя модель ответит так же.
+     *
+     * @return array{body:?array,message:string,final:bool}
+     */
+    private static function ask($endpoint, $payload, $key) {
+        $last = '';
+        foreach (array(0, 6) as $pause) {
+            if ($pause > 0) {
+                sleep($pause);
+            }
+            $response = wp_remote_post($endpoint, array(
+                'timeout' => self::TIMEOUT,
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $key,
+                    'Content-Type'  => 'application/json',
+                ),
+                'body' => wp_json_encode($payload),
+            ));
+            if (is_wp_error($response)) {
+                $last = $response->get_error_message();
+                continue;
+            }
+
+            $code = (int) wp_remote_retrieve_response_code($response);
+            $body = json_decode((string) wp_remote_retrieve_body($response), true);
+            if (!is_array($body)) {
+                $last = 'Поставщик вернул неразборчивый ответ (HTTP ' . $code . ')';
+                continue;
+            }
+            // Ошибка приходит и с кодом 200 — смотрим на тело.
+            $inner = isset($body['code']) ? (int) $body['code'] : 200;
+            if ($inner === 200 && $code < 400) {
+                return array('body' => $body, 'message' => '', 'final' => false);
+            }
+            if (isset($body['msg'])) {
+                $msg = (string) $body['msg'];
+            } elseif (isset($body['error']['message'])) {
+                $msg = (string) $body['error']['message'];
+            } else {
+                $msg = 'HTTP ' . $code;
+            }
+            $last = self::human_error($msg);
+            if (!self::worth_retry($inner, $code, $msg)) {
+                return array('body' => null, 'message' => $last, 'final' => true);
+            }
+        }
+        return array('body' => null, 'message' => $last, 'final' => false);
     }
 
     /** Разбираем ответ: ждём JSON, но готовы и к простому тексту. */
@@ -244,6 +280,15 @@ class GS_Gemini {
         }
         if (strpos($low, 'maintain') !== false) {
             return 'Сервис расшифровки на обслуживании. Повторите попытку через несколько минут.';
+        }
+        // Сбой на стороне поставщика без внятной причины: человеку незачем
+        // читать «Network error, please try again later» по-английски.
+        foreach (array('network', 'try again', 'unavailable', 'internal',
+                       'server error', 'gateway', 'no results') as $needle) {
+            if (strpos($low, $needle) !== false) {
+                return 'Сервис расшифровки сейчас не отвечает на стороне поставщика. '
+                     . 'Попробуйте через несколько минут — за неудачную попытку деньги не берутся.';
+            }
         }
         return (string) $message;
     }
