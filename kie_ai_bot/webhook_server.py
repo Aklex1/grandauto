@@ -1,11 +1,12 @@
 import asyncio
 import threading
 import os
+import hashlib
 import logging
 import time
 from flask import Flask, request
 import pymysql.cursors
-from config import TELEGRAM_BOT_TOKEN
+from config import TELEGRAM_BOT_TOKEN, YOOMONEY_NOTIFICATION_SECRET
 from aiogram import Bot
 from aiogram.client.bot import DefaultBotProperties
 
@@ -112,24 +113,73 @@ def send_telegram_in_thread(chat_id: int, text: str):
     """Запуск асинхронной отправки сообщения в отдельном потоке"""
     threading.Thread(target=lambda: asyncio.run(send_telegram_message(chat_id, text))).start()
 
+
+def verify_signature(data) -> bool:
+    """Проверяет подпись HTTP-уведомления ЮMoney (sha1_hash).
+
+    Формула: sha1(notification_type&operation_id&amount&currency&datetime&
+    sender&codepro&notification_secret&label). Если секрет не задан —
+    проверка пропускается (и об этом пишем предупреждение)."""
+    if not YOOMONEY_NOTIFICATION_SECRET:
+        logger.warning(
+            "YOOMONEY_NOTIFICATION_SECRET не задан — подпись уведомления не проверяется"
+        )
+        return True
+
+    received = (data.get("sha1_hash") or "").lower()
+    parts = [
+        data.get("notification_type", ""),
+        data.get("operation_id", ""),
+        data.get("amount", ""),
+        data.get("currency", ""),
+        data.get("datetime", ""),
+        data.get("sender", ""),
+        data.get("codepro", ""),
+        YOOMONEY_NOTIFICATION_SECRET,
+        data.get("label", ""),
+    ]
+    calculated = hashlib.sha1("&".join(parts).encode("utf-8")).hexdigest()
+    if calculated != received:
+        logger.warning("Подпись уведомления не совпала: ждали %s, пришло %s",
+                       calculated, received)
+        return False
+    return True
+
+
+# --- Проверка доступности эндпойнта (открыть в браузере) ---
+@app.route('/yoomoney-webhook', methods=['GET'])
+@app.route('/health', methods=['GET'])
+def yoomoney_health():
+    return "yoomoney webhook alive", 200
+
+
 # --- Вебхук для YooMoney ---
 @app.route('/yoomoney-webhook', methods=['POST'])
 def yoomoney_webhook():
     logger.info("=== Новый входящий webhook ===")
-    
+
+    # Полное тело запроса в лог — чтобы видеть, что именно шлёт ЮMoney
+    data = request.form
+    logger.info("Payload ЮMoney: %s", dict(data))
+
     # Метрики
     start_time = None
     if webhook_processing_duration:
         start_time = time.time()
-    
-    data = request.form
+
     label = data.get('label')
 
     if not label:
-        logger.warning("Webhook пропущен: нет label")
+        logger.warning("Webhook пропущен: нет label. Тело: %s", dict(data))
         if webhook_requests_total:
             webhook_requests_total.labels(status='invalid').inc()
-        return "Invalid data", 400
+        return "OK", 200
+
+    if not verify_signature(data):
+        if webhook_requests_total:
+            webhook_requests_total.labels(status='bad_signature').inc()
+        # Отдаём 200, чтобы ЮMoney не заваливал повторами, но баланс не трогаем
+        return "OK", 200
 
     from database import get_connection_context
     try:

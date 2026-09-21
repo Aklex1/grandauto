@@ -19,6 +19,10 @@ KIE_API_KEY = os.getenv("KIE_API_KEY", "611e797a34cfaa7f5ff771d982fbe800")
 YOOMONEY_RECEIVER = os.getenv("YOOMONEY_RECEIVER", "4100119260324712")  # Для Telegram бота
 YOOMONEY_RECEIVER_APP = os.getenv("YOOMONEY_RECEIVER_APP", "4100119283768788")  # Для мобильного приложения
 YOOMONEY_SUCCESS_URL = os.getenv("YOOMONEY_SUCCESS_URL", "https://genius-bot.ru/success")
+# Секрет HTTP-уведомлений ЮMoney (для проверки sha1_hash). Задаётся в личном
+# кабинете ЮMoney на странице настройки уведомлений. Пусто — подпись не
+# проверяется (крайне не рекомендуется на проде)
+YOOMONEY_NOTIFICATION_SECRET = os.getenv("YOOMONEY_NOTIFICATION_SECRET", "")
 
 # Database
 DB_HOST = os.getenv("DB_HOST", "akklexb6.beget.tech")
