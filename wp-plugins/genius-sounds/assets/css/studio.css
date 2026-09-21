@@ -1165,3 +1165,145 @@
     color: var(--gs-muted);
     text-align: center;
 }
+
+/* ------------------------------------------------ звук из своего файла
+   Второй вход сервиса: файл разбирается в браузере. Блок должен читаться
+   как равноправный путь, а не как приписка к форме, поэтому у него свой
+   контур и разделитель «или». */
+
+.gs-ytl {
+    margin: 22px 0 4px;
+}
+
+.gs-ytl__or {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 16px;
+    color: var(--gs-muted);
+    font-size: 13px;
+    text-transform: lowercase;
+}
+
+.gs-ytl__or::before,
+.gs-ytl__or::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--gs-border);
+}
+
+.gs-ytl__drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 26px 20px;
+    border: 1px dashed var(--gs-border-strong);
+    border-radius: var(--gs-radius);
+    background: rgba(99, 102, 241, 0.05);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.gs-ytl__drop:hover,
+.gs-ytl__drop.is-over {
+    border-color: var(--gs-primary-light);
+    background: rgba(99, 102, 241, 0.12);
+}
+
+.gs-ytl.is-busy .gs-ytl__drop {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.gs-ytl__icon {
+    font-size: 26px;
+    line-height: 1;
+}
+
+.gs-ytl__title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--gs-text);
+}
+
+.gs-ytl__lead {
+    font-size: 14px;
+    color: var(--gs-muted);
+}
+
+.gs-ytl__formats {
+    font-size: 12.5px;
+    color: var(--gs-muted);
+    opacity: 0.8;
+}
+
+/* Поле прячем: его роль играет вся область, по которой можно кликнуть. */
+.gs-ytl__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.gs-ytl__privacy {
+    margin: 10px 0 0;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--gs-muted);
+}
+
+.gs-ytl__note {
+    margin: 12px 0 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--gs-muted);
+    min-height: 1.5em;
+}
+
+.gs-ytl__note.is-ok {
+    color: #34d399;
+}
+
+.gs-ytl__note.is-bad {
+    color: #fca5a5;
+}
+
+.gs-ytl__out {
+    margin-top: 14px;
+    padding: 16px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+}
+
+.gs-ytl__player {
+    display: block;
+    width: 100%;
+    margin-bottom: 12px;
+}
+
+.gs-ytl__save {
+    display: inline-flex;
+    max-width: 100%;
+}
+
+.gs-ytl__meta {
+    margin: 10px 0 0;
+    font-size: 12.5px;
+    color: var(--gs-muted);
+}
+
+@media (max-width: 640px) {
+    .gs-ytl__drop {
+        padding: 20px 14px;
+    }
+
+    .gs-ytl__save {
+        width: 100%;
+        justify-content: center;
+    }
+}

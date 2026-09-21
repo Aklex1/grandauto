@@ -180,6 +180,10 @@ class GS_Lab_Page {
                         </div>
                     <?php endforeach; ?>
 
+                    <?php if ($service['id'] === 'ytaudio'): ?>
+                        <?php echo self::render_local_extract(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                    <?php endif; ?>
+
                     <div class="gs-form__foot">
                         <div class="gs-balance">
                             <?php if ($logged): ?>
@@ -298,6 +302,42 @@ class GS_Lab_Page {
      * Блок ссылок на остальные микросервисы с призывом.
      * Он же раздаёт вес между посадочными: каждая ссылается на все соседние.
      */
+    /**
+     * Файл с компьютера — разбирается прямо в браузере.
+     *
+     * Дорожку из чужого ролика можно снять только на сервере, а свой файл
+     * незачем гонять по сети: браузер разберёт его сам, быстрее и не отдавая
+     * запись никому. Поэтому у сервиса два входа, и второй работает даже
+     * тогда, когда служба извлечения по ссылке недоступна.
+     */
+    private static function render_local_extract() {
+        ob_start();
+        ?>
+        <div class="gs-ytl" id="gs-ytl" data-lame="<?php echo esc_url(GS_PLUGIN_URL . 'assets/js/vendor/lame.min.js'); ?>">
+            <div class="gs-ytl__or"><span>или</span></div>
+
+            <label class="gs-ytl__drop" for="gs-ytl-file">
+                <span class="gs-ytl__icon" aria-hidden="true">🎞️</span>
+                <span class="gs-ytl__title">Файл с компьютера</span>
+                <span class="gs-ytl__lead">Перетащите видео сюда или нажмите, чтобы выбрать</span>
+                <span class="gs-ytl__formats">MP4, MOV, WebM, M4V, а также готовые аудиофайлы</span>
+                <input id="gs-ytl-file" class="gs-ytl__input" type="file"
+                       accept="video/*,audio/*,.mp4,.mov,.m4v,.webm,.mkv,.m4a,.mp3,.wav,.ogg">
+            </label>
+
+            <p class="gs-ytl__privacy">
+                Файл обрабатывается прямо в браузере и никуда не загружается — ни на наш сервер, ни куда-либо ещё.
+                Поэтому дорожка готова за секунды и ничего не стоит. Предел здесь не наш, а браузера:
+                запись целиком держится в памяти, так что до 25 минут — надёжно, дальше стоит резать на части.
+            </p>
+
+            <p class="gs-ytl__note" id="gs-ytl-note" role="status" aria-live="polite"></p>
+            <div class="gs-ytl__out" id="gs-ytl-out" hidden></div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
     public static function render_cross_links($current_id = '', $title = 'Другие инструменты со звуком', $skip_landing = '') {
         $cards = array();
 

@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '1.83.0');
+define('GS_VERSION', '1.85.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -295,6 +295,10 @@ class Genius_Sounds_Plugin {
             wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
             wp_enqueue_script('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/js/catalog.js', array(), GS_VERSION, true);
             wp_enqueue_script('genius-sounds-lab', GS_PLUGIN_URL . 'assets/js/lab.js', array(), GS_VERSION, true);
+            if ($lab['id'] === 'ytaudio') {
+                // Свой файл разбирается в браузере — серверу он не нужен.
+                wp_enqueue_script('genius-sounds-ytlocal', GS_PLUGIN_URL . 'assets/js/ytaudio-local.js', array(), GS_VERSION, true);
+            }
             wp_localize_script('genius-sounds-lab', 'GS_LAB', array(
                 'restUrl'     => esc_url_raw(rest_url(GS_Rest::NS . '/')),
                 'nonce'       => wp_create_nonce('wp_rest'),
