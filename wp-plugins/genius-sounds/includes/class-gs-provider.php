@@ -57,7 +57,7 @@ class GS_Provider {
                         return array(
                             'prompt'        => (string) $in['prompt'],
                             'output_format' => 'png',
-                            'image_size'    => (string) ($in['ratio'] ?? '16:9'),
+                            'image_size'    => GS_Provider::ratio($in),
                         );
                     },
                 ),
@@ -66,8 +66,8 @@ class GS_Provider {
                     'shape' => function ($in) {
                         return array(
                             'prompt'       => (string) $in['prompt'],
-                            'image_size'   => (string) ($in['ratio'] ?? '16:9'),
-                            'aspect_ratio' => (string) ($in['ratio'] ?? '16:9'),
+                            'image_size'   => GS_Provider::ratio($in, true),
+                            'aspect_ratio' => GS_Provider::ratio($in, true),
                         );
                     },
                 ),
@@ -76,7 +76,7 @@ class GS_Provider {
                     'shape' => function ($in) {
                         return array(
                             'prompt'       => (string) $in['prompt'],
-                            'aspect_ratio' => (string) ($in['ratio'] ?? '16:9'),
+                            'aspect_ratio' => GS_Provider::ratio($in, true),
                         );
                     },
                 ),
@@ -86,11 +86,131 @@ class GS_Provider {
                         // У этой модели размер — из своего списка названий.
                         $map = array('16:9' => 'landscape_16_9', '9:16' => 'portrait_16_9',
                                      '3:4' => 'portrait_4_3', '4:3' => 'landscape_4_3', '1:1' => 'square_hd');
-                        $ratio = (string) ($in['ratio'] ?? '16:9');
+                        $ratio = GS_Provider::ratio($in, true);
                         return array(
                             'prompt'     => (string) $in['prompt'],
                             'image_size' => $map[$ratio] ?? 'landscape_16_9',
                         );
+                    },
+                ),
+            ),
+
+            // Правка фото по описанию. Набор полей у замен тот же, что у
+            // основной модели, — разошлось только название поля со ссылкой:
+            // у одних image_urls списком, у других image_url строкой.
+            'image_edit' => array(
+                array(
+                    'id' => 'image_edit:nano-banana', 'kind' => 'job', 'model' => 'google/nano-banana-edit',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'        => (string) $in['prompt'],
+                            'image_urls'    => array((string) $in['image_url']),
+                            'output_format' => 'png',
+                            'image_size'    => 'auto',
+                        );
+                    },
+                ),
+                array(
+                    'id' => 'image_edit:seedream-v4', 'kind' => 'job', 'model' => 'bytedance/seedream-v4-edit',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'     => (string) $in['prompt'],
+                            'image_urls' => array((string) $in['image_url']),
+                        );
+                    },
+                ),
+                array(
+                    'id' => 'image_edit:qwen', 'kind' => 'job', 'model' => 'qwen/image-edit',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'    => (string) $in['prompt'],
+                            'image_url' => (string) $in['image_url'],
+                        );
+                    },
+                ),
+            ),
+
+            // Оживление фото. У замен длительность и разрешение называются
+            // по-своему, а обязательны только описание и ссылка на кадр —
+            // их и передаём, остальное модель берёт по умолчанию.
+            'photo_video' => array(
+                array(
+                    'id' => 'photo_video:seedance-pro-fast', 'kind' => 'job',
+                    'model' => 'bytedance/v1-pro-fast-image-to-video',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'     => GS_Provider::motion_prompt($in),
+                            'image_url'  => (string) $in['image_url'],
+                            'resolution' => '720p',
+                            'duration'   => '5',
+                        );
+                    },
+                ),
+                array(
+                    'id' => 'photo_video:wan-2-5', 'kind' => 'job', 'model' => 'wan/2-5-image-to-video',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'    => GS_Provider::motion_prompt($in),
+                            'image_url' => (string) $in['image_url'],
+                        );
+                    },
+                ),
+                array(
+                    'id' => 'photo_video:hailuo-02', 'kind' => 'job',
+                    'model' => 'hailuo/02-image-to-video-standard',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'    => GS_Provider::motion_prompt($in),
+                            'image_url' => (string) $in['image_url'],
+                        );
+                    },
+                ),
+            ),
+
+            // Видео по описанию. Основная модель у поставщика регулярно
+            // отвечает «server exception» — без замен сервис в такие часы
+            // просто не работал.
+            'video' => array(
+                array(
+                    'id' => 'video:seedance-pro', 'kind' => 'job', 'model' => 'bytedance/v1-pro-text-to-video',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'     => (string) $in['prompt'],
+                            'resolution' => (string) ($in['resolution'] ?? '720p'),
+                            'duration'   => (string) ($in['duration'] ?? '5'),
+                        );
+                    },
+                ),
+                array(
+                    'id' => 'video:wan-2-5', 'kind' => 'job', 'model' => 'wan/2-5-text-to-video',
+                    'shape' => function ($in) {
+                        return array('prompt' => (string) $in['prompt']);
+                    },
+                ),
+                array(
+                    'id' => 'video:hailuo-02', 'kind' => 'job', 'model' => 'hailuo/02-text-to-video-standard',
+                    'shape' => function ($in) {
+                        return array('prompt' => (string) $in['prompt']);
+                    },
+                ),
+            ),
+
+            // Апскейл. У запасной модели поле со ссылкой зовётся просто
+            // image, и кратности увеличения она не принимает.
+            'upscale' => array(
+                array(
+                    'id' => 'upscale:topaz', 'kind' => 'job', 'model' => 'topaz/image-upscale',
+                    'shape' => function ($in) {
+                        return array(
+                            'image_url'      => (string) $in['image_url'],
+                            'upscale_factor' => '2',
+                        );
+                    },
+                ),
+                array(
+                    'id' => 'upscale:recraft', 'kind' => 'job', 'model' => 'recraft/crisp-upscale',
+                    'shape' => function ($in) {
+                        return array('image' => (string) $in['image_url']);
                     },
                 ),
             ),
@@ -141,6 +261,29 @@ class GS_Provider {
          * Позволяем дополнять таблицу, не трогая этот файл.
          */
         return apply_filters('gs_provider_routes', $routes);
+    }
+
+    /**
+     * Соотношение сторон для картинки.
+     *
+     * Часть моделей понимает «auto» и выбирает размер сама, часть на нём
+     * отказывает. $strict просит настоящее соотношение.
+     */
+    public static function ratio($in, $strict = false) {
+        $ratio = trim((string) ($in['ratio'] ?? ''));
+        if ($ratio === '') {
+            $ratio = '16:9';
+        }
+        if ($strict && !preg_match('~^\d+:\d+$~', $ratio)) {
+            $ratio = '16:9';
+        }
+        return $ratio;
+    }
+
+    /** Описание движения для оживления фото — без него модели отказывают. */
+    public static function motion_prompt($in) {
+        $prompt = trim((string) ($in['prompt'] ?? ''));
+        return $prompt !== '' ? $prompt : 'оживить фотографию, естественное движение';
     }
 
     public static function capabilities() {

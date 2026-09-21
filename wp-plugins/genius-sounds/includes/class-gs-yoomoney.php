@@ -295,7 +295,16 @@ class GS_Yoomoney {
         if (is_wp_error($response)) {
             return array('ok' => false, 'message' => $response->get_error_message());
         }
-        return array('ok' => true, 'message' => 'код ' . wp_remote_retrieve_response_code($response));
+        // Приёмник бота отвечает «OK» и на мусор, поэтому по одному коду
+        // не понять, зачислил он или выбросил. Записываем ответ целиком —
+        // иначе разбираться приходится вслепую, как в прошлый раз.
+        $code = (int) wp_remote_retrieve_response_code($response);
+        $body = trim(wp_strip_all_tags((string) wp_remote_retrieve_body($response)));
+        $message = 'код ' . $code;
+        if ($body !== '') {
+            $message .= ': ' . mb_substr($body, 0, 120);
+        }
+        return array('ok' => $code < 300, 'message' => $message);
     }
 
     /* ---------------------------------------------------------------------

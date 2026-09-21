@@ -60,8 +60,7 @@ class GS_Api {
                 'engine' => 'jobs',
                 'title'  => 'Оживить фото',
                 'about'  => 'Из фотографии получается короткое видео: движение головы, мимика, лёгкая камера.',
-                'model'  => 'bytedance/v1-pro-fast-image-to-video',
-                'info'   => 'https://api.kie.ai/api/v1/seedance/record-info',
+                'capability' => 'photo_video',
                 'input'  => array('image_url' => 'required', 'prompt' => 'optional'),
                 'result' => 'video',
                 'price'  => 25,
@@ -72,8 +71,7 @@ class GS_Api {
                 'engine' => 'jobs',
                 'title'  => 'Изменить фото по описанию',
                 'about'  => 'Замена фона и одежды, удаление объектов, реставрация — словами, без редактора.',
-                'model'  => 'google/nano-banana-edit',
-                'info'   => 'https://api.kie.ai/api/v1/nano-banana/record-info',
+                'capability' => 'image_edit',
                 'input'  => array('image_url' => 'required', 'prompt' => 'required'),
                 'result' => 'image',
                 'price'  => 35,
@@ -84,8 +82,7 @@ class GS_Api {
                 'engine' => 'jobs',
                 'title'  => 'Картинка по описанию',
                 'about'  => 'Изображение из текста — для карточек товара, обложек и иллюстраций.',
-                'model'  => 'google/nano-banana',
-                'info'   => 'https://api.kie.ai/api/v1/nano-banana/record-info',
+                'capability' => 'image',
                 'input'  => array('prompt' => 'required'),
                 'result' => 'image',
                 'price'  => 9,
@@ -96,8 +93,7 @@ class GS_Api {
                 'engine' => 'jobs',
                 'title'  => 'Увеличить качество фото',
                 'about'  => 'Апскейл вдвое с восстановлением деталей: для старых снимков и мелких картинок.',
-                'model'  => 'topaz/image-upscale',
-                'info'   => 'https://api.kie.ai/api/v1/topaz/record-info',
+                'capability' => 'upscale',
                 'input'  => array('image_url' => 'required'),
                 'result' => 'image',
                 'price'  => 50,
@@ -108,8 +104,7 @@ class GS_Api {
                 'engine' => 'jobs',
                 'title'  => 'Видео по описанию',
                 'about'  => 'Ролик из одного текста: сцена, движение и камера — без исходной картинки.',
-                'model'  => 'bytedance/v1-pro-text-to-video',
-                'info'   => 'https://api.kie.ai/api/v1/seedance/record-info',
+                'capability' => 'video',
                 'input'  => array('prompt' => 'required', 'duration' => 'optional', 'resolution' => 'optional'),
                 'result' => 'video',
                 'price'  => 119,
@@ -682,19 +677,21 @@ class GS_Api {
         if ($service['engine'] === 'tts') {
             return self::dispatch_tts($input);
         }
-        $payload = call_user_func($service['build'], $service, $input);
-        return self::jobs_create($payload);
+        // Модель выбирает адаптер: у каждой из этих операций есть замены,
+        // и при сбое одной задача уходит соседней вместо отказа человеку.
+        $prepared = call_user_func($service['build'], $service, $input);
+        $res = GS_Provider::job($service['capability'], $prepared);
+        return array(
+            'ok'      => (bool) $res['ok'],
+            'task_id' => (string) $res['task'],
+            'message' => (string) $res['message'],
+        );
     }
 
     public static function build_photo_video($service, $input) {
         return array(
-            'model' => $service['model'],
-            'input' => array(
-                'prompt'     => isset($input['prompt']) && $input['prompt'] !== '' ? $input['prompt'] : 'оживить фотографию, естественное движение',
-                'image_url'  => $input['image_url'],
-                'resolution' => '720p',
-                'duration'   => '5',
-            ),
+            'prompt'    => isset($input['prompt']) ? (string) $input['prompt'] : '',
+            'image_url' => $input['image_url'],
         );
     }
 
@@ -708,46 +705,26 @@ class GS_Api {
             $resolution = '720p';
         }
         return array(
-            'model' => $service['model'],
-            'input' => array(
-                'prompt'     => $input['prompt'],
-                'resolution' => $resolution,
-                'duration'   => $duration,
-            ),
+            'prompt'     => $input['prompt'],
+            'resolution' => $resolution,
+            'duration'   => $duration,
         );
     }
 
     public static function build_image_edit($service, $input) {
         return array(
-            'model' => $service['model'],
-            'input' => array(
-                'prompt'        => $input['prompt'],
-                'image_urls'    => array($input['image_url']),
-                'output_format' => 'png',
-                'image_size'    => 'auto',
-            ),
+            'prompt'    => $input['prompt'],
+            'image_url' => $input['image_url'],
         );
     }
 
     public static function build_image($service, $input) {
-        return array(
-            'model' => $service['model'],
-            'input' => array(
-                'prompt'        => $input['prompt'],
-                'output_format' => 'png',
-                'image_size'    => 'auto',
-            ),
-        );
+        // Соотношение не спрашиваем: модель подбирает его под описание сама.
+        return array('prompt' => $input['prompt'], 'ratio' => 'auto');
     }
 
     public static function build_upscale($service, $input) {
-        return array(
-            'model' => $service['model'],
-            'input' => array(
-                'image_url'      => $input['image_url'],
-                'upscale_factor' => '2',
-            ),
-        );
+        return array('image_url' => $input['image_url']);
     }
 
     private static function dispatch_sfx($input) {
@@ -780,29 +757,6 @@ class GS_Api {
         return GS_Tts_Fallback::create_task($text, $voice);
     }
 
-    private static function jobs_create($payload) {
-        $key = trim((string) get_option('kie_tts_api_key', ''));
-        if ($key === '') {
-            return array('ok' => false, 'task_id' => '', 'message' => 'Сервис генерации не настроен');
-        }
-        $response = wp_remote_post(self::API_CREATE, array(
-            'timeout' => 45,
-            'headers' => array('Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json'),
-            'body'    => wp_json_encode($payload),
-        ));
-        if (is_wp_error($response)) {
-            return array('ok' => false, 'task_id' => '', 'message' => $response->get_error_message());
-        }
-        $body = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($body) || (int) ($body['code'] ?? 0) !== 200 || empty($body['data']['taskId'])) {
-            return array(
-                'ok'      => false,
-                'task_id' => '',
-                'message' => is_array($body) ? (string) ($body['msg'] ?? 'Сервис вернул ошибку') : 'Некорректный ответ сервиса',
-            );
-        }
-        return array('ok' => true, 'task_id' => (string) $body['data']['taskId'], 'message' => '');
-    }
 
     /* ---------------------------------------------------------------------
      * Пробник моделей поставщика
@@ -904,7 +858,7 @@ class GS_Api {
             $state = self::state_from_generations($task_id);
         } else {
             $service = self::get_service($task['service']);
-            $state = self::jobs_state($task_id, $service && !empty($service['info']) ? $service['info'] : '');
+            $state = self::jobs_state($task_id);
         }
 
         if (empty($state['ok'])) {
@@ -952,39 +906,29 @@ class GS_Api {
     }
 
     /**
-     * Задачи моделей. У части семейств свой адрес проверки статуса,
-     * общий jobs/recordInfo про них просто ничего не знает — поэтому
-     * сначала спрашиваем «родной» адрес, а общий оставляем запасным.
+     * Задачи моделей. Адрес проверки один на всех: задачи ставит адаптер
+     * через общую очередь, и какая модель их выполнила — здесь уже неважно.
      */
-    private static function jobs_state($task_id, $info_url = '') {
+    private static function jobs_state($task_id) {
         $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'message' => '');
         $key = trim((string) get_option('kie_tts_api_key', ''));
         if ($key === '') {
             return $out;
         }
 
-        $data = array();
-        $urls = $info_url !== '' ? array($info_url, self::API_INFO) : array(self::API_INFO);
-        foreach ($urls as $url) {
-            $response = wp_remote_get(add_query_arg('taskId', $task_id, $url), array(
-                'timeout' => 45,
-                'headers' => array('Authorization' => 'Bearer ' . $key),
-            ));
-            if (is_wp_error($response)) {
-                continue;
-            }
-            $body = json_decode((string) wp_remote_retrieve_body($response), true);
-            if (!is_array($body) || (int) ($body['code'] ?? 0) !== 200) {
-                continue;
-            }
-            if (isset($body['data']) && is_array($body['data']) && !empty($body['data'])) {
-                $data = $body['data'];
-                break;
-            }
-        }
-        if (empty($data)) {
+        $response = wp_remote_get(add_query_arg('taskId', $task_id, self::API_INFO), array(
+            'timeout' => 45,
+            'headers' => array('Authorization' => 'Bearer ' . $key),
+        ));
+        if (is_wp_error($response)) {
             return $out;
         }
+        $body = json_decode((string) wp_remote_retrieve_body($response), true);
+        if (!is_array($body) || (int) ($body['code'] ?? 0) !== 200
+            || empty($body['data']) || !is_array($body['data'])) {
+            return $out;
+        }
+        $data = $body['data'];
         $out['ok'] = true;
         $state = (string) ($data['state'] ?? $data['successFlag'] ?? '');
 
