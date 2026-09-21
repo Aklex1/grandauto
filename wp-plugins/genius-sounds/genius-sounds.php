@@ -62,6 +62,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-api.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-api-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rest.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-admin.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-cache.php';
 
 class Genius_Sounds_Plugin {
 
@@ -115,6 +116,7 @@ class Genius_Sounds_Plugin {
         GS_Tts_Fallback::boot();
         GS_Transcribe::boot();
         GS_Api::boot();
+        GS_Cache::boot();
     }
 
     public function activate() {
