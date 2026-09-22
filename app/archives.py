@@ -316,14 +316,21 @@ def _shift_past_cover(cues: list[subtitles.Cue],
     return out
 
 
-def build_item(item_id: int) -> Path:
-    """Собираем ролик одной серии. Возвращает путь к готовому файлу."""
+def build_item(item_id: int) -> Optional[Path]:
+    """Собираем ролик одной серии.
+
+    Возвращает путь к готовому файлу или None, если серии уже нет.
+    """
     from . import pipeline
 
     with session_scope() as session:
         item = session.get(ArchiveItem, item_id)
         if item is None:
-            raise ArchiveError(f"серия {item_id} не найдена")
+            # Архив убрали, пока его серии стояли в очереди. Это не поломка:
+            # человек так и останавливал сборку, и сыпать красными задачами на
+            # каждую оставшуюся серию незачем.
+            log.info("Серия %s уже удалена — задание пропускаю", item_id)
+            return None
         channel = session.get(Channel, item.channel_id)
         if channel is None:
             raise ArchiveError("канал серии не найден")
