@@ -7,12 +7,11 @@
 ## Установка
 
 1. Скопируйте папку `assistants` в `wp-content/plugins/kie-tts-wp/modules/`.
-2. В конец главного файла плагина `kie-tts-wp.php` добавьте одну строку:
-
-   ```php
-   require_once __DIR__ . '/modules/assistants/bootstrap.php';
-   ```
-
+2. Положите `mu-plugins/genius-assistants-loader.php` в `wp-content/mu-plugins/`.
+   Он подключит модуль сам — чужой `kie-tts-wp.php` править не нужно, и обновление
+   плагина не сотрёт интеграцию. (Если mu-плагины не используются, можно вместо
+   этого дописать в конец `kie-tts-wp.php` строку
+   `require_once __DIR__ . '/modules/assistants/bootstrap.php';`.)
 3. Откройте любую страницу админки — таблицы создадутся сами, четыре ассистента
    первой волны появятся в разделе **ИИ-ассистенты**.
 
