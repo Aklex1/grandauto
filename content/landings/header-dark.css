@@ -1,0 +1,47 @@
+/* Тёмная шапка Genius под новый дизайн главной.
+   Куда вставить: Внешний вид → Настроить → Дополнительные стили
+   (или Impreza → Theme Options → Custom CSS). Файл header.php ПРАВИТЬ НЕ НУЖНО —
+   пока активен us-core, шапку строит Header Builder, а меню берётся из
+   WP-меню (id=10), которое уже пересобрано. Этот CSS только перекрашивает
+   существующую шапку в тёмную гамму. */
+
+.l-header,
+.l-header.bg_transparent {
+  background: rgba(17, 26, 46, .92) !important;
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+  backdrop-filter: saturate(140%) blur(12px);
+  border-bottom: 1px solid #3a4568 !important;
+}
+
+/* логотип-текст (если он текстовый) */
+.l-header .w-text-value { color: #fff !important; }
+
+/* пункты верхнего уровня */
+.l-header .w-nav-anchor { color: #a3b0cd !important; font-weight: 500; }
+.l-header .w-nav-anchor:hover,
+.l-header .menu-item-has-children:hover > .w-nav-anchor,
+.l-header .current-menu-item > .w-nav-anchor,
+.l-header .current-menu-ancestor > .w-nav-anchor { color: #fff !important; }
+
+/* выпадающие списки */
+.l-header .w-nav-list.level_2 {
+  background: #1f2942 !important;
+  border: 1px solid #3a4568 !important;
+  border-radius: 14px !important;
+  box-shadow: 0 24px 50px -24px #000 !important;
+  padding: 8px !important;
+}
+.l-header .w-nav-list.level_2 .w-nav-item { margin: 0 !important; }
+.l-header .w-nav-list.level_2 .w-nav-anchor {
+  color: #cdd6e8 !important;
+  border-radius: 10px !important;
+  padding: 9px 12px !important;
+}
+.l-header .w-nav-list.level_2 .w-nav-anchor:hover {
+  color: #fff !important;
+  background: rgba(129, 140, 248, .16) !important;
+}
+
+/* мобильная кнопка-бургер и панель */
+.l-header .w-nav-control,
+.l-header .w-nav-icon { color: #fff !important; }
