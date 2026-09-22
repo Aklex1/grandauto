@@ -113,6 +113,10 @@ def _run_job(job_id: int) -> None:
                 session.add(Event(level="warn" if problems else "info",
                                   stage="библиотека", message=message[:4000]))
                 session.commit()
+        elif kind == "archive_item":
+            from . import archives
+
+            archives.build_item(int(payload.get("item_id") or 0))
         elif kind == "build_loops":
             from . import loops, pipeline
             from .models import Channel, Event

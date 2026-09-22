@@ -46,6 +46,15 @@ def _job_retry_failed() -> None:
         log.info("Догенерация: роликов отправлено дожиматься %s", sent)
 
 
+def _job_run_archives() -> None:
+    """Выпуск серий из архива по расписанию — по столько в день, сколько просили."""
+    from . import archives
+
+    sent = archives.run_due()
+    if sent:
+        log.info("Архив: серий отправлено в сборку %s", sent)
+
+
 def start() -> BackgroundScheduler:
     global _scheduler
     if _scheduler is not None:
@@ -61,6 +70,9 @@ def start() -> BackgroundScheduler:
     # каждого своя и растёт, так что частый обход API не долбит.
     sched.add_job(_job_retry_failed, CronTrigger(minute="*/10"), id="retry_failed",
                   replace_existing=True, misfire_grace_time=600)
+    # Архивные серии смотрим раз в час: расписание у них посуточное, чаще незачем.
+    sched.add_job(_job_run_archives, CronTrigger(minute=5), id="run_archives",
+                  replace_existing=True, misfire_grace_time=1800)
     sched.start()
     _scheduler = sched
     log.info("Планировщик запущен")

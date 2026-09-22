@@ -61,6 +61,7 @@
   <a href="?tab=stock" class="{% if tab == 'stock' %}active{% endif %}">Стоки <span class="badge">beta</span></a>
   <a href="?tab=schedule" class="{% if tab == 'schedule' %}active{% endif %}">Расписание</a>
   <a href="?tab=references" class="{% if tab == 'references' %}active{% endif %}">Референсы ({{ references_list|length }})</a>
+  <a href="?tab=archive" class="{% if tab == 'archive' %}active{% endif %}">Архив ({{ archive_items|length }})</a>
   <a href="?tab=settings" class="{% if tab == 'settings' %}active{% endif %}">Настройки канала</a>
 </div>
 
@@ -435,6 +436,109 @@
     <button class="btn btn-primary">Сохранить расписание</button>
   </form>
 </div>
+
+{% elif tab == 'archive' %}
+<p class="small muted">
+  Архив с готовыми материалами: внутри папки по номерам серий, в каждой обложка,
+  тексты и описания для площадок. Генерировать нечего — ни сценарий, ни видеоряд, ни
+  обложку, — поэтому API тратится только на озвучку и фоновую музыку. Обложка секунду
+  показывается как есть, дальше плавно притемняется и работает фоном, по которому едут
+  титры; кадр при этом живой, а не замерший.
+</p>
+
+{% set added = request.query_params.get('added') %}
+{% if added %}<p class="badge">Архив принят: серий {{ added }}.</p>{% endif %}
+{% set queued = request.query_params.get('queued') %}
+{% if queued %}<p class="badge">Отправлено в сборку: {{ queued }}.</p>{% endif %}
+{% set aerr = request.query_params.get('error') %}
+{% if aerr == 'no-file' %}<p class="badge" style="background:#5b2222">Файл не выбран.</p>{% endif %}
+{% if aerr == 'bad-zip' %}<p class="badge" style="background:#5b2222">Архив не принят:
+  {{ request.query_params.get('detail', '') }}</p>{% endif %}
+
+<div class="card tight">
+  <h2 style="margin-top:0">Загрузить архив</h2>
+  <form method="post" action="/channels/{{ channel.id }}/archives"
+        enctype="multipart/form-data" class="grid cols-3">
+    <label>Файл .zip<input type="file" name="file" accept=".zip,application/zip"></label>
+    <label>Обложка
+      <select name="cover_mode">
+        {% for key, what in archive_cover_modes.items() %}
+        <option value="{{ key }}">{{ what }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Роликов в день — 0, чтобы собрать все разом
+      <input name="per_day" type="number" min="0" max="50" value="0"></label>
+    <div style="grid-column:1/-1"><button class="btn btn-primary">Загрузить</button></div>
+  </form>
+  <p class="small muted">
+    Ждём структуру <code>ENGLISH_100/001/…/100/</code>, в каждой папке
+    <code>metadata.json</code> и <code>cover_copy.json</code>; обложка
+    <code>cover.png</code> необязательна. Внешняя папка может быть любой или
+    отсутствовать — серии ищутся по содержимому, а не по глубине вложенности.
+    Озвучка идёт на языке материалов: английский текст — английский голос,
+    переводить нечего.
+  </p>
+</div>
+
+{% for batch in archive_batches %}
+{% set rows = archive_items | selectattr('batch_id', 'equalto', batch.id) | list %}
+<div class="card tight" style="margin-top:16px">
+  <h2 style="margin-top:0">{{ batch.name }}</h2>
+  <p class="small muted">
+    Серий {{ rows | length }} ·
+    готово {{ rows | selectattr('status', 'equalto', 'done') | list | length }} ·
+    в работе {{ rows | rejectattr('status', 'in', ['done', 'planned', 'failed']) | list | length }} ·
+    сорвалось {{ rows | selectattr('status', 'equalto', 'failed') | list | length }} ·
+    обложка: {{ archive_cover_modes.get(batch.cover_mode, batch.cover_mode) }}
+  </p>
+  <div class="row" style="gap:8px;flex-wrap:wrap">
+    <form method="post" action="/archives/{{ batch.id }}/run" class="inline-form">
+      <input type="hidden" name="scope" value="due">
+      <button class="btn btn-sm">Собрать, чему пришёл срок</button></form>
+    <form method="post" action="/archives/{{ batch.id }}/run" class="inline-form"
+          onsubmit="return confirm('Отправить в сборку все серии разом? Это озвучка на каждую.')">
+      <input type="hidden" name="scope" value="all">
+      <button class="btn btn-sm btn-primary">Собрать все разом</button></form>
+    <form method="post" action="/archives/{{ batch.id }}/schedule" class="inline-form">
+      <input name="per_day" type="number" min="0" max="50" value="{{ batch.per_day }}"
+             style="width:70px" title="0 — без расписания">
+      <button class="btn btn-sm">Пересчитать расписание</button></form>
+    <form method="post" action="/archives/{{ batch.id }}/drop" class="inline-form"
+          onsubmit="return confirm('Убрать архив «{{ batch.name }}» вместе со списком серий? Готовые ролики останутся на диске.')">
+      <button class="btn btn-sm btn-ghost">Убрать</button></form>
+  </div>
+</div>
+
+<table class="table">
+  <thead><tr><th>№</th><th>Заголовок</th><th>Язык</th><th>Выпуск</th>
+    <th>Состояние</th><th>Готовый ролик</th></tr></thead>
+  <tbody>
+  {% for item in rows %}
+    <tr>
+      <td>{{ item.folder }}</td>
+      <td><b>{{ item.title[:70] }}</b>
+        <div class="small muted">{{ item.hook[:90] }}</div></td>
+      <td class="small">{{ item.language }}</td>
+      <td class="small muted">{{ item.scheduled_date.strftime('%d.%m') if item.scheduled_date else 'сразу' }}</td>
+      <td class="small">{{ item.status }}
+        {% if item.error %}<div class="muted">{{ item.error[:90] }}</div>{% endif %}</td>
+      <td class="small">
+        {% if item.video_path %}
+          <a href="/media/{{ item.video_path }}" target="_blank">смотреть</a> ·
+          <a href="/media/{{ item.video_path }}?download=1">скачать</a>
+          <div class="muted">{{ '%.0f'|format(item.duration_sec or 0) }} с</div>
+        {% else %}
+          <form method="post" action="/archive-items/{{ item.id }}/run" class="inline-form">
+            <button class="btn btn-sm">Собрать сейчас</button></form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Архивов пока нет.</p>
+{% endfor %}
 
 {% elif tab == 'references' %}
 <div class="card tight">

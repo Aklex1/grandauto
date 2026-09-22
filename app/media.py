@@ -656,7 +656,8 @@ MOTION_PERIOD_MAX = 40.0
 def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int, int],
                       duration: float, workdir: Path, motion: str = "bust",
                       band_top: float = 0.0, band_height: float = 0.0,
-                      band_color: str = "0x0b0d10") -> Path:
+                      band_color: str = "0x0b0d10", dim: float = 0.0,
+                      dim_start: float = 0.0, dim_span: float = 0.5) -> Path:
     """«Живой кадр»: оживляем одну картинку без генерации видео.
 
     Базовый слой едет и наезжает, поверх него режимом «экран» ложится сильно
@@ -697,6 +698,13 @@ def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int,
         base += f",rotate=a='{turn:.5f}*t/{span:.3f}':c=black@0:ow=iw:oh=ih"
     base += (f",crop=w='trunc(iw/{zoom_expr}/2)*2':h='trunc(ih/{zoom_expr}/2)*2'"
              f":x='(iw-ow)*{px}':y='(ih-oh)*{py}',scale={w}:{h}")
+    if dim > 0.001:
+        # Готовая обложка сделана как обложка: крупный текст во весь верх. Её
+        # показывают как есть ровно тот миг, на который она рассчитана, а потом
+        # гасят — иначе титры поверх неё не прочитать. Гасим не скачком, а за
+        # dim_span секунд: резкая смена яркости бьёт по глазам.
+        ramp = (f"min(max((t-{dim_start:.3f})/{max(dim_span, 0.05):.3f},0),1)")
+        base += f",eq=eval=frame:brightness='-{dim:.3f}*{ramp}'"
     if cfg["shimmer"] > 0:
         # Мерцание яркости — для огня и бликов на воде. eval=frame, иначе
         # выражение посчитается один раз и движения не будет.

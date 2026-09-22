@@ -295,6 +295,65 @@ class Short(Base):
     video: Mapped[Video] = relationship(back_populates="shorts")
 
 
+class ArchiveBatch(Base):
+    """Загруженный архив с готовыми материалами: папка на серию.
+
+    Архив приносит всё, кроме звука: обложку, тексты и описания для площадок.
+    Заводу остаётся озвучить, разложить титры и собрать ролик, поэтому API
+    тратится только на голос и фоновую музыку.
+    """
+
+    __tablename__ = "archive_batches"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    path: Mapped[str] = mapped_column(String(500), default="")
+    # uploaded — берём обложку из архива, generate — рисуем свою,
+    # auto — из архива, а если её там нет, то рисуем.
+    cover_mode: Mapped[str] = mapped_column(String(16), default="uploaded")
+    # Сколько роликов в день выпускать. Ноль — все разом, без расписания.
+    per_day: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+    items: Mapped[list["ArchiveItem"]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan")
+
+
+class ArchiveItem(Base):
+    """Одна папка архива — один будущий ролик."""
+
+    __tablename__ = "archive_items"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("archive_batches.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(Integer, index=True)
+    folder: Mapped[str] = mapped_column(String(80), default="")
+    idx: Mapped[int] = mapped_column(Integer, default=0, index=True)
+
+    title: Mapped[str] = mapped_column(String(300), default="")
+    # Язык материалов. Озвучка идёт на нём же: переводить нечего, текст готов.
+    language: Mapped[str] = mapped_column(String(10), default="en")
+    narration: Mapped[str] = mapped_column(Text, default="")
+    hook: Mapped[str] = mapped_column(Text, default="")
+    caption: Mapped[str] = mapped_column(Text, default="")
+    hashtags: Mapped[str] = mapped_column(Text, default="")
+    cover_path: Mapped[str] = mapped_column(String(500), default="")
+
+    # planned — ждёт своей даты, queued/running — в работе, done, failed
+    status: Mapped[str] = mapped_column(String(24), default="planned", index=True)
+    scheduled_date: Mapped[Optional[dt.date]] = mapped_column(Date, nullable=True, index=True)
+    video_path: Mapped[str] = mapped_column(String(500), default="")
+    duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    credits: Mapped[float] = mapped_column(Float, default=0.0)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+
+    batch: Mapped[ArchiveBatch] = relationship(back_populates="items")
+
+
 class Event(Base):
     """Лог событий по ролику — видно в веб-интерфейсе."""
 

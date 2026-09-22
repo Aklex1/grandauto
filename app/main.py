@@ -21,10 +21,11 @@ from sqlalchemy.orm import Session
 from . import (bootstrap, config, estimate, fonts, footage, pipeline, planner, prompts,
                queue, scheduler, stock, storage, subtitles, sync, webutil)
 from . import settings_store as st
-from . import comfy, references
+from . import archives, comfy, references
 from .db import get_session, session_scope
 from .kie import KieClient
-from .models import (Channel, ComfyWorkflow, Event, Footage, Job, ModelPath, PlanItem, PriceItem,
+from .models import (ArchiveBatch, ArchiveItem, Channel, ComfyWorkflow, Event, Footage, Job,
+                     ModelPath, PlanItem, PriceItem,
                      ScheduleRule, Scene, Short, Video, Voice, utcnow)
 from .security import make_session, read_session, verify_password
 
@@ -543,14 +544,17 @@ def channels_page(request: Request, session: Session = Depends(get_session),
         }
     return templates.TemplateResponse("channels.html", base_context(
         request, session, channel_rows=rows, channel_stats=stats,
-        content_sources=prompts.CONTENT_SOURCES))
+        content_sources=prompts.CONTENT_SOURCES,
+        archive_cover_modes=archives.COVER_MODES))
 
 
 @app.post("/channels/create")
-def channel_create(session: Session = Depends(get_session), _user: str = Depends(require_user),
-                   name: str = Form(...), topic: str = Form(""), description: str = Form(""),
-                   audience: str = Form(""), content_source: str = Form("books"),
-                   language: str = Form("ru")):
+async def channel_create(request: Request, session: Session = Depends(get_session),
+                         _user: str = Depends(require_user),
+                         name: str = Form(...), topic: str = Form(""),
+                         description: str = Form(""),
+                         audience: str = Form(""), content_source: str = Form("books"),
+                         language: str = Form("ru")):
     name = name.strip()[:200]
     if not name:
         return RedirectResponse("/channels?error=no-name", status_code=303)
@@ -579,7 +583,124 @@ def channel_create(session: Session = Depends(get_session), _user: str = Depends
     session.add(Event(level="info", stage="каналы",
                       message=f"Создан канал «{channel.name}» ({channel.slug})"))
     session.commit()
+
+    # Архив при создании канала — необязательный: с ним канал сразу получает
+    # список будущих роликов, без него всё как раньше.
+    form = await request.form()
+    upload = form.get("archive")
+    if isinstance(upload, UploadFile) and upload.filename:
+        try:
+            archives.import_zip(session, channel, await upload.read(),
+                                name=upload.filename,
+                                cover_mode=str(form.get("cover_mode") or "uploaded"),
+                                per_day=int(float(form.get("per_day") or 0)))
+        except archives.ArchiveError as exc:
+            session.add(Event(level="warn", stage="archive",
+                              message=f"Архив к каналу «{channel.name}» не принят: {exc}"))
+            session.commit()
+            return RedirectResponse(
+                f"/channels/{channel.id}?tab=archive&error=bad-zip&detail={str(exc)[:120]}",
+                status_code=303)
+        return RedirectResponse(f"/channels/{channel.id}?tab=archive", status_code=303)
     return RedirectResponse(f"/channels/{channel.id}?tab=settings", status_code=303)
+
+
+@app.post("/channels/{channel_id}/archives")
+async def channel_archive_add(channel_id: int, request: Request,
+                              session: Session = Depends(get_session),
+                              _user: str = Depends(require_user)):
+    """Загрузка архива с готовыми материалами: папка на серию."""
+    from . import archives
+
+    channel = _channel_or_404(session, channel_id)
+    form = await request.form()
+    upload = form.get("file")
+    if not isinstance(upload, UploadFile) or not upload.filename:
+        return RedirectResponse(f"/channels/{channel_id}?tab=archive&error=no-file",
+                                status_code=303)
+    try:
+        batch = archives.import_zip(
+            session, channel, await upload.read(), name=upload.filename,
+            cover_mode=str(form.get("cover_mode") or "uploaded"),
+            per_day=int(float(form.get("per_day") or 0)))
+    except archives.ArchiveError as exc:
+        return RedirectResponse(
+            f"/channels/{channel_id}?tab=archive&error=bad-zip&detail={str(exc)[:120]}",
+            status_code=303)
+    # Без расписания архив собирается разом — но не молча: кнопку всё равно
+    # нажимает человек, иначе сотня серий уедет в работу по одной загрузке файла.
+    return RedirectResponse(f"/channels/{channel_id}?tab=archive&added={batch.total}",
+                            status_code=303)
+
+
+@app.post("/archives/{batch_id}/run")
+def archive_run(batch_id: int, session: Session = Depends(get_session),
+                _user: str = Depends(require_user), scope: str = Form("due")):
+    """Запуск вручную: всё разом или только то, чему пришёл срок."""
+    from . import archives
+    from .models import ArchiveBatch, ArchiveItem
+
+    batch = session.get(ArchiveBatch, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Архив не найден")
+    rows = session.execute(
+        select(ArchiveItem).where(ArchiveItem.batch_id == batch_id,
+                                  ArchiveItem.status.in_(("planned", "failed")))
+        .order_by(ArchiveItem.idx)).scalars().all()
+    if scope == "due":
+        today = dt.date.today()
+        rows = [r for r in rows if r.scheduled_date is None or r.scheduled_date <= today]
+    sent = archives.queue_items(session, rows)
+    return RedirectResponse(f"/channels/{batch.channel_id}?tab=archive&queued={sent}",
+                            status_code=303)
+
+
+@app.post("/archive-items/{item_id}/run")
+def archive_item_run(item_id: int, session: Session = Depends(get_session),
+                     _user: str = Depends(require_user)):
+    from . import archives
+    from .models import ArchiveItem
+
+    item = session.get(ArchiveItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Серия не найдена")
+    archives.queue_items(session, [item])
+    return RedirectResponse(f"/channels/{item.channel_id}?tab=archive", status_code=303)
+
+
+@app.post("/archives/{batch_id}/schedule")
+def archive_reschedule(batch_id: int, session: Session = Depends(get_session),
+                       _user: str = Depends(require_user), per_day: int = Form(0)):
+    """Пересчёт расписания: столько-то серий в день, начиная с сегодня."""
+    from . import archives
+    from .models import ArchiveBatch, ArchiveItem
+
+    batch = session.get(ArchiveBatch, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Архив не найден")
+    batch.per_day = max(0, min(50, per_day))
+    rows = session.execute(
+        select(ArchiveItem).where(ArchiveItem.batch_id == batch_id,
+                                  ArchiveItem.status == "planned")
+        .order_by(ArchiveItem.idx)).scalars().all()
+    for item, when in zip(rows, archives.schedule_dates(len(rows), batch.per_day)):
+        item.scheduled_date = when
+    session.commit()
+    return RedirectResponse(f"/channels/{batch.channel_id}?tab=archive", status_code=303)
+
+
+@app.post("/archives/{batch_id}/drop")
+def archive_drop(batch_id: int, session: Session = Depends(get_session),
+                 _user: str = Depends(require_user)):
+    from .models import ArchiveBatch
+
+    batch = session.get(ArchiveBatch, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Архив не найден")
+    channel_id = batch.channel_id
+    session.delete(batch)
+    session.commit()
+    return RedirectResponse(f"/channels/{channel_id}?tab=archive", status_code=303)
 
 
 @app.post("/channels/{channel_id}/references")
@@ -673,6 +794,13 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
         comfy_workflows=session.execute(
             select(ComfyWorkflow).where(ComfyWorkflow.is_active.is_(True))
             .order_by(ComfyWorkflow.id.desc())).scalars().all(),
+        archive_batches=session.execute(
+            select(ArchiveBatch).where(ArchiveBatch.channel_id == channel.id)
+            .order_by(ArchiveBatch.id.desc())).scalars().all(),
+        archive_items=session.execute(
+            select(ArchiveItem).where(ArchiveItem.channel_id == channel.id)
+            .order_by(ArchiveItem.batch_id.desc(), ArchiveItem.idx)).scalars().all(),
+        archive_cover_modes=archives.COVER_MODES,
         reference_kinds=references.KINDS,
         reference_limit=references.MAX_INPUT_IMAGES,
         references_list=references.for_channel(session, channel.id),

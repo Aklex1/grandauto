@@ -35,7 +35,7 @@
 {% endif %}
 
 <h2>Новый канал</h2>
-<form method="post" action="/channels/create">
+<form method="post" action="/channels/create" enctype="multipart/form-data">
   <fieldset><legend>Основное</legend>
     <p class="small muted">Модели, голос и оформление возьмутся из настроек по умолчанию —
       их можно поменять внутри канала на вкладке «Настройки канала».</p>
@@ -57,6 +57,22 @@
       </select></label>
     <label>Язык
       <input name="language" value="ru" maxlength="10" style="max-width:120px"></label>
+  </fieldset>
+  <fieldset><legend>Готовые материалы — можно пропустить</legend>
+    <p class="small muted">Если серии уже подготовлены, приложите архив: внутри папки по
+      номерам (<code>001</code>, <code>002</code>…), в каждой обложка, тексты и описания
+      для площадок. Завод заведёт по ролику на папку и потратит API только на озвучку и
+      фоновую музыку — генерировать будет нечего.</p>
+    <label>Архив .zip
+      <input type="file" name="archive" accept=".zip,application/zip"></label>
+    <label>Обложка
+      <select name="cover_mode">
+        {% for key, what in archive_cover_modes.items() %}
+        <option value="{{ key }}">{{ what }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Роликов в день — 0, чтобы собрать все разом
+      <input name="per_day" type="number" min="0" max="50" value="0" style="max-width:120px"></label>
     <button class="btn btn-primary" type="submit">Создать канал</button>
   </fieldset>
 </form>
