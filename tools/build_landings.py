@@ -154,8 +154,6 @@ def render(item, img):
       <p class="gaL__lead">{E(item['lead'])}</p>
       <div class="gaL__cta">
         <a class="gaL__btn gaL__btn--main" href="#probovat">Попробовать здесь</a>
-        <a class="gaL__btn gaL__btn--ghost" href="https://t.me/{bot}?start={slug}"
-           target="_blank" rel="noopener">Открыть в Telegram</a>
       </div>
       <div class="gaL__stats">{stats}</div>
     </div>
@@ -217,8 +215,6 @@ def render(item, img):
       <p>Первые сообщения бесплатны. Понравится — останетесь, нет — ничего не потеряете.</p>
       <div class="gaL__cta">
         <a class="gaL__btn gaL__btn--main" href="#probovat">Попробовать здесь</a>
-        <a class="gaL__btn gaL__btn--ghost" href="https://t.me/{bot}?start={slug}"
-           target="_blank" rel="noopener">Открыть в Telegram</a>
       </div>
     </div>
   </section>
