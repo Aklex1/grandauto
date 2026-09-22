@@ -42,20 +42,21 @@
 .gp__trust{margin-top:24px;color:var(--dim);font-size:13.5px}
 
 /* плитки ассистентов */
-.gp__tiles{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(258px,1fr))}
-.a-tile{position:relative;display:flex;flex-direction:column;gap:10px;padding:24px 22px;
-  border-radius:20px;background:linear-gradient(165deg,var(--panel) 0%,var(--bg2) 100%);
+.gp__tiles{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+.a-tile{position:relative;display:flex;flex-direction:row;align-items:flex-start;gap:16px;
+  padding:22px 20px;border-radius:20px;background:linear-gradient(150deg,var(--panel) 0%,var(--bg2) 100%);
   border:1px solid var(--line2);overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s}
-.a-tile::before{content:"";position:absolute;inset:-45% 50% 55% -45%;border-radius:50%;
-  background:radial-gradient(circle,var(--tint) 0%,transparent 70%);opacity:.22;transition:opacity .2s}
+.a-tile::before{content:"";position:absolute;inset:-45% 55% 55% -45%;border-radius:50%;
+  background:radial-gradient(circle,var(--tint) 0%,transparent 70%);opacity:.2;transition:opacity .2s}
 .a-tile:hover{transform:translateY(-4px);border-color:var(--tint);
   box-shadow:0 22px 46px -26px var(--tint)}
-.a-tile:hover::before{opacity:.36}
-.a-tile__ic{width:52px;height:52px;display:grid;place-items:center;border-radius:14px;font-size:27px;
+.a-tile:hover::before{opacity:.34}
+.a-tile__body{display:flex;flex-direction:column;gap:7px;min-width:0}
+.a-tile__ic{flex-shrink:0;width:52px;height:52px;display:grid;place-items:center;border-radius:14px;font-size:27px;
   background:color-mix(in srgb,var(--tint) 18%,transparent);border:1px solid color-mix(in srgb,var(--tint) 40%,transparent)}
 .a-tile__cat{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--tint);font-weight:600}
-.a-tile__nm{font-size:19px}
-.a-tile__tag{color:var(--muted);font-size:14.5px;flex:1}
+.a-tile__nm{font-size:18.5px;font-weight:700;color:#fff}
+.a-tile__tag{color:var(--muted);font-size:14px;flex:1}
 .a-tile__go{color:var(--tint);font-weight:600;font-size:14px}
 
 /* микросервисы */
@@ -126,31 +127,39 @@
       <div class="gp__tiles">
         <a class="a-tile" href="/ai-pomoshnik/dlya-uchitelya/" style="--tint:#818cf8">
           <span class="a-tile__ic">📘</span>
-          <span class="a-tile__cat">Образование</span>
-          <span class="a-tile__nm">Ассистент учителя</span>
-          <span class="a-tile__tag">Конспект урока, техкарта, проверочная и характеристика — за минуты.</span>
-          <span class="a-tile__go">Открыть →</span>
+          <span class="a-tile__body">
+            <span class="a-tile__cat">Образование</span>
+            <span class="a-tile__nm">Ассистент учителя</span>
+            <span class="a-tile__tag">Конспект урока, техкарта, проверочная и характеристика — за минуты.</span>
+            <span class="a-tile__go">Открыть →</span>
+          </span>
         </a>
         <a class="a-tile" href="/ai-pomoshnik/dlya-ucheby/" style="--tint:#38bdf8">
           <span class="a-tile__ic">🎒</span>
-          <span class="a-tile__cat">Образование</span>
-          <span class="a-tile__nm">Ассистент ученика</span>
-          <span class="a-tile__tag">Разбор задачи по шагам, подготовка к контрольной, конспект лекции.</span>
-          <span class="a-tile__go">Открыть →</span>
+          <span class="a-tile__body">
+            <span class="a-tile__cat">Образование</span>
+            <span class="a-tile__nm">Ассистент ученика</span>
+            <span class="a-tile__tag">Разбор задачи по шагам, подготовка к контрольной, конспект лекции.</span>
+            <span class="a-tile__go">Открыть →</span>
+          </span>
         </a>
         <a class="a-tile" href="/ai-pomoshnik/yurist/" style="--tint:#fbbf24">
           <span class="a-tile__ic">⚖️</span>
-          <span class="a-tile__cat">Документы</span>
-          <span class="a-tile__nm">Юрист-ассистент</span>
-          <span class="a-tile__tag">Проверка договора, поиск рискованных пунктов, претензия и заявление.</span>
-          <span class="a-tile__go">Открыть →</span>
+          <span class="a-tile__body">
+            <span class="a-tile__cat">Документы</span>
+            <span class="a-tile__nm">Юрист-ассистент</span>
+            <span class="a-tile__tag">Проверка договора, поиск рискованных пунктов, претензия и заявление.</span>
+            <span class="a-tile__go">Открыть →</span>
+          </span>
         </a>
         <a class="a-tile" href="/ai-pomoshnik/dlya-biznesa/" style="--tint:#22d3ee">
           <span class="a-tile__ic">💼</span>
-          <span class="a-tile__cat">Бизнес</span>
-          <span class="a-tile__nm">Консультант для бизнеса</span>
-          <span class="a-tile__tag">Отвечает клиентам в Telegram и на сайте по вашей базе знаний.</span>
-          <span class="a-tile__go">Открыть →</span>
+          <span class="a-tile__body">
+            <span class="a-tile__cat">Бизнес</span>
+            <span class="a-tile__nm">Консультант для бизнеса</span>
+            <span class="a-tile__tag">Отвечает клиентам в Telegram и на сайте по вашей базе знаний.</span>
+            <span class="a-tile__go">Открыть →</span>
+          </span>
         </a></div>
     </div>
   </section>

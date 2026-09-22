@@ -91,20 +91,21 @@ def css() -> str:
 .gp__trust{{margin-top:24px;color:var(--dim);font-size:13.5px}}
 
 /* плитки ассистентов */
-.gp__tiles{{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(258px,1fr))}}
-.a-tile{{position:relative;display:flex;flex-direction:column;gap:10px;padding:24px 22px;
-  border-radius:20px;background:linear-gradient(165deg,var(--panel) 0%,var(--bg2) 100%);
+.gp__tiles{{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}}
+.a-tile{{position:relative;display:flex;flex-direction:row;align-items:flex-start;gap:16px;
+  padding:22px 20px;border-radius:20px;background:linear-gradient(150deg,var(--panel) 0%,var(--bg2) 100%);
   border:1px solid var(--line2);overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s}}
-.a-tile::before{{content:"";position:absolute;inset:-45% 50% 55% -45%;border-radius:50%;
-  background:radial-gradient(circle,var(--tint) 0%,transparent 70%);opacity:.22;transition:opacity .2s}}
+.a-tile::before{{content:"";position:absolute;inset:-45% 55% 55% -45%;border-radius:50%;
+  background:radial-gradient(circle,var(--tint) 0%,transparent 70%);opacity:.2;transition:opacity .2s}}
 .a-tile:hover{{transform:translateY(-4px);border-color:var(--tint);
   box-shadow:0 22px 46px -26px var(--tint)}}
-.a-tile:hover::before{{opacity:.36}}
-.a-tile__ic{{width:52px;height:52px;display:grid;place-items:center;border-radius:14px;font-size:27px;
+.a-tile:hover::before{{opacity:.34}}
+.a-tile__body{{display:flex;flex-direction:column;gap:7px;min-width:0}}
+.a-tile__ic{{flex-shrink:0;width:52px;height:52px;display:grid;place-items:center;border-radius:14px;font-size:27px;
   background:color-mix(in srgb,var(--tint) 18%,transparent);border:1px solid color-mix(in srgb,var(--tint) 40%,transparent)}}
 .a-tile__cat{{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--tint);font-weight:600}}
-.a-tile__nm{{font-size:19px}}
-.a-tile__tag{{color:var(--muted);font-size:14.5px;flex:1}}
+.a-tile__nm{{font-size:18.5px;font-weight:700;color:#fff}}
+.a-tile__tag{{color:var(--muted);font-size:14px;flex:1}}
 .a-tile__go{{color:var(--tint);font-weight:600;font-size:14px}}
 
 /* микросервисы */
@@ -158,10 +159,12 @@ def assistants_section():
         tiles += f"""
         <a class="a-tile" href="{url}" style="--tint:{tint}">
           <span class="a-tile__ic">{emoji}</span>
-          <span class="a-tile__cat">{E(cat)}</span>
-          <span class="a-tile__nm">{E(name)}</span>
-          <span class="a-tile__tag">{E(tag)}</span>
-          <span class="a-tile__go">Открыть →</span>
+          <span class="a-tile__body">
+            <span class="a-tile__cat">{E(cat)}</span>
+            <span class="a-tile__nm">{E(name)}</span>
+            <span class="a-tile__tag">{E(tag)}</span>
+            <span class="a-tile__go">Открыть →</span>
+          </span>
         </a>"""
     return f"""
   <section class="gp__sec" id="pomoshniki">
