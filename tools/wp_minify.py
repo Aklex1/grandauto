@@ -11,6 +11,9 @@ import re
 
 
 def minify(html: str) -> str:
+    # убираем HTML-комментарии — иначе wpautop оборачивает их в пустой <p>
+    html = re.sub(r"<!--(?!\[if).*?-->", "", html, flags=re.S)
+
     # защищаем <pre> и <script>/<style>: сохраняем как плейсхолдеры
     stash = []
 

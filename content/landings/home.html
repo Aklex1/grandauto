@@ -4,6 +4,25 @@
   --line:#33406230; --line2:#3a4568; --text:#eef2fb; --muted:#a3b0cd; --dim:#7c8aab;
   --accent:#818cf8; --accent2:#22d3ee; --accent3:#a78bfa; --ink:#0b1220;
 }
+
+body:has(.gp),body:has(.gaL){background:#161f36!important}
+.l-canvas:has(.gp),.l-main:has(.gp),#page-content:has(.gp),
+.l-canvas:has(.gaL),.l-main:has(.gaL),#page-content:has(.gaL){background:#161f36!important}
+.l-section:has(.gp),.l-section:has(.gaL){padding:0!important;min-height:0!important;border:0!important;background:transparent!important}
+.l-section:has(.gp)>.l-section-h,.l-section:has(.gaL)>.l-section-h{max-width:none!important;padding:0!important;margin:0!important;width:100%!important}
+.l-section:has(.gp) p:empty,.l-section:has(.gaL) p:empty{display:none!important}
+.l-section:has(.gp) h1,.l-section:has(.gp) h2,.l-section:has(.gp) h3,.l-section:has(.gp) p,.l-section:has(.gaL) h1,.l-section:has(.gaL) h2,.l-section:has(.gaL) h3,.l-section:has(.gaL) p{text-align:left!important}
+.l-main:has(.gp) .l-section+.l-section,.l-main:has(.gaL) .l-section+.l-section{margin-top:0!important}
+/* тёмная шапка темы под наш дизайн */
+body:has(.gp) .l-header,body:has(.gaL) .l-header{background:rgba(17,26,46,.94)!important;border-bottom:1px solid #3a4568!important;-webkit-backdrop-filter:saturate(140%) blur(12px);backdrop-filter:saturate(140%) blur(12px)}
+body:has(.gp) .l-header .w-nav-anchor,body:has(.gaL) .l-header .w-nav-anchor{color:#cdd6e8!important;font-weight:500}
+body:has(.gp) .l-header .w-nav-anchor:hover,body:has(.gp) .l-header .current-menu-item>.w-nav-anchor,body:has(.gp) .l-header .current-menu-ancestor>.w-nav-anchor,body:has(.gaL) .l-header .w-nav-anchor:hover{color:#fff!important}
+body:has(.gp) .l-header .w-nav-list.level_2,body:has(.gaL) .l-header .w-nav-list.level_2{background:#1f2942!important;border:1px solid #3a4568!important;border-radius:14px!important;box-shadow:0 24px 50px -24px #000!important}
+body:has(.gp) .l-header .w-nav-list.level_2 .w-nav-anchor:hover,body:has(.gaL) .l-header .w-nav-list.level_2 .w-nav-anchor:hover{background:rgba(129,140,248,.16)!important}
+body:has(.gp) .l-header .w-text-value,body:has(.gaL) .l-header .w-text-value{color:#fff!important}
+body:has(.gp) .l-header .l-subheader,body:has(.gaL) .l-header .l-subheader,body:has(.gp) .l-header.sticky .l-subheader,body:has(.gaL) .l-header.sticky .l-subheader{background:transparent!important}
+body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!important}
+
 .gp *,.gp *::before,.gp *::after{box-sizing:border-box}
 .gp{background:var(--bg);color:var(--text);font-family:Rubik,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.6;
   font-size:16px;margin:0 calc(50% - 50vw);width:100vw;overflow-x:hidden}
@@ -19,7 +38,7 @@
 .gp__sub{color:var(--muted);margin-top:10px;font-size:16.5px}
 
 /* hero */
-.gp__hero{position:relative;overflow:hidden;padding-block:clamp(64px,10vw,124px);
+.gp__hero{position:relative;overflow:hidden;padding-top:clamp(96px,11vw,132px);padding-bottom:clamp(56px,8vw,110px);
   border-bottom:1px solid var(--line2)}
 .gp__heroBg{position:absolute;inset:0;background-size:cover;background-position:center;opacity:.42}
 .gp__heroBg::after{content:"";position:absolute;inset:0;
@@ -93,8 +112,21 @@
 @keyframes gb-eq{from{transform:scaleY(.72)}to{transform:scaleY(1.12)}}
 
 
-/* блог */
-.gp__blog{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(272px,1fr))}
+/* блог — карточки строго одинаковой высоты, без дыр грида */
+.gp__blog{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.gp-post{display:flex;flex-direction:column;height:100%;border-radius:16px;overflow:hidden;
+  background:var(--panel);border:1px solid var(--line2);transition:transform .2s,border-color .2s,box-shadow .2s}
+.gp-post:hover{transform:translateY(-3px);border-color:var(--accent2);box-shadow:0 18px 40px -26px var(--accent2)}
+.gp-post__top{flex-shrink:0;height:166px;overflow:hidden;background:var(--panel2)}
+.gp-post__img{width:100%;height:100%;object-fit:cover;display:block}
+.gp-post__ph{width:100%;height:100%;display:grid;place-items:center;
+  background:linear-gradient(150deg,rgba(129,140,248,.14),rgba(34,211,238,.08))}
+.gp-post__ph svg{width:56px;height:56px}
+.gp-post__body{display:flex;flex-direction:column;gap:8px;padding:16px 18px;flex:1}
+.gp-post__title{font-size:15.5px;font-weight:600;color:#fff;line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.gp-post__ex{font-size:13.5px;color:var(--muted);line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .gp__sec--soft{background:var(--bg2);border-block:1px solid var(--line2)}
 
 @media (prefers-reduced-motion:reduce){.a-tile,.svc-card,.gp__btn{transition:none}}
@@ -176,21 +208,21 @@
       <div class="gp__grp">
         <div class="gp__grpHead"><h3>Фото</h3><span>Картинки, фоторедактор и оживление снимков</span></div>
         <div class="svc-grid">
-          <a class="svc-card" href="https://t.me/Neuro_HubAI_bot?start=web">
+          <a class="svc-card" href="/neurohub/">
             <span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="10" width="34" height="28" rx="4"/>
       <circle class="gb-spark" cx="17" cy="19" r="3.2"/>
       <path d="M9 33l9-9 6 6 5-5 10 10"/></svg></span>
             <span class="svc-card__nm">Картинка по описанию</span>
             <span class="svc-card__ab">Изображение из текста — для карточек товара, обложек и иллюстраций.</span>
           </a>
-          <a class="svc-card" href="https://t.me/Neuro_HubAI_bot?start=web">
+          <a class="svc-card" href="/neurohub/">
             <span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="10" width="30" height="28" rx="4"/>
       <path d="M9 32l7-7 5 5-7 7"/>
       <path class="gb-spark" d="M33 8l2.4 4.6L40 15l-4.6 2.4L33 22l-2.4-4.6L26 15l4.6-2.4z"/></svg></span>
             <span class="svc-card__nm">Изменить фото</span>
             <span class="svc-card__ab">Замена фона и одежды, удаление объектов, реставрация — словами, без редактора.</span>
           </a>
-          <a class="svc-card" href="https://t.me/Neuro_HubAI_bot?start=web">
+          <a class="svc-card" href="/neurohub/">
             <span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="gb-zoom" x="15" y="15" width="18" height="18" rx="3"/>
       <path d="M9 17V9h8M39 17V9h-8M9 31v8h8M39 31v8h-8"/></svg></span>
             <span class="svc-card__nm">Увеличить качество</span>
@@ -208,7 +240,7 @@
       <div class="gp__grp">
         <div class="gp__grpHead"><h3>Видео</h3><span>Ролики из текста, говорящие аватары, музыка под видео</span></div>
         <div class="svc-grid">
-          <a class="svc-card" href="https://t.me/Neuro_HubAI_bot?start=web">
+          <a class="svc-card" href="/neurohub/">
             <span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="12" width="34" height="24" rx="4"/>
       <path d="M7 19h34M14 12l-3 7M23 12l-3 7M32 12l-3 7"/>
       <path class="gb-play" d="M21 24l8 4-8 4z" fill="currentColor" stroke="none"/></svg></span>
@@ -306,10 +338,8 @@
         <h2 class="gp__h2">Разборы, инструкции и промты</h2>
         <p class="gp__sub">То, что мы сами используем в работе.</p>
       </div>
-      <div class="gp__blog">
-        [us_grid post_type="post" items_quantity="6" columns="3" orderby="date"
-                 items_layout="blog_classic_1" pagination="none"]
-      </div>
+      <div class="gp__blog"><a class="gp-post" href="https://genius-bot.ru/api-neyroseti-besplatno/"><span class="gp-post__top"><img class="gp-post__img" src="https://genius-bot.ru/wp-content/uploads/2026/09/api-neyroseti-besplatno-1-1024x585.jpg" alt="" loading="lazy"></span><span class="gp-post__body"><span class="gp-post__title">API нейросети бесплатно: где это правда, а где ловушка</span><span class="gp-post__ex">Когда разработчик ищет «api нейросети бесплатно», он обычно подразумевает одно из двух: либо вообще не платить за зап…</span></span></a><a class="gp-post" href="https://genius-bot.ru/zarabotok-na-ii-video/"><span class="gp-post__top"><span class="gp-post__ph"><svg viewBox="0 0 48 48" fill="none" stroke="url(#pg1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="pg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#67e8f9"/></linearGradient></defs><path d="M12 24c4-8 20-8 24 0-4 8-20 8-24 0zM24 20a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/></svg></span></span><span class="gp-post__body"><span class="gp-post__title">Заработок на ИИ-видео: короткие ролики, за которые платят</span><span class="gp-post__ex">Заработок на ИИ-видео: какие короткие ролики покупают, сколько стоит производство одного и как выйти на поток из двад…</span></span></a><a class="gp-post" href="https://genius-bot.ru/promt-dlya-foto-s-tortom/"><span class="gp-post__top"><img class="gp-post__img" src="https://genius-bot.ru/wp-content/uploads/2026/09/promt-dlya-foto-s-tortom-1-747x1024.png" alt="" loading="lazy"></span><span class="gp-post__body"><span class="gp-post__title">Промт для фото с тортом: как показать десерт и человека одновременно</span><span class="gp-post__ex">Промт для фото с тортом: готовый промт, который можно скопировать, английская версия, варианты и разбор частых ошибок.</span></span></a><a class="gp-post" href="https://genius-bot.ru/promty-dlya-foto-tovarov/"><span class="gp-post__top"><img class="gp-post__img" src="https://genius-bot.ru/wp-content/uploads/2026/09/promty-dlya-foto-tovarov-1-747x1024.png" alt="" loading="lazy"></span><span class="gp-post__body"><span class="gp-post__title">Промты для фото товаров: карточка, которая продаёт</span><span class="gp-post__ex">Промты для фото товаров: готовый промт, который можно скопировать, английская версия, варианты и разбор частых ошибок.</span></span></a><a class="gp-post" href="https://genius-bot.ru/kak-sobrat-telegram-bota-s-nejrosetyu-i-zapustit-ego-poshagovaya-instrukcziya-4/"><span class="gp-post__top"><span class="gp-post__ph"><svg viewBox="0 0 48 48" fill="none" stroke="url(#pg4)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="pg4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbbf24"/><stop offset="1" stop-color="#fcd34d"/></linearGradient></defs><path d="M14 14h20v20H14zM14 22h20M22 14v20"/></svg></span></span><span class="gp-post__body"><span class="gp-post__title">Как собрать телеграм-бота с нейросетью и запустить его: пошаговая инструкция</span><span class="gp-post__ex">Телеграм-бота с нейросетью внутри можно собрать за вечер, даже если вы не программист. Ниже — как повторить это самом…</span></span></a><a class="gp-post" href="https://genius-bot.ru/ii-dlya-zarabotka-deneg/"><span class="gp-post__top"><span class="gp-post__ph"><svg viewBox="0 0 48 48" fill="none" stroke="url(#pg5)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="pg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#6ee7b7"/></linearGradient></defs><path d="M24 10a14 14 0 1 0 0 28 14 14 0 0 0 0-28zM24 16v8l6 4"/></svg></span></span><span class="gp-post__body"><span class="gp-post__title">ИИ для заработка денег: инструменты и что с ними делать</span><span class="gp-post__ex">ИИ для заработка денег: какие инструменты закрывают оплачиваемые задачи, сколько стоит запуск и как превратить набор…</span></span></a>
+</div>
       <p style="margin-top:24px">
         <a class="gp__btn gp__btn--ghost" href="/blog/">Все статьи</a>
       </p>

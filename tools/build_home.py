@@ -53,6 +53,7 @@ MENU_GROUPS = [
 
 def css() -> str:
     return f""":root{{{theme.TOKENS}}}
+{theme.THEME_FIX}
 .gp *,.gp *::before,.gp *::after{{box-sizing:border-box}}
 .gp{{background:var(--bg);color:var(--text);font-family:{theme.FONT};line-height:1.6;
   font-size:16px;margin:0 calc(50% - 50vw);width:100vw;overflow-x:hidden}}
@@ -68,7 +69,7 @@ def css() -> str:
 .gp__sub{{color:var(--muted);margin-top:10px;font-size:16.5px}}
 
 /* hero */
-.gp__hero{{position:relative;overflow:hidden;padding-block:clamp(64px,10vw,124px);
+.gp__hero{{position:relative;overflow:hidden;padding-top:clamp(96px,11vw,132px);padding-bottom:clamp(56px,8vw,110px);
   border-bottom:1px solid var(--line2)}}
 .gp__heroBg{{position:absolute;inset:0;background-size:cover;background-position:center;opacity:.42}}
 .gp__heroBg::after{{content:"";position:absolute;inset:0;
@@ -125,8 +126,21 @@ def css() -> str:
 .svc-card__ab{{color:var(--muted);font-size:14px;line-height:1.5}}
 {theme.ICON_CSS}
 
-/* блог */
-.gp__blog{{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(272px,1fr))}}
+/* блог — карточки строго одинаковой высоты, без дыр грида */
+.gp__blog{{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}}
+.gp-post{{display:flex;flex-direction:column;height:100%;border-radius:16px;overflow:hidden;
+  background:var(--panel);border:1px solid var(--line2);transition:transform .2s,border-color .2s,box-shadow .2s}}
+.gp-post:hover{{transform:translateY(-3px);border-color:var(--accent2);box-shadow:0 18px 40px -26px var(--accent2)}}
+.gp-post__top{{flex-shrink:0;height:166px;overflow:hidden;background:var(--panel2)}}
+.gp-post__img{{width:100%;height:100%;object-fit:cover;display:block}}
+.gp-post__ph{{width:100%;height:100%;display:grid;place-items:center;
+  background:linear-gradient(150deg,rgba(129,140,248,.14),rgba(34,211,238,.08))}}
+.gp-post__ph svg{{width:56px;height:56px}}
+.gp-post__body{{display:flex;flex-direction:column;gap:8px;padding:16px 18px;flex:1}}
+.gp-post__title{{font-size:15.5px;font-weight:600;color:#fff;line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
+.gp-post__ex{{font-size:13.5px;color:var(--muted);line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
 .gp__sec--soft{{background:var(--bg2);border-block:1px solid var(--line2)}}
 
 @media (prefers-reduced-motion:reduce){{.a-tile,.svc-card,.gp__btn{{transition:none}}}}
@@ -210,6 +224,14 @@ def services_section():
   </section>"""
 
 
+def _blog_cards():
+    f = ROOT / "content" / "landings" / "_blog.html"
+    if f.exists() and f.read_text(encoding="utf-8").strip():
+        return f.read_text(encoding="utf-8")
+    return ('[us_grid post_type="post" items_quantity="6" columns="3" orderby="date" '
+            'items_layout="blog_classic_1" pagination="none"]')
+
+
 def blog_section():
     return """
   <section class="gp__sec" id="blog">
@@ -219,10 +241,7 @@ def blog_section():
         <h2 class="gp__h2">Разборы, инструкции и промты</h2>
         <p class="gp__sub">То, что мы сами используем в работе.</p>
       </div>
-      <div class="gp__blog">
-        [us_grid post_type="post" items_quantity="6" columns="3" orderby="date"
-                 items_layout="blog_classic_1" pagination="none"]
-      </div>
+      <div class="gp__blog">{BLOG_CARDS}</div>
       <p style="margin-top:24px">
         <a class="gp__btn gp__btn--ghost" href="/blog/">Все статьи</a>
       </p>
@@ -237,7 +256,7 @@ def home_html(img):
 {hero(img)}
 {assistants_section()}
 {services_section()}
-{blog_section()}
+{blog_section().replace("{BLOG_CARDS}", _blog_cards())}
 </div>"""
 
 

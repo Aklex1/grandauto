@@ -11,16 +11,16 @@ BOT = "https://t.me/Neuro_HubAI_bot?start=web"
 SERVICES = [
     # --- Фото ---
     ("image",       "Картинка по описанию",   "Изображение из текста — для карточек товара, обложек и иллюстраций.",
-     "foto", "image", "/kartinka-neyrosetyu/", BOT),
+     "foto", "image", "/kartinka-neyrosetyu/", "/neurohub/"),
     ("image-edit",  "Изменить фото",          "Замена фона и одежды, удаление объектов, реставрация — словами, без редактора.",
-     "foto", "edit", "/izmenit-foto-neyrosetyu/", BOT),
+     "foto", "edit", "/izmenit-foto-neyrosetyu/", "/neurohub/"),
     ("upscale",     "Увеличить качество",     "Апскейл вдвое с восстановлением деталей: для старых и мелких снимков.",
-     "foto", "upscale", "/uluchshit-kachestvo-foto/", BOT),
+     "foto", "upscale", "/uluchshit-kachestvo-foto/", "/neurohub/"),
     ("photo-video", "Оживить фото",           "Из фотографии — короткое видео: движение головы, мимика, лёгкая камера.",
      "foto", "revive", "/ozhivit-foto/", "/ozhivit-foto/"),
     # --- Видео ---
     ("video",       "Видео по описанию",      "Ролик из одного текста: сцена, движение и камера — без исходной картинки.",
-     "video", "video", "/video-neyrosetyu/", BOT),
+     "video", "video", "/video-neyrosetyu/", "/neurohub/"),
     ("avatar",      "Говорящий аватар",       "Фото плюс запись голоса — видео, где человек со снимка говорит.",
      "video", "avatar", "/govoryashchiy-avatar/", "/govoryashchiy-avatar/"),
     ("clip-music",  "Музыка для видео",       "Фоновый трек без авторских прав под хронометраж ролика.",

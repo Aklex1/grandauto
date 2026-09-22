@@ -29,7 +29,7 @@ lc = _load("landing_content")
 
 
 def style(accent, accent2):
-    return (":root{" + theme.TOKENS + "}\n" + f"""
+    return (":root{" + theme.TOKENS + "}\n" + theme.THEME_FIX + "\n" + f"""
 .gaL{{--acc:{accent};--acc2:{accent2};background:var(--bg);color:var(--text);
   font-family:{theme.FONT};line-height:1.6;font-size:16px;margin:0 calc(50% - 50vw);
   width:100vw;overflow-x:hidden}}
