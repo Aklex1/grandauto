@@ -362,13 +362,42 @@ class GS_Lab_Page {
             'text'  => 'Опишите звук словами — нейросеть соберёт готовый эффект в MP3: взрывы, шаги, интерфейсные сигналы, атмосфера и бесшовные лупы.',
             'cta'   => 'Создать звук',
         );
+        // Числа берём из самого каталога. Вписанные руками «12 000 звуков в
+        // 945 категориях» устарели через месяц после того, как их вписали,
+        // и на живой странице это читается как небрежность.
+        $stats = GS_Catalog::stats();
         $cards[] = array(
             'url'   => GS_Catalog::base_url(),
             'title' => 'Каталог звуков',
             'short' => 'Каталог',
-            'text'  => 'Больше 12 000 готовых звуков в 945 категориях — слушайте онлайн и скачивайте бесплатно в MP3.',
+            'text'  => sprintf(
+                '%s готовых звуков в %s — слушайте онлайн и скачивайте бесплатно в MP3.',
+                number_format_i18n((int) $stats['sounds']),
+                GS_Catalog::plural_categories_text((int) $stats['filled'])
+            ),
             'cta'   => 'Открыть каталог',
         );
+
+        // Фоновая музыка — самый крупный раздел каталога и отдельный спрос:
+        // её ищут не как «звук», а как «музыку для видео». В шапке сайта до
+        // неё сейчас не добраться, поэтому ссылка нужна здесь.
+        foreach (GS_Sections::overview() as $section) {
+            if ($section['slug'] !== 'fonovaya-muzyka') {
+                continue;
+            }
+            $cards[] = array(
+                'url'   => GS_Sections::url($section['slug']),
+                'title' => $section['title'],
+                'short' => 'Фоновая музыка',
+                'text'  => sprintf(
+                    'Инструментальные треки без слов для видео, роликов и подкастов: %s в %s.',
+                    GS_Catalog::plural_sounds((int) $section['sounds']),
+                    GS_Catalog::plural_categories_text((int) $section['cats'])
+                ),
+                'cta'   => 'Слушать музыку',
+            );
+            break;
+        }
         $cards[] = array(
             'url'   => GS_Api_Page::get_url(),
             'title' => 'API для разработчиков',
