@@ -37,6 +37,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-songs.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-course.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-cta.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-apicta.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-openai.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-404.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-provider.php';
@@ -108,6 +109,7 @@ class Genius_Sounds_Plugin {
         GS_Songs::boot();
         GS_Course::boot();
         GS_CTA::boot();
+        GS_ApiCta::boot();
         GS_OpenAI::boot();
         GS_404::boot();
         GS_Slides_Page::boot();
