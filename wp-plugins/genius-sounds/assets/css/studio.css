@@ -702,6 +702,16 @@
     background: #000;
 }
 
+/* Обложка приходит квадратом или вертикалью: высоту не задаём, иначе
+   вертикальная картинка растянется поперёк. */
+.gs-lab-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--gs-radius-sm);
+    background: #000;
+}
+
 /* Пояснение в шапке услуги: временный ручной режим обработки. */
 .gs-hero__note {
     max-width: 720px;

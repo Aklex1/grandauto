@@ -306,7 +306,14 @@
             title.textContent = file.label;
             wrap.appendChild(title);
 
-            if (file.kind !== 'file') {
+            if (file.kind === 'image') {
+                var picture = document.createElement('img');
+                picture.src = file.url;
+                picture.alt = file.label;
+                picture.loading = 'lazy';
+                picture.className = 'gs-lab-image';
+                wrap.appendChild(picture);
+            } else if (file.kind !== 'file') {
                 var media = document.createElement(file.kind === 'video' ? 'video' : 'audio');
                 media.controls = true;
                 media.src = file.url;

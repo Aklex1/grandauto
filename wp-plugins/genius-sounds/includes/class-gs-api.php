@@ -140,6 +140,20 @@ class GS_Api {
                 'fields' => array('style'),
                 'result' => 'text',
             ),
+            'cover' => array(
+                'id'     => 'cover',
+                'engine' => 'lab',
+                'lab_id' => 'cover',
+                'title'  => 'Обложка для трека',
+                'about'  => 'Картинка под релиз по описанию: квадрат для стримингов, широкий кадр или вертикаль.',
+                'input'  => array(
+                    'prompt' => 'required',
+                    'style'  => 'optional',
+                    'ratio'  => 'optional',
+                ),
+                'fields' => array('style', 'ratio'),
+                'result' => 'image',
+            ),
             'stt' => array(
                 'id'     => 'stt',
                 'engine' => 'lab',
