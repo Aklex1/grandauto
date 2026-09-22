@@ -163,6 +163,13 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_catalog_update'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        // Черновик статьи по заданию: справка о сервисе собирается на
+        // сервере, задание приходит снаружи.
+        register_rest_route(self::NS, '/content/longread', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_longread'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/catalog/rewrite', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_catalog_rewrite'),
@@ -1495,6 +1502,17 @@ class GS_Rest {
             'updated' => $done,
             'missing' => $missing,
         ));
+    }
+
+    public static function handle_longread($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        if (!empty($params['facts_only'])) {
+            return rest_ensure_response(array('success' => true, 'facts' => GS_Longread::facts()));
+        }
+        return rest_ensure_response(GS_Longread::write(is_array($params['brief'] ?? null) ? $params['brief'] : $params));
     }
 
     /**

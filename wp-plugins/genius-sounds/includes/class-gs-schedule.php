@@ -47,6 +47,7 @@ class GS_Schedule {
         return array(
             ''      => 'Блог: лонгриды',
             'promt' => 'Раздел промтов',
+            'api'   => 'Статьи про API',
         );
     }
 
@@ -54,6 +55,10 @@ class GS_Schedule {
         return array(
             ''      => array('enabled' => 1, 'per_day' => 2, 'hours' => array(10, 18)),
             'promt' => array('enabled' => 1, 'per_day' => 4, 'hours' => array(9, 13, 17, 21)),
+            // Кластер API выходит своей полосой: у него свой темп и свой
+            // объём, и смешивать его с лонгридами блога — значит либо
+            // растянуть один, либо выплюнуть другой.
+            'api'   => array('enabled' => 1, 'per_day' => 3, 'hours' => array(11, 15, 20)),
         );
     }
 

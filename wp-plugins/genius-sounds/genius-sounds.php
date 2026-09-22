@@ -21,6 +21,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-storage.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-catalog.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sections.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rewrite.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-longread.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-importer.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sfx.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-pages.php';
