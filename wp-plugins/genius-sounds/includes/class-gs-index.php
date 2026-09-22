@@ -290,6 +290,24 @@ class GS_Index {
             }
         }
 
+        // Каталог здесь был пропущен, а это большая часть сайта: тысяча
+        // подборок и разделы. В индексе они есть (Вебмастер видит 1175
+        // страниц против 359 в карте), но попали туда по ссылкам и с
+        // задержкой в месяцы — быстрее сказать о них самим.
+        if (class_exists('GS_Catalog')) {
+            $urls[] = GS_Catalog::base_url();
+            foreach (GS_Catalog::load_index() as $row) {
+                if (!empty($row['slug'])) {
+                    $urls[] = GS_Catalog::category_url((string) $row['slug']);
+                }
+            }
+        }
+        if (class_exists('GS_Sections')) {
+            foreach (GS_Sections::overview() as $section) {
+                $urls[] = GS_Sections::url($section['slug']);
+            }
+        }
+
         return self::enqueue($urls);
     }
 
