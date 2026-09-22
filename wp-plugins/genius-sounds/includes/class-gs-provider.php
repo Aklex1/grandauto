@@ -428,7 +428,11 @@ class GS_Provider {
             self::mark_down($route['id'], $res['message']);
         }
         return array('ok' => false, 'content' => '', 'route' => '', 'model' => '',
-                     'message' => self::human($last), 'usage' => array(), 'credits' => 0.0);
+                     'message' => self::human($last), 'usage' => array(), 'credits' => 0.0,
+                     // Человеку показываем общую фразу, а в служебные ответы
+                     // кладём то, что на самом деле сказал поставщик: иначе
+                     // разбираться в отказе приходится наугад.
+                     'detail' => (string) $last);
     }
 
     /**

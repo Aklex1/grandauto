@@ -163,6 +163,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_catalog_update'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/catalog/rewrite', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_catalog_rewrite'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/catalog/sections', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_catalog_sections'),
@@ -1489,6 +1494,56 @@ class GS_Rest {
             'success' => true,
             'updated' => $done,
             'missing' => $missing,
+        ));
+    }
+
+    /**
+     * Переписать тексты подборок.
+     *
+     * Работаем небольшими пачками: у хостинга свой предел на время
+     * запроса, а каждый текст — обращение к модели на несколько секунд.
+     */
+    public static function handle_catalog_rewrite($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $dry = !empty($params['dry']);
+
+        // Принимаем и простой список слагов, и список с подсказками:
+        // подсказка — формулировки, которыми тему ищут, и без них текст
+        // получается верным, но не о том, что спрашивают.
+        $items = array();
+        if (isset($params['items']) && is_array($params['items'])) {
+            foreach ($params['items'] as $item) {
+                if (is_array($item) && !empty($item['slug'])) {
+                    $items[] = array(
+                        'slug'       => (string) $item['slug'],
+                        'hint'       => isset($item['hint']) ? (string) $item['hint'] : '',
+                        'with_title' => !empty($item['with_title']),
+                    );
+                }
+            }
+        }
+        if (isset($params['slugs']) && is_array($params['slugs'])) {
+            foreach ($params['slugs'] as $slug) {
+                $items[] = array('slug' => (string) $slug, 'hint' => '', 'with_title' => false);
+            }
+        }
+        $items = array_slice($items, 0, 5);
+
+        $results = array();
+        foreach ($items as $item) {
+            $results[] = GS_Rewrite::category($item['slug'], array(
+                'dry'        => $dry,
+                'hint'       => $item['hint'],
+                'with_title' => $item['with_title'],
+            ));
+        }
+        return rest_ensure_response(array(
+            'success' => true,
+            'done'    => count(array_filter($results, function ($r) { return !empty($r['ok']); })),
+            'results' => $results,
         ));
     }
 
