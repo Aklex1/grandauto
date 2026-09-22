@@ -72,6 +72,7 @@ class GS_Api_Page {
     private static function sections() {
         return array(
             'start'    => 'Быстрый старт',
+            'tools'    => 'Спецификация и примеры',
             'services' => 'Что можно вызвать',
             'more'     => 'Видео, музыка, расшифровка',
             'files'    => 'Свои файлы',
@@ -175,6 +176,31 @@ class GS_Api_Page {
                     видео и аватар — за 1–5 минут.
                 </p>
                 <?php echo self::render_code('Ответ', self::sample_response()); ?>
+            </section>
+
+            <section class="gs-api__section" id="tools">
+                <h2 class="gs-section-title">Спецификация и примеры</h2>
+                <p class="gs-api__text">
+                    Описание API в машинном виде собирается из того же реестра операций, по
+                    которому API и работает: цены и список операций в нём всегда те, что
+                    действуют сейчас.
+                </p>
+                <ul class="gs-api__list">
+                    <li>
+                        <a href="<?php echo esc_url(rest_url(GS_Api::NS . '/openapi.json')); ?>">
+                            Спецификация OpenAPI 3.1</a> — для генератора клиента или своей среды.
+                    </li>
+                    <li>
+                        <a href="<?php echo esc_url(rest_url(GS_Api::NS . '/postman.json')); ?>">
+                            Коллекция Postman</a> — импортируйте, подставьте ключ в переменную
+                        <code>api_key</code> и жмите «Send»: по готовому запросу на каждую операцию.
+                    </li>
+                    <li>
+                        <a href="https://github.com/Aklex1/geniusbot-api" rel="nofollow noopener" target="_blank">
+                            Примеры на GitHub</a> — клиенты на Python, PHP и Node.js, бот в телеграме
+                        целиком и все операции на curl.
+                    </li>
+                </ul>
             </section>
 
             <section class="gs-api__section" id="openai">

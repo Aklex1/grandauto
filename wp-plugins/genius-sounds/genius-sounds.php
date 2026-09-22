@@ -22,6 +22,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-catalog.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sections.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rewrite.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-longread.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-openapi.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-importer.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sfx.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-pages.php';
@@ -124,6 +125,7 @@ class Genius_Sounds_Plugin {
         GS_Tts_Fallback::boot();
         GS_Transcribe::boot();
         GS_Api::boot();
+        GS_Openapi::boot();
         GS_Cache::boot();
     }
 
