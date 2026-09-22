@@ -450,6 +450,9 @@
 {% if added %}<p class="badge">Архив принят: серий {{ added }}.</p>{% endif %}
 {% set queued = request.query_params.get('queued') %}
 {% if queued %}<p class="badge">Отправлено в сборку: {{ queued }}.</p>{% endif %}
+{% set stopped = request.query_params.get('stopped') %}
+{% if stopped %}<p class="badge">Сборка остановлена, серий вернулось в план: {{ stopped }}.
+  Та, что считалась в этот момент, доделается.</p>{% endif %}
 {% set aerr = request.query_params.get('error') %}
 {% if aerr == 'no-file' %}<p class="badge" style="background:#5b2222">Файл не выбран.</p>{% endif %}
 {% if aerr == 'bad-zip' %}<p class="badge" style="background:#5b2222">Архив не принят:
@@ -491,7 +494,17 @@
     сорвалось {{ rows | selectattr('status', 'equalto', 'failed') | list | length }} ·
     обложка: {{ archive_cover_modes.get(batch.cover_mode, batch.cover_mode) }}
   </p>
+  {% if batch.paused %}<p class="badge" style="background:#5b4a22">Архив на паузе:
+    расписание его пропускает, серии запускаются только вручную.</p>{% endif %}
   <div class="row" style="gap:8px;flex-wrap:wrap">
+    {% if batch.paused %}
+    <form method="post" action="/archives/{{ batch.id }}/resume" class="inline-form">
+      <button class="btn btn-sm">Снять с паузы</button></form>
+    {% else %}
+    <form method="post" action="/archives/{{ batch.id }}/stop" class="inline-form"
+          onsubmit="return confirm('Остановить сборку? Очередь снимется, серии вернутся в план. Та серия, что считается прямо сейчас, доделается — за неё уже заплачено.')">
+      <button class="btn btn-sm btn-ghost">Остановить</button></form>
+    {% endif %}
     <form method="post" action="/archives/{{ batch.id }}/run" class="inline-form">
       <input type="hidden" name="scope" value="due">
       <button class="btn btn-sm">Собрать, чему пришёл срок</button></form>
@@ -499,6 +512,10 @@
           onsubmit="return confirm('Отправить в сборку все серии разом? Это озвучка на каждую.')">
       <input type="hidden" name="scope" value="all">
       <button class="btn btn-sm btn-primary">Собрать все разом</button></form>
+    <form method="post" action="/archives/{{ batch.id }}/run" class="inline-form"
+          onsubmit="return confirm('Пересобрать все готовые серии? Озвучка возьмётся с диска — платить второй раз не придётся.')">
+      <input type="hidden" name="scope" value="redo">
+      <button class="btn btn-sm">Пересобрать готовые</button></form>
     <form method="post" action="/archives/{{ batch.id }}/schedule" class="inline-form">
       <input name="per_day" type="number" min="0" max="50" value="{{ batch.per_day }}"
              style="width:70px" title="0 — без расписания">
@@ -527,9 +544,10 @@
           <a href="/media/{{ item.video_path }}" target="_blank">смотреть</a> ·
           <a href="/media/{{ item.video_path }}?download=1">скачать</a>
           <div class="muted">{{ '%.0f'|format(item.duration_sec or 0) }} с</div>
-        {% else %}
-          <form method="post" action="/archive-items/{{ item.id }}/run" class="inline-form">
-            <button class="btn btn-sm">Собрать сейчас</button></form>
+        {% endif %}
+        {% if item.status not in ('queued', 'running') %}
+        <form method="post" action="/archive-items/{{ item.id }}/run" class="inline-form">
+          <button class="btn btn-sm">{{ 'Пересобрать' if item.video_path else 'Собрать сейчас' }}</button></form>
         {% endif %}
       </td>
     </tr>

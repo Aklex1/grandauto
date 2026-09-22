@@ -643,13 +643,21 @@ def archive_run(batch_id: int, session: Session = Depends(get_session),
     batch = session.get(ArchiveBatch, batch_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="Архив не найден")
+    # «Пересобрать готовые» нужна, когда поправили саму сборку: озвучка при этом
+    # берётся с диска, так что пересборка сотни серий не стоит ничего.
+    wanted = (("done",) if scope == "redo"
+              else ("planned", "failed"))
     rows = session.execute(
         select(ArchiveItem).where(ArchiveItem.batch_id == batch_id,
-                                  ArchiveItem.status.in_(("planned", "failed")))
+                                  ArchiveItem.status.in_(wanted))
         .order_by(ArchiveItem.idx)).scalars().all()
     if scope == "due":
         today = dt.date.today()
         rows = [r for r in rows if r.scheduled_date is None or r.scheduled_date <= today]
+    if scope == "redo":
+        for row in rows:
+            row.status = "planned"
+        session.commit()
     sent = archives.queue_items(session, rows)
     return RedirectResponse(f"/channels/{batch.channel_id}?tab=archive&queued={sent}",
                             status_code=303)
@@ -664,8 +672,45 @@ def archive_item_run(item_id: int, session: Session = Depends(get_session),
     item = session.get(ArchiveItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Серия не найдена")
+    # Готовую серию тоже можно запустить снова: это пересборка, и она не должна
+    # упираться в то, что файл уже есть.
+    if item.status == "done":
+        item.status = "planned"
+        session.commit()
     archives.queue_items(session, [item])
     return RedirectResponse(f"/channels/{item.channel_id}?tab=archive", status_code=303)
+
+
+@app.post("/archives/{batch_id}/stop")
+def archive_stop(batch_id: int, session: Session = Depends(get_session),
+                 _user: str = Depends(require_user)):
+    """Остановить архив: снять очередь, вернуть серии в план, поставить на паузу."""
+    from . import archives
+    from .models import ArchiveBatch
+
+    batch = session.get(ArchiveBatch, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Архив не найден")
+    jobs, items = archives.stop_batch(session, batch_id)
+    session.add(Event(level="warn", stage="archive",
+                      message=f"Архив «{batch.name}» остановлен: снято задач {jobs}, "
+                              f"серий вернулось в план {items}"))
+    session.commit()
+    return RedirectResponse(f"/channels/{batch.channel_id}?tab=archive&stopped={items}",
+                            status_code=303)
+
+
+@app.post("/archives/{batch_id}/resume")
+def archive_resume(batch_id: int, session: Session = Depends(get_session),
+                   _user: str = Depends(require_user)):
+    from .models import ArchiveBatch
+
+    batch = session.get(ArchiveBatch, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Архив не найден")
+    batch.paused = False
+    session.commit()
+    return RedirectResponse(f"/channels/{batch.channel_id}?tab=archive", status_code=303)
 
 
 @app.post("/archives/{batch_id}/schedule")

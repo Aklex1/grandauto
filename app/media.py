@@ -750,6 +750,66 @@ def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int,
     return dst
 
 
+def build_cover_scene(cover: Path, audio: Path, dst: Path, size: tuple[int, int],
+                     duration: float, workdir: Path, hold: float = 1.0,
+                     fade: float = 0.5, dim: float = 0.42,
+                     zoom_end: float = 1.08) -> Path:
+    """Ролик поверх готовой обложки.
+
+    От «живого кадра» отличается одним, но решающим: обложку нельзя обрезать.
+    Там кадр генерировался под вертикаль и наезд ему только на пользу, а тут
+    макет свёрстан — заголовок стоит вплотную к верхнему краю, и наезд в первую
+    же секунду срезает ему шапку. Поэтому картинка вписывается целиком, а пустые
+    поля (если пропорции не совпали) закрывает её же размытая копия.
+
+    Движение начинается только после того, как обложка отработала: первую
+    секунду она стоит ровно такой, какой её нарисовали, а дальше, уже под
+    титрами и притемнённая, медленно наезжает — чтобы кадр не выглядел мёртвым.
+    """
+    w, h = size
+    workdir.mkdir(parents=True, exist_ok=True)
+    span = max(duration, 0.1)
+    # Наезд размазываем по остатку ролика: если обложка держится дольше самого
+    # ролика, наезжать уже негде.
+    move = max(span - hold, 0.1)
+    grow = max(zoom_end - 1.0, 0.0)
+    zoom = (f"(1+{grow:.3f}*min(max((t-{hold:.3f})/{move:.3f},0),1))"
+            if grow > 0.001 else "1")
+
+    backdrop = (f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                f"crop={w}:{h},boxblur=24:2,eq=brightness=-0.25,fps={FPS}[bg];")
+    # Вписываем целиком: ни одного пикселя макета не теряем.
+    front = (f"[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,fps={FPS},"
+             f"crop=w='trunc(iw/{zoom}/2)*2':h='trunc(ih/{zoom}/2)*2':"
+             f"x='(iw-ow)/2':y='(ih-oh)/2',"
+             f"scale={w}:{h}:force_original_aspect_ratio=decrease[fg];")
+    graph = backdrop + front + f"[bg][fg]overlay=(W-w)/2:(H-h)/2[ov];"
+
+    if dim > 0.001:
+        # Обложка — крупный текст во весь верх: поверх неё титры не прочитать.
+        # Гасим не скачком, а за fade секунд: резкая смена яркости бьёт по глазам.
+        ramp = f"min(max((t-{hold:.3f})/{max(fade, 0.05):.3f},0),1)"
+        graph += (f"[ov]eq=eval=frame:brightness='-{dim:.3f}*{ramp}',"
+                  f"format=yuv420p[v]")
+    else:
+        graph += "[ov]format=yuv420p[v]"
+
+    script = workdir / "cover.filter"
+    script.write_text(graph, encoding="utf-8")
+    _ff([
+        "-loop", "1", "-i", str(cover),
+        "-loop", "1", "-i", str(cover),
+        "-i", str(audio),
+        "-filter_complex_script", str(script),
+        "-af", "apad",
+        "-map", "[v]", "-map", "2:a:0", "-t", f"{duration:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(dst),
+    ], timeout=2400)
+    return dst
+
+
 def build_loop_scene(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
                      duration: float, workdir: Path, band_top: float = 0.0,
                      band_height: float = 0.0, band_color: str = "0x0b0d10") -> Path:

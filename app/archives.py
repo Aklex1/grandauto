@@ -25,7 +25,10 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+import hashlib
+
 from . import config, media, music, storage, subtitles, tts
+from . import settings_store as st
 from .db import session_scope
 from .kie import KieClient
 from .models import ArchiveBatch, ArchiveItem, Channel, Event, utcnow
@@ -47,6 +50,10 @@ COVER_FADE = 0.5
 # больше — от картинки остаётся чёрный прямоугольник.
 COVER_DIM = 0.42
 
+# Насколько кадр наезжает к концу ролика. Наезд начинается только после того,
+# как обложка отработала: до этого она должна стоять ровно как нарисована.
+COVER_ZOOM = 1.08
+
 # Хвост после последнего слова: под него доигрывает музыка.
 TAIL_SECONDS = 1.2
 
@@ -65,6 +72,26 @@ VOICE_PROFILES = {
 
 class ArchiveError(RuntimeError):
     pass
+
+
+def voice_cache_path(channel: Channel, item: ArchiveItem) -> Path:
+    """Куда кладём озвучку серии, чтобы не платить за неё дважды.
+
+    Имя считается от текста и голоса: тот же текст тем же голосом звучит
+    одинаково, и переозвучивать его при повторной загрузке архива или при
+    пересборке — выброшенные деньги. Поменяется текст или голос — поменяется и
+    имя, старый файл просто не найдётся.
+    """
+    key = "|".join([
+        (item.narration or "").strip(),
+        channel.tts_model or "", channel.voice_id or "",
+        f"{channel.voice_speed:.2f}", f"{channel.voice_stability:.2f}",
+        f"{channel.voice_similarity:.2f}",
+    ])
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:20]
+    folder = config.MEDIA_DIR / "_archives" / (channel.slug or "channel") / "voices"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"{digest}.m4a"
 
 
 def _read_json(path: Path) -> dict:
@@ -316,17 +343,28 @@ def build_item(item_id: int) -> Path:
         try:
             # 1. Голос. Текст уже на нужном языке — переводить нечего.
             lang = _voice_language(item)
-            audio = workdir / "voice.m4a"
-            spoken = tts.synthesize(
-                client, item.narration, audio,
-                model=channel.tts_model, voice_id=channel.voice_id,
-                stability=channel.voice_stability, similarity=channel.voice_similarity,
-                speed=channel.voice_speed,
-                voice_profile=VOICE_PROFILES.get(lang, VOICE_PROFILES["en"]))
-            duration = spoken.duration or storage.media_duration(spoken.path)
-            if duration <= 0:
-                raise ArchiveError("озвучка не получилась")
-            item.credits = float(spoken.credits or 0.0)
+            cached = voice_cache_path(channel, item)
+            voice: Path
+            if cached.exists() and storage.media_duration(cached) > 0.5:
+                # Тот же текст тем же голосом уже озвучен: при повторной загрузке
+                # архива и при пересборке платить второй раз незачем.
+                voice = cached
+                duration = storage.media_duration(cached)
+                item.credits = 0.0
+                log.info("Серия %s: озвучка взята с диска (%.1f с)", item.folder, duration)
+            else:
+                spoken = tts.synthesize(
+                    client, item.narration, workdir / "voice.m4a",
+                    model=channel.tts_model, voice_id=channel.voice_id,
+                    stability=channel.voice_stability, similarity=channel.voice_similarity,
+                    speed=channel.voice_speed,
+                    voice_profile=VOICE_PROFILES.get(lang, VOICE_PROFILES["en"]))
+                duration = spoken.duration or storage.media_duration(spoken.path)
+                if duration <= 0:
+                    raise ArchiveError("озвучка не получилась")
+                shutil.copyfile(spoken.path, cached)
+                voice = cached
+                item.credits = float(spoken.credits or 0.0)
 
             # 2. Фон. Обложка из архива — бесплатно; генерация только если просят.
             cover = _cover_for(session, client, channel, batch, item, workdir)
@@ -334,13 +372,13 @@ def build_item(item_id: int) -> Path:
             # 3. Ролик: обложка секунду как есть, дальше притемнённая под титры.
             total = duration + TAIL_SECONDS
             raw = workdir / "raw.mp4"
-            media.build_still_scene(
-                cover, spoken.path, raw, size, total, workdir,
-                motion=channel_motion(channel), dim=COVER_DIM,
-                dim_start=COVER_HOLD, dim_span=COVER_FADE)
+            media.build_cover_scene(
+                cover, voice, raw, size, total, workdir,
+                hold=COVER_HOLD, fade=COVER_FADE, dim=COVER_DIM,
+                zoom_end=COVER_ZOOM)
 
             # 4. Титры поверх, но не поверх обложки.
-            cues = _shift_past_cover(_cues_for(item, spoken.path, duration))
+            cues = _shift_past_cover(_cues_for(item, voice, duration))
             with_subs = raw
             if channel.burn_subtitles and cues:
                 ass = workdir / "subs.ass"
@@ -352,9 +390,14 @@ def build_item(item_id: int) -> Path:
             # 5. Музыка — вторая и последняя статья расхода API.
             final_src = with_subs
             if channel.background_music:
-                track = music.ensure_track(session, client, channel.id,
-                                           channel.topic or channel.name,
-                                           hint=channel.music_style or "")
+                # Именно pick_track, а не ensure_track: тот держит один трек на
+                # канал (так нужно длинному ролику со сквозной музыкой), а сотня
+                # шортсов с одинаковым фоном сливается в ленте.
+                track = music.pick_track(session, client, channel.id,
+                                         channel.topic or channel.name,
+                                         style_hint=channel.music_style or "",
+                                         target=st.get_int(session,
+                                                           "music_library_target", 5))
                 if track is not None:
                     mixed = workdir / "mixed.mp4"
                     media.mix_background_music(
@@ -428,13 +471,52 @@ def _cover_for(session: Session, client: KieClient, channel: Channel,
 # --------------------------------------------------------------- расписание
 
 def due_items(session: Session, today: dt.date = None) -> list[ArchiveItem]:
-    """Серии, которым пора собираться."""
+    """Серии, которым пора собираться. Архивы на паузе пропускаем."""
     today = today or dt.date.today()
+    paused = {b.id for b in session.execute(
+        select(ArchiveBatch).where(ArchiveBatch.paused.is_(True))).scalars()}
     rows = session.execute(
         select(ArchiveItem).where(ArchiveItem.status == "planned")
         .order_by(ArchiveItem.idx, ArchiveItem.id)).scalars().all()
     return [r for r in rows
-            if r.scheduled_date is None or r.scheduled_date <= today]
+            if r.batch_id not in paused
+            and (r.scheduled_date is None or r.scheduled_date <= today)]
+
+
+def stop_batch(session: Session, batch_id: int) -> tuple[int, int]:
+    """Остановить архив: снять очередь и вернуть серии в план.
+
+    Задачу, которая уже считается прямо сейчас, не обрываем — она доделает свою
+    серию и остановится сама. Обрывать её на середине смысла нет: озвучка за неё
+    уже оплачена.
+    """
+    from .models import Job
+
+    batch = session.get(ArchiveBatch, batch_id)
+    if batch is None:
+        return 0, 0
+    batch.paused = True
+    rows = session.execute(
+        select(ArchiveItem).where(ArchiveItem.batch_id == batch_id,
+                                  ArchiveItem.status == "queued")).scalars().all()
+    ids = {r.id for r in rows}
+    jobs = 0
+    for job in session.execute(
+            select(Job).where(Job.kind == "archive_item",
+                              Job.status == "pending")).scalars():
+        try:
+            payload = json.loads(job.payload or "{}")
+        except ValueError:
+            continue
+        if int(payload.get("item_id") or 0) in ids:
+            job.status = "cancelled"
+            jobs += 1
+    for row in rows:
+        row.status = "planned"
+    session.commit()
+    log.info("Архив %s остановлен: снято задач %s, серий в план %s",
+             batch_id, jobs, len(rows))
+    return jobs, len(rows)
 
 
 def run_due(limit: int = 50) -> int:

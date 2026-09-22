@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sqlalchemy import func, select
 from app.db import session_scope
 from app.models import Channel, ComfyTask, ComfyWorkflow, Event, Job
-from app import pipeline
+from app import pipeline, storage
 from app import settings_store as st
 
 with session_scope() as s:
@@ -51,6 +51,29 @@ with session_scope() as s:
     print("=== очередь задач завода")
     for j in s.execute(select(Job).order_by(Job.id.desc()).limit(5)).scalars():
         print(f"  #{j.id} {j.kind} → {j.status}: {(j.error or '')[:120]}")
+
+    print("=== фоновая музыка по каналам")
+    from app.models import Channel as _Ch, MusicTrack
+    for ch in s.execute(select(_Ch)).scalars():
+        tracks = s.execute(select(MusicTrack).where(
+            MusicTrack.channel_id == ch.id)).scalars().all()
+        alive = [t for t in tracks if t.path and storage.abspath(t.path).exists()]
+        print(f"  #{ch.id} «{ch.name}»: музыка "
+              f"{'включена' if ch.background_music else 'выключена'}, "
+              f"треков в библиотеке {len(alive)}")
+        for t in alive[:5]:
+            print(f"      «{t.title[:50]}» {t.duration_sec:.0f} с, "
+                  f"использован {t.used_count} раз")
+
+    print("=== архивы")
+    from app.models import ArchiveBatch, ArchiveItem
+    for b in s.execute(select(ArchiveBatch)).scalars():
+        rows = s.execute(select(ArchiveItem.status, func.count(ArchiveItem.id))
+                         .where(ArchiveItem.batch_id == b.id)
+                         .group_by(ArchiveItem.status)).all()
+        print(f"  #{b.id} «{b.name}» (канал {b.channel_id}): "
+              f"{'НА ПАУЗЕ, ' if b.paused else ''}по {b.per_day or 'все'} в день, "
+              f"{dict(rows)}")
 
     print("=== последние события")
     for e in s.execute(select(Event).order_by(Event.id.desc()).limit(20)).scalars():

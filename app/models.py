@@ -315,6 +315,9 @@ class ArchiveBatch(Base):
     # Сколько роликов в день выпускать. Ноль — все разом, без расписания.
     per_day: Mapped[int] = mapped_column(Integer, default=0)
     total: Mapped[int] = mapped_column(Integer, default=0)
+    # Пауза: расписание такой архив пропускает, а нажатое вручную снимается с
+    # очереди. Нужна, когда сотня серий уже поехала, а остановить её нечем.
+    paused: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
     items: Mapped[list["ArchiveItem"]] = relationship(
