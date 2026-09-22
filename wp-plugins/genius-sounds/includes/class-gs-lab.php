@@ -17,6 +17,8 @@ class GS_Lab {
     const API_JOBS_INFO   = 'https://api.kie.ai/api/v1/jobs/recordInfo';
     const API_MUSIC      = 'https://api.kie.ai/api/v1/generate';
     const API_MUSIC_INFO = 'https://api.kie.ai/api/v1/generate/record-info';
+    const API_LYRICS      = 'https://api.kie.ai/api/v1/lyrics';
+    const API_LYRICS_INFO = 'https://api.kie.ai/api/v1/lyrics/record-info';
     const API_VOCAL       = 'https://api.kie.ai/api/v1/vocal-removal/generate';
     const API_VOCAL_INFO  = 'https://api.kie.ai/api/v1/vocal-removal/record-info';
 
@@ -454,6 +456,60 @@ class GS_Lab {
                           'Да, сгенерированные треки вы используете в своих проектах — в видео, подкастах, рекламе. Это удобнее готовых библиотек: площадки не предъявляют претензий по авторским правам к музыке, которой раньше не существовало.'),
                     array('Чем это отличается от генератора звуков?',
                           'Генератор звуков делает короткие эффекты и атмосферу — шаги, взрыв, дождь. Здесь получается полноценный музыкальный трек со структурой: вступление, развитие, финал.'),
+                ),
+            ),
+
+            'lyrics' => array(
+                'id'          => 'lyrics',
+                'slug'        => 'tekst-pesni',
+                'page_option' => 'gs_lab_page_lyrics',
+                'menu'        => 'Текст песни',
+                'nav'         => 'Текст песни',
+                'h1'          => 'Текст песни нейросетью: слова к треку по описанию',
+                'seo_title'   => 'Написать текст песни нейросетью онлайн — слова к треку',
+                'seo_desc'    => 'Напишите текст песни нейросетью онлайн: опишите тему и настроение — получите два варианта со структурой куплет-припев. Готовый текст сразу поётся в генераторе музыки.',
+                'lead'        => 'Опишите, о чём песня и каким должно быть настроение, — нейросеть напишет слова со структурой: куплеты, припев, бридж. Приходит два разных варианта, чтобы было из чего выбрать.',
+                'badge'       => 'Слова к треку',
+                'cost_option' => 'gs_lab_cost_lyrics',
+                'cost'        => 9,
+                'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 9, 'max_seconds' => 0),
+                'available'   => true,
+                'inputs'      => array(),
+                'accept'      => array(),
+                'prompt'      => true,
+                'prompt_label'=> 'О чём песня',
+                'prompt_hint' => 'Чем конкретнее сюжет, тем живее текст. Пишите на том языке, на котором нужны слова: русское описание даёт русский текст.',
+                'prompt_place'=> 'Например: о переезде в чужой город, тепло и с иронией, от первого лица',
+                'fields'      => array(
+                    'style' => array(
+                        'type'  => 'text',
+                        'label' => 'Жанр и настроение (необязательно)',
+                        'place' => 'рок-баллада, рэп, шансон, поп',
+                        'max'   => 200,
+                        'hint'  => 'От жанра зависит длина строк и ритм: у рэпа плотный текст, у баллады — длинные фразы.',
+                    ),
+                ),
+                'result_kind' => 'text',
+                'text_label'  => 'Текст песни',
+                'poll_seconds'=> 300,
+                'steps'       => array(
+                    'Опишите сюжет песни и настроение — пары предложений достаточно.',
+                    'При желании укажите жанр: от него зависят ритм и длина строк.',
+                    'Через полминуты заберите два варианта текста и отдайте понравившийся в генератор музыки.',
+                ),
+                'faq'         => array(
+                    array('На каком языке будет текст?',
+                          'На том, на котором написано описание. Русское описание даёт русский текст, английское — английский. Язык можно задать и прямо в описании: «текст на английском о летней поездке».'),
+                    array('Что означают пометки [Verse] и [Chorus]?',
+                          'Это разметка структуры: куплет, припев, бридж. Генератор музыки читает её и строит по ней аранжировку — где вступление, где подъём, где повтор. Если текст нужен только для чтения, пометки можно убрать.'),
+                    array('Сколько вариантов приходит за один запуск?',
+                          'Два разных текста на одно описание. Это не одна и та же песня с правками: сюжет и образы у них расходятся, поэтому есть из чего выбрать.'),
+                    array('Можно ли сразу спеть этот текст?',
+                          'Да. Скопируйте текст, откройте «Создать музыку», снимите галочку «без вокала» и вставьте слова в поле текста — нейросеть споёт именно их. А если нужен свой голос, тот же текст берёт «Песня своим голосом».'),
+                    array('Кому принадлежат слова?',
+                          'Вам. Текст написан по вашему описанию и раньше не существовал — его можно публиковать, петь и использовать в коммерческих проектах.'),
+                    array('Сколько это стоит?',
+                          'Девять рублей за запуск, и за эти деньги приходит сразу два варианта. Переписать описание и запустить снова — ещё девять.'),
                 ),
             ),
 
@@ -1158,6 +1214,23 @@ class GS_Lab {
             return array('ok' => $res['ok'] && $task !== '', 'task_id' => $task, 'message' => $res['message']);
         }
 
+        if ($id === 'lyrics') {
+            $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
+            $style  = trim((string) ($fields['style'] ?? ''));
+            $prompt = trim((string) ($params['prompt'] ?? ''));
+            // Жанр поставщик отдельным полем не принимает — дописываем в
+            // описание, иначе он просто потеряется по дороге.
+            if ($style !== '') {
+                $prompt .= '. Жанр и настроение: ' . $style;
+            }
+            $res = self::post_json(self::API_LYRICS, array(
+                'prompt'      => mb_substr($prompt, 0, 1000),
+                'callBackUrl' => $callback,
+            ));
+            $task = $res['ok'] ? (string) ($res['body']['data']['taskId'] ?? '') : '';
+            return array('ok' => $res['ok'] && $task !== '', 'task_id' => $task, 'message' => $res['message']);
+        }
+
         if ($id === 'vocal') {
             $res = self::post_json(self::API_VOCAL, array(
                 'audioUrl'    => (string) $params['audio_url'],
@@ -1263,6 +1336,47 @@ class GS_Lab {
             if ($status === 'SUCCESS' && $files) {
                 $out['status'] = 'completed';
                 $out['files'] = $files;
+            }
+            return $out;
+        }
+
+        if ($id === 'lyrics') {
+            $res = self::get_json(self::API_LYRICS_INFO, array('taskId' => $task_id));
+            if (!$res['ok']) {
+                $out['message'] = $res['message'];
+                return $out;
+            }
+            $data = isset($res['body']['data']) && is_array($res['body']['data']) ? $res['body']['data'] : array();
+            $out['ok'] = true;
+            $status = strtoupper((string) ($data['status'] ?? ''));
+
+            if (in_array($status, array('CREATE_TASK_FAILED', 'GENERATE_LYRICS_FAILED', 'CALLBACK_EXCEPTION', 'SENSITIVE_WORD_ERROR'), true)) {
+                $out['status'] = 'failed';
+                $out['message'] = $status === 'SENSITIVE_WORD_ERROR'
+                    ? 'Описание не прошло проверку — переформулируйте запрос'
+                    : 'Не удалось написать текст';
+                return $out;
+            }
+
+            $items = array();
+            if (!empty($data['response']['data']) && is_array($data['response']['data'])) {
+                $items = $data['response']['data'];
+            }
+            // Вариантов приходит два. Склеиваем их в один текст с
+            // подписями: раздельные поля здесь только мешали бы копировать.
+            $parts = array();
+            foreach ($items as $index => $item) {
+                $text = trim((string) ($item['text'] ?? ''));
+                if ($text === '') {
+                    continue;
+                }
+                $title = trim((string) ($item['title'] ?? ''));
+                $head = 'Вариант ' . ((int) $index + 1) . ($title !== '' ? ' — ' . $title : '');
+                $parts[] = $head . "\n\n" . $text;
+            }
+            if ($status === 'SUCCESS' && $parts) {
+                $out['status'] = 'completed';
+                $out['text'] = implode("\n\n\n", $parts);
             }
             return $out;
         }

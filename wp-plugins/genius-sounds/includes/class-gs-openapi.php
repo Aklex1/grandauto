@@ -415,7 +415,7 @@ class GS_Openapi {
                         'properties' => array(
                             'task_id' => array('type' => 'string'),
                             'service' => array('type' => 'string'),
-                            'status'  => array('type' => 'string', 'examples' => array('processing')),
+                            'status'  => array('type' => 'string', 'examples' => array('pending')),
                             'cost'    => array('type' => 'number'),
                             'balance' => array('type' => 'number'),
                         ),
@@ -425,8 +425,21 @@ class GS_Openapi {
                         'properties' => array(
                             'task_id' => array('type' => 'string'),
                             'service' => array('type' => 'string'),
-                            'status'  => array('type' => 'string', 'enum' => array('processing', 'done', 'failed')),
-                            'files'   => array('type' => 'array', 'items' => array('type' => 'string', 'format' => 'uri')),
+                            'status'  => array('type' => 'string', 'enum' => array('pending', 'completed', 'failed')),
+                            // Файл — не голая ссылка: у операции их бывает
+                            // несколько, и без подписи и вида непонятно, что
+                            // из этого субтитры, а что звук.
+                            'files'   => array(
+                                'type'  => 'array',
+                                'items' => array(
+                                    'type' => 'object',
+                                    'properties' => array(
+                                        'label' => array('type' => 'string', 'examples' => array('Субтитры SRT')),
+                                        'kind'  => array('type' => 'string', 'enum' => array('audio', 'video', 'image', 'file')),
+                                        'url'   => array('type' => 'string', 'format' => 'uri'),
+                                    ),
+                                ),
+                            ),
                             'text'    => array('type' => 'string', 'description' => 'Для операций, отдающих текст'),
                             'message' => array('type' => 'string'),
                             'cost'    => array('type' => 'number'),

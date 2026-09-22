@@ -127,6 +127,19 @@ class GS_Api {
                 'bools'  => array('instrumental'),
                 'result' => 'audio',
             ),
+            'lyrics' => array(
+                'id'     => 'lyrics',
+                'engine' => 'lab',
+                'lab_id' => 'lyrics',
+                'title'  => 'Текст песни',
+                'about'  => 'Два варианта слов к треку по описанию, с разметкой куплетов и припева.',
+                'input'  => array(
+                    'prompt' => 'required',
+                    'style'  => 'optional',
+                ),
+                'fields' => array('style'),
+                'result' => 'text',
+            ),
             'stt' => array(
                 'id'     => 'stt',
                 'engine' => 'lab',

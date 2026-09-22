@@ -265,7 +265,7 @@
 
             var caption = document.createElement('h3');
             caption.className = 'gs-lab-file__title';
-            caption.textContent = 'Расшифровка';
+            caption.textContent = cfg.textLabel || 'Расшифровка';
             box.appendChild(caption);
 
             var body = document.createElement('div');
