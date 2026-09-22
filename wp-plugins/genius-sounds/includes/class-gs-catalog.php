@@ -165,8 +165,8 @@ class GS_Catalog {
     /**
      * @return array<int,array{slug:string,title:string,desc:string,count:int}>
      */
-    public static function load_index() {
-        if (self::$index !== null) {
+    public static function load_index($fresh = false) {
+        if (!$fresh && self::$index !== null) {
             return self::$index;
         }
         $items = array();
@@ -253,7 +253,12 @@ class GS_Catalog {
             return false;
         }
 
-        $index = self::load_index();
+        // Указатель читаем заново, а не из памяти запроса: рядом может
+        // идти импорт, который только что дописал в него свои строки.
+        // Именно так и потерялись 27 подборок: импорт добавил их в файл,
+        // а следующая правка описания записала поверх свою старую копию.
+        $lock = self::lock_index();
+        $index = self::load_index(true);
         $entry = self::index_entry($category);
         $found = false;
         foreach ($index as $i => $row) {
@@ -266,7 +271,35 @@ class GS_Catalog {
         if (!$found) {
             $index[] = $entry;
         }
-        return self::save_index($index);
+        $saved = self::save_index($index);
+        self::unlock_index($lock);
+        return $saved;
+    }
+
+    /**
+     * Замок на время «прочитать указатель — изменить — записать».
+     *
+     * Сам по себе atomic_put не спасает: он атомарен для записи, но не для
+     * пары чтение-запись, а параллельно идут импорт и правка текстов.
+     *
+     * @return resource|null
+     */
+    private static function lock_index() {
+        $path = self::index_path() . '.lock';
+        $handle = @fopen($path, 'c');
+        if (!$handle) {
+            return null;
+        }
+        // Ждём недолго: лучше редкая потеря строки, чем зависший запрос.
+        @flock($handle, LOCK_EX);
+        return $handle;
+    }
+
+    private static function unlock_index($handle) {
+        if (is_resource($handle)) {
+            @flock($handle, LOCK_UN);
+            @fclose($handle);
+        }
     }
 
     /**
@@ -289,7 +322,8 @@ class GS_Catalog {
      * вычисляется по слагу и названию — они в индексе есть.
      */
     public static function rebuild_index() {
-        $index = self::load_index();
+        $lock = self::lock_index();
+        $index = self::load_index(true);
         $out = array();
         foreach ($index as $row) {
             if (!is_array($row) || empty($row['slug'])) {
@@ -299,7 +333,69 @@ class GS_Catalog {
             $out[] = $row;
         }
         self::save_index($out);
+        self::unlock_index($lock);
         return count($out);
+    }
+
+    /**
+     * Пересобрать указатель по самим файлам подборок.
+     *
+     * Указатель — производная от файлов, и когда он расходится с ними
+     * (так и вышло: параллельные записи затёрли часть строк), правда лежит
+     * в файлах. Идём пачками: подборок больше тысячи, а памяти у WordPress
+     * на этом хостинге 40 МБ, и держать их все разом нельзя.
+     *
+     * @return array{done:int,total:int,next:int}
+     */
+    public static function rebuild_from_files($offset = 0, $limit = 100) {
+        $dir = self::cats_dir();
+        $names = is_dir($dir) ? scandir($dir) : array();
+        $files = array();
+        foreach ((array) $names as $name) {
+            if (substr($name, -5) === '.json') {
+                $files[] = $name;
+            }
+        }
+        sort($files);
+        $total = count($files);
+        $slice = array_slice($files, max(0, (int) $offset), max(1, (int) $limit));
+
+        $lock = self::lock_index();
+        $index = self::load_index(true);
+        $by_slug = array();
+        foreach ($index as $i => $row) {
+            if (!empty($row['slug'])) {
+                $by_slug[(string) $row['slug']] = $i;
+            }
+        }
+
+        $done = 0;
+        foreach ($slice as $name) {
+            $raw = @file_get_contents($dir . '/' . $name);
+            if ($raw === false) {
+                continue;
+            }
+            $category = json_decode($raw, true);
+            unset($raw);
+            if (!is_array($category) || empty($category['slug'])) {
+                continue;
+            }
+            $entry = self::index_entry($category);
+            unset($category);
+            $slug = $entry['slug'];
+            if (isset($by_slug[$slug])) {
+                $index[$by_slug[$slug]] = $entry;
+            } else {
+                $index[] = $entry;
+                $by_slug[$slug] = count($index) - 1;
+            }
+            $done++;
+        }
+
+        self::save_index($index);
+        self::unlock_index($lock);
+
+        return array('done' => $done, 'total' => $total, 'next' => (int) $offset + count($slice));
     }
 
     public static function count_sounds($category) {

@@ -1566,10 +1566,21 @@ class GS_Rest {
         }
         $rebuilt = !empty($params['rebuild']) ? GS_Catalog::rebuild_index() : 0;
 
+        // Полная пересборка по файлам подборок — когда указатель разошёлся
+        // с ними. Идёт пачками: ответ говорит, с какого места продолжать.
+        $from_files = null;
+        if (!empty($params['from_files'])) {
+            $from_files = GS_Catalog::rebuild_from_files(
+                (int) ($params['offset'] ?? 0),
+                (int) ($params['limit'] ?? 100)
+            );
+        }
+
         return rest_ensure_response(array(
             'success'  => true,
             'assigned' => $assigned,
             'rebuilt'  => $rebuilt,
+            'files'    => $from_files,
             'sections' => GS_Sections::overview(),
         ));
     }
