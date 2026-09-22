@@ -1,73 +1,130 @@
-<!-- Шапка genius-bot.ru. Вставлять в Header Builder темы Impreza элементом HTML,
-     родное меню темы при этом скрыть. Самодостаточна: свои стили, свой мобильный режим. -->
-<style>.gaH{--bg:rgba(7,11,20,.88);--line:#1e293b;--text:#f1f5f9;--muted:#94a3b8;--accent:#818cf8;
-  --accent2:#22d3ee;position:sticky;top:0;z-index:900;background:var(--bg);
-  backdrop-filter:saturate(140%) blur(14px);border-bottom:1px solid var(--line);
-  font-family:Rubik,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
-  margin:0 calc(50% - 50vw);width:100vw}
-.gaH *,.gaH *::before,.gaH *::after{box-sizing:border-box}
-.gaH__in{max-width:1180px;margin:0 auto;padding:0 20px;height:64px;display:flex;align-items:center;gap:22px}
-.gaH__logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px;color:var(--text);
-  text-decoration:none;white-space:nowrap}
-.gaH__logo b{background:linear-gradient(92deg,var(--accent),var(--accent2));
+<!-- Шапка genius-bot.ru. В Header Builder темы Impreza вставить элементом HTML,
+     родное меню темы скрыть. Самодостаточна: свои стили и мобильный режим. -->
+<style>:root{
+  --bg:#161f36; --bg2:#111a2e; --panel:#1f2942; --panel2:#27324f; --panel3:#2d3956;
+  --line:#33406230; --line2:#3a4568; --text:#eef2fb; --muted:#a3b0cd; --dim:#7c8aab;
+  --accent:#818cf8; --accent2:#22d3ee; --accent3:#a78bfa; --ink:#0b1220;
+}
+.gh *,.gh *::before,.gh *::after{box-sizing:border-box}
+.gh{position:sticky;top:0;z-index:900;background:rgba(17,26,46,.9);
+  backdrop-filter:saturate(140%) blur(14px);border-bottom:1px solid var(--line2);
+  font-family:Rubik,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;margin:0 calc(50% - 50vw);width:100vw}
+.gh__in{max-width:1200px;margin:0 auto;padding:0 20px;height:66px;display:flex;align-items:center;gap:20px}
+.gh__logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:18px;color:#fff;white-space:nowrap}
+.gh__logo b{background:linear-gradient(92deg,var(--accent),var(--accent2));
   -webkit-background-clip:text;background-clip:text;color:transparent}
-.gaH__nav{display:flex;align-items:center;gap:3px;flex:1}
-.gaH__item{position:relative}
-.gaH__link{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border-radius:10px;
-  color:var(--muted);text-decoration:none;font-size:14.5px;font-weight:500;white-space:nowrap;
-  transition:color .15s,background .15s}
-.gaH__link:hover,.gaH__item:focus-within .gaH__link{color:var(--text);background:rgba(255,255,255,.06)}
-.gaH__item--has::after{content:"";width:5px;height:5px;border-right:1.5px solid currentColor;
-  border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-2px);
-  display:inline-block;margin-left:-6px;color:var(--muted);pointer-events:none}
-.gaH__drop{position:absolute;top:calc(100% + 8px);left:0;min-width:262px;padding:8px;
-  border-radius:14px;background:#0f172a;border:1px solid var(--line);
-  box-shadow:0 22px 48px -24px #000;display:none;flex-direction:column;gap:2px}
-.gaH__item:hover .gaH__drop,.gaH__item:focus-within .gaH__drop{display:flex}
-.gaH__drop a{padding:9px 12px;border-radius:9px;color:#cbd5e1;text-decoration:none;font-size:14.5px}
-.gaH__drop a:hover{background:rgba(129,140,248,.14);color:#fff}
-.gaH__right{display:flex;align-items:center;gap:10px;margin-left:auto}
-.gaH__ghost{padding:9px 16px;border-radius:10px;border:1px solid var(--line);color:#cbd5e1;
-  text-decoration:none;font-size:14.5px;font-weight:500;background:none;cursor:pointer;
-  font-family:inherit}
-.gaH__ghost:hover{border-color:var(--accent);color:#fff}
-.gaH__main{padding:9px 18px;border-radius:10px;text-decoration:none;font-size:14.5px;font-weight:600;
-  background:linear-gradient(92deg,var(--accent),var(--accent2));color:#070b14}
-.gaH__burger{display:none;width:42px;height:42px;border-radius:10px;border:1px solid var(--line);
-  background:none;cursor:pointer;color:var(--text);font-size:20px;line-height:1;margin-left:auto}
-@media (max-width:1000px){
-  .gaH__nav,.gaH__right{display:none}
-  .gaH__burger{display:block}
-  .gaH__in{gap:12px}
-  .gaH.is-open .gaH__nav{display:flex;position:absolute;top:64px;left:0;right:0;flex-direction:column;
-    align-items:stretch;gap:2px;padding:12px;background:#0b1220;border-bottom:1px solid var(--line)}
-  .gaH.is-open .gaH__drop{position:static;display:flex;border:none;background:none;box-shadow:none;
-    padding:0 0 6px 14px}
-  .gaH.is-open .gaH__right{display:flex;position:absolute;top:auto;left:0;right:0;padding:0 12px 14px;
-    background:#0b1220;transform:translateY(100%);bottom:0}
-}</style>
+.gh__nav{display:flex;align-items:center;gap:2px;flex:1}
+.gh__item{position:relative}
+.gh__link{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border-radius:10px;
+  color:var(--muted);font-size:14.5px;font-weight:500;white-space:nowrap;cursor:pointer;
+  transition:color .15s,background .15s;background:none;border:none;font-family:inherit}
+.gh__link:hover,.gh__item:focus-within .gh__link{color:#fff;background:rgba(255,255,255,.06)}
+.gh__item--has>.gh__link::after{content:"";width:5px;height:5px;border-right:1.6px solid currentColor;
+  border-bottom:1.6px solid currentColor;transform:rotate(45deg) translateY(-2px);margin-left:2px}
+.gh__drop{position:absolute;top:calc(100% + 8px);left:0;min-width:288px;padding:8px;border-radius:16px;
+  background:var(--panel);border:1px solid var(--line2);box-shadow:0 26px 54px -24px #000;
+  display:none;flex-direction:column;gap:2px}
+.gh__item:hover .gh__drop,.gh__item:focus-within .gh__drop{display:flex}
+.gh__di{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:11px;color:#d4dcec;
+  font-size:14.5px}
+.gh__di:hover{background:rgba(129,140,248,.15);color:#fff}
+.gh__di .svc-card__ic,.gh__di .gh__ic{width:36px;height:36px;padding:7px;flex-shrink:0;border-radius:10px;
+  background:linear-gradient(150deg,rgba(129,140,248,.16),rgba(34,211,238,.1));border:1px solid var(--line2)}
+.gh__di small{display:block;color:var(--dim);font-size:12px;margin-top:1px}
+.gh__right{display:flex;align-items:center;gap:10px;margin-left:auto}
+.gh__ghost{padding:9px 16px;border-radius:10px;border:1px solid var(--line2);color:#e6ebf6;
+  font-size:14.5px;font-weight:500;background:none;cursor:pointer;font-family:inherit}
+.gh__ghost:hover{border-color:var(--accent);color:#fff}
+.gh__main{padding:9px 18px;border-radius:10px;font-size:14.5px;font-weight:600;
+  background:linear-gradient(92deg,var(--accent),var(--accent2));color:var(--ink)}
+.gh__burger{display:none;width:44px;height:44px;border-radius:10px;border:1px solid var(--line2);
+  background:none;cursor:pointer;color:#fff;font-size:20px;margin-left:auto}
 
-<header class="gaH" id="gaHeader">
-  <div class="gaH__in">
-    <a class="gaH__logo" href="/"><span aria-hidden="true">🤖</span> Genius<b>bot</b></a>
-    <nav class="gaH__nav" aria-label="Основное меню"><div class="gaH__item gaH__item--has"><a class="gaH__link" href="/ai-pomoshnik/">ИИ-ассистенты</a><div class="gaH__drop"><a href="/ai-pomoshnik/dlya-uchitelya/">📘 Для учителя</a><a href="/ai-pomoshnik/dlya-ucheby/">🎒 Для учёбы</a><a href="/ai-pomoshnik/yurist/">⚖️ Документы и договоры</a><a href="/ai-pomoshnik/dlya-biznesa/">💼 Консультант для бизнеса</a></div></div><div class="gaH__item gaH__item--has"><a class="gaH__link" href="/sounds-catalog/">Сервисы</a><div class="gaH__drop"><a href="/tts-pricing/">🎙 Озвучка текста</a><a href="/audio-v-tekst/">📝 Аудио в текст</a><a href="/sozdat-prezentaciyu/">🎬 Слайды нейросетью</a><a href="/sozdat-muzyku/">🎵 Создать музыку</a><a href="/govoryashchiy-avatar/">🗣 Говорящий аватар</a></div></div><div class="gaH__item"><a class="gaH__link" href="/zakazat/">Боты под ключ</a></div><div class="gaH__item"><a class="gaH__link" href="/tts-pricing/">Цены</a></div><div class="gaH__item"><a class="gaH__link" href="/blog/">Блог</a></div></nav>
-    <div class="gaH__right">
-      <button type="button" class="gaH__ghost kie-auth-open-trigger">Войти</button>
-      <a class="gaH__main" href="/ai-pomoshnik/">Открыть ассистентов</a>
+.svc-ico{width:100%;height:100%;color:var(--accent);transition:color .2s ease,transform .35s cubic-bezier(.2,.8,.2,1)}
+.svc-ico *{transform-box:fill-box;transform-origin:center}
+.svc-card:hover .svc-ico,.svc-tile:hover .svc-ico{transform:scale(1.09);color:var(--accent2)}
+.gb-wave{stroke-dasharray:44;stroke-dashoffset:0}
+@media (prefers-reduced-motion:no-preference){
+  .svc-card:hover .gb-spark,.svc-tile:hover .gb-spark{animation:gb-pulse 1s ease-in-out infinite alternate}
+  .svc-card:hover .gb-play,.svc-tile:hover .gb-play{animation:gb-nudge .8s ease-in-out infinite alternate}
+  .svc-card:hover .gb-wave,.svc-tile:hover .gb-wave{animation:gb-draw 1.1s ease forwards}
+  .svc-card:hover .gb-zoom,.svc-tile:hover .gb-zoom{animation:gb-zoom 1s ease-in-out infinite alternate}
+  .svc-card:hover .gb-bar,.svc-tile:hover .gb-bar{animation:gb-eq .7s ease-in-out infinite alternate}
+}
+@keyframes gb-pulse{from{opacity:.4;transform:scale(.8)}to{opacity:1;transform:scale(1.15)}}
+@keyframes gb-nudge{from{transform:translateX(-1.5px)}to{transform:translateX(2.5px)}}
+@keyframes gb-draw{from{stroke-dashoffset:44}to{stroke-dashoffset:0}}
+@keyframes gb-zoom{from{transform:scale(.82)}to{transform:scale(1.04)}}
+@keyframes gb-eq{from{transform:scaleY(.72)}to{transform:scaleY(1.12)}}
+
+.gh__di:hover .svc-ico{transform:scale(1.12);color:var(--accent2)}
+@media (max-width:1040px){
+  .gh__nav,.gh__right{display:none}
+  .gh__burger{display:block}
+  .gh.is-open .gh__nav{display:flex;position:absolute;top:66px;left:0;right:0;flex-direction:column;
+    align-items:stretch;gap:2px;padding:12px;background:var(--panel);border-bottom:1px solid var(--line2);
+    max-height:calc(100vh - 66px);overflow-y:auto}
+  .gh.is-open .gh__drop{position:static;display:flex;border:none;background:rgba(0,0,0,.2);
+    box-shadow:none;margin:2px 0 6px}
+  .gh.is-open .gh__item--has>.gh__link::after{margin-left:auto}
+}
+</style>
+<header class="gh" id="ghHeader">
+  <div class="gh__in">
+    <a class="gh__logo" href="/"><span aria-hidden="true">🤖</span> Genius<b>bot</b></a>
+    <nav class="gh__nav" aria-label="Основное меню"><div class="gh__item gh__item--has"><a class="gh__link" href="/ai-pomoshnik/">ИИ-помощники</a><div class="gh__drop"><a class="gh__di" href="/ai-pomoshnik/dlya-uchitelya/"><span class="gh__ic" style="display:grid;place-items:center;font-size:18px">📘</span><span><strong style="font-weight:600">Ассистент учителя</strong></span></a><a class="gh__di" href="/ai-pomoshnik/dlya-ucheby/"><span class="gh__ic" style="display:grid;place-items:center;font-size:18px">🎒</span><span><strong style="font-weight:600">Ассистент ученика</strong></span></a><a class="gh__di" href="/ai-pomoshnik/yurist/"><span class="gh__ic" style="display:grid;place-items:center;font-size:18px">⚖️</span><span><strong style="font-weight:600">Юрист-ассистент</strong></span></a><a class="gh__di" href="/ai-pomoshnik/dlya-biznesa/"><span class="gh__ic" style="display:grid;place-items:center;font-size:18px">💼</span><span><strong style="font-weight:600">Консультант для бизнеса</strong></span></a></div></div><div class="gh__item gh__item--has"><a class="gh__link" href="#servisy">Фото</a><div class="gh__drop"><a class="gh__di" href="https://t.me/Neuro_HubAI_bot?start=web"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="10" width="34" height="28" rx="4"/>
+      <circle class="gb-spark" cx="17" cy="19" r="3.2"/>
+      <path d="M9 33l9-9 6 6 5-5 10 10"/></svg></span><span><strong style="font-weight:600">Картинка по описанию</strong></span></a><a class="gh__di" href="https://t.me/Neuro_HubAI_bot?start=web"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="10" width="30" height="28" rx="4"/>
+      <path d="M9 32l7-7 5 5-7 7"/>
+      <path class="gb-spark" d="M33 8l2.4 4.6L40 15l-4.6 2.4L33 22l-2.4-4.6L26 15l4.6-2.4z"/></svg></span><span><strong style="font-weight:600">Изменить фото</strong></span></a><a class="gh__di" href="https://t.me/Neuro_HubAI_bot?start=web"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="gb-zoom" x="15" y="15" width="18" height="18" rx="3"/>
+      <path d="M9 17V9h8M39 17V9h-8M9 31v8h8M39 31v8h-8"/></svg></span><span><strong style="font-weight:600">Увеличить качество</strong></span></a><a class="gh__di" href="/ozhivit-foto/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="9" width="34" height="26" rx="4"/>
+      <circle cx="16" cy="18" r="3"/>
+      <path d="M9 30l8-7 6 5"/>
+      <path class="gb-play" d="M27 20l11 6-11 6z" fill="currentColor" stroke="none"/></svg></span><span><strong style="font-weight:600">Оживить фото</strong></span></a></div></div><div class="gh__item gh__item--has"><a class="gh__link" href="#servisy">Видео</a><div class="gh__drop"><a class="gh__di" href="https://t.me/Neuro_HubAI_bot?start=web"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="12" width="34" height="24" rx="4"/>
+      <path d="M7 19h34M14 12l-3 7M23 12l-3 7M32 12l-3 7"/>
+      <path class="gb-play" d="M21 24l8 4-8 4z" fill="currentColor" stroke="none"/></svg></span><span><strong style="font-weight:600">Видео по описанию</strong></span></a><a class="gh__di" href="/govoryashchiy-avatar/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="19" cy="17" r="6"/>
+      <path d="M9 39c0-6 5-10 10-10s10 4 10 10"/>
+      <path class="gb-wave" d="M34 18c2 3 2 9 0 12"/>
+      <path class="gb-wave" d="M39 14c4 6 4 14 0 20"/></svg></span><span><strong style="font-weight:600">Говорящий аватар</strong></span></a><a class="gh__di" href="/muzyka-dlya-video/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="12" width="34" height="24" rx="4"/>
+      <path d="M7 19h34M13 12l-2 7M22 12l-2 7"/>
+      <circle class="gb-play" cx="22" cy="30" r="3"/>
+      <path d="M25 30v-7l7-2v7"/>
+      <circle cx="29" cy="28" r="3"/></svg></span><span><strong style="font-weight:600">Музыка для видео</strong></span></a></div></div><div class="gh__item gh__item--has"><a class="gh__link" href="#servisy">Звук</a><div class="gh__drop"><a class="gh__di" href="/tts-pricing/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20v8h6l9 7V13l-9 7z"/>
+      <path class="gb-wave" d="M30 18c3 4 3 12 0 16"/>
+      <path class="gb-wave" d="M35 14c5 6 5 18 0 24"/></svg></span><span><strong style="font-weight:600">Озвучка текста</strong></span></a><a class="gh__di" href="/audio-v-tekst/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="gb-bar" d="M8 24v-5M13 27v-11M18 30V14M23 26v-8"/>
+      <path d="M29 16h11M29 22h11M29 28h8M29 34h11"/></svg></span><span><strong style="font-weight:600">Расшифровка записи</strong></span></a><a class="gh__di" href="/sozdat-muzyku/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 30V12l16-4v18"/>
+      <circle class="gb-play" cx="15" cy="32" r="5"/>
+      <circle cx="31" cy="28" r="5"/></svg></span><span><strong style="font-weight:600">Создать музыку</strong></span></a><a class="gh__di" href="/neyroset-napishet-pesnyu/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle class="gb-play" cx="13" cy="31" r="4"/>
+      <path d="M17 31V15l8-2v14"/>
+      <circle cx="21" cy="29" r="4"/>
+      <path d="M30 16h10M30 23h10M30 30h7"/></svg></span><span><strong style="font-weight:600">Текст песни</strong></span></a><a class="gh__di" href="/ubrat-vokal/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="19" y="8" width="10" height="19" rx="5"/>
+      <path d="M14 22a10 10 0 0 0 20 0M24 32v6M18 40h12"/>
+      <path class="gb-spark" d="M37 12l2 3 3 2-3 2-2 3-2-3-3-2 3-2z"/></svg></span><span><strong style="font-weight:600">Убрать вокал</strong></span></a><a class="gh__di" href="/ubrat-shum/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="gb-bar" d="M9 24v-4M14 27v-10M19 30V14M24 27v-10M29 24v-4"/>
+      <path class="gb-spark" d="M37 10l1.6 3.4L42 15l-3.4 1.6L37 20l-1.6-3.4L32 15l3.4-1.6z"/>
+      <path d="M34 30h8"/></svg></span><span><strong style="font-weight:600">Убрать шум</strong></span></a><a class="gh__di" href="/sound-generator/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle class="gb-play" cx="24" cy="24" r="5"/>
+      <path class="gb-wave" d="M24 12V6M24 42v-6M12 24H6M42 24h-6M15 15l-4-4M37 37l-4-4M33 15l4-4M11 37l4-4"/></svg></span><span><strong style="font-weight:600">Звук по описанию</strong></span></a><a class="gh__di" href="/izvlech-zvuk-iz-video-onlayn/"><span class="svc-card__ic"><svg class="svc-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="10" width="26" height="18" rx="4"/>
+      <path class="gb-play" d="M17 15l7 4-7 4z" fill="currentColor" stroke="none"/>
+      <path d="M24 33c0 0 4 5 9 5" fill="none"/>
+      <path d="M35 24v11" />
+      <circle class="gb-play" cx="32" cy="37" r="3.4"/>
+      <path d="M35 24l6-2v11"/>
+      <circle cx="38" cy="35" r="3.4"/></svg></span><span><strong style="font-weight:600">Звук из видео</strong></span></a></div></div><div class="gh__item"><a class="gh__link" href="/sozdat-prezentaciyu/">Презентации</a></div><div class="gh__item"><a class="gh__link" href="/muzyka-dlya-video/">Фоновая музыка</a></div><div class="gh__item"><a class="gh__link" href="/sounds-catalog/">Каталог звуков</a></div><div class="gh__item"><a class="gh__link" href="/blog/">Блог</a></div></nav>
+    <div class="gh__right">
+      <button type="button" class="gh__ghost kie-auth-open-trigger">Войти</button>
+      <a class="gh__main" href="/ai-pomoshnik/">Открыть ассистентов</a>
     </div>
-    <button type="button" class="gaH__burger" aria-label="Меню" aria-expanded="false">☰</button>
+    <button type="button" class="gh__burger" aria-label="Меню" aria-expanded="false">☰</button>
   </div>
 </header>
-
 <script>
-(function () {
-  var head = document.getElementById('gaHeader');
-  if (!head) return;
-  var burger = head.querySelector('.gaH__burger');
-  burger.addEventListener('click', function () {
-    var open = head.classList.toggle('is-open');
-    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
-    burger.textContent = open ? '✕' : '☰';
-  });
-})();
+(function(){var h=document.getElementById('ghHeader');if(!h)return;
+var b=h.querySelector('.gh__burger');
+b.addEventListener('click',function(){var o=h.classList.toggle('is-open');
+b.setAttribute('aria-expanded',o?'true':'false');b.textContent=o?'✕':'☰';});
+h.querySelectorAll('.gh__item--has>.gh__link').forEach(function(l){
+  l.addEventListener('click',function(e){
+    if(window.matchMedia('(max-width:1040px)').matches){e.preventDefault();
+      l.parentNode.classList.toggle('is-exp');
+      var d=l.nextElementSibling;if(d)d.style.display=l.parentNode.classList.contains('is-exp')?'flex':'';}
+  });});})();
 </script>
