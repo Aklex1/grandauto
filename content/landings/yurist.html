@@ -1,0 +1,232 @@
+<!-- Лендинг ассистента «ИИ-помощник по договорам и документам». Собрано tools/build_landings.py — правьте tools/landing_content.py, не этот файл. -->
+<style>.gaL{--bg:#070b14;--panel:#0f172a;--panel2:#131c2e;--line:#1e293b;--text:#f1f5f9;
+  --muted:#94a3b8;--dim:#64748b;--accent:#fbbf24;--accent2:#fcd34d;
+  color:var(--text);background:var(--bg);font-family:Rubik,-apple-system,BlinkMacSystemFont,
+  "Segoe UI",Roboto,Arial,sans-serif;line-height:1.6;font-size:16px;
+  margin:0 calc(50% - 50vw);padding:0;width:100vw;overflow-x:hidden}
+.gaL *,.gaL *::before,.gaL *::after{box-sizing:border-box}
+.gaL h1,.gaL h2,.gaL h3{color:#fff;margin:0;line-height:1.18;text-wrap:balance;font-weight:700}
+.gaL p{margin:0}
+.gaL__in{width:100%;max-width:1120px;margin:0 auto;padding-left:20px;padding-right:20px}
+
+.gaL__hero{position:relative;padding-block:clamp(56px,9vw,104px);overflow:hidden;
+  border-bottom:1px solid var(--line)}
+.gaL__heroBg{position:absolute;inset:0;background-size:cover;background-position:center;
+  opacity:.5}
+.gaL__heroBg::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(105deg,#070b14 12%,rgba(7,11,20,.82) 48%,rgba(7,11,20,.35) 100%)}
+.gaL__heroIn{position:relative;max-width:660px}
+.gaL__eyebrow{display:inline-flex;align-items:center;gap:8px;padding:5px 13px;border-radius:999px;
+  background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--accent);
+  font-size:12.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.gaL__hero h1{margin:18px 0 14px;font-size:clamp(31px,5.4vw,52px);letter-spacing:-.02em}
+.gaL__lead{font-size:clamp(16px,2vw,19px);color:#cbd5e1;max-width:56ch}
+.gaL__cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+.gaL__btn{display:inline-flex;align-items:center;gap:8px;padding:14px 26px;border-radius:14px;
+  font-weight:600;font-size:15px;text-decoration:none;border:1px solid transparent;transition:.15s}
+.gaL__btn--main{background:var(--accent);color:#070b14}
+.gaL__btn--main:hover{background:var(--accent2);color:#070b14}
+.gaL__btn--ghost{background:rgba(255,255,255,.05);border-color:var(--line);color:#e2e8f0}
+.gaL__btn--ghost:hover{border-color:var(--accent);color:#fff}
+
+.gaL__stats{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+.gaL__stat{flex:1 1 150px;padding:14px 16px;border-radius:14px;background:rgba(15,23,42,.72);
+  border:1px solid var(--line);backdrop-filter:blur(6px)}
+.gaL__statV{display:block;font-size:24px;font-weight:700;color:#fff;line-height:1.1}
+.gaL__statL{display:block;font-size:12.5px;color:var(--muted);margin-top:3px}
+
+.gaL__sec{padding-block:clamp(44px,6.5vw,76px)}
+.gaL__sec--alt{background:var(--panel);border-block:1px solid var(--line)}
+.gaL__h2{font-size:clamp(23px,3.4vw,34px);margin-bottom:10px;letter-spacing:-.015em}
+.gaL__sub{color:var(--muted);max-width:60ch;margin-bottom:30px}
+
+.gaL__grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(272px,1fr))}
+.gaL__feat{padding:22px 20px;border-radius:16px;background:var(--panel2);border:1px solid var(--line);
+  display:flex;flex-direction:column;gap:8px}
+.gaL__feat i{font-style:normal;font-size:26px;line-height:1}
+.gaL__feat h3{font-size:17px}
+.gaL__feat p{color:var(--muted);font-size:14.5px}
+
+.gaL__demo{display:grid;gap:18px;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);align-items:start}
+.gaL__ask,.gaL__ans{border-radius:16px;border:1px solid var(--line);padding:18px 20px}
+.gaL__ask{background:var(--panel2)}
+.gaL__ans{background:#080d18}
+.gaL__tag{display:block;font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--dim);font-weight:600;margin-bottom:9px}
+.gaL__ask p{font-size:15px;color:#e2e8f0}
+.gaL__ans pre{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+  line-height:1.72;color:#cbd5e1;white-space:pre-wrap;word-break:break-word}
+
+.gaL__why{display:grid;gap:20px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center}
+.gaL__whyImg{border-radius:18px;border:1px solid var(--line);width:100%;height:auto;display:block;
+  aspect-ratio:4/3;object-fit:cover;background:var(--panel2)}
+.gaL__whyList{display:flex;flex-direction:column;gap:18px}
+.gaL__whyItem h3{font-size:17px;margin-bottom:5px}
+.gaL__whyItem p{color:var(--muted);font-size:14.5px}
+
+.gaL__faq{display:flex;flex-direction:column;gap:10px;max-width:820px}
+.gaL__q{border-radius:14px;border:1px solid var(--line);background:var(--panel2);
+  padding:15px 18px}
+.gaL__q summary{cursor:pointer;font-weight:600;color:#fff;font-size:15.5px;list-style:none}
+.gaL__q summary::-webkit-details-marker{display:none}
+.gaL__q summary::after{content:"+";float:right;color:var(--accent);font-weight:700}
+.gaL__q[open] summary::after{content:"–"}
+.gaL__q p{margin-top:10px;color:var(--muted);font-size:14.5px}
+
+.gaL__end{text-align:center;padding-block:clamp(48px,7vw,84px);
+  background:radial-gradient(ellipse at 50% 0%,rgba(129,140,248,.14),transparent 62%)}
+.gaL__end h2{font-size:clamp(24px,3.6vw,36px);margin-bottom:12px}
+.gaL__end p{color:var(--muted);max-width:52ch;margin:0 auto 26px}
+.gaL__end .gaL__cta{justify-content:center}
+
+@media (max-width:820px){
+  .gaL__demo,.gaL__why{grid-template-columns:1fr}
+  .gaL__why{gap:16px}
+}
+@media (prefers-reduced-motion:reduce){.gaL__btn{transition:none}}</style>
+
+<div class="gaL">
+
+  <section class="gaL__hero">
+    <div class="gaL__heroBg" style="background-image:url('{IMG}/yurist-hero.webp')"></div>
+    <div class="gaL__in gaL__heroIn">
+      <span class="gaL__eyebrow">⚖️ ИИ-ассистент · документы</span>
+      <h1>ИИ-помощник по договорам и документам</h1>
+      <p class="gaL__lead">Читает договор и показывает пункты, которые работают против вас, с готовой заменой формулировки. Составляет претензию, заявление и ответ на требование.</p>
+      <div class="gaL__cta">
+        <a class="gaL__btn gaL__btn--main" href="#probovat">Попробовать здесь</a>
+        <a class="gaL__btn gaL__btn--ghost" href="https://t.me/Neuro_HubAI_bot?start=yurist"
+           target="_blank" rel="noopener">Открыть в Telegram</a>
+      </div>
+      <div class="gaL__stats"><div class="gaL__stat"><span class="gaL__statV">3</span><span class="gaL__statL">документа в день бесплатно</span></div><div class="gaL__stat"><span class="gaL__statV">1290 ₽</span><span class="gaL__statL">в месяц без ограничений</span></div><div class="gaL__stat"><span class="gaL__statV">2 мин</span><span class="gaL__statL">разбор договора</span></div></div>
+    </div>
+  </section>
+
+  <section class="gaL__sec" id="probovat">
+    <div class="gaL__in">
+      <h2 class="gaL__h2">Попробуйте прямо сейчас</h2>
+      <p class="gaL__sub">Без регистрации. Вход — почтой, через VK или Telegram, тем же аккаунтом,
+         что и остальные сервисы Genius: баланс один на всё.</p>
+      [genius_assistant slug="yurist"]
+    </div>
+  </section>
+
+  <section class="gaL__sec gaL__sec--alt">
+    <div class="gaL__in">
+      <h2 class="gaL__h2">Что он делает</h2>
+      <div class="gaL__grid"><article class="gaL__feat"><i aria-hidden="true">🔍</i><h3>Разбор договора</h3><p>По пунктам: что это значит на практике. Отдельно — формулировки против вас, с готовой заменой для каждой.</p></article><article class="gaL__feat"><i aria-hidden="true">📨</i><h3>Претензия</h3><p>Кому, на каком основании, что требуете и в какой срок. Готовый текст с полями под реквизиты.</p></article><article class="gaL__feat"><i aria-hidden="true">📄</i><h3>Заявление</h3><p>В организацию, в госорган, работодателю. В той форме, в которой их принимают.</p></article><article class="gaL__feat"><i aria-hidden="true">🗣</i><h3>Перевод на человеческий</h3><p>Что от вас хотят, что будет, если промолчать, и сколько времени есть на ответ.</p></article><article class="gaL__feat"><i aria-hidden="true">✍️</i><h3>Ответ на требование</h3><p>Позиция, изложенная спокойно и по существу, со ссылками на нормы там, где они уместны.</p></article><article class="gaL__feat"><i aria-hidden="true">📑</i><h3>Расписка, акт, соглашение</h3><p>Бытовые документы, которые чаще всего составляют неправильно и потом не могут использовать.</p></article></div>
+    </div>
+  </section>
+
+  <section class="gaL__sec">
+    <div class="gaL__in">
+      <h2 class="gaL__h2">Как это выглядит</h2>
+      <p class="gaL__sub">Реальный запрос и реальный ответ, без монтажа.</p>
+      <div class="gaL__demo">
+        <div class="gaL__ask">
+          <span class="gaL__tag">Запрос</span>
+          <p>Проверь договор аренды, я арендатор. Пункт 4.3: «Арендодатель вправе в одностороннем порядке изменять размер арендной платы, уведомив Арендатора за 5 (пять) календарных дней».</p>
+        </div>
+        <div class="gaL__ans">
+          <span class="gaL__tag">Ответ ассистента</span>
+          <pre>Пункт 4.3 — рискованный. Разбираю, чем именно.
+
+Что здесь написано на практике: арендодатель может поднять плату на любую сумму, в любой момент и сколько угодно раз. Пять календарных дней — это срок,
+за который вы не успеете ни найти помещение, ни съехать.
+
+Чем это грозит: через месяц после заезда плата может вырасти вдвое, и формально вы с этим согласились, подписав договор.
+
+Чем заменить:
+«Размер арендной платы может быть изменён не чаще одного раза в 12 месяцев и не более чем на 10 процентов, с письменным уведомлением Арендатора не позднее чем за 30 календарных дней до даты изменения».
+
+— Это подготовка документа, а не юридическая консультация: перед подписанием покажите договор юристу.</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gaL__sec gaL__sec--alt">
+    <div class="gaL__in">
+      <h2 class="gaL__h2">Где проходит граница</h2>
+      <div class="gaL__why">
+        <img class="gaL__whyImg" src="{IMG}/yurist-card.webp" alt="" loading="lazy"
+             width="1200" height="896">
+        <div class="gaL__whyList"><div class="gaL__whyItem"><h3>Готовит документы, а не консультирует</h3><p>Формулировка выбрана не для красоты. Ассистент проверяет и составляет тексты; решение по спору принимает юрист.</p></div><div class="gaL__whyItem"><h3>Не берётся за уголовное и семейное</h3><p>Уголовные дела, лишение родительских прав, опека — сразу отправляет к живому адвокату. Это не тот случай, где экономят.</p></div><div class="gaL__whyItem"><h3>Не выдумывает статьи</h3><p>Если точный номер нормы под сомнением, так и напишет — вместо правдоподобной ссылки, которой не существует.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gaL__sec">
+    <div class="gaL__in">
+      <h2 class="gaL__h2">Частые вопросы</h2>
+      <div class="gaL__faq"><details class="gaL__q"><summary>Это заменит юриста?</summary><p>Нет. Ассистент снимает черновую работу: прочитать договор, найти слабые места, собрать документ по форме. Перед подачей в суд или госорган результат должен посмотреть практикующий юрист.</p></details><details class="gaL__q"><summary>Насколько ему можно верить?</summary><p>Проверяйте номера норм и сроки. Ассистент честно помечает, где не уверен, и не обещает исход дела — если какой-то сервис обещает, это повод насторожиться.</p></details><details class="gaL__q"><summary>Договор длинный, влезет?</summary><p>До шести тысяч знаков за раз. Длинный договор присылайте частями по разделам — разбор будет даже точнее, потому что контекст не размывается.</p></details><details class="gaL__q"><summary>Сколько стоит?</summary><p>Три документа в день бесплатно. Дальше — с общего баланса Genius. Безлимит по подписке 1290 ₽ в месяц.</p></details></div>
+    </div>
+  </section>
+
+  <section class="gaL__end">
+    <div class="gaL__in">
+      <h2>Начните с одной задачи</h2>
+      <p>Первые сообщения бесплатны. Понравится — останетесь, нет — ничего не потеряете.</p>
+      <div class="gaL__cta">
+        <a class="gaL__btn gaL__btn--main" href="#probovat">Попробовать здесь</a>
+        <a class="gaL__btn gaL__btn--ghost" href="https://t.me/Neuro_HubAI_bot?start=yurist"
+           target="_blank" rel="noopener">Открыть в Telegram</a>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "WebApplication",
+ "name": "ИИ-помощник по договорам и документам",
+ "description": "ИИ-помощник для работы с документами: разбор договора и поиск рискованных пунктов, претензия, заявление, объяснение документа простым языком. Телеграм-бот и веб-версия.",
+ "applicationCategory": "BusinessApplication",
+ "operatingSystem": "Web, Telegram",
+ "url": "https://genius-bot.ru/ai-pomoshnik/yurist/",
+ "offers": {
+  "@type": "Offer",
+  "price": "0",
+  "priceCurrency": "RUB",
+  "description": "Бесплатный дневной лимит, далее с общего баланса Genius"
+ }
+}</script>
+<script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "FAQPage",
+ "mainEntity": [
+  {
+   "@type": "Question",
+   "name": "Это заменит юриста?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Нет. Ассистент снимает черновую работу: прочитать договор, найти слабые места, собрать документ по форме. Перед подачей в суд или госорган результат должен посмотреть практикующий юрист."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Насколько ему можно верить?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Проверяйте номера норм и сроки. Ассистент честно помечает, где не уверен, и не обещает исход дела — если какой-то сервис обещает, это повод насторожиться."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Договор длинный, влезет?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "До шести тысяч знаков за раз. Длинный договор присылайте частями по разделам — разбор будет даже точнее, потому что контекст не размывается."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Сколько стоит?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Три документа в день бесплатно. Дальше — с общего баланса Genius. Безлимит по подписке 1290 ₽ в месяц."
+   }
+  }
+ ]
+}</script>

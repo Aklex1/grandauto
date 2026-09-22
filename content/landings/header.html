@@ -1,0 +1,73 @@
+<!-- Шапка genius-bot.ru. Вставлять в Header Builder темы Impreza элементом HTML,
+     родное меню темы при этом скрыть. Самодостаточна: свои стили, свой мобильный режим. -->
+<style>.gaH{--bg:rgba(7,11,20,.88);--line:#1e293b;--text:#f1f5f9;--muted:#94a3b8;--accent:#818cf8;
+  --accent2:#22d3ee;position:sticky;top:0;z-index:900;background:var(--bg);
+  backdrop-filter:saturate(140%) blur(14px);border-bottom:1px solid var(--line);
+  font-family:Rubik,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  margin:0 calc(50% - 50vw);width:100vw}
+.gaH *,.gaH *::before,.gaH *::after{box-sizing:border-box}
+.gaH__in{max-width:1180px;margin:0 auto;padding:0 20px;height:64px;display:flex;align-items:center;gap:22px}
+.gaH__logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px;color:var(--text);
+  text-decoration:none;white-space:nowrap}
+.gaH__logo b{background:linear-gradient(92deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.gaH__nav{display:flex;align-items:center;gap:3px;flex:1}
+.gaH__item{position:relative}
+.gaH__link{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border-radius:10px;
+  color:var(--muted);text-decoration:none;font-size:14.5px;font-weight:500;white-space:nowrap;
+  transition:color .15s,background .15s}
+.gaH__link:hover,.gaH__item:focus-within .gaH__link{color:var(--text);background:rgba(255,255,255,.06)}
+.gaH__item--has::after{content:"";width:5px;height:5px;border-right:1.5px solid currentColor;
+  border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-2px);
+  display:inline-block;margin-left:-6px;color:var(--muted);pointer-events:none}
+.gaH__drop{position:absolute;top:calc(100% + 8px);left:0;min-width:262px;padding:8px;
+  border-radius:14px;background:#0f172a;border:1px solid var(--line);
+  box-shadow:0 22px 48px -24px #000;display:none;flex-direction:column;gap:2px}
+.gaH__item:hover .gaH__drop,.gaH__item:focus-within .gaH__drop{display:flex}
+.gaH__drop a{padding:9px 12px;border-radius:9px;color:#cbd5e1;text-decoration:none;font-size:14.5px}
+.gaH__drop a:hover{background:rgba(129,140,248,.14);color:#fff}
+.gaH__right{display:flex;align-items:center;gap:10px;margin-left:auto}
+.gaH__ghost{padding:9px 16px;border-radius:10px;border:1px solid var(--line);color:#cbd5e1;
+  text-decoration:none;font-size:14.5px;font-weight:500;background:none;cursor:pointer;
+  font-family:inherit}
+.gaH__ghost:hover{border-color:var(--accent);color:#fff}
+.gaH__main{padding:9px 18px;border-radius:10px;text-decoration:none;font-size:14.5px;font-weight:600;
+  background:linear-gradient(92deg,var(--accent),var(--accent2));color:#070b14}
+.gaH__burger{display:none;width:42px;height:42px;border-radius:10px;border:1px solid var(--line);
+  background:none;cursor:pointer;color:var(--text);font-size:20px;line-height:1;margin-left:auto}
+@media (max-width:1000px){
+  .gaH__nav,.gaH__right{display:none}
+  .gaH__burger{display:block}
+  .gaH__in{gap:12px}
+  .gaH.is-open .gaH__nav{display:flex;position:absolute;top:64px;left:0;right:0;flex-direction:column;
+    align-items:stretch;gap:2px;padding:12px;background:#0b1220;border-bottom:1px solid var(--line)}
+  .gaH.is-open .gaH__drop{position:static;display:flex;border:none;background:none;box-shadow:none;
+    padding:0 0 6px 14px}
+  .gaH.is-open .gaH__right{display:flex;position:absolute;top:auto;left:0;right:0;padding:0 12px 14px;
+    background:#0b1220;transform:translateY(100%);bottom:0}
+}</style>
+
+<header class="gaH" id="gaHeader">
+  <div class="gaH__in">
+    <a class="gaH__logo" href="/"><span aria-hidden="true">🤖</span> Genius<b>bot</b></a>
+    <nav class="gaH__nav" aria-label="Основное меню"><div class="gaH__item gaH__item--has"><a class="gaH__link" href="/ai-pomoshnik/">ИИ-ассистенты</a><div class="gaH__drop"><a href="/ai-pomoshnik/dlya-uchitelya/">📘 Для учителя</a><a href="/ai-pomoshnik/dlya-ucheby/">🎒 Для учёбы</a><a href="/ai-pomoshnik/yurist/">⚖️ Документы и договоры</a><a href="/ai-pomoshnik/dlya-biznesa/">💼 Консультант для бизнеса</a></div></div><div class="gaH__item gaH__item--has"><a class="gaH__link" href="/sounds-catalog/">Сервисы</a><div class="gaH__drop"><a href="/tts-pricing/">🎙 Озвучка текста</a><a href="/audio-v-tekst/">📝 Аудио в текст</a><a href="/sozdat-prezentaciyu/">🎬 Слайды нейросетью</a><a href="/sozdat-muzyku/">🎵 Создать музыку</a><a href="/govoryashchiy-avatar/">🗣 Говорящий аватар</a></div></div><div class="gaH__item"><a class="gaH__link" href="/zakazat/">Боты под ключ</a></div><div class="gaH__item"><a class="gaH__link" href="/tts-pricing/">Цены</a></div><div class="gaH__item"><a class="gaH__link" href="/blog/">Блог</a></div></nav>
+    <div class="gaH__right">
+      <button type="button" class="gaH__ghost kie-auth-open-trigger">Войти</button>
+      <a class="gaH__main" href="/ai-pomoshnik/">Открыть ассистентов</a>
+    </div>
+    <button type="button" class="gaH__burger" aria-label="Меню" aria-expanded="false">☰</button>
+  </div>
+</header>
+
+<script>
+(function () {
+  var head = document.getElementById('gaHeader');
+  if (!head) return;
+  var burger = head.querySelector('.gaH__burger');
+  burger.addEventListener('click', function () {
+    var open = head.classList.toggle('is-open');
+    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    burger.textContent = open ? '✕' : '☰';
+  });
+})();
+</script>
