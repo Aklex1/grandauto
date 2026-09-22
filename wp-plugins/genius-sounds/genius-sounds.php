@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version: 2.0.2
+ * Version: 2.1.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,13 +12,14 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '2.0.2');
+define('GS_VERSION', '2.1.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 require_once GS_PLUGIN_DIR . 'includes/class-gs-storage.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-catalog.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-sections.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-importer.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sfx.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-pages.php';
@@ -83,6 +84,11 @@ class Genius_Sounds_Plugin {
         // Позже базового плагина (он вешает шорткоды на init с приоритетом по умолчанию),
         // чтобы успеть перехватить [kie_tts_sounds_catalog].
         add_action('init', array($this, 'init'), 20);
+        // Постраничная навигация каталога живёт в адресе, а не в параметре:
+        // переменную запроса и редирект со старых адресов заводим здесь,
+        // чтобы они работали и когда каталог отрисовывает не наш шорткод.
+        add_filter('query_vars', array('GS_Catalog', 'add_query_vars'));
+        add_action('template_redirect', array('GS_Catalog', 'redirect_legacy_page'), 5);
         add_action('wp_enqueue_scripts', array($this, 'enqueue_front_assets'));
 
         GS_Importer::boot();
@@ -139,6 +145,7 @@ class Genius_Sounds_Plugin {
 
     public function init() {
         GS_Catalog::takeover_shortcode();
+        GS_Catalog::add_rewrite_rules();
         GS_Pages::register_shortcodes();
         GS_Lab_Page::register_shortcodes();
         GS_Landing::register_shortcodes();

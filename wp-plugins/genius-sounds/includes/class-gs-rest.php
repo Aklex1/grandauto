@@ -151,6 +151,24 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Каталог: чтение указателя и правка текстов подборок.
+        // Только администратору: это содержимое сайта, а не публичные данные.
+        register_rest_route(self::NS, '/catalog/index', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_catalog_index'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/catalog/update', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_catalog_update'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/catalog/sections', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_catalog_sections'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         // Разбор ответов Вебмастера: маршруты у него разные, а токен должен
         // остаться на сервере. Только для администратора.
         register_rest_route(self::NS, '/webmaster/probe', array(
@@ -1407,6 +1425,98 @@ class GS_Rest {
         }
         $removed = GS_Songs::remove((string) ($params['id'] ?? ''));
         return rest_ensure_response(array('success' => $removed, 'total' => GS_Songs::count()));
+    }
+
+    /**
+     * Указатель каталога: слаг, название, описание из индекса, число звуков
+     * и раздел. Список звуков не отдаём — он тяжёлый и здесь не нужен.
+     */
+    public static function handle_catalog_index($request) {
+        $rows = array();
+        foreach (GS_Catalog::load_index() as $row) {
+            if (!is_array($row) || empty($row['slug'])) {
+                continue;
+            }
+            $rows[] = array(
+                'slug'    => (string) $row['slug'],
+                'title'   => (string) ($row['title'] ?? ''),
+                'desc'    => (string) ($row['desc'] ?? ''),
+                'count'   => (int) ($row['count'] ?? 0),
+                'section' => (string) ($row['section'] ?? GS_Sections::guess((string) $row['slug'], (string) ($row['title'] ?? ''))),
+            );
+        }
+        return rest_ensure_response(array('success' => true, 'total' => count($rows), 'items' => $rows));
+    }
+
+    /**
+     * Правка текстов подборки. Принимаем только поля текста и раздела:
+     * список звуков живёт своей жизнью и правится импортом.
+     */
+    public static function handle_catalog_update($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $items = isset($params['items']) && is_array($params['items'])
+            ? $params['items']
+            : array($params);
+
+        $done = 0;
+        $missing = array();
+        foreach ($items as $item) {
+            if (!is_array($item) || empty($item['slug'])) {
+                continue;
+            }
+            $slug = GS_Storage::sanitize_slug((string) $item['slug']);
+            if ($slug === '' || !GS_Catalog::get_category($slug)) {
+                $missing[] = (string) $item['slug'];
+                continue;
+            }
+            $patch = array();
+            foreach (array('title', 'headline', 'description', 'description_2', 'section') as $field) {
+                if (isset($item[$field]) && is_string($item[$field])) {
+                    $patch[$field] = trim($item[$field]);
+                }
+            }
+            if (!$patch) {
+                continue;
+            }
+            if (GS_Catalog::update_category($slug, $patch)) {
+                $done++;
+            }
+        }
+        return rest_ensure_response(array(
+            'success' => true,
+            'updated' => $done,
+            'missing' => $missing,
+        ));
+    }
+
+    /**
+     * Разделы: привязка подборок и пересборка указателя.
+     */
+    public static function handle_catalog_sections($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        $assigned = 0;
+        if (!empty($params['assign']) && is_array($params['assign'])) {
+            foreach ($params['assign'] as $section => $slugs) {
+                if (is_array($slugs)) {
+                    $assigned += GS_Sections::assign($slugs, (string) $section);
+                }
+            }
+        }
+        $rebuilt = !empty($params['rebuild']) ? GS_Catalog::rebuild_index() : 0;
+
+        return rest_ensure_response(array(
+            'success'  => true,
+            'assigned' => $assigned,
+            'rebuilt'  => $rebuilt,
+            'sections' => GS_Sections::overview(),
+        ));
     }
 
     public static function handle_webmaster_probe($request) {

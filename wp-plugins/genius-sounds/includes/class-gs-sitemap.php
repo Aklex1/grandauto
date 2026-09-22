@@ -137,6 +137,18 @@ class GS_Sitemap {
             'changefreq' => 'daily',
         );
 
+        // Разделы идут сразу за каталогом и с высоким приоритетом: через них
+        // робот доходит до подборок, а не перебирает тысячу ссылок с одной
+        // страницы, обходя по полсотни адресов в сутки.
+        foreach (GS_Sections::overview() as $section) {
+            $urls[] = array(
+                'loc'        => GS_Sections::url($section['slug']),
+                'lastmod'    => self::file_date(GS_Storage::base_dir() . '/index.json'),
+                'priority'   => '0.9',
+                'changefreq' => 'weekly',
+            );
+        }
+
         foreach (GS_Catalog::load_index() as $row) {
             if (empty($row['slug'])) {
                 continue;
@@ -179,7 +191,7 @@ class GS_Sitemap {
     }
 
     public static function chunk_count() {
-        $total = count(GS_Catalog::load_index()) + 4
+        $total = count(GS_Catalog::load_index()) + count(GS_Sections::overview()) + 4
             + count(GS_Lab::available_services()) + count(GS_Landing::all());
         return max(1, (int) ceil($total / self::CHUNK));
     }

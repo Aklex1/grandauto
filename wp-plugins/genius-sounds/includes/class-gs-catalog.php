@@ -147,11 +147,18 @@ class GS_Catalog {
         if (mb_strlen($desc) > 160) {
             $desc = mb_substr($desc, 0, 160);
         }
+        $title = (string) ($category['title'] ?? $category['slug']);
+        // Раздел считаем один раз при записи, а не на каждый показ каталога:
+        // правил несколько сотен, а подборок почти тысяча.
+        $section = isset($category['section']) && $category['section'] !== ''
+            ? (string) $category['section']
+            : GS_Sections::guess((string) $category['slug'], $title);
         return array(
-            'slug'  => (string) $category['slug'],
-            'title' => (string) ($category['title'] ?? $category['slug']),
-            'desc'  => $desc,
-            'count' => self::count_sounds($category),
+            'slug'    => (string) $category['slug'],
+            'title'   => $title,
+            'desc'    => $desc,
+            'count'   => self::count_sounds($category),
+            'section' => $section,
         );
     }
 
@@ -262,6 +269,39 @@ class GS_Catalog {
         return self::save_index($index);
     }
 
+    /**
+     * Раздел подборки: сохранённый, иначе вычисленный по названию.
+     */
+    public static function section_of($category) {
+        if (is_array($category) && !empty($category['section'])) {
+            return (string) $category['section'];
+        }
+        $slug  = is_array($category) ? (string) ($category['slug'] ?? '') : (string) $category;
+        $title = is_array($category) ? (string) ($category['title'] ?? '') : '';
+        return GS_Sections::guess($slug, $title);
+    }
+
+    /**
+     * Пересобрать индекс: разделы и заголовки.
+     *
+     * Читаем только индекс, не файлы подборок: их почти тысяча, в каждой до
+     * сотни звуков, а памяти у WordPress на этом хостинге 40 МБ. Раздел
+     * вычисляется по слагу и названию — они в индексе есть.
+     */
+    public static function rebuild_index() {
+        $index = self::load_index();
+        $out = array();
+        foreach ($index as $row) {
+            if (!is_array($row) || empty($row['slug'])) {
+                continue;
+            }
+            $row['section'] = GS_Sections::guess((string) $row['slug'], (string) ($row['title'] ?? ''));
+            $out[] = $row;
+        }
+        self::save_index($out);
+        return count($out);
+    }
+
     public static function count_sounds($category) {
         return (isset($category['sounds']) && is_array($category['sounds'])) ? count($category['sounds']) : 0;
     }
@@ -314,8 +354,101 @@ class GS_Catalog {
         return add_query_arg('sound_cat', $slug, $base);
     }
 
+    /**
+     * Адрес страницы списка.
+     *
+     * Вторая и следующие страницы жили на ?gs_page=2. Поиск считает такой
+     * адрес отдельной страницей — в индексе Яндекса лежат и ?gs_page=2, и
+     * ?gs_page=20, и ?gs_page=4: мусор, который делит вес с настоящими
+     * страницами и путает отчёты. Адрес вида /page/2/ поиск понимает как
+     * продолжение списка, а не как новую сущность.
+     */
+    public static function page_url($slug = '', $page = 1) {
+        $page = max(1, (int) $page);
+        $base = $slug === '' ? self::base_url() : self::category_url($slug);
+        if ($page === 1) {
+            return $base;
+        }
+        if ((string) get_option('permalink_structure') === '') {
+            return add_query_arg('gs_page', $page, $base);
+        }
+        return trailingslashit($base . 'page/' . $page);
+    }
+
+    /**
+     * Запрошенная страница списка: сначала из адреса, потом из старого
+     * параметра — ссылки на него ещё живут в чужих закладках и в индексе.
+     */
+    public static function requested_page() {
+        $page = (int) get_query_var('gs_page');
+        if ($page < 1 && isset($_GET['gs_page'])) {
+            $page = (int) $_GET['gs_page'];
+        }
+        return max(1, $page);
+    }
+
     public static function file_url($relative) {
         return GS_Storage::files_url() . '/' . ltrim((string) $relative, '/');
+    }
+
+    /**
+     * Правила для /page/N/ у каталога и у категории.
+     *
+     * Базовый плагин завёл только правило вида /sounds-catalog/<категория>/,
+     * и трогать его нельзя — правки в чужом плагине теряются при обновлении.
+     * Поэтому свои правила добавляем сверху: они разбирают хвост /page/N/ и
+     * передают остальное так же, как раньше делал запрос со знаком вопроса.
+     */
+    public static function add_rewrite_rules() {
+        $base = trim((string) wp_parse_url(self::base_url(), PHP_URL_PATH), '/');
+        if ($base === '') {
+            return;
+        }
+        $pid = (int) get_option('kie_tts_sounds_page_id');
+        if ($pid <= 0) {
+            return;
+        }
+        $quoted = preg_quote($base, '~');
+        add_rewrite_rule(
+            '^' . $quoted . '/page/([0-9]{1,6})/?$',
+            'index.php?page_id=' . $pid . '&gs_page=$matches[1]',
+            'top'
+        );
+        add_rewrite_rule(
+            '^' . $quoted . '/([^/]+)/page/([0-9]{1,6})/?$',
+            'index.php?page_id=' . $pid . '&kie_sound_category=$matches[1]&gs_page=$matches[2]',
+            'top'
+        );
+    }
+
+    public static function add_query_vars($vars) {
+        $vars[] = 'gs_page';
+        return $vars;
+    }
+
+    /**
+     * Старый адрес со знаком вопроса уводим на новый.
+     *
+     * Без этого в индексе останутся оба, и поиск сам решит, какой из них
+     * дубль. Решать это должны мы: постоянный редирект склеивает их и
+     * передаёт новому адресу всё, что успел набрать старый.
+     */
+    public static function redirect_legacy_page() {
+        if (is_admin() || !isset($_GET['gs_page']) || !self::is_catalog_request()) {
+            return;
+        }
+        if ((string) get_option('permalink_structure') === '') {
+            return;
+        }
+        $page = max(1, (int) $_GET['gs_page']);
+        $target = self::page_url(self::requested_slug(), $page);
+        $query = isset($_GET['gs_q']) ? sanitize_text_field(wp_unslash((string) $_GET['gs_q'])) : '';
+        if ($query !== '') {
+            // Поиск по каталогу — страница служебная, её адрес не трогаем.
+            return;
+        }
+        wp_safe_redirect($target, 301);
+        exit;
     }
 
     /**
@@ -355,10 +488,17 @@ class GS_Catalog {
 
         if ($slug !== '') {
             $category = self::get_category($slug);
-            if (!$category) {
-                return self::render_not_found();
+            if ($category) {
+                return self::render_category($category);
             }
-            return self::render_category($category);
+            // Подборки нет — возможно, это раздел. Порядок именно такой:
+            // подборок почти тысяча, и ни одна не должна пропасть из-за
+            // того, что кто-то назвал раздел тем же словом.
+            $section = GS_Sections::get($slug);
+            if ($section) {
+                return self::render_section($section);
+            }
+            return self::render_not_found();
         }
 
         return self::render_index();
@@ -387,7 +527,7 @@ class GS_Catalog {
         $stats = self::stats();
 
         $query = isset($_GET['gs_q']) ? sanitize_text_field(wp_unslash((string) $_GET['gs_q'])) : '';
-        $page  = isset($_GET['gs_page']) ? max(1, (int) $_GET['gs_page']) : 1;
+        $page  = self::requested_page();
 
         // Сначала заполненные категории, внутри — по числу звуков.
         $list = array();
@@ -454,6 +594,10 @@ class GS_Catalog {
 
             <?php echo self::render_cta('', 'index'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
+            <?php if ($query === '' && $page === 1) {
+                echo self::render_sections_nav(); // phpcs:ignore WordPress.Security.EscapeOutput
+            } ?>
+
             <?php if ($query !== ''): ?>
                 <div class="gs-section-head">
                     <h2 class="gs-section-title">Результаты: «<?php echo esc_html($query); ?>»</h2>
@@ -499,6 +643,103 @@ class GS_Catalog {
     }
 
     /**
+     * Страница раздела: подборки одной темы.
+     *
+     * Промежуточный уровень нужен не посетителю (он и так пришёл из поиска
+     * на нужную подборку), а обходу: с каталога уходит дюжина ссылок вместо
+     * 945, и робот доходит до дальних подборок за дни, а не за месяцы.
+     */
+    private static function render_section($section) {
+        $cats = GS_Sections::categories($section['slug']);
+        $page  = self::requested_page();
+        $total = count($cats);
+        $pages = max(1, (int) ceil($total / self::CATS_PER_PAGE));
+        $page  = min($page, $pages);
+        $slice = array_slice($cats, ($page - 1) * self::CATS_PER_PAGE, self::CATS_PER_PAGE);
+        $sounds = 0;
+        foreach ($cats as $row) {
+            $sounds += (int) ($row['count'] ?? 0);
+        }
+
+        ob_start();
+        ?>
+        <div class="gs-wrap gs-catalog gs-section-page">
+            <nav class="gs-breadcrumbs" aria-label="Хлебные крошки">
+                <a href="<?php echo esc_url(home_url('/')); ?>">Главная</a>
+                <span aria-hidden="true">/</span>
+                <a href="<?php echo esc_url(self::base_url()); ?>">Каталог звуков</a>
+                <span aria-hidden="true">/</span>
+                <span class="gs-breadcrumbs__current"><?php echo esc_html($section['menu']); ?></span>
+            </nav>
+
+            <section class="gs-hero">
+                <h1 class="gs-hero__title"><?php echo esc_html($section['title']); ?></h1>
+                <p class="gs-hero__lead"><?php echo esc_html($section['lead']); ?></p>
+                <div class="gs-hero__meta">
+                    <span class="gs-chip gs-chip--ok"><?php echo esc_html(self::plural_sounds($sounds)); ?></span>
+                    <span class="gs-chip"><?php echo esc_html(self::plural_categories($total)); ?></span>
+                    <span class="gs-chip">MP3</span>
+                </div>
+            </section>
+
+            <?php if (!empty($slice)): ?>
+                <ul class="gs-cat-grid">
+                    <?php foreach ($slice as $cat): ?>
+                        <li class="gs-cat-card<?php echo (int) ($cat['count'] ?? 0) > 0 ? '' : ' is-empty'; ?>">
+                            <a class="gs-cat-card__link" href="<?php echo esc_url(self::category_url($cat['slug'])); ?>">
+                                <span class="gs-cat-card__title"><?php echo esc_html(self::short_title($cat['title'])); ?></span>
+                                <span class="gs-cat-card__meta">
+                                    <?php if ((int) ($cat['count'] ?? 0) > 0): ?>
+                                        <span class="gs-chip gs-chip--ok"><?php echo esc_html(self::plural_sounds((int) $cat['count'])); ?></span>
+                                    <?php else: ?>
+                                        <span class="gs-chip">скоро</span>
+                                    <?php endif; ?>
+                                </span>
+                            </a>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php echo self::render_pagination($page, $pages, array()); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php endif; ?>
+
+            <?php echo self::render_cta($section['menu'], 'section'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php echo self::render_sections_nav($section['slug']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Список разделов. Показываем и на каталоге, и внизу раздела: это
+     * единственная перелинковка между темами, которая есть у каталога.
+     */
+    public static function render_sections_nav($current = '') {
+        $sections = GS_Sections::overview();
+        if (count($sections) < 2) {
+            return '';
+        }
+        ob_start();
+        ?>
+        <section class="gs-sections">
+            <div class="gs-section-head">
+                <h2 class="gs-section-title">Разделы каталога</h2>
+            </div>
+            <ul class="gs-sections__grid">
+                <?php foreach ($sections as $item): ?>
+                    <li class="gs-sections__item<?php echo $item['slug'] === $current ? ' is-current' : ''; ?>">
+                        <a class="gs-sections__link" href="<?php echo esc_url(GS_Sections::url($item['slug'])); ?>">
+                            <span class="gs-sections__name"><?php echo esc_html($item['menu']); ?></span>
+                            <span class="gs-sections__meta"><?php echo esc_html(self::plural_sounds((int) $item['sounds'])); ?></span>
+                        </a>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
      * Страница одной категории: описание, сетка звуков с плеером, CTA, соседние подборки.
      */
     private static function render_category($category) {
@@ -506,7 +747,7 @@ class GS_Catalog {
         $title  = (string) ($category['title'] ?? $slug);
         $sounds = (isset($category['sounds']) && is_array($category['sounds'])) ? $category['sounds'] : array();
 
-        $page  = isset($_GET['gs_page']) ? max(1, (int) $_GET['gs_page']) : 1;
+        $page  = self::requested_page();
         $total = count($sounds);
         $pages = max(1, (int) ceil($total / self::SOUNDS_PER_PAGE));
         $page  = min($page, $pages);
@@ -515,10 +756,15 @@ class GS_Catalog {
         ob_start();
         ?>
         <div class="gs-wrap gs-category">
+            <?php $section = GS_Sections::get(self::section_of($category)); ?>
             <nav class="gs-breadcrumbs" aria-label="Хлебные крошки">
                 <a href="<?php echo esc_url(home_url('/')); ?>">Главная</a>
                 <span aria-hidden="true">/</span>
                 <a href="<?php echo esc_url(self::base_url()); ?>">Каталог звуков</a>
+                <?php if ($section): ?>
+                    <span aria-hidden="true">/</span>
+                    <a href="<?php echo esc_url(GS_Sections::url($section['slug'])); ?>"><?php echo esc_html($section['menu']); ?></a>
+                <?php endif; ?>
                 <span aria-hidden="true">/</span>
                 <span class="gs-breadcrumbs__current"><?php echo esc_html(self::short_title($title)); ?></span>
             </nav>
@@ -826,15 +1072,20 @@ class GS_Catalog {
         if ($pages <= 1) {
             return '';
         }
-        $base = self::current_page_url();
-        $link = function ($p) use ($base, $extra_args) {
+        $slug = self::requested_slug();
+        $link = function ($p) use ($slug, $extra_args) {
             $args = array_filter($extra_args, function ($v) {
                 return $v !== '' && $v !== null;
             });
-            if ($p > 1) {
-                $args['gs_page'] = $p;
+            // Поиск по каталогу остаётся на параметрах: это не страница
+            // списка, а выдача по запросу, и в индексе ей делать нечего.
+            if (!empty($args)) {
+                $args['gs_page'] = $p > 1 ? $p : null;
+                return add_query_arg(array_filter($args, function ($v) {
+                    return $v !== null;
+                }), self::base_url());
             }
-            return empty($args) ? $base : add_query_arg($args, $base);
+            return self::page_url($slug, $p);
         };
 
         $window = array();
@@ -932,6 +1183,11 @@ class GS_Catalog {
 
     private static function plural_categories($n) {
         return $n . ' ' . self::plural($n, 'категория', 'категории', 'категорий');
+    }
+
+    /** То же для текста описания: «в 42 подборках». */
+    public static function plural_categories_text($n) {
+        return $n . ' ' . self::plural($n, 'подборке', 'подборках', 'подборках');
     }
 
     private static function plural($n, $one, $few, $many) {

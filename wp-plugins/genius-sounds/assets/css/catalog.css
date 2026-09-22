@@ -1122,3 +1122,73 @@ body.gs-topup-open {
 .gs-topup .gs-btn:hover {
     border-color: var(--gs-border-strong);
 }
+
+/* ------------------------------------------------------- Разделы каталога */
+
+/*
+ * Разделы — единственный уровень между каталогом и почти тысячей подборок.
+ * Их видно сразу под шапкой: это и навигация для человека, и короткий путь
+ * для робота, который обходит по полсотни адресов в сутки и до дальних
+ * подборок раньше просто не доходил.
+ */
+.gs-sections {
+    margin: 28px 0 8px;
+}
+
+.gs-sections__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.gs-sections__item {
+    margin: 0;
+}
+
+.gs-wrap .gs-sections__link {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    height: 100%;
+    padding: 14px 16px;
+    border: 1px solid var(--gs-line, #e6e8ef);
+    border-radius: 14px;
+    background: var(--gs-card, #fff);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color .15s ease, transform .15s ease;
+}
+
+.gs-wrap .gs-sections__link:hover {
+    border-color: var(--gs-accent, #4f6ef7);
+    transform: translateY(-1px);
+}
+
+.gs-sections__item.is-current .gs-sections__link {
+    border-color: var(--gs-accent, #4f6ef7);
+    background: var(--gs-accent-soft, #f2f5ff);
+}
+
+.gs-sections__name {
+    font-weight: 600;
+    font-size: 15px;
+    line-height: 1.35;
+}
+
+.gs-sections__meta {
+    font-size: 13px;
+    opacity: .68;
+}
+
+@media (max-width: 600px) {
+    .gs-sections__grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+
+    .gs-wrap .gs-sections__link {
+        padding: 12px 13px;
+    }
+}

@@ -39,7 +39,7 @@ class GS_Seo {
             return;
         }
         $slug = GS_Catalog::requested_slug();
-        if ($slug === '' || GS_Catalog::get_category($slug)) {
+        if ($slug === '' || GS_Catalog::get_category($slug) || GS_Sections::get($slug)) {
             return;
         }
         status_header(404);
@@ -122,14 +122,32 @@ class GS_Seo {
             return null;
         }
 
-        $page  = isset($_GET['gs_page']) ? max(1, (int) $_GET['gs_page']) : 1;
+        $page  = GS_Catalog::requested_page();
         $query = isset($_GET['gs_q']) ? sanitize_text_field(wp_unslash((string) $_GET['gs_q'])) : '';
         $slug  = GS_Catalog::requested_slug();
 
         if ($slug !== '') {
             $category = GS_Catalog::get_category($slug);
             if (!$category) {
-                return null;
+                $section = GS_Sections::get($slug);
+                if (!$section) {
+                    return null;
+                }
+                $cats = GS_Sections::categories($slug);
+                $pages = max(1, (int) ceil(count($cats) / GS_Catalog::CATS_PER_PAGE));
+                self::$ctx = array(
+                    'type'     => 'section',
+                    'section'  => $section,
+                    'category' => null,
+                    'page'     => min($page, $pages),
+                    'pages'    => $pages,
+                    'query'    => '',
+                    'sounds'   => array_sum(array_map(function ($row) {
+                        return (int) ($row['count'] ?? 0);
+                    }, $cats)),
+                    'cats'     => count($cats),
+                );
+                return self::$ctx;
             }
             $pages = max(1, (int) ceil(GS_Catalog::count_sounds($category) / GS_Catalog::SOUNDS_PER_PAGE));
             self::$ctx = array(
@@ -250,6 +268,16 @@ class GS_Seo {
         if ($ctx['type'] === 'lab') {
             return (string) $ctx['service']['seo_title'];
         }
+        if ($ctx['type'] === 'section') {
+            $title = (string) $ctx['section']['title'];
+            if (mb_strlen($title) > 60) {
+                $title = mb_substr($title, 0, 59) . '…';
+            }
+            if ($ctx['page'] > 1) {
+                $title .= ' — страница ' . $ctx['page'];
+            }
+            return $title;
+        }
         if ($ctx['type'] === 'index') {
             $title = 'Каталог звуков — скачать бесплатно в MP3';
             if ($ctx['query'] !== '') {
@@ -297,6 +325,14 @@ class GS_Seo {
         if ($ctx['type'] === 'lab') {
             return (string) $ctx['service']['seo_desc'];
         }
+        if ($ctx['type'] === 'section') {
+            return sprintf(
+                '%s %s в %s. Слушайте онлайн и скачивайте бесплатно в MP3 — для монтажа, роликов, игр и стримов.',
+                (string) $ctx['section']['lead'],
+                GS_Catalog::plural_sounds((int) $ctx['sounds']),
+                GS_Catalog::plural_categories_text((int) $ctx['cats'])
+            );
+        }
         if ($ctx['type'] === 'index') {
             $stats = GS_Catalog::stats();
             return sprintf(
@@ -338,10 +374,13 @@ class GS_Seo {
             return !empty($ctx['url']) ? $ctx['url'] : GS_Lab::get_url($ctx['service']['id']);
         }
         $page = $page === null ? (int) $ctx['page'] : (int) $page;
-        $base = $ctx['type'] === 'category'
-            ? GS_Catalog::category_url($ctx['category']['slug'])
-            : GS_Catalog::base_url();
-        return $page > 1 ? add_query_arg('gs_page', $page, $base) : $base;
+        if ($ctx['type'] === 'category') {
+            return GS_Catalog::page_url((string) $ctx['category']['slug'], $page);
+        }
+        if ($ctx['type'] === 'section') {
+            return GS_Catalog::page_url((string) $ctx['section']['slug'], $page);
+        }
+        return GS_Catalog::page_url('', $page);
     }
 
     /* ---------------------------------------------------------------------
@@ -486,7 +525,13 @@ class GS_Seo {
             return $out;
         }
 
-        $schema = $ctx['type'] === 'category' ? self::schema_category($ctx) : self::schema_index($ctx);
+        if ($ctx['type'] === 'section') {
+            $schema = self::schema_section($ctx);
+        } elseif ($ctx['type'] === 'category') {
+            $schema = self::schema_category($ctx);
+        } else {
+            $schema = self::schema_index($ctx);
+        }
         $out .= '<script type="application/ld+json">'
             . wp_json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
             . '</script>' . "\n";
@@ -649,6 +694,69 @@ class GS_Seo {
         );
     }
 
+    /**
+     * Крошки подборки: главная → каталог → раздел → подборка.
+     *
+     * Раздел в цепочке — не украшение: по ней поиск понимает, что подборка
+     * не висит сама по себе, а принадлежит теме, и переносит на неё часть
+     * доверия к разделу.
+     */
+    private static function category_crumbs($category, $title, $slug) {
+        $crumbs = array(
+            'Главная'        => home_url('/'),
+            'Каталог звуков' => GS_Catalog::base_url(),
+        );
+        $section = GS_Sections::get(GS_Catalog::section_of($category));
+        if ($section) {
+            $crumbs[$section['menu']] = GS_Sections::url($section['slug']);
+        }
+        $crumbs[$title] = GS_Catalog::category_url($slug);
+        return $crumbs;
+    }
+
+    private static function schema_section($ctx) {
+        $section = $ctx['section'];
+        $items = array();
+        $position = 1 + ($ctx['page'] - 1) * GS_Catalog::CATS_PER_PAGE;
+        $slice = array_slice(
+            GS_Sections::categories($section['slug']),
+            ($ctx['page'] - 1) * GS_Catalog::CATS_PER_PAGE,
+            GS_Catalog::CATS_PER_PAGE
+        );
+        foreach ($slice as $row) {
+            $items[] = array(
+                '@type'    => 'ListItem',
+                'position' => $position++,
+                'name'     => GS_Catalog::short_title((string) ($row['title'] ?? $row['slug'])),
+                'url'      => GS_Catalog::category_url((string) $row['slug']),
+            );
+        }
+
+        return array(
+            '@context'    => 'https://schema.org',
+            '@type'       => 'CollectionPage',
+            'name'        => (string) $section['title'],
+            'description' => self::build_description($ctx),
+            'url'         => self::page_url($ctx),
+            'inLanguage'  => 'ru-RU',
+            'isPartOf'    => array(
+                '@type' => 'WebSite',
+                'name'  => self::brand_name(get_bloginfo('name')),
+                'url'   => home_url('/'),
+            ),
+            'breadcrumb'  => self::breadcrumbs(array(
+                'Главная'         => home_url('/'),
+                'Каталог звуков'  => GS_Catalog::base_url(),
+                $section['menu']  => GS_Sections::url($section['slug']),
+            )),
+            'mainEntity'  => array(
+                '@type'           => 'ItemList',
+                'numberOfItems'   => count($items),
+                'itemListElement' => $items,
+            ),
+        );
+    }
+
     private static function schema_category($ctx) {
         $category = $ctx['category'];
         $slug     = (string) $category['slug'];
@@ -691,11 +799,7 @@ class GS_Seo {
                 'name'  => self::brand_name(get_bloginfo('name')),
                 'url'   => home_url('/'),
             ),
-            'breadcrumb'  => self::breadcrumbs(array(
-                'Главная'        => home_url('/'),
-                'Каталог звуков' => GS_Catalog::base_url(),
-                $title           => GS_Catalog::category_url($slug),
-            )),
+            'breadcrumb'  => self::breadcrumbs(self::category_crumbs($category, $title, $slug)),
             'mainEntity'  => array(
                 '@type'           => 'ItemList',
                 'numberOfItems'   => count($sounds),
