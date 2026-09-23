@@ -1379,3 +1379,71 @@
         width: 100%;
     }
 }
+
+/* Партнёрская программа: ссылка и кнопки — главное на странице. */
+.gs-partner__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.gs-partner__row .gs-input {
+    flex: 1 1 320px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.gs-partner__share {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.gs-partner__share-label {
+    color: var(--gs-text-muted);
+}
+
+.gs-partner__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+}
+
+.gs-partner__card {
+    padding: 18px 20px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+    display: grid;
+    gap: 4px;
+}
+
+.gs-partner__num {
+    font-size: clamp(22px, 3vw, 28px);
+    font-weight: 700;
+}
+
+.gs-partner__cap {
+    color: var(--gs-text-muted);
+}
+
+.gs-partner__log {
+    margin-top: clamp(24px, 3vw, 36px);
+}
+
+.gs-partner__guest {
+    margin-top: 20px;
+    display: grid;
+    gap: 12px;
+    justify-items: start;
+}
+
+@media (max-width: 480px) {
+    .gs-partner__row .gs-btn,
+    .gs-partner__share-btn {
+        width: 100%;
+    }
+}

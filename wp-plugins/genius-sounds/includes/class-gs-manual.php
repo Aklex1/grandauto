@@ -165,7 +165,7 @@ class GS_Manual {
         $order['done_at'] = time();
         self::save($task_id, $order);
 
-        GS_SFX::refund((int) $order['user_id'], (float) $order['cost']);
+        GS_SFX::refund_charge((int) $order['user_id'], (float) $order['cost']);
         if (class_exists('KIE_TTS_DB')) {
             KIE_TTS_DB::update_generation_status($task_id, 'failed');
         }

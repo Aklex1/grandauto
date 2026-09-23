@@ -959,7 +959,7 @@ class GS_Api {
                 return array('status' => 'pending', 'files' => array(), 'message' => '');
             }
             if ($engine !== 'tts') {
-                GS_SFX::refund((int) $task['user_id'], (float) $task['cost']);
+                GS_SFX::refund_charge((int) $task['user_id'], (float) $task['cost']);
             }
             if (class_exists('KIE_TTS_DB')) {
                 KIE_TTS_DB::update_generation_status($task_id, 'failed');

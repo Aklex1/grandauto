@@ -726,7 +726,7 @@ class GS_Rest {
             KIE_TTS_DB::update_generation_status($task_id, 'failed');
         }
         if (is_array($meta) && !empty($meta['user_id']) && !empty($meta['cost'])) {
-            GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
+            GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
         }
         delete_option('gs_sfx_task_' . $task_id);
     }
@@ -1073,7 +1073,7 @@ class GS_Rest {
                 KIE_TTS_DB::update_generation_status($task_id, 'failed');
             }
             if (is_array($meta) && !empty($meta['user_id']) && !empty($meta['cost'])) {
-                GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
+                GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
             }
             delete_option('gs_lab_task_' . $task_id);
             return rest_ensure_response(array(
@@ -1151,14 +1151,14 @@ class GS_Rest {
             $res = GS_Voice::start_phrase($url, $seconds);
         } catch (Throwable $e) {
             if ($cost > 0) {
-                GS_SFX::refund($user_id, $cost);
+                GS_SFX::refund_charge($user_id, $cost);
             }
             error_log('genius-sounds: создание голоса — ' . $e->getMessage());
             return new WP_Error('gs_voice_failed', 'Не получилось начать создание голоса. Деньги вернулись на баланс.', array('status' => 500));
         }
         if (empty($res['ok'])) {
             if ($cost > 0) {
-                GS_SFX::refund($user_id, $cost);
+                GS_SFX::refund_charge($user_id, $cost);
             }
             return new WP_Error('gs_voice_failed', $res['message'] !== '' ? $res['message'] : 'Не удалось начать создание голоса', array('status' => 502));
         }
@@ -1275,7 +1275,7 @@ class GS_Rest {
             return;
         }
         if ((float) ($meta['cost'] ?? 0) > 0) {
-            GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
+            GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
         }
         delete_option('gs_voice_task_' . $task_id);
     }
@@ -1364,14 +1364,14 @@ class GS_Rest {
             $res = GS_Voice::create_song($voice_id, $fields);
         } catch (Throwable $e) {
             if ($cost > 0) {
-                GS_SFX::refund($user_id, $cost);
+                GS_SFX::refund_charge($user_id, $cost);
             }
             error_log('genius-sounds: песня своим голосом — ' . $e->getMessage());
             return new WP_Error('gs_song_failed', 'Не получилось запустить генерацию. Деньги вернулись на баланс.', array('status' => 500));
         }
         if (empty($res['ok'])) {
             if ($cost > 0) {
-                GS_SFX::refund($user_id, $cost);
+                GS_SFX::refund_charge($user_id, $cost);
             }
             return new WP_Error('gs_song_failed', $res['message'] !== '' ? $res['message'] : 'Не удалось запустить генерацию', array('status' => 502));
         }
@@ -1414,7 +1414,7 @@ class GS_Rest {
             delete_option('gs_voice_song_' . $task_id);
         } elseif ($state['status'] === 'failed') {
             if ((float) ($meta['cost'] ?? 0) > 0) {
-                GS_SFX::refund($user_id, (float) $meta['cost']);
+                GS_SFX::refund_charge($user_id, (float) $meta['cost']);
             }
             delete_option('gs_voice_song_' . $task_id);
         }
@@ -1792,7 +1792,7 @@ class GS_Rest {
             }
         } catch (Throwable $e) {
             if ($cost > 0) {
-                GS_SFX::refund($user_id, $cost);
+                GS_SFX::refund_charge($user_id, $cost);
             }
             error_log('genius-sounds: презентация — ' . $e->getMessage());
             return new WP_Error(
@@ -1861,7 +1861,7 @@ class GS_Rest {
         $built = GS_Slides::build($meta['deck'], $images, (int) $meta['user_id']);
         if (empty($built['ok'])) {
             if (!empty($meta['cost'])) {
-                GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
+                GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
             }
             delete_option($key);
             return new WP_Error('gs_slides_build', $built['message'] . ' Деньги вернулись на баланс.', array('status' => 500));
@@ -1869,7 +1869,7 @@ class GS_Rest {
 
         if ($overdue && !$got['done'] && !empty($meta['cost'])) {
             // Часть фонов не дождались — честнее вернуть деньги, файл отдать.
-            GS_SFX::refund((int) $meta['user_id'], (float) $meta['cost']);
+            GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
         }
 
         $meta['url'] = $built['url'];

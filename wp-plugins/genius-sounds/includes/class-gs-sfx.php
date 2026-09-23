@@ -390,9 +390,31 @@ class GS_SFX {
         $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);
         if ($is_telegram) {
             $telegram_id = KIE_TTS_Auth::get_telegram_id($user_id);
-            return (bool) KIE_TTS_DB::deduct_balance($telegram_id, $amount, true);
+            $ok = (bool) KIE_TTS_DB::deduct_balance($telegram_id, $amount, true);
+        } else {
+            $ok = (bool) KIE_TTS_DB::deduct_balance($user_id, $amount, false);
         }
-        return (bool) KIE_TTS_DB::deduct_balance($user_id, $amount, false);
+        // Доля партнёра считается со всех трат, а не только с озвучки:
+        // раньше человек приводил друга, тот работал с микросервисами, и
+        // партнёру не доставалось ничего.
+        if ($ok && class_exists('GS_Referral')) {
+            GS_Referral::note_spend($user_id, $amount);
+        }
+        return $ok;
+    }
+
+    /**
+     * Возврат за неудачу сервиса.
+     *
+     * Отличается от обычного пополнения тем, что уменьшает сумму трат: доля
+     * партнёра не должна начисляться с денег, которые вернулись человеку.
+     */
+    public static function refund_charge($user_id, $amount) {
+        $ok = self::refund($user_id, $amount);
+        if ($ok && class_exists('GS_Referral')) {
+            GS_Referral::note_refund($user_id, $amount);
+        }
+        return $ok;
     }
 
     public static function refund($user_id, $amount) {
