@@ -163,6 +163,20 @@ class GS_Api {
                 'input'  => array('video_url' => 'required'),
                 'result' => 'video',
             ),
+            'dub' => array(
+                'id'     => 'dub',
+                'engine' => 'lab',
+                'lab_id' => 'dub',
+                'title'  => 'Дубляж видео',
+                'about'  => 'Новая речь поверх ролика с подгонкой движения губ; при желании с переводом.',
+                'input'  => array(
+                    'video_url' => 'required',
+                    'speech'    => 'required',
+                    'lang'      => 'optional',
+                ),
+                'fields' => array('speech', 'lang'),
+                'result' => 'video',
+            ),
             'stt' => array(
                 'id'     => 'stt',
                 'engine' => 'lab',

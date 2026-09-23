@@ -577,6 +577,71 @@ class GS_Lab {
                 ),
             ),
 
+            'dub' => array(
+                'id'          => 'dub',
+                'slug'        => 'dublyazh-video',
+                'page_option' => 'gs_lab_page_dub',
+                'menu'        => 'Дубляж видео',
+                'nav'         => 'Дубляж видео',
+                'h1'          => 'Дубляж видео нейросетью: новая речь с попаданием в губы',
+                'seo_title'   => 'Дубляж видео онлайн — переозвучить ролик с синхронизацией губ',
+                'seo_desc'    => 'Дубляж видео онлайн: загрузите ролик, вставьте текст новой озвучки — нейросеть проговорит его и подгонит движение губ под новую речь. Готовый MP4 за несколько минут.',
+                'lead'        => 'Загрузите ролик и вставьте текст новой озвучки — нейросеть проговорит его голосом диктора и подгонит движение губ под новую речь. Нужен перевод на другой язык — отметьте нужный, текст переведём перед озвучкой.',
+                'badge'       => 'Переозвучка видео',
+                'cost_option' => 'gs_lab_cost_dub',
+                'cost'        => 150,
+                'pricing'     => array('unit' => 'second', 'rate' => 12, 'min' => 150, 'max_seconds' => 60),
+                'available'   => true,
+                'inputs'      => array('video'),
+                'accept'      => array(
+                    'video' => 'video/mp4,video/webm,video/quicktime,video/x-m4v',
+                ),
+                'prompt'      => false,
+                'fields'      => array(
+                    'speech' => array(
+                        'type'  => 'textarea',
+                        'label' => 'Текст новой озвучки',
+                        'place' => 'Что должен говорить человек в кадре',
+                        'hint'  => 'Читайте текст вслух с секундомером: речь должна укладываться в длину ролика. Если она длиннее, к концу губы разойдутся со звуком.',
+                    ),
+                    'lang' => array(
+                        'type'    => 'select',
+                        'label'   => 'Перевести перед озвучкой',
+                        'default' => '',
+                        'options' => array(
+                            ''   => 'Не переводить — текст уже готов',
+                            'en' => 'На английский',
+                            'es' => 'На испанский',
+                            'de' => 'На немецкий',
+                            'fr' => 'На французский',
+                            'zh' => 'На китайский',
+                            'ru' => 'На русский',
+                        ),
+                    ),
+                ),
+                'result_kind' => 'video',
+                'poll_seconds'=> 1800,
+                'steps'       => array(
+                    'Загрузите ролик — до минуты и до 60 МБ.',
+                    'Вставьте текст, который должен прозвучать, и при необходимости выберите язык перевода.',
+                    'Через несколько минут скачайте готовый MP4 с новой озвучкой.',
+                ),
+                'faq'         => array(
+                    array('Что именно делает сервис?',
+                          'Проговаривает ваш текст голосом диктора и перерисовывает движение губ человека в кадре под новую речь. Остальная картинка остаётся прежней: поза, жесты, фон и монтаж не трогаются.'),
+                    array('Почему текст нужно вставлять, а не брать из самого ролика?',
+                          'Речь из записи мы пока не распознаём автоматически: для этого нужна звуковая дорожка отдельным файлом. Текст вы вставляете сами — заодно вы видите, что именно прозвучит, и можете поправить формулировку до списания денег.'),
+                    array('Как подогнать длину речи под ролик?',
+                          'Прочитайте текст вслух по секундомеру. Примерно 12–15 слов на десять секунд — нормальный темп. Текст короче ролика не страшен: в конце будет тишина. Текст длиннее — уже проблема: губы разойдутся со звуком.'),
+                    array('Сколько это стоит?',
+                          'Двенадцать рублей за секунду видео, минимум сто пятьдесят рублей. Полминуты — 360 ₽, минута — 720 ₽. Цена считается по настоящей длительности файла и показывается до запуска.'),
+                    array('Какое видео подходит?',
+                          'Такое, где лицо видно целиком и крупно, человек смотрит примерно в камеру и не закрывает рот рукой или микрофоном. На дальнем плане и в профиль губы перерисовываются хуже.'),
+                    array('Сколько ждать?',
+                          'Обычно две-четыре минуты: сначала делается озвучка, потом по ней перерисовывается артикуляция. Страницу можно не держать открытой — результат сохранится.'),
+                ),
+            ),
+
             'vupscale' => array(
                 'id'          => 'vupscale',
                 'slug'        => 'uluchshit-kachestvo-video',
@@ -1238,6 +1303,56 @@ class GS_Lab {
             return array('ok' => !empty($res['ok']), 'task_id' => (string) $res['task'], 'message' => (string) $res['message']);
         }
 
+        if ($id === 'dub') {
+            $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
+            $speech = trim((string) ($fields['speech'] ?? ''));
+            if ($speech === '') {
+                return array('ok' => false, 'task_id' => '', 'message' => 'Вставьте текст, который должен прозвучать');
+            }
+            if (mb_strlen($speech) > 5000) {
+                $speech = mb_substr($speech, 0, 5000);
+            }
+
+            $lang = (string) ($fields['lang'] ?? '');
+            $names = array('en' => 'английский', 'es' => 'испанский', 'de' => 'немецкий',
+                           'fr' => 'французский', 'zh' => 'китайский', 'ru' => 'русский');
+            if (isset($names[$lang])) {
+                // Перевод делаем до озвучки и синхронно: он занимает секунды,
+                // а разбивать ради него задачу на лишний этап — значит ещё
+                // одно место, где всё может застрять.
+                $res = GS_Provider::chat(
+                    'Ты переводишь реплики для дубляжа видео. Отвечаешь только переводом, без '
+                    . 'пояснений и кавычек. Держишь длину близкой к оригиналу: перевод читают '
+                    . 'вслух поверх того же ролика.',
+                    'Переведи на ' . $names[$lang] . " язык:\n\n" . $speech,
+                    array('temperature' => 0.3, 'max_tokens' => 2000, 'timeout' => 120)
+                );
+                if (empty($res['ok']) || trim((string) $res['content']) === '') {
+                    return array('ok' => false, 'task_id' => '',
+                                 'message' => 'Не удалось перевести текст — попробуйте ещё раз');
+                }
+                $speech = trim((string) $res['content']);
+            }
+
+            $voiced = GS_Tts_Fallback::create_task($speech, '');
+            if (empty($voiced['ok'])) {
+                return array('ok' => false, 'task_id' => '',
+                             'message' => (string) ($voiced['message'] ?: 'Озвучка сейчас недоступна'));
+            }
+
+            // Свой номер задачи: у дубляжа два захода к поставщику подряд, и
+            // страница должна опрашивать один адрес от начала до конца.
+            $task_id = 'dub-' . wp_generate_password(20, false, false);
+            set_transient('gs_lab_dub_' . $task_id, array(
+                'stage'     => 'tts',
+                'tts_task'  => (string) $voiced['task_id'],
+                'lip_task'  => '',
+                'video_url' => (string) $params['video_url'],
+                'text'      => $speech,
+            ), DAY_IN_SECONDS);
+            return array('ok' => true, 'task_id' => $task_id, 'message' => '');
+        }
+
         if ($id === 'vupscale') {
             // Множитель кадра не передаём. Поставщик его принимает — и «2»,
             // и «4» проходят проверку, — но размер кадра от этого не
@@ -1438,6 +1553,10 @@ class GS_Lab {
             return $out;
         }
 
+        if ($id === 'dub') {
+            return self::dub_state($task_id);
+        }
+
         if ($id === 'music') {
             $res = self::get_json(self::API_MUSIC_INFO, array('taskId' => $task_id));
             if (!$res['ok']) {
@@ -1603,6 +1722,118 @@ class GS_Lab {
             : array('audio', 'Очищенная запись');
         foreach ($urls as $url) {
             $out['files'][] = array('label' => $label, 'url' => (string) $url, 'kind' => $kind);
+        }
+        $out['status'] = 'completed';
+        return $out;
+    }
+
+    /**
+     * Состояние дубляжа: сначала озвучка, потом артикуляция.
+     *
+     * Два захода к поставщику подряд, а номер задачи для страницы один.
+     * Переход между ними делается здесь же, при очередном опросе: своей
+     * фоновой очереди у сайта нет, а держать её ради двух шагов — лишняя
+     * машинерия, которая ломается тише, чем работает.
+     */
+    private static function dub_state($task_id) {
+        $out = array('ok' => true, 'status' => 'pending', 'files' => array(), 'text' => '', 'message' => '');
+        $key = 'gs_lab_dub_' . $task_id;
+        $row = get_transient($key);
+        if (!is_array($row) || empty($row['stage'])) {
+            $out['status'] = 'failed';
+            $out['message'] = 'Задача не найдена — попробуйте ещё раз';
+            return $out;
+        }
+
+        if ($row['stage'] === 'tts') {
+            $res = self::get_json(self::API_JOBS_INFO, array('taskId' => (string) $row['tts_task']));
+            if (!$res['ok']) {
+                $out['message'] = $res['message'];
+                return $out;
+            }
+            $data = is_array($res['body']['data']) ? $res['body']['data'] : array();
+            $state = (string) ($data['state'] ?? 'waiting');
+            if ($state === 'fail') {
+                $out['status'] = 'failed';
+                $out['message'] = 'Не удалось озвучить текст — деньги вернулись на баланс';
+                return $out;
+            }
+            if ($state !== 'success') {
+                return $out;
+            }
+
+            $result = isset($data['resultJson']) ? $data['resultJson'] : array();
+            if (is_string($result)) {
+                $decoded = json_decode($result, true);
+                $result = is_array($decoded) ? $decoded : array();
+            }
+            $audio = '';
+            if (!empty($result['resultUrls'])) {
+                $urls = is_array($result['resultUrls']) ? $result['resultUrls'] : array($result['resultUrls']);
+                $audio = (string) reset($urls);
+            }
+            if ($audio === '') {
+                $out['status'] = 'failed';
+                $out['message'] = 'Озвучка вернулась пустой — попробуйте ещё раз';
+                return $out;
+            }
+
+            $created = self::post_json(self::API_JOBS, array(
+                'model' => 'volcengine/video-to-video-lip-sync',
+                'input' => array(
+                    'video_url' => (string) $row['video_url'],
+                    'audio_url' => $audio,
+                    'mode'      => 'lite',
+                ),
+            ));
+            $lip = $created['ok'] ? (string) ($created['body']['data']['taskId'] ?? '') : '';
+            if ($lip === '') {
+                $out['status'] = 'failed';
+                $out['message'] = $created['message'] ?: 'Не удалось подогнать артикуляцию';
+                return $out;
+            }
+            $row['stage'] = 'lip';
+            $row['lip_task'] = $lip;
+            $row['audio_url'] = $audio;
+            set_transient($key, $row, DAY_IN_SECONDS);
+            return $out;
+        }
+
+        $res = self::get_json(self::API_JOBS_INFO, array('taskId' => (string) $row['lip_task']));
+        if (!$res['ok']) {
+            $out['message'] = $res['message'];
+            return $out;
+        }
+        $data = is_array($res['body']['data']) ? $res['body']['data'] : array();
+        $state = (string) ($data['state'] ?? 'waiting');
+        if ($state === 'fail') {
+            $out['status'] = 'failed';
+            $out['message'] = (string) ($data['failMsg'] ?? 'Не удалось подогнать артикуляцию');
+            return $out;
+        }
+        if ($state !== 'success') {
+            return $out;
+        }
+
+        $result = isset($data['resultJson']) ? $data['resultJson'] : array();
+        if (is_string($result)) {
+            $decoded = json_decode($result, true);
+            $result = is_array($decoded) ? $decoded : array();
+        }
+        $urls = array();
+        if (!empty($result['resultUrls'])) {
+            $urls = is_array($result['resultUrls']) ? $result['resultUrls'] : array($result['resultUrls']);
+        }
+        if (empty($urls)) {
+            return $out;
+        }
+        foreach ($urls as $url) {
+            $out['files'][] = array('label' => 'Видео с новой озвучкой', 'url' => (string) $url, 'kind' => 'video');
+        }
+        // Дорожку отдаём тоже: её часто хотят отдельно — подложить в монтаж
+        // или переозвучить другой ролик тем же голосом.
+        if (!empty($row['audio_url'])) {
+            $out['files'][] = array('label' => 'Только новая озвучка', 'url' => (string) $row['audio_url'], 'kind' => 'audio');
         }
         $out['status'] = 'completed';
         return $out;
