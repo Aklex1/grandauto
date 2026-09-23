@@ -453,6 +453,8 @@
 {% set stopped = request.query_params.get('stopped') %}
 {% if stopped %}<p class="badge">Сборка остановлена, серий вернулось в план: {{ stopped }}.
   Та, что считалась в этот момент, доделается.</p>{% endif %}
+{% if request.query_params.get('saved') %}<p class="badge">Настройки сохранены.
+  Чтобы они попали в уже готовые ролики, нажмите «Пересобрать готовые».</p>{% endif %}
 {% set aerr = request.query_params.get('error') %}
 {% if aerr == 'no-file' %}<p class="badge" style="background:#5b2222">Файл не выбран.</p>{% endif %}
 {% if aerr == 'bad-zip' %}<p class="badge" style="background:#5b2222">Архив не принят:
@@ -524,6 +526,107 @@
           onsubmit="return confirm('Убрать архив «{{ batch.name }}» вместе со списком серий? Готовые ролики останутся на диске.')">
       <button class="btn btn-sm btn-ghost">Убрать</button></form>
   </div>
+
+  <details style="margin-top:12px">
+    <summary class="small">⚙ Как собирать ролики этого архива</summary>
+    <p class="small muted">Пусто и ноль означают «как в настройках канала» — архив не
+      обязан переопределять всё подряд. Настройки действуют на все его серии, так что
+      поправить и нажать «Пересобрать готовые» дешевле, чем кажется: озвучка берётся
+      с диска.</p>
+    <form method="post" action="/archives/{{ batch.id }}/settings" class="grid cols-3">
+      <label>Обложка
+        <select name="cover_mode">
+          {% for key, what in archive_cover_modes.items() %}
+          <option value="{{ key }}" {% if batch.cover_mode == key %}selected{% endif %}>{{ what }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Притемнение обложки под титры — 0 не гасить, 0.85 почти в чёрное
+        <input name="cover_dim" type="number" min="0" max="0.85" step="0.01"
+               value="{{ '%.2f'|format(batch.cover_dim or archive_defaults.cover_dim) }}"></label>
+      <label>Сколько держать обложку нетронутой, с
+        <input name="cover_hold" type="number" min="0" max="6" step="0.1"
+               value="{{ '%.1f'|format(batch.cover_hold or archive_defaults.cover_hold) }}"></label>
+      <label>Наезд к концу ролика — 1.0 без движения
+        <input name="cover_zoom" type="number" min="1" max="1.4" step="0.01"
+               value="{{ '%.2f'|format(batch.cover_zoom or archive_defaults.cover_zoom) }}"></label>
+      <label>Хвост после последней фразы, с
+        <input name="tail_sec" type="number" min="0" max="8" step="0.1"
+               value="{{ '%.1f'|format(batch.tail_sec or archive_defaults.tail_sec) }}"></label>
+
+      <label>Субтитры
+        <select name="subtitles_mode">
+          <option value="" {% if not batch.subtitles_mode %}selected{% endif %}>как у канала</option>
+          <option value="on" {% if batch.subtitles_mode == 'on' %}selected{% endif %}>вшивать</option>
+          <option value="off" {% if batch.subtitles_mode == 'off' %}selected{% endif %}>не вшивать</option>
+        </select></label>
+      <label>Оформление субтитров
+        <select name="subtitle_style">
+          <option value="">как у канала</option>
+          {% for key, label in subtitle_styles.items() %}
+          <option value="{{ key }}" {% if batch.subtitle_style == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Шрифт концовки
+        <select name="title_font">
+          <option value="">как у канала</option>
+          {% for f in font_list %}
+          <option value="{{ f.key }}" {% if batch.title_font == f.key %}selected{% endif %}>{{ f.label }}</option>
+          {% endfor %}
+        </select></label>
+
+      <label>Фоновая музыка
+        <select name="music_mode">
+          <option value="" {% if not batch.music_mode %}selected{% endif %}>как у канала</option>
+          <option value="on" {% if batch.music_mode == 'on' %}selected{% endif %}>подмешивать</option>
+          <option value="off" {% if batch.music_mode == 'off' %}selected{% endif %}>без музыки</option>
+        </select></label>
+      <label>Громкость музыки, дБ — 0 как у канала
+        <input name="music_volume_db" type="number" min="-40" max="0" step="1"
+               value="{{ batch.music_volume_db or 0 }}"></label>
+
+      <label>Модель озвучки
+        <select name="tts_model">
+          <option value="">как у канала</option>
+          {% for m in models.tts %}
+          <option value="{{ m }}" {% if batch.tts_model == m %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Голос
+        <select name="voice_id">
+          <option value="">как у канала</option>
+          {% for v in voices %}
+          <option value="{{ v.voice_id }}" {% if batch.voice_id == v.voice_id %}selected{% endif %}>{{ v.name }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Скорость речи — 0 как у канала
+        <input name="voice_speed" type="number" min="0" max="1.2" step="0.05"
+               value="{{ '%.2f'|format(batch.voice_speed or 0) }}"></label>
+
+      <label style="grid-column:1/-1">Рекламная концовка
+        <select name="outro_mode">
+          <option value="" {% if not batch.outro_mode %}selected{% endif %}>как у канала</option>
+          <option value="on" {% if batch.outro_mode == 'on' %}selected{% endif %}>добавлять</option>
+          <option value="off" {% if batch.outro_mode == 'off' %}selected{% endif %}>не добавлять</option>
+        </select></label>
+      <label>Ссылка на канал
+        <input name="outro_url" maxlength="300" value="{{ batch.outro_url }}"
+               placeholder="t.me/life_rules_for_mens"></label>
+      <label>Название в концовке
+        <input name="outro_title" maxlength="120" value="{{ batch.outro_title }}"></label>
+      <label>Откуда брать реплики
+        <select name="outro_source">
+          <option value="">как у канала</option>
+          {% for key, label in outro_sources.items() %}
+          <option value="{{ key }}" {% if batch.outro_source == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select></label>
+      <label style="grid-column:1/-1">Свои реплики — через пустую строку, чередуются по сериям
+        <textarea name="outro_text" rows="3">{{ batch.outro_text }}</textarea></label>
+      <label style="grid-column:1/-1">Чем завлекаем — короткое описание для реплики
+        <textarea name="outro_about" rows="2">{{ batch.outro_about }}</textarea></label>
+      <div style="grid-column:1/-1"><button class="btn btn-primary">Сохранить настройки</button></div>
+    </form>
+  </details>
 </div>
 
 <table class="table">

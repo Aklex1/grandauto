@@ -681,6 +681,59 @@ def archive_item_run(item_id: int, session: Session = Depends(get_session),
     return RedirectResponse(f"/channels/{item.channel_id}?tab=archive", status_code=303)
 
 
+@app.post("/archives/{batch_id}/settings")
+async def archive_settings(batch_id: int, request: Request,
+                           session: Session = Depends(get_session),
+                           _user: str = Depends(require_user)):
+    """Как собирать ролики этого архива: обложка, титры, голос, концовка."""
+    from .models import ArchiveBatch
+
+    batch = session.get(ArchiveBatch, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Архив не найден")
+    form = await request.form()
+
+    def num(name: str, low: float, high: float, default: float) -> float:
+        try:
+            return max(low, min(high, float(form.get(name) or default)))
+        except (TypeError, ValueError):
+            return default
+
+    def mode(name: str) -> str:
+        value = str(form.get(name) or "")
+        return value if value in ("on", "off") else ""
+
+    if str(form.get("cover_mode") or "") in archives.COVER_MODES:
+        batch.cover_mode = str(form.get("cover_mode"))
+    batch.cover_dim = num("cover_dim", 0.0, 0.85, archives.COVER_DIM)
+    batch.cover_hold = num("cover_hold", 0.0, 6.0, archives.COVER_HOLD)
+    batch.cover_zoom = num("cover_zoom", 1.0, 1.4, archives.COVER_ZOOM)
+    batch.tail_sec = num("tail_sec", 0.0, 8.0, archives.TAIL_SECONDS)
+
+    batch.subtitles_mode = mode("subtitles_mode")
+    style = str(form.get("subtitle_style") or "")
+    batch.subtitle_style = style if style in subtitles.SUBTITLE_STYLES else ""
+    batch.title_font = fonts.normalize(str(form.get("title_font") or ""))         if form.get("title_font") else ""
+    batch.music_mode = mode("music_mode")
+    batch.music_volume_db = num("music_volume_db", -40.0, 0.0, 0.0)
+
+    batch.tts_model = str(form.get("tts_model") or "").strip()[:120]
+    batch.voice_id = str(form.get("voice_id") or "").strip()[:120]
+    batch.voice_name = str(form.get("voice_name") or "").strip()[:120]
+    batch.voice_speed = num("voice_speed", 0.0, 1.2, 0.0)
+
+    batch.outro_mode = mode("outro_mode")
+    batch.outro_url = str(form.get("outro_url") or "").strip()[:300]
+    batch.outro_title = str(form.get("outro_title") or "").strip()[:120]
+    batch.outro_about = str(form.get("outro_about") or "").strip()[:2000]
+    source = str(form.get("outro_source") or "")
+    batch.outro_source = source if source in pipeline.OUTRO_SOURCES else ""
+    batch.outro_text = str(form.get("outro_text") or "").strip()[:4000]
+    session.commit()
+    return RedirectResponse(f"/channels/{batch.channel_id}?tab=archive&saved=1",
+                            status_code=303)
+
+
 @app.post("/archives/{batch_id}/stop")
 def archive_stop(batch_id: int, session: Session = Depends(get_session),
                  _user: str = Depends(require_user)):
@@ -846,6 +899,11 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
             select(ArchiveItem).where(ArchiveItem.channel_id == channel.id)
             .order_by(ArchiveItem.batch_id.desc(), ArchiveItem.idx)).scalars().all(),
         archive_cover_modes=archives.COVER_MODES,
+        archive_defaults={"cover_dim": archives.COVER_DIM,
+                          "cover_hold": archives.COVER_HOLD,
+                          "cover_zoom": archives.COVER_ZOOM,
+                          "tail_sec": archives.TAIL_SECONDS},
+        outro_sources=pipeline.OUTRO_SOURCES,
         reference_kinds=references.KINDS,
         reference_limit=references.MAX_INPUT_IMAGES,
         references_list=references.for_channel(session, channel.id),

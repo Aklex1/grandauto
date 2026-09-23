@@ -74,7 +74,68 @@ class ArchiveError(RuntimeError):
     pass
 
 
-def voice_cache_path(channel: Channel, item: ArchiveItem) -> Path:
+def resolve(batch: Optional[ArchiveBatch], channel: Channel) -> dict:
+    """Настройки сборки: своё у архива, иначе как у канала.
+
+    Пустая строка и ноль в архиве значат «не переопределяю»: архив не обязан
+    описывать всё подряд, а канал остаётся общим знаменателем. Один словарь на
+    всю сборку удобнее десятка `batch.x or channel.x` по коду — иначе правило
+    «пусто значит как у канала» пришлось бы помнить в каждой строке.
+    """
+    def pick(name: str, fallback):
+        """Пусто и ноль — «как у канала»: у голоса и громкости ноль смысла не имеет."""
+        value = getattr(batch, name, None) if batch is not None else None
+        if value in (None, "", 0, 0.0):
+            return fallback
+        return value
+
+    def number(name: str, fallback: float, low: float, high: float) -> float:
+        """То же для чисел, у которых ноль — законное значение.
+
+        Притемнение 0 означает «не гасить вовсе», и подменять его значением по
+        умолчанию нельзя: тогда выключить притемнение было бы нечем. За «не
+        задано» здесь отвечает выход за границы, а не ноль.
+        """
+        value = getattr(batch, name, None) if batch is not None else None
+        if value is None or not (low <= float(value) <= high):
+            return fallback
+        return float(value)
+
+    def mode(name: str, fallback: bool) -> bool:
+        value = (getattr(batch, name, "") or "") if batch is not None else ""
+        if value == "on":
+            return True
+        if value == "off":
+            return False
+        return fallback
+
+    outro_on = mode("outro_mode", bool(channel.outro_enabled))
+    return {
+        "cover_mode": (batch.cover_mode if batch else "uploaded") or "uploaded",
+        "cover_dim": number("cover_dim", COVER_DIM, 0.0, 0.85),
+        "cover_hold": number("cover_hold", COVER_HOLD, 0.0, 6.0),
+        "cover_zoom": number("cover_zoom", COVER_ZOOM, 1.0, 1.4),
+        "tail_sec": number("tail_sec", TAIL_SECONDS, 0.0, 8.0),
+        "subtitles": mode("subtitles_mode", bool(channel.burn_subtitles)),
+        "subtitle_style": pick("subtitle_style", channel.subtitle_style or "shorts"),
+        "title_font": pick("title_font", channel.title_font or ""),
+        "music": mode("music_mode", bool(channel.background_music)),
+        "music_volume_db": float(pick("music_volume_db", channel.music_volume_db or -20.0)),
+        "tts_model": pick("tts_model", channel.tts_model),
+        "voice_id": pick("voice_id", channel.voice_id),
+        "voice_name": pick("voice_name", channel.voice_name),
+        "voice_speed": float(pick("voice_speed", channel.voice_speed or 1.0)),
+        "outro": outro_on,
+        "outro_url": pick("outro_url", channel.outro_url or ""),
+        "outro_title": pick("outro_title", channel.outro_title or channel.name or ""),
+        "outro_about": pick("outro_about", channel.outro_about or ""),
+        "outro_source": pick("outro_source", channel.outro_source or "builtin"),
+        "outro_text": pick("outro_text", channel.outro_text or ""),
+    }
+
+
+def voice_cache_path(channel: Channel, item: ArchiveItem,
+                     setup: Optional[dict] = None) -> Path:
     """Куда кладём озвучку серии, чтобы не платить за неё дважды.
 
     Имя считается от текста и голоса: тот же текст тем же голосом звучит
@@ -82,10 +143,11 @@ def voice_cache_path(channel: Channel, item: ArchiveItem) -> Path:
     пересборке — выброшенные деньги. Поменяется текст или голос — поменяется и
     имя, старый файл просто не найдётся.
     """
+    setup = setup or resolve(None, channel)
     key = "|".join([
         (item.narration or "").strip(),
-        channel.tts_model or "", channel.voice_id or "",
-        f"{channel.voice_speed:.2f}", f"{channel.voice_stability:.2f}",
+        setup["tts_model"] or "", setup["voice_id"] or "",
+        f"{setup['voice_speed']:.2f}", f"{channel.voice_stability:.2f}",
         f"{channel.voice_similarity:.2f}",
     ])
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:20]
@@ -347,10 +409,11 @@ def build_item(item_id: int) -> Optional[Path]:
         out_dir = config.MEDIA_DIR / channel.slug / "_archive"
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        setup = resolve(batch, channel)
         try:
             # 1. Голос. Текст уже на нужном языке — переводить нечего.
             lang = _voice_language(item)
-            cached = voice_cache_path(channel, item)
+            cached = voice_cache_path(channel, item, setup)
             voice: Path
             if cached.exists() and storage.media_duration(cached) > 0.5:
                 # Тот же текст тем же голосом уже озвучен: при повторной загрузке
@@ -362,9 +425,9 @@ def build_item(item_id: int) -> Optional[Path]:
             else:
                 spoken = tts.synthesize(
                     client, item.narration, workdir / "voice.m4a",
-                    model=channel.tts_model, voice_id=channel.voice_id,
+                    model=setup["tts_model"], voice_id=setup["voice_id"],
                     stability=channel.voice_stability, similarity=channel.voice_similarity,
-                    speed=channel.voice_speed,
+                    speed=setup["voice_speed"],
                     voice_profile=VOICE_PROFILES.get(lang, VOICE_PROFILES["en"]))
                 duration = spoken.duration or storage.media_duration(spoken.path)
                 if duration <= 0:
@@ -377,26 +440,32 @@ def build_item(item_id: int) -> Optional[Path]:
             cover = _cover_for(session, client, channel, batch, item, workdir)
 
             # 3. Ролик: обложка секунду как есть, дальше притемнённая под титры.
-            total = duration + TAIL_SECONDS
+            total = duration + setup["tail_sec"]
             raw = workdir / "raw.mp4"
             media.build_cover_scene(
                 cover, voice, raw, size, total, workdir,
-                hold=COVER_HOLD, fade=COVER_FADE, dim=COVER_DIM,
-                zoom_end=COVER_ZOOM)
+                hold=setup["cover_hold"], fade=COVER_FADE, dim=setup["cover_dim"],
+                zoom_end=setup["cover_zoom"])
 
             # 4. Титры поверх, но не поверх обложки.
-            cues = _shift_past_cover(_cues_for(item, voice, duration))
+            cues = _shift_past_cover(_cues_for(item, voice, duration),
+                                     hold=setup["cover_hold"])
             with_subs = raw
-            if channel.burn_subtitles and cues:
+            if setup["subtitles"] and cues:
                 ass = workdir / "subs.ass"
                 subtitles.write_ass(cues, ass, size=size, vertical=True,
-                                    style=channel.subtitle_style or "shorts")
+                                    style=setup["subtitle_style"])
                 with_subs = workdir / "subs.mp4"
                 media.burn_subtitles(raw, ass, with_subs)
 
+            # 4б. Рекламная концовка: та же, что у шортсов, — озвученный призыв,
+            # название канала и ссылка поверх последнего кадра.
+            with_subs = _append_outro(session, client, channel, item, setup,
+                                      with_subs, size, workdir)
+
             # 5. Музыка — вторая и последняя статья расхода API.
             final_src = with_subs
-            if channel.background_music:
+            if setup["music"]:
                 # Именно pick_track, а не ensure_track: тот держит один трек на
                 # канал (так нужно длинному ролику со сквозной музыкой), а сотня
                 # шортсов с одинаковым фоном сливается в ленте.
@@ -409,7 +478,8 @@ def build_item(item_id: int) -> Optional[Path]:
                     mixed = workdir / "mixed.mp4"
                     media.mix_background_music(
                         with_subs, storage.abspath(track.path), mixed,
-                        music_db=channel.music_volume_db, fade_out=TAIL_SECONDS)
+                        music_db=setup["music_volume_db"],
+                        fade_out=setup["tail_sec"])
                     final_src = mixed
 
             final = out_dir / f"{item.idx:03d}_{storage.slugify(item.title, 50) or 'reel'}.mp4"
@@ -436,6 +506,91 @@ def build_item(item_id: int) -> Optional[Path]:
                               message=f"Серия {item.folder} не собралась: {str(exc)[:200]}"))
             session.commit()
             raise
+
+
+def _outro_lines(setup: dict) -> list[str]:
+    """Реплики концовки. Разные, чтобы сотня серий не звучала одинаково."""
+    from . import pipeline
+
+    title = (setup["outro_title"] or "").strip()
+    mine = pipeline._split_variants(setup["outro_text"] or "")
+    if setup["outro_source"] == "custom" and mine:
+        return mine
+    # Источник «модель» здесь не зовём: платить за реплику на каждую из сотни
+    # серий незачем. Если её уже составили в шортсах, она лежит готовой — берём.
+    if mine:
+        return mine
+    return [text.format(title=title) for text in pipeline.OUTRO_FALLBACK]
+
+
+def _outro_voice(client, text: str, channel: Channel, setup: dict,
+                 lang: str, workdir: Path) -> Optional[tuple[Path, float, float]]:
+    """Озвучка призыва. Кэшируется так же, как и основная: реплик всего несколько."""
+    key = "|".join([text.strip(), setup["tts_model"] or "", setup["voice_id"] or "",
+                    f"{setup['voice_speed']:.2f}"])
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:20]
+    folder = config.MEDIA_DIR / "_archives" / (channel.slug or "channel") / "voices"
+    folder.mkdir(parents=True, exist_ok=True)
+    cached = folder / f"outro_{digest}.m4a"
+    if cached.exists() and storage.media_duration(cached) > 0.3:
+        return cached, storage.media_duration(cached), 0.0
+    try:
+        result = tts.synthesize(
+            client, text, workdir / "outro_voice.m4a",
+            model=setup["tts_model"], voice_id=setup["voice_id"],
+            stability=channel.voice_stability, similarity=channel.voice_similarity,
+            speed=setup["voice_speed"],
+            voice_profile=VOICE_PROFILES.get(lang, VOICE_PROFILES["en"]))
+    except Exception as exc:  # noqa: BLE001 — без озвучки концовка всё равно нужна
+        log.warning("Концовка не озвучена: %s", exc)
+        return None
+    shutil.copyfile(result.path, cached)
+    return cached, result.duration, float(result.credits or 0.0)
+
+
+def _append_outro(session: Session, client, channel: Channel, item: ArchiveItem,
+                  setup: dict, video: Path, size: tuple[int, int],
+                  workdir: Path) -> Path:
+    """Приклеиваем концовку к ролику. Без неё ролик остаётся как был."""
+    from . import fonts, pipeline
+
+    if not setup["outro"]:
+        return video
+    link = (setup["outro_url"] or "").strip()
+    title = (setup["outro_title"] or "").strip()
+    if not link and not title:
+        return video
+
+    try:
+        lines = _outro_lines(setup)
+        # Реплику выбираем по номеру серии: у соседних роликов концовка разная.
+        text = lines[item.idx % len(lines)] if lines else ""
+        spoken = _outro_voice(client, text, channel, setup,
+                              _voice_language(item), workdir) if text else None
+        if spoken is not None:
+            voice, spoken_sec, credits = spoken
+            item.credits = float(item.credits or 0.0) + credits
+            duration = media.OUTRO_LEAD_IN + spoken_sec + pipeline.OUTRO_PAD
+        else:
+            voice, duration = None, pipeline.OUTRO_SILENT_SECONDS
+
+        # Последний кадр ролика уходит фоном концовки, чтобы она не выглядела
+        # приклеенной из другого видео.
+        frame = workdir / "outro_bg.jpg"
+        media.frame_grab(video, frame, at=max(0.0, storage.media_duration(video) - 0.3))
+        tail = workdir / "outro.mp4"
+        media.build_outro(tail, size, duration, voice, title, link,
+                          fonts.font_path(setup["title_font"]) or "", workdir,
+                          background=frame if frame.exists() else None)
+        joined = workdir / "joined.mp4"
+        media.concat_scenes([video, tail], joined, workdir / "join")
+        return joined
+    except Exception as exc:  # noqa: BLE001 — ролик важнее концовки
+        log.warning("Серия %s: концовка не добавлена: %s", item.folder, exc)
+        session.add(Event(level="warn", stage="archive",
+                          message=f"Серия {item.folder}: концовка не добавлена ({exc})"))
+        session.commit()
+        return video
 
 
 def channel_motion(channel: Channel) -> str:

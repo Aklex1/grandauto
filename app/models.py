@@ -318,6 +318,33 @@ class ArchiveBatch(Base):
     # Пауза: расписание такой архив пропускает, а нажатое вручную снимается с
     # очереди. Нужна, когда сотня серий уже поехала, а остановить её нечем.
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # --- как собирать ролики этого архива ---
+    # Пустая строка и ноль означают «как у канала»: архив не обязан переопределять
+    # всё подряд, а настройки канала остаются общими по умолчанию.
+    cover_dim: Mapped[float] = mapped_column(Float, default=0.42)
+    cover_hold: Mapped[float] = mapped_column(Float, default=1.0)
+    cover_zoom: Mapped[float] = mapped_column(Float, default=1.08)
+    tail_sec: Mapped[float] = mapped_column(Float, default=1.2)
+
+    subtitle_style: Mapped[str] = mapped_column(String(20), default="")
+    title_font: Mapped[str] = mapped_column(String(32), default="")
+    # "" — как у канала, "on" — включить, "off" — выключить
+    subtitles_mode: Mapped[str] = mapped_column(String(8), default="")
+    music_mode: Mapped[str] = mapped_column(String(8), default="")
+    music_volume_db: Mapped[float] = mapped_column(Float, default=0.0)
+
+    tts_model: Mapped[str] = mapped_column(String(120), default="")
+    voice_id: Mapped[str] = mapped_column(String(120), default="")
+    voice_name: Mapped[str] = mapped_column(String(120), default="")
+    voice_speed: Mapped[float] = mapped_column(Float, default=0.0)
+
+    outro_mode: Mapped[str] = mapped_column(String(8), default="")
+    outro_url: Mapped[str] = mapped_column(String(300), default="")
+    outro_title: Mapped[str] = mapped_column(String(120), default="")
+    outro_about: Mapped[str] = mapped_column(Text, default="")
+    outro_source: Mapped[str] = mapped_column(String(20), default="")
+    outro_text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
     items: Mapped[list["ArchiveItem"]] = relationship(
