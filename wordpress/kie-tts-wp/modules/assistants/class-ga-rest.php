@@ -290,7 +290,7 @@ class GA_Rest
         $text = (string) $request->get_param('text');
         $user_id = GA_Billing::user_by_telegram($tg_id);
         $external = (string) $tg_id;
-        $account = self::bot_account($assistant, $user_id);
+        $account = self::bot_account($assistant, $user_id, $tg_id);
 
         switch ($intent) {
             case 'start':
@@ -433,9 +433,10 @@ class GA_Rest
     }
 
     /** Баланс, текст о балансе и ссылки для кнопок бота. Пополнение — редирект на сайт. */
-    private static function bot_account(array $assistant, int $user_id): array
+    private static function bot_account(array $assistant, int $user_id, int $tg_id = 0): array
     {
         $topup = $assistant['landing_url'] ?: home_url('/tts-dashboard/');
+        $bind = null;
         if ($user_id) {
             $balance = GA_Billing::balance($user_id);
             $text = sprintf(
@@ -446,10 +447,11 @@ class GA_Rest
                 number_format_i18n(GA_Billing::price_per_message(), 0));
         } else {
             $balance = null;
+            $bind = $tg_id ? GA_Billing::bind_url($tg_id) : null;
             $text = sprintf(
-                "Аккаунт ещё не привязан. Гостю доступно %d сообщений в сутки.\n"
-                . "Войдите на сайте через Telegram — баланс станет общим со всеми сервисами Genius, "
-                . "и можно будет пополнять счёт.",
+                "Аккаунт ещё не привязан — сейчас работает гостевой лимит (%d сообщений в сутки).\n"
+                . "Нажмите «Привязать аккаунт», войдите на сайте — и баланс станет общим со всеми "
+                . "сервисами Genius, появится пополнение счёта.",
                 GA_Billing::guest_free_limit());
         }
         return [
@@ -458,6 +460,7 @@ class GA_Rest
             'balance_text' => $text,
             'topup_url' => $topup,
             'login_url' => home_url('/tts-login/'),
+            'bind_url' => $bind,
         ];
     }
 }

@@ -18,6 +18,7 @@ class GA_Shortcodes
         add_shortcode('genius_assistants_gallery', [self::class, 'gallery']);
         add_shortcode('genius_assistant', [self::class, 'widget']);
         add_shortcode('genius_knowledge_base', [self::class, 'knowledge_base']);
+        add_shortcode('genius_bind_telegram', [self::class, 'bind_telegram']);
     }
 
     private static function kb_assets(): void
@@ -247,6 +248,44 @@ class GA_Shortcodes
           <?php endif; ?>
         </div>
         <?php
+        return (string) ob_get_clean();
+    }
+
+    public static function bind_telegram($atts = []): string
+    {
+        self::kb_assets();
+        $tg = isset($_GET['tg']) ? (int) $_GET['tg'] : 0;
+        $exp = isset($_GET['exp']) ? (int) $_GET['exp'] : 0;
+        $sig = isset($_GET['sig']) ? preg_replace('/[^a-f0-9]/', '', (string) $_GET['sig']) : '';
+        $uid = get_current_user_id();
+
+        ob_start();
+        echo '<div class="ga-kb ga-bind">';
+        echo '<h3 class="ga-kb__title">Привязка Telegram</h3>';
+        if (!$tg || !$exp || !$sig) {
+            echo '<p class="ga-kb__lead">Ссылка неполная. Вернитесь в бота и нажмите «Привязать аккаунт».</p>';
+        } elseif (!$uid) {
+            echo '<p class="ga-kb__lead">Войдите на сайте — почтой, через VK или Telegram, — и аккаунт '
+                . 'привяжется. Баланс станет общим со всеми сервисами Genius.</p>'
+                . '<p><button type="button" class="ga-support__main kie-auth-open-trigger">Войти</button> '
+                . '<a class="ga-support__ask" href="' . esc_url(home_url('/tts-login/')) . '">Страница входа</a></p>'
+                . '<p class="ga-kb__lead" style="margin-top:12px">После входа снова нажмите «Привязать аккаунт» '
+                . 'в боте.</p>';
+        } else {
+            $res = GA_Billing::bind_apply($uid, $tg, $exp, $sig);
+            if (!empty($res['ok'])) {
+                echo '<p class="ga-kb__lead">✅ Аккаунт Telegram привязан. Вернитесь в бота и наберите '
+                    . '<b>/balance</b> — баланс теперь общий, доступно пополнение.</p>';
+            } elseif (($res['code'] ?? '') === 'taken') {
+                echo '<p class="ga-kb__lead">Этот Telegram уже привязан к другому аккаунту. '
+                    . 'Войдите под ним или напишите в поддержку.</p>';
+            } elseif (($res['code'] ?? '') === 'expired') {
+                echo '<p class="ga-kb__lead">Ссылка устарела. Вернитесь в бота и нажмите «Привязать аккаунт» ещё раз.</p>';
+            } else {
+                echo '<p class="ga-kb__lead">Ссылка недействительна. Повторите привязку из бота.</p>';
+            }
+        }
+        echo '</div>';
         return (string) ob_get_clean();
     }
 

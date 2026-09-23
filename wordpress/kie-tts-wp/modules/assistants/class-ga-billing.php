@@ -174,6 +174,46 @@ class GA_Billing
      * Телеграм-пользователь, пришедший в бота ассистента, может быть ещё не связан
      * с аккаунтом на сайте. Ищем связь по мете, которую заводит kie-tts-wp.
      */
+    /**
+     * Привязка Telegram-аккаунта к аккаунту на сайте.
+     *
+     * Бот даёт подписанную сайтом ссылку (bind_url) с tg-id и сроком; пользователь
+     * открывает её залогиненным, сайт проверяет подпись и пишет мету telegram_id.
+     * Подпись на секрете WordPress — подделать чужой tg-id нельзя.
+     */
+    public static function bind_sign(int $tg, int $exp): string
+    {
+        return substr(hash_hmac('sha256', $tg . '.' . $exp, wp_salt('ga-bind')), 0, 32);
+    }
+
+    public static function bind_url(int $tg): string
+    {
+        $exp = time() + 1800;
+        return add_query_arg(
+            ['tg' => $tg, 'exp' => $exp, 'sig' => self::bind_sign($tg, $exp)],
+            home_url('/privyazka-telegram/'));
+    }
+
+    /** @return array{ok:bool,code?:string} */
+    public static function bind_apply(int $user_id, int $tg, int $exp, string $sig): array
+    {
+        if (!$user_id) {
+            return ['ok' => false, 'code' => 'login'];
+        }
+        if ($tg <= 0 || $exp < time()) {
+            return ['ok' => false, 'code' => 'expired'];
+        }
+        if (!hash_equals(self::bind_sign($tg, $exp), $sig)) {
+            return ['ok' => false, 'code' => 'bad'];
+        }
+        $existing = self::user_by_telegram($tg);
+        if ($existing && $existing !== $user_id) {
+            return ['ok' => false, 'code' => 'taken'];
+        }
+        update_user_meta($user_id, 'telegram_id', (string) $tg);
+        return ['ok' => true];
+    }
+
     public static function user_by_telegram(int $tg_id): int
     {
         if (!$tg_id) {
