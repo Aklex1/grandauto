@@ -527,8 +527,9 @@
       <button class="btn btn-sm btn-ghost">Убрать</button></form>
   </div>
 
-  <details style="margin-top:12px">
-    <summary class="small">⚙ Как собирать ролики этого архива</summary>
+  <details style="margin-top:12px" {% if not batch.paused %}open{% endif %}>
+    <summary class="small"><b>⚙ Как собирать ролики этого архива</b> — притемнение
+      обложки, шрифт, голос, музыка, концовка</summary>
     <p class="small muted">Пусто и ноль означают «как в настройках канала» — архив не
       обязан переопределять всё подряд. Настройки действуют на все его серии, так что
       поправить и нажать «Пересобрать готовые» дешевле, чем кажется: озвучка берётся
