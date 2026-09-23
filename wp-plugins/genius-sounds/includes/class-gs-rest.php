@@ -291,6 +291,16 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // На сайте живут два телеграм-бота: один водит в кабинет озвучки,
+        // другой — в нейрохаб, PDF и примерку дисков. Настройки у них
+        // разные, и по одному полю с токеном не понять, какой это бот.
+        // Здесь спрашиваем у самого Telegram — наружу отдаём только имя.
+        register_rest_route(self::NS, '/telegram/whoami', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_telegram_whoami'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         // Временная проверка форматов запроса к поставщику (только админ).
         register_rest_route(self::NS, '/lab/provider-test', array(
             'methods'             => 'POST',
@@ -2007,6 +2017,42 @@ class GS_Rest {
         $body   = is_array($params) && isset($params['payload']) && is_array($params['payload'])
             ? $params['payload'] : null;
         return rest_ensure_response(GS_MusicAI::probe($path, $method, $body));
+    }
+
+    public static function handle_telegram_whoami($request) {
+        $sources = array(
+            'озвучка и микросервисы' => array('kie_tts_telegram_bot_token', 'kie_tts_telegram_bot_username'),
+            'нейрохаб, PDF, колесо'  => array('kie_neurohub_telegram_bot_token', 'kie_neurohub_telegram_bot_username'),
+        );
+        $out = array();
+        foreach ($sources as $label => $pair) {
+            list($token_option, $name_option) = $pair;
+            $token = trim((string) get_option($token_option, ''));
+            $row = array(
+                'настроено имя' => (string) get_option($name_option, ''),
+                'токен'         => $token === '' ? 'пусто' : 'задан',
+                'бот по токену' => '',
+                'ошибка'        => '',
+            );
+            if ($token !== '') {
+                $response = wp_remote_get('https://api.telegram.org/bot' . rawurlencode($token) . '/getMe',
+                    array('timeout' => 20));
+                if (is_wp_error($response)) {
+                    $row['ошибка'] = $response->get_error_message();
+                } else {
+                    $body = json_decode((string) wp_remote_retrieve_body($response), true);
+                    if (is_array($body) && !empty($body['ok'])) {
+                        $row['бот по токену'] = (string) ($body['result']['username'] ?? '');
+                    } else {
+                        $row['ошибка'] = is_array($body)
+                            ? (string) ($body['description'] ?? 'Telegram отклонил токен')
+                            : 'некорректный ответ Telegram';
+                    }
+                }
+            }
+            $out[$label] = $row;
+        }
+        return rest_ensure_response($out);
     }
 
     public static function handle_ytaudio_probe($request) {
