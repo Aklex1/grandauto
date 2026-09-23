@@ -68,6 +68,25 @@ class GA_Chat
         ];
     }
 
+    /**
+     * Хеш клиентского IP (сырой IP не сохраняем). За реальным IP смотрим
+     * заголовки прокси/CDN, затем REMOTE_ADDR. Соль — из ключей WordPress.
+     */
+    public static function client_ip_hash(): string
+    {
+        $ip = '';
+        foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $k) {
+            if (!empty($_SERVER[$k])) {
+                $ip = trim(explode(',', (string) $_SERVER[$k])[0]);
+                break;
+            }
+        }
+        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return '';
+        }
+        return substr(hash_hmac('sha256', $ip, wp_salt('ga-ip')), 0, 64);
+    }
+
     /** Сколько бесплатных сообщений в сутки положено этому собеседнику. */
     private static function free_limit(array $assistant, int $user_id): int
     {
@@ -85,6 +104,14 @@ class GA_Chat
         $today = current_time('Y-m-d');
         $used = ($thread['counter_date'] === $today) ? (int) $thread['messages_today'] : 0;
         $free = self::free_limit($assistant, $user_id);
+
+        // Гостя ограничиваем не только по куке, но и по IP: очистка cookie
+        // или инкогнито не обнуляют лимит, если IP тот же. За лимит берём
+        // больший из двух счётчиков.
+        if (!$user_id) {
+            $ip_used = GA_Store::guest_ip_used_today((string) ($thread['ip_hash'] ?? ''));
+            $used = max($used, $ip_used);
+        }
 
         if ($used < $free) {
             return ['ok' => true, 'charge' => false];

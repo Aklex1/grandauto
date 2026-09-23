@@ -81,7 +81,10 @@ class GA_Rest
         $result = GA_Chat::ask(
             $assistant, 'web', $external,
             (string) $request->get_param('text'), $user_id,
-            ['source' => sanitize_text_field((string) $request->get_param('source'))]
+            [
+                'source' => sanitize_text_field((string) $request->get_param('source')),
+                'ip_hash' => $user_id ? '' : GA_Chat::client_ip_hash(),
+            ]
         );
 
         if (!$result['ok']) {

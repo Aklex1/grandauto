@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 
 class GA_Store
 {
-    public const SCHEMA_VERSION = 3;
+    public const SCHEMA_VERSION = 4;
     public const OPT_SCHEMA = 'ga_schema_version';
 
     public static function t(string $name): string
@@ -94,6 +94,7 @@ class GA_Store
             channel VARCHAR(10) NOT NULL DEFAULT 'web',
             external_id VARCHAR(120) NOT NULL,
             user_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            ip_hash VARCHAR(64) NOT NULL DEFAULT '',
             tg_user_id BIGINT NOT NULL DEFAULT 0,
             source VARCHAR(160) NOT NULL DEFAULT '',
             messages_today INT NOT NULL DEFAULT 0,
@@ -104,6 +105,7 @@ class GA_Store
             PRIMARY KEY (id),
             UNIQUE KEY thread (assistant_id, channel, external_id),
             KEY owner (user_id),
+            KEY ip_day (ip_hash),
             KEY recent (last_at)
         ) $charset;");
 
@@ -275,6 +277,11 @@ class GA_Store
             'SELECT * FROM ' . self::t('threads') . ' WHERE assistant_id = %d AND channel = %s AND external_id = %s',
             $assistant_id, $channel, $external_id), ARRAY_A);
         if ($row) {
+            // Добэкиваем ip_hash на диалоги, заведённые до появления IP-слоя.
+            if (!empty($extra['ip_hash']) && empty($row['ip_hash'])) {
+                $wpdb->update(self::t('threads'), ['ip_hash' => $extra['ip_hash']], ['id' => (int) $row['id']]);
+                $row['ip_hash'] = $extra['ip_hash'];
+            }
             return $row;
         }
         $wpdb->insert(self::t('threads'), array_merge([
@@ -316,6 +323,24 @@ class GA_Store
             'last_at' => current_time('mysql'),
         ], ['id' => (int) $thread['id']]);
         return $used;
+    }
+
+    /**
+     * Сколько сообщений пользователя отправлено сегодня с этого хеша IP
+     * во всех гостевых диалогах. Второй слой лимита поверх куки.
+     */
+    public static function guest_ip_used_today(string $ip_hash): int
+    {
+        if ($ip_hash === '') {
+            return 0;
+        }
+        global $wpdb;
+        $threads = self::t('threads');
+        $messages = self::t('messages');
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $messages m JOIN $threads t ON t.id = m.thread_id
+             WHERE t.ip_hash = %s AND t.user_id = 0 AND m.role = 'user' AND DATE(m.created_at) = %s",
+            $ip_hash, current_time('Y-m-d')));
     }
 
     public static function stats(int $assistant_id): array
