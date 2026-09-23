@@ -109,6 +109,22 @@ class GS_Partner_Page {
                     </div>
                     <p class="gs-hint" id="gs-partner-note">Код приглашения: <?php echo esc_html($data['code']); ?></p>
 
+                    <?php if (!empty($data['targets']) && count($data['targets']) > 1): ?>
+                        <div class="gs-partner__targets">
+                            <span class="gs-partner__share-label">Вести сразу на сервис:</span>
+                            <?php foreach ($data['targets'] as $label => $url): ?>
+                                <button type="button" class="gs-chip gs-partner__target"
+                                        data-gs-target="<?php echo esc_attr($url); ?>">
+                                    <?php echo esc_html($label); ?>
+                                </button>
+                            <?php endforeach; ?>
+                        </div>
+                        <p class="gs-hint">
+                            Метка приглашения ловится на любой странице сайта, так что ссылку можно
+                            дать на ту, про которую вы рассказываете. Считается она одинаково.
+                        </p>
+                    <?php endif; ?>
+
                     <div class="gs-partner__share">
                         <span class="gs-partner__share-label">Поделиться:</span>
                         <?php

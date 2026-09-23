@@ -1447,3 +1447,17 @@
         width: 100%;
     }
 }
+
+/* Выбор страницы, на которую ведёт приглашение. */
+.gs-partner__targets {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.gs-partner__target.is-active {
+    border-color: var(--gs-accent, #6c7cff);
+    color: var(--gs-accent, #6c7cff);
+}

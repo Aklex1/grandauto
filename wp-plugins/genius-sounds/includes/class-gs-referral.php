@@ -113,6 +113,57 @@ class GS_Referral {
      * ------------------------------------------------------------------ */
 
     /**
+     * Куда ведёт приглашение.
+     *
+     * Базовый плагин строит ссылку на кабинет озвучки. Человеку, пришедшему
+     * из ролика на YouTube, кабинет ничего не объясняет: он видит форму и
+     * уходит. Метка приглашения ловится на любой странице сайта, поэтому
+     * ведём на главную — а партнёру даём выбрать и конкретный сервис, если
+     * он рассказывает про него.
+     */
+    public static function link_for($code) {
+        $code = trim((string) $code);
+        return $code === '' ? '' : add_query_arg('ref', rawurlencode($code), home_url('/'));
+    }
+
+    /**
+     * Готовые ссылки под разные поводы.
+     *
+     * @return array<string,string> подпись => адрес с меткой
+     */
+    public static function targets($code) {
+        $code = trim((string) $code);
+        if ($code === '') {
+            return array();
+        }
+        $out = array('Главная' => home_url('/'));
+        $wanted = array(
+            'dub'      => 'Дубляж видео',
+            'vupscale' => 'Улучшить видео',
+            'music'    => 'Создать музыку',
+            'avatar'   => 'Говорящий аватар',
+        );
+        foreach ($wanted as $id => $label) {
+            if (class_exists('GS_Lab') && GS_Lab::is_available($id)) {
+                $url = GS_Lab::get_url($id);
+                if ($url !== '') {
+                    $out[$label] = $url;
+                }
+            }
+        }
+        if (class_exists('GS_Dashboard') && method_exists('GS_Dashboard', 'is_page')) {
+            $dashboard = (int) get_option('kie_tts_dashboard_page_id');
+            if ($dashboard > 0) {
+                $out['Озвучка текста'] = (string) get_permalink($dashboard);
+            }
+        }
+        foreach ($out as $label => $url) {
+            $out[$label] = add_query_arg('ref', rawurlencode($code), $url);
+        }
+        return $out;
+    }
+
+    /**
      * Ссылка, код и заработок — в одном месте.
      */
     public static function summary($user_id) {
@@ -128,12 +179,11 @@ class GS_Referral {
         if (!$out['ready'] || $user_id <= 0) {
             return $out;
         }
-        if (method_exists('KIE_TTS_Referral', 'get_referral_link')) {
-            $out['link'] = (string) KIE_TTS_Referral::get_referral_link($user_id);
-        }
         if (method_exists('KIE_TTS_Referral', 'get_or_create_referral_code')) {
             $out['code'] = (string) KIE_TTS_Referral::get_or_create_referral_code($user_id);
         }
+        $out['link'] = self::link_for($out['code']);
+        $out['targets'] = self::targets($out['code']);
         if (method_exists('KIE_TTS_Referral', 'get_stats')) {
             $stats = (array) KIE_TTS_Referral::get_stats($user_id);
             $out['invited'] = (int) ($stats['invited_count'] ?? 0);
