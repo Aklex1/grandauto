@@ -46,6 +46,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-pptx.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-slides.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-slides-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-leads.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-support.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-schedule.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-promt.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
@@ -360,6 +361,17 @@ class Genius_Sounds_Plugin {
                 'pollSeconds' => (int) $lab['poll_seconds'],
                 'manual'      => GS_Lab::is_manual($lab['id']),
                 'textLabel'   => isset($lab['text_label']) ? $lab['text_label'] : 'Расшифровка',
+            ));
+        }
+
+        // Связь с поддержкой нужна на любой странице сервиса, включая песню
+        // своим голосом со своим мастером, — поэтому вне обеих веток.
+        if ($lab) {
+            wp_enqueue_script('genius-sounds-support', GS_PLUGIN_URL . 'assets/js/support.js', array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-support', 'GS_HELP', array(
+                'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),
+                'nonce'   => wp_create_nonce('wp_rest'),
+                'bot'     => GS_Support::BOT,
             ));
         }
 

@@ -1317,3 +1317,65 @@
         justify-content: center;
     }
 }
+
+/* Связь с поддержкой на странице сервиса.
+   Блок намеренно спокойный: он нужен тем, у кого не вышло, и не должен
+   перетягивать внимание у самого инструмента. */
+.gs-help {
+    margin-top: clamp(30px, 4vw, 48px);
+    padding: clamp(20px, 3vw, 28px);
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+}
+
+.gs-help__lead {
+    margin: 8px 0 0;
+    max-width: 62ch;
+    color: var(--gs-text-muted);
+}
+
+.gs-help__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.gs-help__direct {
+    color: var(--gs-text-muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.gs-help__form {
+    margin-top: 20px;
+    display: grid;
+    gap: 8px;
+}
+
+.gs-help__kind {
+    margin: 0 0 4px;
+    color: var(--gs-text-muted);
+}
+
+.gs-help__submit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 6px;
+}
+
+.gs-help__done {
+    margin-top: 16px;
+    color: var(--gs-ok, #2e7d32);
+}
+
+@media (max-width: 480px) {
+    .gs-help__actions .gs-btn,
+    .gs-help__submit .gs-btn {
+        width: 100%;
+    }
+}

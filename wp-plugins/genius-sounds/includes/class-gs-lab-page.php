@@ -293,6 +293,8 @@ class GS_Lab_Page {
                     </details>
                 <?php endforeach; ?>
             </section>
+
+            <?php echo GS_Support::render($service['nav']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         </div>
         <?php
         return ob_get_clean();
