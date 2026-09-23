@@ -62,7 +62,16 @@ class GA_Billing
         if (user_can($user_id, 'manage_options')) {
             return true;
         }
-        return self::balance($user_id) > 0;
+        // Достаточно, чтобы платил хоть раз: доступ к базе/коробке не пропадает,
+        // когда баланс уходит в ноль. Флаг ставим, как только видим баланс > 0.
+        if (get_user_meta($user_id, 'ga_has_paid', true)) {
+            return true;
+        }
+        if (self::balance($user_id) > 0) {
+            update_user_meta($user_id, 'ga_has_paid', 1);
+            return true;
+        }
+        return false;
     }
 
     /** Баланс пользователя в рублях. */

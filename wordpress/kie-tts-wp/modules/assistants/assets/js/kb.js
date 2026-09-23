@@ -14,6 +14,11 @@
     root.querySelectorAll('.kie-auth-open-trigger').forEach(function (b) {
       b.addEventListener('click', function (e) {
         e.preventDefault();
+        try {
+          document.cookie = 'ga_login_return=' +
+            encodeURIComponent(location.pathname + location.search + location.hash) +
+            '; path=/; max-age=900; samesite=Lax';
+        } catch (err) {}
         if (typeof window.kieTtsOpenAuthModal === 'function') {
           window.kieTtsOpenAuthModal();
         } else {

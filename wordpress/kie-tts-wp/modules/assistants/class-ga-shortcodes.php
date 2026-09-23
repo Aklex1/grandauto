@@ -40,6 +40,33 @@ class GA_Shortcodes
     }
 
     /**
+     * Возврат на страницу, с которой пользователь пошёл авторизовываться.
+     * Кнопка «Войти» кладёт исходный URL в куку ga_login_return; после входа
+     * (даже если чужой вход перебросил на дашборд) возвращаем человека туда.
+     */
+    public static function maybe_login_return(): void
+    {
+        if (is_admin() || !is_user_logged_in() || empty($_COOKIE['ga_login_return'])) {
+            return;
+        }
+        $return = self::safe_path((string) wp_unslash($_COOKIE['ga_login_return']));
+        setcookie('ga_login_return', '', [
+            'expires' => time() - 3600, 'path' => '/', 'samesite' => 'Lax', 'secure' => is_ssl(),
+        ]);
+        unset($_COOKIE['ga_login_return']);
+        if ($return === '') {
+            return;
+        }
+        $current = '/' . ltrim((string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH), '/');
+        $target = '/' . ltrim((string) wp_parse_url($return, PHP_URL_PATH), '/');
+        if ($current === $target) {
+            return; // уже на нужной странице (вход перезагрузил её же)
+        }
+        wp_safe_redirect(home_url($return));
+        exit;
+    }
+
+    /**
      * «Переходник»: бот отправляет сюда с ?to=/сервис. Вошедшего сразу форвардим
      * на сервис, гостю даём войти — после входа модалка перезагружает эту же
      * страницу, и форвард срабатывает.

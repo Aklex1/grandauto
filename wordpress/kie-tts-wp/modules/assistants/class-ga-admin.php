@@ -204,6 +204,8 @@ class GA_Admin
         update_option('ga_fallback_models',
             sanitize_text_field(wp_unslash($_POST['fallback_models'] ?? ''))
                 ?: 'gemini-3-6-flash-openai,gemini-3-5-flash-openai', false);
+        update_option('ga_vision_model',
+            sanitize_text_field(wp_unslash($_POST['vision_model'] ?? '')) ?: 'gemini-3-5-flash-openai', false);
         update_option('ga_topup_amounts',
             sanitize_text_field(wp_unslash($_POST['topup_amounts'] ?? '')) ?: '200,300,400,500', false);
         update_option('ga_kb_assistants',
@@ -553,6 +555,11 @@ class GA_Admin
                          value="<?php echo esc_attr(get_option('ga_fallback_models', 'gemini-3-6-flash-openai,gemini-3-5-flash-openai')); ?>">
                 <p class="description">Через запятую. Если основная модель упадёт (как недавно
                    gemini-3-8 → 500), ассистент автоматически пробует их по очереди. Порядок = приоритет.</p></td></tr>
+            <tr><th><label for="ga-set-vision">Модель для картинок</label></th>
+              <td><input id="ga-set-vision" name="vision_model" class="regular-text"
+                         value="<?php echo esc_attr(get_option('ga_vision_model', 'gemini-3-5-flash-openai')); ?>">
+                <p class="description">Разбор фото идёт на неё (не все текстовые модели умеют зрение).
+                   Сейчас рабочая — <code>gemini-3-5-flash-openai</code>.</p></td></tr>
             <tr><th><label for="ga-set-topup">Суммы пополнения, ₽</label></th>
               <td><input id="ga-set-topup" name="topup_amounts" class="regular-text"
                          value="<?php echo esc_attr(get_option('ga_topup_amounts', '200,300,400,500')); ?>">

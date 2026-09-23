@@ -50,14 +50,35 @@ class GA_Kie
         return array_filter(array_map('trim', explode(',', $raw)));
     }
 
+    /** Модель для картинок (vision). Не все текстовые модели умеют зрение. */
+    public static function vision_model(): string
+    {
+        return (string) get_option('ga_vision_model', 'gemini-3-5-flash-openai');
+    }
+
+    private static function is_vision(array $messages): bool
+    {
+        foreach ($messages as $m) {
+            if (is_array($m['content'] ?? null)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Основной вызов с фолбеками: сначала модель ассистента, затем резервные.
      * Возвращает первый успешный ответ или последнюю ошибку.
      */
     public static function chat(string $model, array $messages, float $temperature = 0.4)
     {
-        $primary = trim($model ?: self::default_model(), '/');
-        $chain = array_merge([$primary], self::fallbacks());
+        // Для картинок берём vision-модель (обычная текстовая может не уметь зрение).
+        if (self::is_vision($messages)) {
+            $chain = array_merge([self::vision_model()], self::fallbacks());
+        } else {
+            $primary = trim($model ?: self::default_model(), '/');
+            $chain = array_merge([$primary], self::fallbacks());
+        }
         $seen = [];
         $last = null;
         foreach ($chain as $m) {

@@ -12,6 +12,15 @@
     return node;
   }
 
+  // Запомнить страницу, с которой пошли авторизовываться — чтобы вернуться сюда.
+  function rememberReturn() {
+    try {
+      document.cookie = 'ga_login_return=' +
+        encodeURIComponent(location.pathname + location.search + location.hash) +
+        '; path=/; max-age=900; samesite=Lax';
+    } catch (e) {}
+  }
+
   // Рубли без лишних нулей: 48, 48.5, 120.
   function money(v) {
     v = Math.round((Number(v) || 0) * 100) / 100;
@@ -59,6 +68,7 @@
         var btn = el('button', 'ga-link', 'Войти');
         btn.type = 'button';
         btn.addEventListener('click', function () {
+          rememberReturn();
           if (typeof window.kieTtsOpenAuthModal === 'function') {
             window.kieTtsOpenAuthModal();
           } else {
@@ -76,6 +86,7 @@
     root.querySelectorAll('.kie-auth-open-trigger').forEach(function (b) {
       b.addEventListener('click', function (e) {
         e.preventDefault();
+        rememberReturn();
         if (typeof window.kieTtsOpenAuthModal === 'function') {
           window.kieTtsOpenAuthModal();
         } else {

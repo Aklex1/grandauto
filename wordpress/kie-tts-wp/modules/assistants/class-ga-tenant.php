@@ -221,6 +221,7 @@ class GA_Tenant
         // есть баланс. Это же прикрывает бесплатный безлимит веб-виджета, если
         // браузер режет third-party куку посетителя.
         if (GA_Billing::balance($owner) <= 0) {
+            self::notify_owner_low($tenant);
             return ['ok' => false, 'code' => 'no_funds',
                 'error' => 'Извините, консультант временно недоступен. Загляните чуть позже.'];
         }
@@ -269,6 +270,28 @@ class GA_Tenant
         GA_Store::add_message((int) $thread['id'], 'assistant', $reply, $charge);
         GA_Store::bump_daily($thread);
         return ['ok' => true, 'reply' => $reply];
+    }
+
+    /** Алерт владельцу коробки, что баланс кончился и консультант приостановлен. Раз в сутки. */
+    private static function notify_owner_low(array $tenant): void
+    {
+        $owner = (int) $tenant['owner_user_id'];
+        $tg = (int) get_user_meta($owner, 'telegram_id', true);
+        if (!$tg || empty($tenant['bot_token'])) {
+            return; // некому или нечем слать (владелец не привязал Telegram / нет бота)
+        }
+        $key = 'ga_tenant_low_' . (int) $tenant['id'];
+        if (get_transient($key)) {
+            return;
+        }
+        set_transient($key, 1, DAY_IN_SECONDS);
+        GA_Telegram::api((string) $tenant['bot_token'], 'sendMessage', [
+            'chat_id' => $tg,
+            'text' => "⚠️ Баланс закончился — ваш консультант «"
+                . ($tenant['name'] ?: 'коробка') . "» приостановлен для клиентов.\n"
+                . "Пополните счёт, чтобы он снова отвечал: " . home_url('/moya-baza/'),
+            'disable_web_page_preview' => 'true',
+        ]);
     }
 
     /** Системный промпт коробки: правила базового ассистента + брендинг + база владельца. */
