@@ -507,12 +507,15 @@ def import_zip(session: Session, channel: Channel, data: bytes, *, name: str = "
         per_day=max(0, min(50, per_day)), preset=preset, package_format=package,
         language=lang)
     if preset == PRESET_STORY:
-        # Пакет запрещает генерацию, чужие титры, музыку и концовку — ставим это
-        # настройками сразу, чтобы человеку не пришлось помнить про каждую.
+        # Пакет запрещает подменять свои материалы — это ставим сразу, чтобы
+        # человеку не пришлось помнить про каждый запрет.
         batch.cover_mode = "uploaded"
-        batch.music_mode = "off"
         batch.outro_mode = "off"
         batch.subtitle_style = "story"
+        # Музыку спецификация пакета тоже запрещает, но это решение владельца
+        # канала, а не свойство материалов: фон не подменяет ни речь, ни кадры.
+        # Поэтому оставляем как у канала — выключить можно тут же в настройках.
+        batch.music_mode = ""
     session.add(batch)
     session.commit()
 
@@ -917,8 +920,10 @@ def _story_pages(item: ArchiveItem, cues: list, duration: float,
         # обложки, а не потерять вместе с её началом.
         if start < hold:
             start = hold
+        # Время каждого слова страницы — из него собирается набор текста.
+        words = [max(marks[i], start) for i in range(first, min(last + 1, total))]
         out.append({"start": start, "end": max(end, start + 0.4),
-                    "lines": page.get("lines") or []})
+                    "lines": page.get("lines") or [], "words": words})
     return [p for p in out if p["end"] > p["start"] + 0.05]
 
 

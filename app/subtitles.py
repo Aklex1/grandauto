@@ -471,18 +471,48 @@ def write_story_pages(pages: list[dict], dst: Path, *, size: tuple[int, int],
         "title_shadow": 0, "title_back": "&HA8000000",
         "title_margin": margin_v,
     }
-    lines = [ASS_HEADER.format(**params)]
+    out = [ASS_HEADER.format(**params)]
     for page in pages:
-        text = "\\N".join(str(line) for line in page.get("lines") or [] if line)
-        if not text:
+        rows = [str(line) for line in page.get("lines") or [] if line]
+        if not rows:
             continue
         start, end = float(page.get("start") or 0.0), float(page.get("end") or 0.0)
         if end <= start:
             continue
-        # Страница появляется мягко и держится целиком — слова внутри не мигают.
-        lines.append(f"Dialogue: 0,{_fmt_ass_ts(start)},{_fmt_ass_ts(end)},"
-                     f"Main,,0,0,0,,{{\\fad(140,120)}}{text}")
-    dst.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        # Слова появляются по речи и остаются до ухода страницы. Ещё не
+        # прозвучавшие не выкидываем, а делаем прозрачными: тогда каждое слово
+        # сразу стоит на своём месте и строка не перескакивает, когда оно
+        # появляется. Ради этого весь абзац и вёрстан заранее.
+        words = page.get("words") or []
+        if not words:
+            out.append(f"Dialogue: 0,{_fmt_ass_ts(start)},{_fmt_ass_ts(end)},"
+                       f"Main,,0,0,0,,{{\\fad(140,120)}}" + "\\N".join(rows))
+            continue
+
+        shown = 0
+        for step, mark in enumerate(words):
+            at = max(float(mark), start)
+            until = float(words[step + 1]) if step + 1 < len(words) else end
+            until = min(max(until, at + 0.02), end)
+            shown = step + 1
+            index = 0
+            painted: list[str] = []
+            for row in rows:
+                parts = []
+                for word in row.split(" "):
+                    if not word:
+                        continue
+                    index += 1
+                    # \alpha&HFF& — полностью прозрачное слово: место занимает,
+                    # но не видно.
+                    parts.append(word if index <= shown
+                                 else "{\\alpha&HFF&}" + word + "{\\alpha&H00&}")
+                painted.append(" ".join(parts))
+            prefix = "{\\fad(140,0)}" if step == 0 else ""
+            out.append(f"Dialogue: 0,{_fmt_ass_ts(at)},{_fmt_ass_ts(until)},"
+                       f"Main,,0,0,0,,{prefix}" + "\\N".join(painted))
+    dst.write_text("\n".join(out) + "\n", encoding="utf-8")
     return dst
 
 
