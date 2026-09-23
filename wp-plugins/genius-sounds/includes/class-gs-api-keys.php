@@ -39,6 +39,27 @@ class GS_Api_Keys {
     const TRIAL_BUDGET_DEFAULT = 3000;
     const OPT_TRIAL_SPENT  = 'gs_api_trial_spent';
 
+    /**
+     * Подарок — один на человека, а не на почту.
+     *
+     * Завести новый ящик стоит минуту, поэтому отметки на пользователе мало:
+     * тот же человек возвращается под другой почтой и берёт подарок снова.
+     * Смотрим ещё на две вещи.
+     *
+     * Отпечаток устройства — адрес, браузер и язык вместе: точное совпадение
+     * означает «тот же человек с того же места», и второго подарка не будет.
+     * Адрес сам по себе слабее: за одним адресом сидит офис, общежитие и
+     * целый оператор мобильной связи, поэтому по нему не запрет, а предел —
+     * несколько подарков в месяц.
+     *
+     * Храним хеши, а не адреса: для сравнения хватает, а прочитать нельзя.
+     */
+    const OPT_TRIAL_PRINTS = 'gs_api_trial_prints';
+    const OPT_TRIAL_IPS    = 'gs_api_trial_ips';
+    const IP_LIMIT  = 3;
+    const IP_WINDOW = 2592000;  // 30 суток
+    const PRINT_KEEP = 5000;
+
     /** @return array<string,array> хеш => запись */
     public static function index() {
         $index = get_option(self::OPT_INDEX, array());
@@ -125,14 +146,167 @@ class GS_Api_Keys {
             // пришёл работать, а не за подарком.
             return 0.0;
         }
+        if (!self::device_allowed($user_id)) {
+            // Этот человек подарок уже получал — под другой почтой. Ключ
+            // выдаём, подарок нет.
+            update_user_meta($user_id, self::TRIAL_META, current_time('mysql'));
+            return 0.0;
+        }
         // Отметку ставим до начисления: если начисление не пройдёт, повтор
         // случится по обращению человека, а не сам по себе пять раз.
         update_user_meta($user_id, self::TRIAL_META, current_time('mysql'));
         if (!GS_SFX::refund($user_id, $amount)) {
             return 0.0;
         }
+        self::remember_device($user_id);
         self::trial_spend($amount);
         return $amount;
+    }
+
+    /* ---------------------------------------------------------------------
+     * Один подарок на человека
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Адрес посетителя.
+     *
+     * Обычно это REMOTE_ADDR. Но если сайт окажется за своим прокси, там
+     * будет один и тот же внутренний адрес у всех — и подарок достанется
+     * ровно одному человеку на свете. Поэтому для внутренних адресов
+     * смотрим X-Forwarded-For; подделать его можно, но выбор простой:
+     * или изредка пропустить хитреца, или отказать всем сразу.
+     */
+    private static function client_ip() {
+        $remote = isset($_SERVER['REMOTE_ADDR']) ? trim((string) $_SERVER['REMOTE_ADDR']) : '';
+        $public = filter_var($remote, FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
+        if ($public) {
+            return $remote;
+        }
+        $forwarded = isset($_SERVER['HTTP_X_FORWARDED_FOR']) ? (string) $_SERVER['HTTP_X_FORWARDED_FOR'] : '';
+        foreach (explode(',', $forwarded) as $candidate) {
+            $candidate = trim($candidate);
+            if (filter_var($candidate, FILTER_VALIDATE_IP,
+                    FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                return $candidate;
+            }
+        }
+        return $remote;
+    }
+
+    /**
+     * Отпечаток посетителя и хеш его адреса.
+     *
+     * Отпечаток намеренно грубый: адрес, браузер и язык. Точнее его делать
+     * незачем — задача не узнать человека, а заметить, что подарок уже
+     * уходил на это же место с тем же браузером.
+     *
+     * @return array{print:string,ip:string}
+     */
+    private static function client_print() {
+        $ip = self::client_ip();
+        $ua = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+        $lang = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? (string) $_SERVER['HTTP_ACCEPT_LANGUAGE'] : '';
+        return array(
+            'print' => hash('sha256', $ip . '|' . $ua . '|' . $lang),
+            'ip'    => $ip === '' ? '' : hash('sha256', 'ip|' . $ip),
+        );
+    }
+
+    /**
+     * Можно ли дарить этому устройству.
+     *
+     * Совпал отпечаток — нельзя вовсе. Совпал только адрес — можно, пока
+     * подарков с него меньше предела: за одним адресом сидит и офис, и
+     * оператор мобильной связи, и отказывать им всем было бы враньём
+     * про «пробуйте бесплатно».
+     */
+    private static function device_allowed($user_id) {
+        $now = time();
+        $me = self::client_print();
+        if ($me['print'] === '' || $me['ip'] === '') {
+            // Запроса без адреса и браузера не бывает у живого человека;
+            // если так вышло, не наказываем — пропускаем.
+            return true;
+        }
+
+        $prints = get_option(self::OPT_TRIAL_PRINTS, array());
+        $prints = is_array($prints) ? $prints : array();
+        if (isset($prints[$me['print']])) {
+            $row = (array) $prints[$me['print']];
+            // Свой же повторный выпуск не считаем чужим: отметку на
+            // пользователе мы проверили выше, сюда он не дойдёт.
+            if ((int) ($row['user'] ?? 0) !== (int) $user_id) {
+                return false;
+            }
+        }
+
+        $ips = get_option(self::OPT_TRIAL_IPS, array());
+        $ips = is_array($ips) ? $ips : array();
+        $row = isset($ips[$me['ip']]) ? (array) $ips[$me['ip']] : array();
+        $since = (int) ($row['at'] ?? 0);
+        $count = (int) ($row['count'] ?? 0);
+        if ($count >= self::IP_LIMIT && ($now - $since) < self::IP_WINDOW) {
+            return false;
+        }
+        return true;
+    }
+
+    /** Запомнить, что подарок ушёл на это устройство. */
+    private static function remember_device($user_id) {
+        $now = time();
+        $me = self::client_print();
+        if ($me['print'] === '' || $me['ip'] === '') {
+            return;
+        }
+
+        $prints = get_option(self::OPT_TRIAL_PRINTS, array());
+        $prints = is_array($prints) ? $prints : array();
+        $prints[$me['print']] = array('user' => (int) $user_id, 'at' => $now);
+        if (count($prints) > self::PRINT_KEEP) {
+            // Держим свежие: браузер и адрес меняются, и старые записи
+            // перестают что-либо значить раньше, чем кончится место.
+            uasort($prints, function ($a, $b) {
+                return (int) ($b['at'] ?? 0) <=> (int) ($a['at'] ?? 0);
+            });
+            $prints = array_slice($prints, 0, self::PRINT_KEEP, true);
+        }
+        update_option(self::OPT_TRIAL_PRINTS, $prints, false);
+
+        $ips = get_option(self::OPT_TRIAL_IPS, array());
+        $ips = is_array($ips) ? $ips : array();
+        $row = isset($ips[$me['ip']]) ? (array) $ips[$me['ip']] : array();
+        $since = (int) ($row['at'] ?? 0);
+        $count = (int) ($row['count'] ?? 0);
+        if (($now - $since) >= self::IP_WINDOW) {
+            $since = $now;
+            $count = 0;
+        }
+        $ips[$me['ip']] = array('at' => $since ?: $now, 'count' => $count + 1);
+        if (count($ips) > self::PRINT_KEEP) {
+            uasort($ips, function ($a, $b) {
+                return (int) ($b['at'] ?? 0) <=> (int) ($a['at'] ?? 0);
+            });
+            $ips = array_slice($ips, 0, self::PRINT_KEEP, true);
+        }
+        update_option(self::OPT_TRIAL_IPS, $ips, false);
+    }
+
+    /** Сводка для админки: сколько устройств и адресов уже получили подарок. */
+    public static function trial_device_stats() {
+        $prints = get_option(self::OPT_TRIAL_PRINTS, array());
+        $ips = get_option(self::OPT_TRIAL_IPS, array());
+        $repeat = 0;
+        foreach ((array) $ips as $row) {
+            if ((int) (is_array($row) ? ($row['count'] ?? 0) : 0) > 1) {
+                $repeat++;
+            }
+        }
+        return array(
+            'devices' => is_array($prints) ? count($prints) : 0,
+            'ips'     => is_array($ips) ? count($ips) : 0,
+            'repeat'  => $repeat,
+        );
     }
 
     /** Месячный предел на подарки: ноль в настройке — предела нет. */

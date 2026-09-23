@@ -1085,6 +1085,17 @@ class GS_Admin {
                                 ?>
                                 Когда предел исчерпан, ключи выдаются по-прежнему, но уже без подарка.
                             </p>
+                            <?php $devices = GS_Api_Keys::trial_device_stats(); ?>
+                            <p class="description">
+                                <strong>Один подарок на человека.</strong>
+                                Подарок помнится не только по аккаунту: совпал отпечаток устройства
+                                (адрес, браузер и язык вместе) — второго не будет, даже под новой почтой.
+                                По одному адресу разрешено до <?php echo (int) GS_Api_Keys::IP_LIMIT; ?>
+                                подарков за 30 дней: за адресом сидит и офис, и оператор мобильной связи.
+                                Сейчас в памяти устройств: <strong><?php echo (int) $devices['devices']; ?></strong>,
+                                адресов: <strong><?php echo (int) $devices['ips']; ?></strong>,
+                                из них с повторами: <strong><?php echo (int) $devices['repeat']; ?></strong>.
+                            </p>
                         </td>
                     </tr>
                     <tr>
