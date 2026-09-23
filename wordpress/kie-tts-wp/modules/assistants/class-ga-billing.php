@@ -116,6 +116,45 @@ class GA_Billing
         return self::table_charge($user_id, $amount);
     }
 
+    /** Зачисление на баланс (обратное списанию). Нужно при слиянии аккаунтов. */
+    public static function credit(int $user_id, float $amount, string $note = ''): bool
+    {
+        if ($amount <= 0) {
+            return true;
+        }
+        if (!$user_id) {
+            return false;
+        }
+        $external = apply_filters('ga_balance_credit', null, $user_id, $amount, $note);
+        if ($external !== null) {
+            return (bool) $external;
+        }
+        foreach (['kie_tts_add_balance', 'kie_tts_credit_balance', 'kie_tts_credit'] as $fn) {
+            if (function_exists($fn)) {
+                return (bool) call_user_func($fn, $user_id, $amount, $note);
+            }
+        }
+        return self::table_credit($user_id, $amount);
+    }
+
+    private static function table_credit(int $user_id, float $amount): bool
+    {
+        $column = self::amount_column();
+        if (!$column) {
+            return false;
+        }
+        global $wpdb;
+        $table = self::table();
+        $exists = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM `$table` WHERE user_id = %d", $user_id));
+        if ($exists) {
+            return (bool) $wpdb->query($wpdb->prepare(
+                "UPDATE `$table` SET `$column` = `$column` + %f WHERE user_id = %d", $amount, $user_id));
+        }
+        return (bool) $wpdb->query($wpdb->prepare(
+            "INSERT INTO `$table` (user_id, `$column`) VALUES (%d, %f)", $user_id, $amount));
+    }
+
     // ------------------------------------------------------------------ прямая работа с таблицей
 
     /** Имя таблицы балансов kie-tts-wp. */
@@ -217,12 +256,23 @@ class GA_Billing
         if (!hash_equals(self::bind_sign($tg, $exp), $sig)) {
             return ['ok' => false, 'code' => 'bad'];
         }
+        $merged = 0.0;
         $existing = self::user_by_telegram($tg);
         if ($existing && $existing !== $user_id) {
-            return ['ok' => false, 'code' => 'taken'];
+            // Ссылку на привязку бот выдаёт только владельцу этого Telegram, значит
+            // $existing — старый аккаунт того же человека. Сливаем его в текущий,
+            // чтобы не плодить два баланса: переносим остаток и переезжаем.
+            $old = self::balance($existing);
+            if ($old > 0 && self::charge($existing, $old, sprintf('Слияние в аккаунт #%d', $user_id))) {
+                self::credit($user_id, $old, 'Перенос со старого Telegram-аккаунта');
+                $merged = $old;
+            }
+            foreach (['telegram_id', 'kie_tts_telegram_id', 'tg_id'] as $meta_key) {
+                delete_user_meta($existing, $meta_key);
+            }
         }
         update_user_meta($user_id, 'telegram_id', (string) $tg);
-        return ['ok' => true];
+        return ['ok' => true, 'merged' => $merged];
     }
 
     public static function user_by_telegram(int $tg_id): int

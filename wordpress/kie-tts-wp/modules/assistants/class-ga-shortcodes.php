@@ -418,7 +418,10 @@ class GA_Shortcodes
         } else {
             $res = GA_Billing::bind_apply($uid, $tg, $exp, $sig);
             if (!empty($res['ok'])) {
-                echo '<p class="ga-kb__lead">✅ Аккаунт Telegram привязан. Баланс теперь общий, доступно пополнение.</p>';
+                $merged = (float) ($res['merged'] ?? 0);
+                echo '<p class="ga-kb__lead">✅ Аккаунт Telegram привязан. Баланс теперь общий, доступно пополнение.'
+                    . ($merged > 0 ? ' Остаток со старого Telegram-аккаунта перенесён (+'
+                        . esc_html(number_format_i18n($merged, 2)) . ' ₽).' : '') . '</p>';
                 if ($to !== '') {
                     echo '<p><a class="ga-support__main" href="' . esc_url(home_url($to)) . '">Открыть сервис</a></p>'
                         . '<script>setTimeout(function(){location.replace('
