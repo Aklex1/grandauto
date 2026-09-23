@@ -9,6 +9,19 @@
     var root = document.querySelector('.ga-kb');
     if (!root || !window.gaKB) return;
 
+    // Кнопка «Войти»: на этой странице чужой скрипт не вешает обработчик на класс,
+    // поэтому открываем модалку сами, а если её нет — уводим на страницу входа.
+    root.querySelectorAll('.kie-auth-open-trigger').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof window.kieTtsOpenAuthModal === 'function') {
+          window.kieTtsOpenAuthModal();
+        } else {
+          window.location.href = '/tts-login/';
+        }
+      });
+    });
+
     var form = root.querySelector('.ga-kbform');
     var cta = root.querySelector('.ga-kb__ctaBtn');
     var ctaStatus = root.querySelector('.ga-kb__ctaStatus');
