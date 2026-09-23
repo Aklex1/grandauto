@@ -159,6 +159,9 @@ class GA_Admin
         update_option(GA_Billing::OPT_PRICE_FILE, max(0, (float) ($_POST['price_file'] ?? 8)), false);
         update_option(GA_Kie::OPT_MODEL,
             sanitize_text_field(wp_unslash($_POST['model'] ?? '')) ?: 'gemini-3-8-flash-openai', false);
+        update_option('ga_support_url', esc_url_raw(wp_unslash($_POST['support_url'] ?? '')), false);
+        update_option('ga_topup_amounts',
+            sanitize_text_field(wp_unslash($_POST['topup_amounts'] ?? '')) ?: '200,300,400,500', false);
         self::redirect(self::SLUG . '-settings', ['ga_msg' => 'saved']);
     }
 
@@ -488,6 +491,18 @@ class GA_Admin
             <tr><th><label for="ga-set-model">Модель по умолчанию</label></th>
               <td><input id="ga-set-model" name="model" class="regular-text"
                          value="<?php echo esc_attr(GA_Kie::default_model()); ?>"></td></tr>
+            <tr><th><label for="ga-set-topup">Суммы пополнения, ₽</label></th>
+              <td><input id="ga-set-topup" name="topup_amounts" class="regular-text"
+                         value="<?php echo esc_attr(get_option('ga_topup_amounts', '200,300,400,500')); ?>">
+                <p class="description">Через запятую. Кнопки в плашке пополнения виджета.
+                   Оплата идёт по тому же маршруту ЮMoney, что и микросервисы
+                   (<code>/wp-json/tts/v1/topup</code>), на общий баланс.</p></td></tr>
+            <tr><th><label for="ga-set-support">Ссылка «Техническая поддержка»</label></th>
+              <td><input id="ga-set-support" name="support_url" class="large-text"
+                         value="<?php echo esc_attr(get_option('ga_support_url', '')); ?>"
+                         placeholder="https://t.me/ваш_саппорт или mailto:help@genius-bot.ru">
+                <p class="description">Куда ведут кнопки «Техническая поддержка» и «Задать вопрос»
+                   в виджете. Пусто — письмо на <?php echo esc_html(get_option('admin_email')); ?>.</p></td></tr>
           </table>
           <?php submit_button(); ?>
         </form>

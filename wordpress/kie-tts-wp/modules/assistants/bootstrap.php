@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GA_VERSION', '1.0.0');
+define('GA_VERSION', '1.3.0');
 define('GA_DIR', __DIR__);
 define('GA_URL', rtrim(plugins_url('', __FILE__), '/'));
 define('GA_REST_NS', 'assistants/v1');

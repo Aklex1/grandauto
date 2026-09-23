@@ -28,10 +28,51 @@ class GA_Shortcodes
         wp_enqueue_script('ga-chat', GA_URL . '/assets/js/chat.js', [], GA_VERSION, true);
         wp_localize_script('ga-chat', 'gaChat', [
             'rest' => esc_url_raw(rest_url(GA_REST_NS . '/')),
+            // Пополнение общее с микросервисами: тот же REST-маршрут kie-tts-wp,
+            // тот же nonce (действие wp_rest единое для всех маршрутов WP REST).
+            'ttsRest' => esc_url_raw(rest_url('tts/v1/')),
             'nonce' => wp_create_nonce('wp_rest'),
             'loggedIn' => is_user_logged_in(),
             'loginUrl' => home_url('/tts-login/'),
+            'topupAmounts' => self::topup_amounts(),
+            'supportUrl' => self::support_url(),
+            'currency' => '₽',
         ]);
+    }
+
+    /** Суммы пополнения — те же, что в модалке микросервисов. */
+    private static function topup_amounts(): array
+    {
+        $raw = get_option('ga_topup_amounts', '200,300,400,500');
+        $out = [];
+        foreach (explode(',', (string) $raw) as $part) {
+            $v = (int) trim($part);
+            if ($v > 0) {
+                $out[] = $v;
+            }
+        }
+        return $out ?: [200, 300, 400, 500];
+    }
+
+    /** Куда ведёт «Техническая поддержка» / «Задать вопрос». */
+    private static function support_url(): string
+    {
+        $url = trim((string) get_option('ga_support_url', ''));
+        if ($url !== '') {
+            return $url;
+        }
+        $email = get_option('admin_email');
+        return $email ? 'mailto:' . $email . '?subject=' . rawurlencode('Техническая поддержка Genius') : '#';
+    }
+
+    /** Баланс в рублях без лишних нулей: 48, 48.5, 120. */
+    private static function money(float $value): string
+    {
+        $rounded = round($value, 2);
+        if (abs($rounded - round($rounded)) < 0.005) {
+            return number_format_i18n((int) round($rounded), 0);
+        }
+        return rtrim(rtrim(number_format_i18n($rounded, 2), '0'), '.,');
     }
 
     public static function gallery($atts = []): string
@@ -85,6 +126,9 @@ class GA_Shortcodes
         $user_id = get_current_user_id();
         $can_upload = GA_Billing::can_upload($user_id);
         $price_file = GA_Billing::price_per_file();
+        $balance = $user_id ? GA_Billing::balance($user_id) : 0.0;
+        $support_url = self::support_url();
+        $topup_amounts = self::topup_amounts();
 
         ob_start(); ?>
         <div class="ga-chat<?php echo $atts['compact'] === '1' ? ' ga-chat--compact' : ''; ?>"
@@ -103,6 +147,36 @@ class GA_Shortcodes
                  target="_blank" rel="noopener">Открыть в Telegram</a>
             <?php endif; ?>
           </header>
+
+          <?php if ($user_id): ?>
+            <div class="ga-account">
+              <div class="ga-account__top">
+                <div class="ga-balance">
+                  <span class="ga-balance__label">Ваш баланс</span>
+                  <strong class="ga-balance__value" data-ga-balance><?php
+                    echo esc_html(self::money($balance)); ?>&nbsp;₽</strong>
+                </div>
+                <div class="ga-support">
+                  <a class="ga-support__main" href="<?php echo esc_url($support_url); ?>"
+                     target="_blank" rel="noopener">🛟 Техническая поддержка</a>
+                  <a class="ga-support__ask" href="<?php echo esc_url($support_url); ?>"
+                     target="_blank" rel="noopener">Задать вопрос</a>
+                </div>
+              </div>
+              <div class="ga-topup">
+                <span class="ga-topup__label">Пополнить баланс через ЮMoney</span>
+                <div class="ga-topup__amounts">
+                  <?php foreach ($topup_amounts as $amt): ?>
+                    <button type="button" class="ga-topup__amount" data-amount="<?php echo (int) $amt; ?>">
+                      <?php echo (int) $amt; ?>&nbsp;₽
+                    </button>
+                  <?php endforeach; ?>
+                </div>
+                <a class="ga-topup__link" hidden target="_blank" rel="noopener"></a>
+                <p class="ga-topup__msg" hidden role="status"></p>
+              </div>
+            </div>
+          <?php endif; ?>
 
           <div class="ga-chat__log" role="log" aria-live="polite">
             <div class="ga-msg ga-msg--bot"><?php
