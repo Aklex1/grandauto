@@ -270,6 +270,12 @@ class GS_Rest {
 
         // Пробник моделей поставщика: узнать идентификатор и формат входа,
         // не заводя ради этого отдельный сервис (только админ).
+        register_rest_route(self::NS, '/musicai/probe', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_musicai_probe'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/jobs/probe', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_jobs_probe'),
@@ -1983,6 +1989,15 @@ class GS_Rest {
             'task_id' => $created['task_id'],
             'cost'    => $cost,
         ));
+    }
+
+    public static function handle_musicai_probe($request) {
+        $params = $request->get_json_params();
+        $path   = is_array($params) && !empty($params['path']) ? (string) $params['path'] : '/';
+        $method = is_array($params) && !empty($params['method']) ? (string) $params['method'] : 'GET';
+        $body   = is_array($params) && isset($params['payload']) && is_array($params['payload'])
+            ? $params['payload'] : null;
+        return rest_ensure_response(GS_MusicAI::probe($path, $method, $body));
     }
 
     public static function handle_jobs_probe($request) {

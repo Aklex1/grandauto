@@ -91,6 +91,18 @@ class GS_MusicAI {
     }
 
     /**
+     * Диагностика: произвольный запрос к поставщику из админки.
+     *
+     * Нужна, чтобы посмотреть список рабочих процессов в аккаунте, не
+     * вынося ключ никуда наружу: ключ остаётся на сервере, а наружу уходит
+     * только ответ. Маршрут закрыт правами управления сайтом.
+     */
+    public static function probe($path, $method = 'GET', $payload = null) {
+        $path = '/' . ltrim((string) $path, '/');
+        return self::request(strtoupper($method), $path, $payload);
+    }
+
+    /**
      * @return array{ok:bool,task_id:string,message:string}
      */
     public static function create_job($service_id, $audio_url) {
