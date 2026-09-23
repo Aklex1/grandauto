@@ -22,6 +22,7 @@ class GA_Billing
 {
     public const OPT_PRICE = 'ga_price_per_message';   // рублей за сообщение
     public const OPT_FREE_GUEST = 'ga_guest_free';     // бесплатных сообщений гостю
+    public const OPT_PRICE_FILE = 'ga_price_per_file'; // рублей за сообщение с файлом (дороже: разбор через KIE)
 
     public static function price_per_message(): float
     {
@@ -32,6 +33,21 @@ class GA_Billing
     {
         // По умолчанию берём тот же лимит, что показывают микросервисы гостю.
         return (int) get_option(self::OPT_FREE_GUEST, get_option('kie_tts_guest_free_limit', 5));
+    }
+
+    /** Цена сообщения с вложением (документ/фото). Разбор через KIE дороже обычного. */
+    public static function price_per_file(): float
+    {
+        return (float) get_option(self::OPT_PRICE_FILE, 8);
+    }
+
+    /**
+     * Может ли пользователь прикладывать файлы. Функция платная: нужен вход
+     * и положительный баланс. Гостю и на нуле — закрыто.
+     */
+    public static function can_upload(int $user_id): bool
+    {
+        return $user_id > 0 && self::balance($user_id) >= self::price_per_file();
     }
 
     /** Баланс пользователя в рублях. */

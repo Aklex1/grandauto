@@ -83,10 +83,14 @@ class GA_Shortcodes
         $actions = GA_Store::actions($assistant);
         $bot = self::bot_username((int) $assistant['id']);
         $user_id = get_current_user_id();
+        $can_upload = GA_Billing::can_upload($user_id);
+        $price_file = GA_Billing::price_per_file();
 
         ob_start(); ?>
         <div class="ga-chat<?php echo $atts['compact'] === '1' ? ' ga-chat--compact' : ''; ?>"
              data-slug="<?php echo esc_attr($assistant['slug']); ?>"
+             data-can-upload="<?php echo $can_upload ? '1' : '0'; ?>"
+             data-price-file="<?php echo esc_attr($price_file); ?>"
              style="--ga-accent: <?php echo esc_attr($assistant['accent']); ?>">
           <header class="ga-chat__head">
             <span class="ga-chat__icon" aria-hidden="true"><?php echo esc_html($assistant['emoji']); ?></span>
@@ -116,12 +120,23 @@ class GA_Shortcodes
             </div>
           <?php endif; ?>
 
+          <div class="ga-chat__filechip" hidden></div>
           <form class="ga-chat__form">
+            <label class="ga-chat__attach<?php echo $can_upload ? '' : ' is-locked'; ?>"
+                   title="Прикрепить документ или фото">
+              <input type="file" class="ga-chat__file"
+                     accept="image/jpeg,image/png,image/webp,.txt,.csv,.md,.docx" hidden>
+              <span aria-hidden="true">📎</span>
+            </label>
             <textarea class="ga-chat__input" rows="2"
                       maxlength="<?php echo (int) $assistant['max_input_chars']; ?>"
                       placeholder="Опишите задачу…"></textarea>
             <button type="submit" class="ga-chat__send">Спросить</button>
           </form>
+          <p class="ga-chat__uploadnote" hidden>
+            Подгрузка документов и фото доступна после авторизации на платном тарифе
+            (<?php echo esc_html(number_format_i18n($price_file, 0)); ?> ₽ за разбор).
+          </p>
 
           <p class="ga-chat__note">
             <?php if ($user_id): ?>

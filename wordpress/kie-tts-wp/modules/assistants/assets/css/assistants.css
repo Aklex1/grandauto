@@ -61,9 +61,24 @@
 .ga-chip:hover{border-color:var(--ga-accent);color:#f1f5f9}
 
 .ga-chat__form{display:flex;gap:10px;align-items:flex-end}
-.ga-chat__input{flex:1;min-height:52px;padding:12px 14px;border-radius:14px;background:#0f172a;
-  border:1px solid #1f2937;color:#e2e8f0;font:inherit;resize:vertical}
+.ga-chat__input{flex:1;min-height:52px;padding:12px 14px;border-radius:14px;background:#0f172a!important;
+  border:1px solid #1f2937;color:#eef2fb!important;font:inherit;resize:vertical;-webkit-text-fill-color:#eef2fb}
+.ga-chat__input::placeholder{color:#64748b!important;-webkit-text-fill-color:#64748b}
 .ga-chat__input:focus{outline:none;border-color:var(--ga-accent)}
+/* кнопка загрузки файла */
+.ga-chat__attach{flex-shrink:0;width:52px;height:52px;display:grid;place-items:center;border-radius:14px;
+  background:#0f172a;border:1px solid #1f2937;cursor:pointer;font-size:20px;transition:.15s}
+.ga-chat__attach:hover{border-color:var(--ga-accent)}
+.ga-chat__attach.is-locked{border-color:var(--ga-accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--ga-accent) 26%,transparent);opacity:.9}
+.ga-chat__attach.is-flash{animation:ga-flash .6s ease}
+@keyframes ga-flash{0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--ga-accent) 26%,transparent)}
+  50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--ga-accent) 45%,transparent)}}
+.ga-chat__filechip{display:flex;align-items:center;gap:6px;font-size:13px;color:#cbd5e1;
+  background:#111827;border:1px solid #1f2937;border-radius:10px;padding:6px 10px;align-self:flex-start}
+.ga-chat__filechip .ga-chip{padding:1px 8px;font-size:12px}
+.ga-chat__uploadnote{margin:0;font-size:12.5px;color:#fcd34d;
+  background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:8px 12px}
 .ga-chat__send{flex-shrink:0;padding:13px 22px;border-radius:14px;border:none;background:var(--ga-accent);
   color:#0b1220;font:inherit;font-weight:700;cursor:pointer}
 .ga-chat__send:hover{filter:brightness(1.08)}

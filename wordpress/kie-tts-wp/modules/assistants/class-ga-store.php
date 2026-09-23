@@ -27,7 +27,20 @@ class GA_Store
             return;
         }
         self::install();
+        self::migrate_once();
         update_option(self::OPT_SCHEMA, self::SCHEMA_VERSION, false);
+    }
+
+    /** Точечные разовые правки данных, каждая под своим флагом. */
+    public static function migrate_once(): void
+    {
+        global $wpdb;
+        if (!get_option('ga_mig_ucheba_limit')) {
+            $wpdb->query($wpdb->prepare(
+                'UPDATE ' . self::t('assistants') . ' SET free_daily_limit = %d WHERE slug = %s',
+                3, 'ucheba'));
+            update_option('ga_mig_ucheba_limit', 1, false);
+        }
     }
 
     public static function install(): void

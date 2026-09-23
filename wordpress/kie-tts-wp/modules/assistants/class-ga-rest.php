@@ -64,6 +64,8 @@ class GA_Rest
             'free_daily' => $assistant
                 ? ($user_id ? (int) $assistant['free_daily_limit'] : GA_Billing::guest_free_limit())
                 : GA_Billing::guest_free_limit(),
+            'can_upload' => GA_Billing::can_upload($user_id),
+            'price_file' => GA_Billing::price_per_file(),
         ];
     }
 
@@ -77,6 +79,28 @@ class GA_Rest
 
         $user_id = get_current_user_id();
         $external = $user_id ? 'u' . $user_id : 'g' . self::visitor_id();
+
+        $file = $request->get_param('file');
+        if (is_array($file) && !empty($file['data'])) {
+            $result = GA_Chat::ask_file(
+                $assistant, $external, (string) $request->get_param('text'),
+                [
+                    'data' => (string) $file['data'],
+                    'mime' => sanitize_text_field((string) ($file['mime'] ?? '')),
+                    'name' => sanitize_file_name((string) ($file['name'] ?? 'file')),
+                ],
+                $user_id
+            );
+            if (!$result['ok']) {
+                $status = ($result['code'] ?? '') === 'model' ? 502 : 400;
+                return new WP_REST_Response([
+                    'ok' => false, 'code' => $result['code'] ?? 'error', 'error' => $result['error'],
+                    'login_url' => home_url('/tts-login/'),
+                ], $status);
+            }
+            return ['ok' => true, 'reply' => $result['reply'], 'charged' => $result['charged'],
+                    'balance' => $result['balance']];
+        }
 
         $result = GA_Chat::ask(
             $assistant, 'web', $external,

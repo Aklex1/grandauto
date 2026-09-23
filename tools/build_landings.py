@@ -116,6 +116,10 @@ def style(accent, accent2):
 .gaL__end .gaL__cta{{justify-content:center}}
 
 @media (max-width:820px){{.gaL__demo,.gaL__why{{grid-template-columns:1fr}}}}
+/* оверрайд поверх темы: текст в поле чата должен быть виден */
+.ga-chat .ga-chat__input{{color:#eef2fb!important;-webkit-text-fill-color:#eef2fb!important;background:#0f172a!important}}
+.ga-chat .ga-chat__input::placeholder{{color:#64748b!important;-webkit-text-fill-color:#64748b!important}}
+.ga-chat .ga-msg--user{{color:#0b1220!important}}
 @media (prefers-reduced-motion:reduce){{.gaL__btn,.gaL__feat{{transition:none}}}}
 """)
 

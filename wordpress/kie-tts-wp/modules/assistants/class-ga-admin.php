@@ -156,6 +156,7 @@ class GA_Admin
     {
         update_option(GA_Billing::OPT_PRICE, max(0, (float) ($_POST['price'] ?? 2)), false);
         update_option(GA_Billing::OPT_FREE_GUEST, max(0, (int) ($_POST['guest_free'] ?? 5)), false);
+        update_option(GA_Billing::OPT_PRICE_FILE, max(0, (float) ($_POST['price_file'] ?? 8)), false);
         update_option(GA_Kie::OPT_MODEL,
             sanitize_text_field(wp_unslash($_POST['model'] ?? '')) ?: 'gemini-3-8-flash-openai', false);
         self::redirect(self::SLUG . '-settings', ['ga_msg' => 'saved']);
@@ -475,6 +476,11 @@ class GA_Admin
                          value="<?php echo esc_attr(GA_Billing::price_per_message()); ?>">
                 <p class="description">Списывается с того же баланса, что и озвучка,
                    и только после того, как ответ действительно получен.</p></td></tr>
+            <tr><th><label for="ga-set-file">Цена файла, ₽</label></th>
+              <td><input id="ga-set-file" name="price_file" type="number" step="0.5" min="0"
+                         value="<?php echo esc_attr(GA_Billing::price_per_file()); ?>">
+                <p class="description">Сообщение с документом или фото. Разбор через KIE дороже обычного,
+                   поэтому цена выше. Загрузка файлов доступна только на платном тарифе (вход + баланс).</p></td></tr>
             <tr><th><label for="ga-set-guest">Гостю бесплатно</label></th>
               <td><input id="ga-set-guest" name="guest_free" type="number" min="0"
                          value="<?php echo (int) GA_Billing::guest_free_limit(); ?>">

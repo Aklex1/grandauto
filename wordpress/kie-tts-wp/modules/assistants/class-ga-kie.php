@@ -28,6 +28,21 @@ class GA_Kie
      * @param array $messages [['role' => 'system|user|assistant', 'content' => '...'], ...]
      * @return string|WP_Error текст ответа
      */
+    /**
+     * Сообщение пользователя с картинкой для vision-модели: content — массив
+     * из текста и image_url (data:base64). Модель должна поддерживать зрение.
+     */
+    public static function image_message(string $text, string $data_url): array
+    {
+        return [
+            'role' => 'user',
+            'content' => [
+                ['type' => 'text', 'text' => $text !== '' ? $text : 'Опиши и разбери, что на изображении.'],
+                ['type' => 'image_url', 'image_url' => ['url' => $data_url]],
+            ],
+        ];
+    }
+
     public static function chat(string $model, array $messages, float $temperature = 0.4)
     {
         $key = self::api_key();
