@@ -91,6 +91,91 @@
       });
     }
 
+    // ---- Коробка: брендинг и подключение своего бота ----
+    var box = root.querySelector('.ga-box');
+    if (box) {
+      var bName = box.querySelector('.ga-box__name');
+      var bWelcome = box.querySelector('.ga-box__welcome');
+      var bPersona = box.querySelector('.ga-box__persona');
+      var bAccent = box.querySelector('.ga-box__accent');
+      var bFree = box.querySelector('.ga-box__free');
+      var bToken = box.querySelector('.ga-box__token');
+      var bSave = box.querySelector('.ga-box__save');
+      var bConnect = box.querySelector('.ga-box__connect');
+      var bDisconnect = box.querySelector('.ga-box__disconnect');
+      var bState = box.querySelector('.ga-box__state');
+      var bStatus = box.querySelector('.ga-box__status');
+      var bBotStatus = box.querySelector('.ga-box__botstatus');
+      var bEmbed = box.querySelector('.ga-box__embed');
+      var bBusy = false;
+
+      function boxFields() {
+        return {
+          name: bName ? bName.value : '',
+          welcome: bWelcome ? bWelcome.value : '',
+          persona: bPersona ? bPersona.value : '',
+          accent: bAccent ? bAccent.value : '#22d3ee',
+          free_daily: bFree ? bFree.value : 10
+        };
+      }
+
+      function applyTenant(d) {
+        if (!d) return;
+        if (bState) {
+          if (d.status === 'connected' && d.bot_username) {
+            bState.innerHTML = 'Бот подключён: <a href="https://t.me/' + d.bot_username
+              + '" target="_blank" rel="noopener">@' + d.bot_username + '</a>';
+          } else if (d.status === 'error') {
+            bState.textContent = 'Ошибка подключения: ' + (d.last_error || '');
+          } else {
+            bState.textContent = 'Бот не подключён.';
+          }
+        }
+        if (bDisconnect) bDisconnect.hidden = !d.has_token;
+        if (bEmbed) bEmbed.hidden = !d.has_token;
+      }
+
+      function boxPost(action, status, done) {
+        var body = boxFields();
+        body.action = action;
+        if (action === 'connect' && bToken) body.bot_token = bToken.value.trim();
+        bBusy = true;
+        fetch(gaKB.rest + 'tenant', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': gaKB.nonce },
+          body: JSON.stringify(body)
+        })
+          .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
+          .then(function (res) {
+            var d = res.d || {};
+            if (d.ok) {
+              applyTenant(d);
+              setStatus(status, done || 'Готово.', 'ok');
+              if (action === 'connect' && bToken) bToken.value = '';
+            } else {
+              setStatus(status, d.error || 'Не удалось. Попробуйте ещё раз.', 'err');
+            }
+          })
+          .catch(function () { setStatus(status, 'Сеть не отвечает.', 'err'); })
+          .finally(function () { bBusy = false; });
+      }
+
+      if (bSave) bSave.addEventListener('click', function () {
+        if (bBusy) return; setStatus(bStatus, 'Сохраняем…', 'load');
+        boxPost('save', bStatus, 'Брендинг сохранён.');
+      });
+      if (bConnect) bConnect.addEventListener('click', function () {
+        if (bBusy) return;
+        if (bToken && !bToken.value.trim()) { setStatus(bBotStatus, 'Вставьте токен бота от @BotFather.', 'err'); return; }
+        setStatus(bBotStatus, 'Подключаем бота…', 'load');
+        boxPost('connect', bBotStatus, 'Бот подключён.');
+      });
+      if (bDisconnect) bDisconnect.addEventListener('click', function () {
+        if (bBusy) return; setStatus(bBotStatus, 'Отключаем…', 'load');
+        boxPost('disconnect', bBotStatus, 'Бот отключён.');
+      });
+    }
+
     if (cta) {
       cta.addEventListener('click', function () {
         cta.disabled = true;

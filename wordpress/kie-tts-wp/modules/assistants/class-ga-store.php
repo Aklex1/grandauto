@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 
 class GA_Store
 {
-    public const SCHEMA_VERSION = 4;
+    public const SCHEMA_VERSION = 5;
     public const OPT_SCHEMA = 'ga_schema_version';
 
     public static function t(string $name): string
@@ -53,6 +53,18 @@ class GA_Store
                 'biznes', '%демонстрац%'));
             update_option('ga_mig_biznes_welcome', 1, false);
         }
+        // Модель gemini-3-8/3-7-flash-openai сломалась на стороне KIE (500). Переводим
+        // ассистентов на рабочую 3-6; кастомные модели не трогаем.
+        if (!get_option('ga_mig_model_36')) {
+            $wpdb->query(
+                'UPDATE ' . self::t('assistants') . " SET chat_model = 'gemini-3-6-flash-openai' "
+                . "WHERE chat_model IN ('gemini-3-8-flash-openai','gemini-3-7-flash-openai','')");
+            if (in_array((string) get_option('ga_default_model'),
+                    ['', 'gemini-3-8-flash-openai', 'gemini-3-7-flash-openai'], true)) {
+                update_option('ga_default_model', 'gemini-3-6-flash-openai', false);
+            }
+            update_option('ga_mig_model_36', 1, false);
+        }
     }
 
     public static function install(): void
@@ -72,7 +84,7 @@ class GA_Store
             wave TINYINT NOT NULL DEFAULT 1,
             position INT NOT NULL DEFAULT 0,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
-            chat_model VARCHAR(120) NOT NULL DEFAULT 'gemini-3-8-flash-openai',
+            chat_model VARCHAR(120) NOT NULL DEFAULT 'gemini-3-6-flash-openai',
             temperature FLOAT NOT NULL DEFAULT 0.4,
             system_prompt LONGTEXT NULL,
             knowledge LONGTEXT NULL,
@@ -143,6 +155,31 @@ class GA_Store
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY thread (thread_id, id)
+        ) $charset;");
+
+        dbDelta("CREATE TABLE " . self::t('tenants') . " (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            owner_user_id BIGINT UNSIGNED NOT NULL,
+            public_key VARCHAR(32) NOT NULL,
+            base_slug VARCHAR(80) NOT NULL DEFAULT 'biznes',
+            name VARCHAR(160) NOT NULL DEFAULT '',
+            welcome TEXT NULL,
+            persona LONGTEXT NULL,
+            accent VARCHAR(16) NOT NULL DEFAULT '#22d3ee',
+            free_daily INT NOT NULL DEFAULT 10,
+            bot_token VARCHAR(200) NOT NULL DEFAULT '',
+            bot_username VARCHAR(120) NOT NULL DEFAULT '',
+            secret VARCHAR(64) NOT NULL DEFAULT '',
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            status VARCHAR(24) NOT NULL DEFAULT 'idle',
+            last_error TEXT NULL,
+            checked_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY owner (owner_user_id),
+            UNIQUE KEY public_key (public_key),
+            KEY bot_username (bot_username)
         ) $charset;");
 
         self::seed();

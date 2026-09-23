@@ -200,7 +200,7 @@ class GA_Admin
         update_option(GA_Billing::OPT_FREE_GUEST, max(0, (int) ($_POST['guest_free'] ?? 5)), false);
         update_option(GA_Billing::OPT_PRICE_FILE, max(0, (float) ($_POST['price_file'] ?? 8)), false);
         update_option(GA_Kie::OPT_MODEL,
-            sanitize_text_field(wp_unslash($_POST['model'] ?? '')) ?: 'gemini-3-8-flash-openai', false);
+            sanitize_text_field(wp_unslash($_POST['model'] ?? '')) ?: 'gemini-3-6-flash-openai', false);
         update_option('ga_topup_amounts',
             sanitize_text_field(wp_unslash($_POST['topup_amounts'] ?? '')) ?: '200,300,400,500', false);
         update_option('ga_kb_assistants',

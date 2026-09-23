@@ -66,6 +66,143 @@ class GA_Rest
             'permission_callback' => static fn() => is_user_logged_in(),
             'callback' => [self::class, 'kb_extract'],
         ]);
+
+        // Коробка: настройка своей из кабинета, вебхук бота тенанта, чат веб-виджета.
+        register_rest_route(GA_REST_NS, '/tenant', [
+            [
+                'methods' => 'GET',
+                'permission_callback' => static fn() => is_user_logged_in(),
+                'callback' => [self::class, 'tenant_get'],
+            ],
+            [
+                'methods' => 'POST',
+                'permission_callback' => static fn() => is_user_logged_in(),
+                'callback' => [self::class, 'tenant_save'],
+            ],
+        ]);
+        register_rest_route(GA_REST_NS, '/tenant/webhook/(?P<id>\d+)', [
+            'methods' => 'POST',
+            'permission_callback' => '__return_true',
+            'callback' => [self::class, 'tenant_webhook'],
+        ]);
+        register_rest_route(GA_REST_NS, '/tenant/chat', [
+            'methods' => 'POST',
+            'permission_callback' => '__return_true',
+            'callback' => [self::class, 'tenant_chat'],
+        ]);
+    }
+
+    // ------------------------------------------------------------------ коробка (тенант)
+
+    private static function tenant_payload(array $t): array
+    {
+        $embed = home_url('/consultant/?t=' . $t['public_key']);
+        return [
+            'ok' => true,
+            'name' => (string) $t['name'],
+            'welcome' => (string) $t['welcome'],
+            'persona' => (string) $t['persona'],
+            'accent' => (string) $t['accent'],
+            'free_daily' => (int) $t['free_daily'],
+            'status' => (string) $t['status'],
+            'bot_username' => (string) $t['bot_username'],
+            'has_token' => $t['bot_token'] !== '',
+            'last_error' => (string) $t['last_error'],
+            'widget_url' => $embed,
+            'embed' => '<iframe src="' . esc_url($embed) . '" style="width:100%;max-width:440px;height:640px;'
+                . 'border:0;border-radius:16px" title="Консультант"></iframe>',
+            'balance' => GA_Billing::balance((int) $t['owner_user_id']),
+        ];
+    }
+
+    public static function tenant_get(WP_REST_Request $request)
+    {
+        $uid = get_current_user_id();
+        if (!GA_Billing::can_manage_kb($uid)) {
+            return ['ok' => true, 'can_manage' => false, 'balance' => GA_Billing::balance($uid)];
+        }
+        return array_merge(['can_manage' => true], self::tenant_payload(GA_Tenant::ensure($uid)));
+    }
+
+    public static function tenant_save(WP_REST_Request $request)
+    {
+        $uid = get_current_user_id();
+        if (!GA_Billing::can_manage_kb($uid)) {
+            return new WP_REST_Response(['ok' => false,
+                'error' => 'Коробка доступна после пополнения баланса.'], 403);
+        }
+        $t = GA_Tenant::ensure($uid);
+        $action = sanitize_key((string) ($request->get_param('action') ?: 'save'));
+
+        GA_Tenant::update((int) $t['id'], [
+            'name' => mb_substr(sanitize_text_field((string) $request->get_param('name')), 0, 160),
+            'welcome' => mb_substr(sanitize_textarea_field((string) $request->get_param('welcome')), 0, 1000),
+            'persona' => mb_substr(sanitize_textarea_field((string) $request->get_param('persona')), 0, 4000),
+            'accent' => sanitize_hex_color((string) $request->get_param('accent')) ?: '#22d3ee',
+            'free_daily' => max(0, (int) $request->get_param('free_daily')),
+        ]);
+        $t = GA_Tenant::get((int) $t['id']);
+
+        if ($action === 'connect') {
+            $token = trim((string) $request->get_param('bot_token'));
+            if (!preg_match('/^\d{6,}:[A-Za-z0-9_-]{30,}$/', $token)) {
+                return new WP_REST_Response(['ok' => false,
+                    'error' => 'Это не похоже на токен бота. Формат: 123456789:AA…'], 400);
+            }
+            if (GA_Store::token_by_value($token)) {
+                return new WP_REST_Response(['ok' => false,
+                    'error' => 'Этот токен уже используется в системе.'], 400);
+            }
+            GA_Tenant::update((int) $t['id'], ['bot_token' => $token]);
+            $t = GA_Tenant::get((int) $t['id']);
+            $res = GA_Tenant::connect($t);
+            if (!$res['ok']) {
+                return new WP_REST_Response(['ok' => false,
+                    'error' => 'Telegram не принял бота: ' . $res['error']], 400);
+            }
+        } elseif ($action === 'disconnect') {
+            GA_Tenant::disconnect($t);
+        }
+        return self::tenant_payload(GA_Tenant::get((int) $t['id']));
+    }
+
+    public static function tenant_webhook(WP_REST_Request $request)
+    {
+        $t = GA_Tenant::get((int) $request->get_param('id'));
+        if (!$t || !$t['is_active']) {
+            return new WP_REST_Response(['ok' => true], 200);
+        }
+        $secret = $request->get_header('x_telegram_bot_api_secret_token');
+        if (!hash_equals((string) $t['secret'], (string) $secret)) {
+            return new WP_REST_Response(['ok' => true], 200);
+        }
+        $update = json_decode($request->get_body(), true);
+        if (is_array($update)) {
+            try {
+                GA_Tenant::handle_update($t, $update);
+            } catch (Throwable $e) {
+                GA_Tenant::update((int) $t['id'], [
+                    'last_error' => mb_substr($e->getMessage(), 0, 500),
+                    'checked_at' => current_time('mysql'),
+                ]);
+            }
+        }
+        return new WP_REST_Response(['ok' => true], 200);
+    }
+
+    public static function tenant_chat(WP_REST_Request $request)
+    {
+        $t = GA_Tenant::by_public_key((string) $request->get_param('key'));
+        if (!$t || !$t['is_active']) {
+            return new WP_REST_Response(['ok' => false, 'error' => 'Консультант недоступен.'], 404);
+        }
+        $res = GA_Tenant::reply($t, 'web', 'v' . self::visitor_id(),
+            (string) $request->get_param('text'));
+        if (!$res['ok']) {
+            return new WP_REST_Response(['ok' => false, 'error' => $res['error'],
+                'code' => $res['code'] ?? 'error'], 400);
+        }
+        return ['ok' => true, 'reply' => $res['reply']];
     }
 
     // ------------------------------------------------------------------ база знаний

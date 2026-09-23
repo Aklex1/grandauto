@@ -286,6 +286,63 @@ class GA_Shortcodes
         return (string) ob_get_clean();
     }
 
+    /**
+     * Голая страница веб-виджета тенанта для встраивания через iframe на чужой сайт.
+     * Без обвязки темы: только чат, свой на genius-bot.ru origin (запросы same-origin).
+     */
+    public static function maybe_consultant(): void
+    {
+        if (!is_page('consultant')) {
+            return;
+        }
+        $key = isset($_GET['t']) ? preg_replace('/[^a-f0-9]/', '', (string) $_GET['t']) : '';
+        $t = $key ? GA_Tenant::by_public_key($key) : null;
+        nocache_headers();
+        header('Content-Type: text/html; charset=utf-8');
+        $css = esc_url(GA_URL . '/assets/css/assistants.css?v=' . GA_VERSION);
+        if (!$t || !$t['is_active']) {
+            echo '<!doctype html><meta charset="utf-8"><body style="margin:0;background:#0b1220;'
+                . 'color:#e2e8f0;font-family:system-ui,sans-serif;padding:20px">Консультант недоступен.</body>';
+            exit;
+        }
+        $accent = $t['accent'] ?: '#22d3ee';
+        $name = esc_html($t['name'] ?: 'Консультант');
+        $welcome = nl2br(esc_html(GA_Tenant::welcome_text($t)));
+        $rest = esc_url(rest_url(GA_REST_NS . '/tenant/chat'));
+        ?><!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title><?php echo $name; ?></title>
+<link rel="stylesheet" href="<?php echo $css; ?>">
+<style>html,body{margin:0;background:transparent}.ga-chat{margin:0;max-width:none;height:100vh;box-sizing:border-box}
+.ga-chat__log{flex:1;max-height:none}</style>
+</head><body>
+<div class="ga-chat ga-tenant" style="--ga-accent:<?php echo esc_attr($accent); ?>">
+  <header class="ga-chat__head"><span class="ga-chat__title"><strong><?php echo $name; ?></strong></span></header>
+  <div class="ga-chat__log" role="log" aria-live="polite"><div class="ga-msg ga-msg--bot"><?php echo $welcome; ?></div></div>
+  <form class="ga-chat__form"><textarea class="ga-chat__input" rows="2" maxlength="6000" placeholder="Ваш вопрос…"></textarea><button type="submit" class="ga-chat__send">Отправить</button></form>
+</div>
+<script>
+(function(){
+  var key=<?php echo wp_json_encode($t['public_key']); ?>, rest=<?php echo wp_json_encode($rest); ?>;
+  var log=document.querySelector('.ga-chat__log'), form=document.querySelector('.ga-chat__form'),
+      input=document.querySelector('.ga-chat__input'), send=document.querySelector('.ga-chat__send'), busy=false;
+  function push(role,text){var n=document.createElement('div');n.className='ga-msg ga-msg--'+role;
+    String(text).split('\n').forEach(function(l,i){if(i)n.appendChild(document.createElement('br'));n.appendChild(document.createTextNode(l));});
+    log.appendChild(n);log.scrollTop=log.scrollHeight;return n;}
+  form.addEventListener('submit',function(e){e.preventDefault();var t=input.value.trim();if(!t||busy)return;
+    push('user',t);input.value='';busy=true;send.disabled=true;var p=push('bot','…');p.classList.add('is-typing');
+    fetch(rest,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key,text:t})})
+      .then(function(r){return r.json();}).then(function(d){p.remove();
+        if(d&&d.ok){push('bot',d.reply);}else{var n=push('bot',(d&&d.error)||'Не получилось ответить. Попробуйте ещё раз.');n.classList.add('ga-msg--notice');}})
+      .catch(function(){p.remove();var n=push('bot','Сеть не отвечает. Повторите.');n.classList.add('ga-msg--notice');})
+      .finally(function(){busy=false;send.disabled=false;});});
+  input.addEventListener('keydown',function(e){if((e.metaKey||e.ctrlKey)&&e.key==='Enter')form.requestSubmit();});
+})();
+</script>
+</body></html><?php
+        exit;
+    }
+
     public static function open_page($atts = []): string
     {
         self::kb_assets();
@@ -405,15 +462,76 @@ class GA_Shortcodes
               </form>
             <?php endif; ?>
 
-            <div class="ga-kb__cta">
-              <div class="ga-kb__ctaText">
-                <strong>🚀 Подключить своего бота с базой и брендингом</strong>
-                <span>Отдельный Telegram-бот и виджет на сайте под вашим брендом, отвечающий вашим
-                   клиентам по вашей базе знаний. Оставьте заявку — подберём и настроим под вас.</span>
+            <?php if ($can):
+              $t = GA_Tenant::ensure($uid); ?>
+              <div class="ga-box" data-public-key="<?php echo esc_attr($t['public_key']); ?>">
+                <h4 class="ga-box__title">🚀 Ваш бот-консультант (коробка)</h4>
+                <p class="ga-box__lead">Свой Telegram-бот и виджет на сайте под вашим брендом.
+                   Отвечает вашим клиентам по вашей базе, списывается с вашего баланса.</p>
+
+                <div class="ga-boxform">
+                  <input type="text" class="ga-box__name" maxlength="160"
+                         placeholder="Название компании / консультанта"
+                         value="<?php echo esc_attr($t['name']); ?>">
+                  <textarea class="ga-box__welcome" rows="2" maxlength="1000"
+                            placeholder="Приветствие бота (что клиент видит на /start)"><?php
+                    echo esc_textarea($t['welcome']); ?></textarea>
+                  <textarea class="ga-box__persona" rows="3" maxlength="4000"
+                            placeholder="Стиль и правила: тон общения, что можно и чего нельзя обещать"><?php
+                    echo esc_textarea($t['persona']); ?></textarea>
+                  <div class="ga-boxform__row">
+                    <label class="ga-box__inline">Цвет
+                      <input type="color" class="ga-box__accent" value="<?php echo esc_attr($t['accent']); ?>"></label>
+                    <label class="ga-box__inline">Бесплатно клиенту в сутки
+                      <input type="number" class="ga-box__free" min="0" style="width:80px"
+                             value="<?php echo (int) $t['free_daily']; ?>"></label>
+                    <button type="button" class="ga-box__save">Сохранить брендинг</button>
+                  </div>
+                  <p class="ga-box__status" hidden role="status"></p>
+                </div>
+
+                <div class="ga-box__bot">
+                  <div class="ga-box__state"><?php
+                    if ($t['status'] === 'connected' && $t['bot_username']) {
+                        echo 'Бот подключён: <a href="https://t.me/' . esc_attr($t['bot_username'])
+                            . '" target="_blank" rel="noopener">@' . esc_html($t['bot_username']) . '</a>';
+                    } elseif ($t['status'] === 'error') {
+                        echo 'Ошибка подключения: ' . esc_html($t['last_error']);
+                    } else {
+                        echo 'Бот не подключён.';
+                    } ?></div>
+                  <input type="text" class="ga-box__token" autocomplete="off" spellcheck="false"
+                         placeholder="Токен бота от @BotFather (123456789:AA…)">
+                  <div class="ga-boxform__row">
+                    <button type="button" class="ga-box__connect">Подключить бота</button>
+                    <button type="button" class="ga-box__disconnect"<?php
+                      echo $t['bot_token'] === '' ? ' hidden' : ''; ?>>Отключить</button>
+                  </div>
+                  <p class="ga-box__botstatus" hidden role="status"></p>
+                  <p class="ga-box__hint">Создайте бота у
+                     <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>,
+                     скопируйте токен и вставьте сюда — вебхук настроится сам.</p>
+                </div>
+
+                <div class="ga-box__embed"<?php echo $t['bot_token'] !== '' ? '' : ' hidden'; ?>>
+                  <p class="ga-box__lead">Виджет на ваш сайт — вставьте код в HTML страницы:</p>
+                  <textarea class="ga-box__embedcode" readonly rows="2"><?php
+                    echo esc_textarea('<iframe src="' . home_url('/consultant/?t=' . $t['public_key'])
+                      . '" style="width:100%;max-width:440px;height:640px;border:0;border-radius:16px" '
+                      . 'title="Консультант"></iframe>'); ?></textarea>
+                  <a class="ga-box__widget" href="<?php echo esc_url(home_url('/consultant/?t=' . $t['public_key'])); ?>"
+                     target="_blank" rel="noopener">Открыть виджет ↗</a>
+                </div>
               </div>
-              <button type="button" class="ga-kb__ctaBtn">Оставить заявку</button>
-              <p class="ga-kb__ctaStatus" hidden role="status"></p>
-            </div>
+            <?php else: ?>
+              <div class="ga-kb__cta">
+                <div class="ga-kb__ctaText">
+                  <strong>🚀 Своя коробка: бот + база + брендинг</strong>
+                  <span>Пополните баланс — и подключите свой Telegram-бот и виджет под вашим брендом,
+                     отвечающий вашим клиентам по вашей базе.</span>
+                </div>
+              </div>
+            <?php endif; ?>
           </div>
         <?php endif;
         return (string) ob_get_clean();

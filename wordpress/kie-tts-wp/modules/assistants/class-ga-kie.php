@@ -19,7 +19,7 @@ class GA_Kie
 
     public static function default_model(): string
     {
-        return (string) get_option(self::OPT_MODEL, 'gemini-3-8-flash-openai');
+        return (string) get_option(self::OPT_MODEL, 'gemini-3-6-flash-openai');
     }
 
     /**
@@ -70,9 +70,13 @@ class GA_Kie
         }
         $code = wp_remote_retrieve_response_code($response);
         $body = json_decode(wp_remote_retrieve_body($response), true);
-        if ($code >= 400) {
+        // KIE иногда кладёт ошибку в тело с HTTP 200 (например {"code":500,...}) —
+        // без этой проверки такой ответ выглядел бы как «пустой ответ модели».
+        $inner = is_array($body) ? (int) ($body['code'] ?? 0) : 0;
+        if ($code >= 400 || $inner >= 400) {
             $msg = is_array($body) ? ($body['msg'] ?? $body['message'] ?? '') : '';
-            return new WP_Error('ga_kie_http', sprintf('KIE ответил %d. %s', $code, $msg));
+            return new WP_Error('ga_kie_http',
+                sprintf('KIE: %s (код %d)', $msg ?: 'ошибка запроса', $inner ?: $code));
         }
         $text = $body['choices'][0]['message']['content'] ?? '';
         if (!is_string($text) || trim($text) === '') {
