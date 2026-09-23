@@ -54,16 +54,20 @@ class GS_Schedule {
 
     public static function lane_defaults() {
         return array(
-            ''      => array('enabled' => 1, 'per_day' => 2, 'hours' => array(10, 18)),
-            'promt' => array('enabled' => 1, 'per_day' => 4, 'hours' => array(9, 13, 17, 21)),
+            ''      => array('enabled' => 1, 'per_day' => 1, 'hours' => array(10),
+                             'days' => array(1, 2, 3, 4, 5, 6, 7)),
+            'promt' => array('enabled' => 1, 'per_day' => 1, 'hours' => array(17),
+                             'days' => array(1, 2, 3, 4, 5, 6, 7)),
             // Кластер API выходит своей полосой: у него свой темп и свой
             // объём, и смешивать его с лонгридами блога — значит либо
             // растянуть один, либо выплюнуть другой.
-            'api'   => array('enabled' => 1, 'per_day' => 3, 'hours' => array(11, 15, 20)),
+            'api'   => array('enabled' => 1, 'per_day' => 1, 'hours' => array(13),
+                             'days' => array(1, 3, 5)),
             // Кластер вокруг одного сервиса — это шесть-семь статей, и
             // выходить им лучше не пачкой: по одной в день кластер живёт
             // неделю и не забивает собой ни блог, ни очередь про API.
-            'service' => array('enabled' => 1, 'per_day' => 1, 'hours' => array(13)),
+            'service' => array('enabled' => 1, 'per_day' => 1, 'hours' => array(15),
+                               'days' => array(2, 4)),
         );
     }
 
@@ -108,6 +112,18 @@ class GS_Schedule {
         if ($hours) {
             $now['hours'] = array_values(array_unique($hours));
         }
+
+        $days = array();
+        foreach ((array) ($values['days'] ?? array()) as $day) {
+            $day = (int) $day;
+            if ($day >= 1 && $day <= 7) {
+                $days[] = $day;
+            }
+        }
+        sort($days);
+        // Пустой выбор означал бы «не выходить никогда»: это делается
+        // галочкой «публиковать по расписанию», а не пустым списком дней.
+        $now['days'] = $days ? array_values(array_unique($days)) : array(1, 2, 3, 4, 5, 6, 7);
 
         $saved = get_option(self::OPT, array());
         $saved = is_array($saved) ? $saved : array();
@@ -227,6 +243,13 @@ class GS_Schedule {
                 continue;
             }
 
+            // День недели у каждого потока свой: целыми статьями в день
+            // ровный темп «десять-двадцать страниц в неделю» не выставить.
+            $days = (array) ($set['days'] ?? array(1, 2, 3, 4, 5, 6, 7));
+            if ($days && !in_array((int) current_time('N'), array_map('intval', $days), true)) {
+                continue;
+            }
+
             $hour = (int) current_time('G');
             $due = 0;
             foreach ((array) $set['hours'] as $slot) {
@@ -281,9 +304,21 @@ class GS_Schedule {
         }
 
         $index -= $left_today;
-        $day = (int) floor($index / $per) + 1;
+        $days = array_map('intval', (array) ($set['days'] ?? array(1, 2, 3, 4, 5, 6, 7)));
         $slot = $hours[$index % $per] ?? 12;
-        $stamp = strtotime(current_time('Y-m-d') . ' +' . $day . ' day ' . (int) $slot . ':00');
+
+        // Считаем по календарю, а не делением: поток может выходить через
+        // день, и «плюс N дней» тогда показывает дату, которой не будет.
+        $need = (int) floor($index / $per) + 1;
+        $ahead = 0;
+        for ($step = 1; $step <= 400 && $need > 0; $step++) {
+            $stamp = strtotime(current_time('Y-m-d') . ' +' . $step . ' day');
+            if (!$days || in_array((int) date_i18n('N', $stamp), $days, true)) {
+                $need--;
+                $ahead = $step;
+            }
+        }
+        $stamp = strtotime(current_time('Y-m-d') . ' +' . max(1, $ahead) . ' day ' . (int) $slot . ':00');
         return date_i18n('d.m, H:i', $stamp);
     }
 
@@ -345,6 +380,7 @@ class GS_Schedule {
             'enabled' => !empty($_POST['enabled']),
             'per_day' => $_POST['per_day'] ?? null,
             'hours'   => $hours,
+            'days'    => (array) ($_POST['days'] ?? array()),
         ), $lane);
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-schedule');
         exit;
@@ -411,6 +447,18 @@ class GS_Schedule {
                 часы выхода
                 <input type="text" name="hours" value="<?php echo esc_attr(implode(', ', (array) $set['hours'])); ?>" class="small-text">
             </label>
+            <span style="margin-right:16px">
+                дни:
+                <?php
+                $chosen = array_map('intval', (array) ($set['days'] ?? array(1, 2, 3, 4, 5, 6, 7)));
+                $names = array(1 => 'пн', 2 => 'вт', 3 => 'ср', 4 => 'чт', 5 => 'пт', 6 => 'сб', 7 => 'вс');
+                foreach ($names as $num => $name): ?>
+                    <label style="margin-right:6px">
+                        <input type="checkbox" name="days[]" value="<?php echo (int) $num; ?>"
+                            <?php checked(in_array($num, $chosen, true)); ?>><?php echo esc_html($name); ?>
+                    </label>
+                <?php endforeach; ?>
+            </span>
             <?php submit_button('Сохранить', 'secondary', 'submit', false); ?>
         </form>
 
