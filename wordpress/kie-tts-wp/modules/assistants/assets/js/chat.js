@@ -71,6 +71,19 @@
       log.scrollTop = log.scrollHeight;
     }
 
+    // Кнопка «Войти» в гостевой подсказке: сами открываем модалку входа
+    // (или уводим на /tts-login/), не полагаясь на чужой скрипт на странице.
+    root.querySelectorAll('.kie-auth-open-trigger').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof window.kieTtsOpenAuthModal === 'function') {
+          window.kieTtsOpenAuthModal();
+        } else {
+          window.location.href = (window.gaChat && gaChat.loginUrl) || '/tts-login/';
+        }
+      });
+    });
+
     root.querySelectorAll('.ga-chip').forEach(function (chip) {
       chip.addEventListener('click', function () {
         input.value = chip.getAttribute('data-prompt');
