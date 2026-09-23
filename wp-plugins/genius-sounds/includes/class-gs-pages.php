@@ -429,6 +429,8 @@ class GS_Pages {
             </section>
 
             <?php echo GS_Keywords::render('sfx'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo GS_Support::render('Генератор звуков'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         </div>
         <?php
         return ob_get_clean();

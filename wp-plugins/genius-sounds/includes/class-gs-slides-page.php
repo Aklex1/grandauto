@@ -399,6 +399,8 @@ class GS_Slides_Page {
             </section>
 
             <?php echo self::links_block(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo GS_Support::render('Презентации'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         </div>
         <?php
         return ob_get_clean();

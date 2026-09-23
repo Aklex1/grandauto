@@ -310,6 +310,8 @@ class GS_Voice_Page {
                     </details>
                 <?php endforeach; ?>
             </section>
+
+            <?php echo GS_Support::render('Песня своим голосом'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         </div>
         <?php
         return ob_get_clean();

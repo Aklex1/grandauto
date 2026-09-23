@@ -366,7 +366,7 @@ class Genius_Sounds_Plugin {
 
         // Связь с поддержкой нужна на любой странице сервиса, включая песню
         // своим голосом со своим мастером, — поэтому вне обеих веток.
-        if ($lab) {
+        if ($lab || $api || $dashboard || GS_Slides_Page::is_any() || GS_Pages::is_studio_request()) {
             wp_enqueue_script('genius-sounds-support', GS_PLUGIN_URL . 'assets/js/support.js', array(), GS_VERSION, true);
             wp_localize_script('genius-sounds-support', 'GS_HELP', array(
                 'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),

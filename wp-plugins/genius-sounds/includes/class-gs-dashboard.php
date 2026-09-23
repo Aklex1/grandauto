@@ -23,6 +23,7 @@ class GS_Dashboard {
         add_filter('the_content', array(__CLASS__, 'append_keywords'), 20);
         // Позже вывода шорткодов: панель рисуется именно ими.
         add_filter('the_content', array(__CLASS__, 'strip_old_docs_links'), 30);
+        add_filter('the_content', array(__CLASS__, 'append_support'), 40);
     }
 
     /**
@@ -51,6 +52,24 @@ class GS_Dashboard {
      * самим сервисом. Здесь фильтр оставлен пустым, чтобы блок не появился
      * в кабинете второй раз.
      */
+    /**
+     * Связь с поддержкой в кабинете озвучки.
+     *
+     * Кабинет рисует чужой плагин, и трогать его нельзя. Но блок — наш
+     * вывод в конце содержимого страницы: базовый плагин об этом не знает
+     * и знать не должен. Озвучка — главный платный сервис, и оставлять
+     * её единственной без кнопки «что-то не так» было бы странно.
+     */
+    public static function append_support($content) {
+        if (is_admin() || !is_main_query() || !in_the_loop() || !self::is_page()) {
+            return $content;
+        }
+        if (strpos($content, 'gs-help') !== false || !class_exists('GS_Support')) {
+            return $content;
+        }
+        return $content . GS_Support::render('Озвучка текста');
+    }
+
     public static function append_keywords($content) {
         if (is_admin() || !is_main_query() || !in_the_loop()) {
             return $content;
