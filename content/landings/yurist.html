@@ -70,7 +70,11 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
 .gaL__feat{padding:22px 20px;border-radius:16px;background:var(--panel);border:1px solid var(--line2);
   display:flex;flex-direction:column;gap:8px;transition:transform .2s,border-color .2s}
 .gaL__feat:hover{transform:translateY(-3px);border-color:var(--acc)}
-.gaL__feat i{font-style:normal;font-size:26px;line-height:1}
+.gaL__ico{display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;
+  border-radius:13px;color:var(--acc);background:color-mix(in srgb,var(--acc) 13%,transparent);
+  border:1px solid color-mix(in srgb,var(--acc) 28%,transparent);transition:background .2s,transform .2s}
+.gaL__feat:hover .gaL__ico{background:color-mix(in srgb,var(--acc) 22%,transparent);transform:translateY(-1px)}
+.gaL__svg{width:24px;height:24px;display:block}
 .gaL__feat h3{font-size:17px}
 .gaL__feat p{color:var(--muted);font-size:14.5px}
 
@@ -114,7 +118,8 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
   background:linear-gradient(92deg,color-mix(in srgb,var(--acc) 20%,var(--panel)),var(--panel));
   border:1px solid color-mix(in srgb,var(--acc) 45%,transparent);transition:.15s;flex-wrap:wrap}
 .gaL__tgb:hover{border-color:var(--acc);transform:translateY(-2px)}
-.gaL__tgbIc{font-size:30px;line-height:1;flex-shrink:0}
+.gaL__tgbIc{flex-shrink:0;display:flex;color:var(--acc)}
+.gaL__tgbIc svg{width:28px;height:28px;display:block}
 .gaL__tgbT{display:flex;flex-direction:column;gap:2px;flex:1;min-width:210px}
 .gaL__tgbT strong{color:#fff;font-size:17px}
 .gaL__tgbT small{color:var(--muted);font-size:13.5px}
@@ -147,7 +152,7 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
       <p class="gaL__sub">Без регистрации. Вход — почтой, через VK или Telegram, тем же аккаунтом,
          что и остальные сервисы Genius: баланс один на всё.</p>
       [genius_assistant slug="yurist"]
-      <a class="gaL__tgb" href="https://t.me/Doc_Law_AI_bot?start=web" target="_blank" rel="noopener"><span class="gaL__tgbIc" aria-hidden="true">✈️</span><span class="gaL__tgbT"><strong>Использовать в Telegram через бота</strong><small>@Doc_Law_AI_bot — тот же помощник и общий баланс прямо в мессенджере</small></span><span class="gaL__tgbGo">Открыть бота →</span></a>
+      <a class="gaL__tgb" href="https://t.me/Doc_Law_AI_bot?start=web" target="_blank" rel="noopener"><span class="gaL__tgbIc" aria-hidden="true"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3 10.4 13.6"/><path d="M21 3l-6.5 18-3.8-8.3L2.5 9.3z"/></svg></span><span class="gaL__tgbT"><strong>Использовать в Telegram через бота</strong><small>@Doc_Law_AI_bot — тот же помощник и общий баланс прямо в мессенджере</small></span><span class="gaL__tgbGo">Открыть бота →</span></a>
     </div>
   </section>
 
@@ -155,7 +160,7 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
     <div class="gaL__in">
       <span class="gaL__ey">Возможности</span>
       <h2 class="gaL__h2">Что он делает</h2>
-      <div class="gaL__grid" style="margin-top:6px"><article class="gaL__feat"><i aria-hidden="true">🔍</i><h3>Разбор договора</h3><p>По пунктам: что это значит на практике. Отдельно — формулировки против вас, с готовой заменой для каждой.</p></article><article class="gaL__feat"><i aria-hidden="true">📨</i><h3>Претензия</h3><p>Кому, на каком основании, что требуете и в какой срок. Готовый текст с полями под реквизиты.</p></article><article class="gaL__feat"><i aria-hidden="true">📄</i><h3>Заявление</h3><p>В организацию, в госорган, работодателю. В той форме, в которой их принимают.</p></article><article class="gaL__feat"><i aria-hidden="true">🗣</i><h3>Перевод на человеческий</h3><p>Что от вас хотят, что будет, если промолчать, и сколько времени есть на ответ.</p></article><article class="gaL__feat"><i aria-hidden="true">✍️</i><h3>Ответ на требование</h3><p>Позиция, изложенная спокойно и по существу, со ссылками на нормы там, где они уместны.</p></article><article class="gaL__feat"><i aria-hidden="true">📑</i><h3>Расписка, акт, соглашение</h3><p>Бытовые документы, которые чаще всего составляют неправильно и потом не могут использовать.</p></article></div>
+      <div class="gaL__grid" style="margin-top:6px"><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20H12"/><path d="M13 4v6h6"/><circle cx="16" cy="15.5" r="3"/><path d="M18.2 17.7 21 20.5"/></svg></span><h3>Разбор договора</h3><p>По пунктам: что это значит на практике. Отдельно — формулировки против вас, с готовой заменой для каждой.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3 10.4 13.6"/><path d="M21 3l-6.5 18-3.8-8.3L2.5 9.3z"/></svg></span><h3>Претензия</h3><p>Кому, на каком основании, что требуете и в какой срок. Готовый текст с полями под реквизиты.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V10z"/><path d="M13 4v6h6"/></svg></span><h3>Заявление</h3><p>В организацию, в госорган, работодателю. В той форме, в которой их принимают.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 6v7a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V14.5H5.5A1.5 1.5 0 0 1 4 13z"/><path d="M7.5 11.5 9.3 7l1.8 4.5M8 10.3h2.6"/><path d="M13.5 8h3M15 8v3.5"/></svg></span><h3>Перевод на человеческий</h3><p>Что от вас хотят, что будет, если промолчать, и сколько времени есть на ответ.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1-4L16 5a2 2 0 0 1 3 3L8 19z"/><path d="M14 7l3 3"/></svg></span><h3>Ответ на требование</h3><p>Позиция, изложенная спокойно и по существу, со ссылками на нормы там, где они уместны.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 4.5H14l4 4V18a1.3 1.3 0 0 1-1.3 1.3H9.5A1.3 1.3 0 0 1 8.2 18V5.8A1.3 1.3 0 0 1 9.5 4.5z"/><path d="M14 4.5v4h4"/><path d="M6 8v10.5A1.5 1.5 0 0 0 7.5 20H15"/></svg></span><h3>Расписка, акт, соглашение</h3><p>Бытовые документы, которые чаще всего составляют неправильно и потом не могут использовать.</p></article></div>
     </div>
   </section>
 

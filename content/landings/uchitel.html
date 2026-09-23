@@ -70,7 +70,11 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
 .gaL__feat{padding:22px 20px;border-radius:16px;background:var(--panel);border:1px solid var(--line2);
   display:flex;flex-direction:column;gap:8px;transition:transform .2s,border-color .2s}
 .gaL__feat:hover{transform:translateY(-3px);border-color:var(--acc)}
-.gaL__feat i{font-style:normal;font-size:26px;line-height:1}
+.gaL__ico{display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;
+  border-radius:13px;color:var(--acc);background:color-mix(in srgb,var(--acc) 13%,transparent);
+  border:1px solid color-mix(in srgb,var(--acc) 28%,transparent);transition:background .2s,transform .2s}
+.gaL__feat:hover .gaL__ico{background:color-mix(in srgb,var(--acc) 22%,transparent);transform:translateY(-1px)}
+.gaL__svg{width:24px;height:24px;display:block}
 .gaL__feat h3{font-size:17px}
 .gaL__feat p{color:var(--muted);font-size:14.5px}
 
@@ -114,7 +118,8 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
   background:linear-gradient(92deg,color-mix(in srgb,var(--acc) 20%,var(--panel)),var(--panel));
   border:1px solid color-mix(in srgb,var(--acc) 45%,transparent);transition:.15s;flex-wrap:wrap}
 .gaL__tgb:hover{border-color:var(--acc);transform:translateY(-2px)}
-.gaL__tgbIc{font-size:30px;line-height:1;flex-shrink:0}
+.gaL__tgbIc{flex-shrink:0;display:flex;color:var(--acc)}
+.gaL__tgbIc svg{width:28px;height:28px;display:block}
 .gaL__tgbT{display:flex;flex-direction:column;gap:2px;flex:1;min-width:210px}
 .gaL__tgbT strong{color:#fff;font-size:17px}
 .gaL__tgbT small{color:var(--muted);font-size:13.5px}
@@ -147,7 +152,7 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
       <p class="gaL__sub">Без регистрации. Вход — почтой, через VK или Telegram, тем же аккаунтом,
          что и остальные сервисы Genius: баланс один на всё.</p>
       [genius_assistant slug="uchitel"]
-      <a class="gaL__tgb" href="https://t.me/Teeacher_ai_bot?start=web" target="_blank" rel="noopener"><span class="gaL__tgbIc" aria-hidden="true">✈️</span><span class="gaL__tgbT"><strong>Использовать в Telegram через бота</strong><small>@Teeacher_ai_bot — тот же помощник и общий баланс прямо в мессенджере</small></span><span class="gaL__tgbGo">Открыть бота →</span></a>
+      <a class="gaL__tgb" href="https://t.me/Teeacher_ai_bot?start=web" target="_blank" rel="noopener"><span class="gaL__tgbIc" aria-hidden="true"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3 10.4 13.6"/><path d="M21 3l-6.5 18-3.8-8.3L2.5 9.3z"/></svg></span><span class="gaL__tgbT"><strong>Использовать в Telegram через бота</strong><small>@Teeacher_ai_bot — тот же помощник и общий баланс прямо в мессенджере</small></span><span class="gaL__tgbGo">Открыть бота →</span></a>
     </div>
   </section>
 
@@ -155,7 +160,7 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
     <div class="gaL__in">
       <span class="gaL__ey">Возможности</span>
       <h2 class="gaL__h2">Что он берёт на себя</h2>
-      <div class="gaL__grid" style="margin-top:6px"><article class="gaL__feat"><i aria-hidden="true">📝</i><h3>Конспект урока</h3><p>Тема, тип, цель, планируемые результаты, ход урока по этапам с хронометражом и домашнее задание.</p></article><article class="gaL__feat"><i aria-hidden="true">🗂</i><h3>Технологическая карта</h3><p>Таблица по ФГОС: этап, время, деятельность учителя, деятельность учеников, формируемые УУД.</p></article><article class="gaL__feat"><i aria-hidden="true">✅</i><h3>Проверочная работа</h3><p>Два варианта, ключи с ответами и критерии оценивания в баллах — проверять можно сразу.</p></article><article class="gaL__feat"><i aria-hidden="true">👤</i><h3>Характеристика на ученика</h3><p>Сдержанно и по делу: сильные стороны, зоны роста, рекомендации. Без ярлыков и диагнозов.</p></article><article class="gaL__feat"><i aria-hidden="true">📊</i><h3>Отчёт для завуча</h3><p>Что сделано за четверть, по классам и направлениям, в той форме, которую принимают.</p></article><article class="gaL__feat"><i aria-hidden="true">👨‍👩‍👧</i><h3>Родительское собрание</h3><p>План выступления и текст: что сказать, в каком порядке и как ответить на трудный вопрос.</p></article></div>
+      <div class="gaL__grid" style="margin-top:6px"><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9.5"/><path d="M9 13h4M9 16h6"/><path d="M17 3.8l3.2 3.2-6 6-3.2.6.6-3.2z"/></svg></span><h3>Конспект урока</h3><p>Тема, тип, цель, планируемые результаты, ход урока по этапам с хронометражом и домашнее задание.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.6"/><path d="M4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14"/></svg></span><h3>Технологическая карта</h3><p>Таблица по ФГОС: этап, время, деятельность учителя, деятельность учеников, формируемые УУД.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5" width="13" height="15" rx="2"/><rect x="9" y="3" width="6" height="3.8" rx="1.2"/><path d="M8.8 13l2.3 2.3 4-4.6"/></svg></span><h3>Проверочная работа</h3><p>Два варианта, ключи с ответами и критерии оценивания в баллах — проверять можно сразу.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.2" r="3.4"/><path d="M5.7 19.5c0-3.5 2.8-5.8 6.3-5.8s6.3 2.3 6.3 5.8"/></svg></span><h3>Характеристика на ученика</h3><p>Сдержанно и по делу: сильные стороны, зоны роста, рекомендации. Без ярлыков и диагнозов.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 20h15"/><rect x="6.5" y="11" width="2.8" height="6" rx="0.6"/><rect x="10.8" y="7.5" width="2.8" height="9.5" rx="0.6"/><rect x="15.1" y="13.5" width="2.8" height="3.5" rx="0.6"/></svg></span><h3>Отчёт для завуча</h3><p>Что сделано за четверть, по классам и направлениям, в той форме, которую принимают.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.6 19c0-3 2.4-5 5.4-5s5.4 2 5.4 5"/><path d="M16 6a3 3 0 0 1 0 5.8"/><path d="M17.2 14.2c2.2.5 3.8 2.3 3.8 4.4"/></svg></span><h3>Родительское собрание</h3><p>План выступления и текст: что сказать, в каком порядке и как ответить на трудный вопрос.</p></article></div>
     </div>
   </section>
 

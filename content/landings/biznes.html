@@ -70,7 +70,11 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
 .gaL__feat{padding:22px 20px;border-radius:16px;background:var(--panel);border:1px solid var(--line2);
   display:flex;flex-direction:column;gap:8px;transition:transform .2s,border-color .2s}
 .gaL__feat:hover{transform:translateY(-3px);border-color:var(--acc)}
-.gaL__feat i{font-style:normal;font-size:26px;line-height:1}
+.gaL__ico{display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;
+  border-radius:13px;color:var(--acc);background:color-mix(in srgb,var(--acc) 13%,transparent);
+  border:1px solid color-mix(in srgb,var(--acc) 28%,transparent);transition:background .2s,transform .2s}
+.gaL__feat:hover .gaL__ico{background:color-mix(in srgb,var(--acc) 22%,transparent);transform:translateY(-1px)}
+.gaL__svg{width:24px;height:24px;display:block}
 .gaL__feat h3{font-size:17px}
 .gaL__feat p{color:var(--muted);font-size:14.5px}
 
@@ -114,7 +118,8 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
   background:linear-gradient(92deg,color-mix(in srgb,var(--acc) 20%,var(--panel)),var(--panel));
   border:1px solid color-mix(in srgb,var(--acc) 45%,transparent);transition:.15s;flex-wrap:wrap}
 .gaL__tgb:hover{border-color:var(--acc);transform:translateY(-2px)}
-.gaL__tgbIc{font-size:30px;line-height:1;flex-shrink:0}
+.gaL__tgbIc{flex-shrink:0;display:flex;color:var(--acc)}
+.gaL__tgbIc svg{width:28px;height:28px;display:block}
 .gaL__tgbT{display:flex;flex-direction:column;gap:2px;flex:1;min-width:210px}
 .gaL__tgbT strong{color:#fff;font-size:17px}
 .gaL__tgbT small{color:var(--muted);font-size:13.5px}
@@ -147,7 +152,7 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
       <p class="gaL__sub">Без регистрации. Вход — почтой, через VK или Telegram, тем же аккаунтом,
          что и остальные сервисы Genius: баланс один на всё.</p>
       [genius_assistant slug="biznes"]
-      <a class="gaL__tgb" href="https://t.me/Businesss_AI_bot?start=web" target="_blank" rel="noopener"><span class="gaL__tgbIc" aria-hidden="true">✈️</span><span class="gaL__tgbT"><strong>Использовать в Telegram через бота</strong><small>@Businesss_AI_bot — тот же помощник и общий баланс прямо в мессенджере</small></span><span class="gaL__tgbGo">Открыть бота →</span></a>
+      <a class="gaL__tgb" href="https://t.me/Businesss_AI_bot?start=web" target="_blank" rel="noopener"><span class="gaL__tgbIc" aria-hidden="true"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3 10.4 13.6"/><path d="M21 3l-6.5 18-3.8-8.3L2.5 9.3z"/></svg></span><span class="gaL__tgbT"><strong>Использовать в Telegram через бота</strong><small>@Businesss_AI_bot — тот же помощник и общий баланс прямо в мессенджере</small></span><span class="gaL__tgbGo">Открыть бота →</span></a>
     </div>
   </section>
 
@@ -155,7 +160,7 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
     <div class="gaL__in">
       <span class="gaL__ey">Возможности</span>
       <h2 class="gaL__h2">Что он закрывает</h2>
-      <div class="gaL__grid" style="margin-top:6px"><article class="gaL__feat"><i aria-hidden="true">💬</i><h3>Первая линия</h3><p>Отвечает на повторяющиеся вопросы о ценах, сроках и условиях — строго по тому, что есть в базе знаний.</p></article><article class="gaL__feat"><i aria-hidden="true">🌙</i><h3>Ночные заявки</h3><p>Клиент пишет в 3 часа ночи и получает ответ, а не «менеджер свяжется с вами в рабочее время».</p></article><article class="gaL__feat"><i aria-hidden="true">🎯</i><h3>Квалификация</h3><p>Уточняет задачу по одному вопросу за раз и доводит до конкретного следующего шага.</p></article><article class="gaL__feat"><i aria-hidden="true">🤝</i><h3>Передача менеджеру</h3><p>Как только вопрос выходит за рамки базы знаний — честно говорит об этом и собирает контакт.</p></article><article class="gaL__feat"><i aria-hidden="true">🔌</i><h3>Сайт и Telegram</h3><p>Один и тот же консультант в виджете на сайте и в телеграм-боте, с общей историей диалога.</p></article><article class="gaL__feat"><i aria-hidden="true">🧩</i><h3>Под вашу специфику</h3><p>Коробка закрывает типовое. Всё остальное — разработка под задачу, это наш основной профиль.</p></article></div>
+      <div class="gaL__grid" style="margin-top:6px"><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 6v7a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V14.5H5.5A1.5 1.5 0 0 1 4 13z"/><path d="M8.5 9.7h.01M12 9.7h.01M15.5 9.7h.01"/></svg></span><h3>Первая линия</h3><p>Отвечает на повторяющиеся вопросы о ценах, сроках и условиях — строго по тому, что есть в базе знаний.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.2A8 8 0 1 1 9.8 4 6.3 6.3 0 0 0 20 14.2z"/></svg></span><h3>Ночные заявки</h3><p>Клиент пишет в 3 часа ночи и получает ответ, а не «менеджер свяжется с вами в рабочее время».</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg></span><h3>Квалификация</h3><p>Уточняет задачу по одному вопросу за раз и доводит до конкретного следующего шага.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8.5" cy="8" r="3.2"/><path d="M3.2 19c0-3.2 2.4-5.3 5.3-5.3 1.2 0 2.3.35 3.2.95"/><path d="M13.5 16.5h6.5M17.2 13.7l2.8 2.8-2.8 2.8"/></svg></span><h3>Передача менеджеру</h3><p>Как только вопрос выходит за рамки базы знаний — честно говорит об этом и собирает контакт.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 13.5a3.6 3.6 0 0 0 5.1 0l2.6-2.6a3.6 3.6 0 0 0-5.1-5.1l-1.3 1.3"/><path d="M13.5 10.5a3.6 3.6 0 0 0-5.1 0l-2.6 2.6a3.6 3.6 0 0 0 5.1 5.1l1.3-1.3"/></svg></span><h3>Сайт и Telegram</h3><p>Один и тот же консультант в виджете на сайте и в телеграм-боте, с общей историей диалога.</p></article><article class="gaL__feat"><span class="gaL__ico"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4.5a1.6 1.6 0 0 0-3 0c0 .5.3.9.3 1.4 0 .6-.5 1-1.1 1H7.5v2.7c0 .6-.4 1.1-1 1.1-.5 0-.9-.4-1.4-.4a1.6 1.6 0 0 0 0 3.2c.5 0 .9-.4 1.4-.4.6 0 1 .5 1 1.1V17h2.7c.6 0 1.1.4 1.1 1 0 .5-.4.9-.4 1.4a1.6 1.6 0 0 0 3.2 0c0-.5-.4-.9-.4-1.4 0-.6.5-1 1.1-1h2.7v-2.7c0-.6.4-1 .9-1 .5 0 .9.4 1.4.4a1.6 1.6 0 0 0 0-3.2c-.5 0-.9.4-1.4.4-.5 0-.9-.5-.9-1.1V7.9h-2.7c-.6 0-1.1-.4-1.1-1 0-.5.3-.9.3-1.4z"/></svg></span><h3>Под вашу специфику</h3><p>Коробка закрывает типовое. Всё остальное — разработка под задачу, это наш основной профиль.</p></article></div>
     </div>
   </section>
 

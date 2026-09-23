@@ -34,6 +34,7 @@ def _load(name):
 
 theme = _load("theme")
 lc = _load("landing_content")
+li = _load("landing_icons")
 
 
 def style(accent, accent2):
@@ -84,7 +85,11 @@ def style(accent, accent2):
 .gaL__feat{{padding:22px 20px;border-radius:16px;background:var(--panel);border:1px solid var(--line2);
   display:flex;flex-direction:column;gap:8px;transition:transform .2s,border-color .2s}}
 .gaL__feat:hover{{transform:translateY(-3px);border-color:var(--acc)}}
-.gaL__feat i{{font-style:normal;font-size:26px;line-height:1}}
+.gaL__ico{{display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;
+  border-radius:13px;color:var(--acc);background:color-mix(in srgb,var(--acc) 13%,transparent);
+  border:1px solid color-mix(in srgb,var(--acc) 28%,transparent);transition:background .2s,transform .2s}}
+.gaL__feat:hover .gaL__ico{{background:color-mix(in srgb,var(--acc) 22%,transparent);transform:translateY(-1px)}}
+.gaL__svg{{width:24px;height:24px;display:block}}
 .gaL__feat h3{{font-size:17px}}
 .gaL__feat p{{color:var(--muted);font-size:14.5px}}
 
@@ -128,7 +133,8 @@ def style(accent, accent2):
   background:linear-gradient(92deg,color-mix(in srgb,var(--acc) 20%,var(--panel)),var(--panel));
   border:1px solid color-mix(in srgb,var(--acc) 45%,transparent);transition:.15s;flex-wrap:wrap}}
 .gaL__tgb:hover{{border-color:var(--acc);transform:translateY(-2px)}}
-.gaL__tgbIc{{font-size:30px;line-height:1;flex-shrink:0}}
+.gaL__tgbIc{{flex-shrink:0;display:flex;color:var(--acc)}}
+.gaL__tgbIc svg{{width:28px;height:28px;display:block}}
 .gaL__tgbT{{display:flex;flex-direction:column;gap:2px;flex:1;min-width:210px}}
 .gaL__tgbT strong{{color:#fff;font-size:17px}}
 .gaL__tgbT small{{color:var(--muted);font-size:13.5px}}
@@ -147,14 +153,14 @@ def render(item, img):
     bot = BOTS.get(slug, "")
     tg_banner = (
         f'<a class="gaL__tgb" href="https://t.me/{E(bot)}?start=web" target="_blank" rel="noopener">'
-        f'<span class="gaL__tgbIc" aria-hidden="true">✈️</span>'
+        f'<span class="gaL__tgbIc" aria-hidden="true">{li.svg("telegram")}</span>'
         f'<span class="gaL__tgbT"><strong>Использовать в Telegram через бота</strong>'
         f'<small>@{E(bot)} — тот же помощник и общий баланс прямо в мессенджере</small></span>'
         f'<span class="gaL__tgbGo">Открыть бота →</span></a>'
     ) if bot else ""
     stats = "".join(f'<div class="gaL__stat"><span class="gaL__statV">{E(v)}</span>'
                     f'<span class="gaL__statL">{E(l)}</span></div>' for v, l in item["stats"])
-    feats = "".join(f'<article class="gaL__feat"><i aria-hidden="true">{E(ic)}</i>'
+    feats = "".join(f'<article class="gaL__feat"><span class="gaL__ico">{li.svg(ic)}</span>'
                     f'<h3>{E(t)}</h3><p>{E(d)}</p></article>' for ic, t, d in item["features"])
     whys = "".join(f'<div class="gaL__whyItem"><h3>{E(t)}</h3><p>{E(d)}</p></div>'
                    for t, d in item["why"])
