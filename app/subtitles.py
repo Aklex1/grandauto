@@ -440,6 +440,93 @@ def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720)
     return dst
 
 
+def write_story_pages(pages: list[dict], dst: Path, *, size: tuple[int, int],
+                      zone: dict, font_px: float, canvas_h: float = 1920.0,
+                      font: str = "Georgia") -> Path:
+    """Титры по готовым страницам пакета production.v2.
+
+    Строки уже разбиты автором пакета по метрикам Georgia под ширину зоны, и
+    пересчитывать их своими правилами нельзя: получатся другие переносы, другое
+    число строк и другая высота блока. Поэтому здесь ничего не переносится —
+    строки выводятся как есть, а из зоны берётся положение блока.
+
+    pages — [{"start": с, "end": с, "lines": ["строка", …]}, …].
+    """
+    w, h = size
+    scale = h / max(canvas_h, 1.0)
+    font_size = max(14, int(round(font_px * scale)))
+    zone_x = float(zone.get("x") or 0) * (w / max(zone.get("canvas_w") or 1080, 1))
+    margin_h = max(0, int(round(zone_x)))
+    # Зона задана от верха холста, поэтому и выравнивание берём верхнее: иначе
+    # блок «поедет» вниз тем сильнее, чем больше в нём строк.
+    margin_v = max(0, int(round(float(zone.get("y") or 0) * scale)))
+
+    params = {
+        "w": w, "h": h, "font": font, "size": font_size,
+        "primary": STORY_WHITE.rstrip("&"), "bold": 0,
+        "back": "&HA8000000", "border": 1, "outline": 0,
+        "shadow": max(2, int(font_size * 0.12)), "spacing": 0,
+        "margin_h": margin_h or int(w * 0.08), "margin_v": margin_v,
+        "align": 8, "title_size": font_size, "title_outline": 0,
+        "title_shadow": 0, "title_back": "&HA8000000",
+        "title_margin": margin_v,
+    }
+    lines = [ASS_HEADER.format(**params)]
+    for page in pages:
+        text = "\\N".join(str(line) for line in page.get("lines") or [] if line)
+        if not text:
+            continue
+        start, end = float(page.get("start") or 0.0), float(page.get("end") or 0.0)
+        if end <= start:
+            continue
+        # Страница появляется мягко и держится целиком — слова внутри не мигают.
+        lines.append(f"Dialogue: 0,{_fmt_ass_ts(start)},{_fmt_ass_ts(end)},"
+                     f"Main,,0,0,0,,{{\\fad(140,120)}}{text}")
+    dst.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return dst
+
+
+def token_times(cues: list[Cue], total: int, duration: float) -> list[float]:
+    """Момент начала каждого токена речи.
+
+    Точных таймингов слов у нас нет: распознавание даёт границы реплик. Внутри
+    реплики слова раскладываются пропорционально длине — этого хватает, чтобы
+    страница титров менялась в такт речи. Если распознавания нет вовсе, делим
+    время ровно по числу токенов.
+    """
+    if total <= 0:
+        return []
+    if not cues:
+        return [duration * i / total for i in range(total + 1)]
+
+    marks: list[float] = []
+    for cue in cues:
+        words = (cue.text or "").split()
+        if not words:
+            continue
+        span = max(cue.end - cue.start, 0.05)
+        weights = [max(len(word), 1) for word in words]
+        whole = sum(weights)
+        at = cue.start
+        for weight in weights:
+            marks.append(at)
+            at += span * weight / whole
+    if not marks:
+        return [duration * i / total for i in range(total + 1)]
+
+    # Число распознанных слов почти никогда не совпадает с числом токенов
+    # пакета: сокращения, кавычки, тире. Поэтому шкалу растягиваем по индексу.
+    out: list[float] = []
+    for i in range(total + 1):
+        pos = (len(marks) - 1) * i / max(total, 1)
+        low = min(int(pos), len(marks) - 1)
+        high = min(low + 1, len(marks) - 1)
+        frac = pos - low
+        out.append(marks[low] + (marks[high] - marks[low]) * frac)
+    out[-1] = max(out[-1], duration)
+    return out
+
+
 def spoken_words(cues: list[Cue]) -> int:
     """Сколько слов распознавание реально услышало в озвучке."""
     return sum(len(c.text.split()) for c in cues)

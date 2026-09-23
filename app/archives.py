@@ -255,12 +255,19 @@ def _clean_script(path: Path) -> str:
     return "\n".join(line.strip() for line in text.splitlines()).strip()
 
 
-def _scenes_from(storyboard: dict, folder: Path) -> list[dict]:
-    """Сцены серии: порядок, кадр и сколько слов на сцену приходится.
+def _scenes_from(storyboard: dict, folder: Path, tokens: list[dict]) -> list[dict]:
+    """Сцены серии: их собственные ID, кадр и сколько токенов речи приходится.
 
-    Число слов нужно, чтобы разложить сцены по времени речи: точных таймингов до
-    озвучки нет, а слова — единственная общая мера между текстом и звуком.
+    ID берём из поля `scene` и не трогаем: в пакете оно своё у каждой серии и
+    бывает нулевым (у 001 сцены 0–3), а перенумерация ломает связь с токенами
+    титров. Токены считаем по раскладке титров — это точная мера речи; если
+    раскладки нет, считаем слова в beats.
     """
+    by_scene: dict = {}
+    for token in tokens:
+        key = token.get("scene")
+        by_scene[key] = by_scene.get(key, 0) + 1
+
     scenes: list[dict] = []
     raw = storyboard.get("scenes") or storyboard.get("items") or []
     for index, scene in enumerate(raw):
@@ -270,20 +277,59 @@ def _scenes_from(storyboard: dict, folder: Path) -> list[dict]:
                  or scene.get("assetPath") or "")
         if isinstance(asset, dict):
             asset = asset.get("path") or asset.get("file") or ""
-        beats = scene.get("beats") or []
+        scene_id = scene.get("scene", scene.get("id", scene.get("sceneId", index)))
         words = 0
-        for beat in beats:
+        for beat in scene.get("beats") or []:
             text = (beat.get("text") if isinstance(beat, dict) else str(beat)) or ""
             words += len(text.split())
-        if not words:
-            words = len(str(scene.get("text") or "").split())
         scenes.append({
-            "id": scene.get("id", scene.get("sceneId", index + 1)),
+            "id": scene_id,
             "asset": str(asset),
-            "words": words,
+            "tokens": by_scene.get(scene_id, 0) or words or 1,
             "exists": bool(asset) and (folder / str(asset)).exists(),
         })
     return scenes
+
+
+def _captions_from(layout: dict) -> dict:
+    """Готовая раскладка титров: зона, кегль и страницы с разбитыми строками.
+
+    Переносы в пакете посчитаны по метрикам Georgia под ширину зоны. Считать их
+    заново своими правилами — значит получить другие строки, а вместе с ними
+    другое число строк на странице и другую высоту блока.
+    """
+    tokens = layout.get("tokens") or []
+    if not tokens:
+        return {}
+    order = {str(t.get("id")): i for i, t in enumerate(tokens)}
+    display = {str(t.get("id")): str(t.get("display") or t.get("spoken") or "")
+               for t in tokens}
+
+    pages: list[dict] = []
+    for page in layout.get("pages") or []:
+        lines: list[str] = []
+        indexes: list[int] = []
+        for line in page.get("lines") or []:
+            words = [display.get(str(tid), "") for tid in line]
+            indexes += [order[str(tid)] for tid in line if str(tid) in order]
+            text = " ".join(w for w in words if w).strip()
+            if text:
+                lines.append(text)
+        if not lines or not indexes:
+            continue
+        pages.append({"lines": lines, "first": min(indexes), "last": max(indexes),
+                      "scene": page.get("scene")})
+    if not pages:
+        return {}
+    return {
+        "zone": layout.get("zone") or {},
+        "font_px": float(layout.get("fontSizePx") or 64),
+        "line_px": float(layout.get("lineHeightPx") or 88),
+        "canvas_h": 1920.0,
+        "total": len(tokens),
+        "mode": str(layout.get("mode") or ""),
+        "pages": pages,
+    }
 
 
 def read_reel_v2(folder: Path, language: str) -> Optional[dict]:
@@ -307,7 +353,13 @@ def read_reel_v2(folder: Path, language: str) -> Optional[dict]:
     pub = _read_json(folder / "publication_metadata.json")
     copy = _read_json(folder / COPY_NAME) if (folder / COPY_NAME).exists() else {}
     storyboard = _read_json(folder / "storyboard.json")
-    scenes = _scenes_from(storyboard, folder)
+    layout_path = folder / "captions.layout.json"
+    layout = _read_json(layout_path) if layout_path.exists() else {}
+    captions = _captions_from(layout)
+    scenes = _scenes_from(storyboard, folder, layout.get("tokens") or [])
+    montage_path = folder / "montage.json"
+    montage = _read_json(montage_path) if montage_path.exists() else {}
+    cover_plan = montage.get("cover") or {}
     cover = next((folder / name for name in COVER_NAMES if (folder / name).exists()), None)
 
     platforms = pub.get("platforms") or pub
@@ -322,6 +374,12 @@ def read_reel_v2(folder: Path, language: str) -> Optional[dict]:
         "hashtags": hashtags_from({"platforms": platforms}),
         "cover": cover,
         "scenes": scenes,
+        "captions": captions,
+        # Тайминг обложки и переходов задаёт сам пакет, а не наши константы:
+        # у 001–002 переход 700 мс, у остальных 180.
+        "cover_hold_ms": float(cover_plan.get("holdUntilMs") or V2_COVER_OPAQUE_MS),
+        "cover_gone_ms": float(cover_plan.get("clearAtMs") or V2_COVER_GONE_MS),
+        "scene_fade_ms": float(montage.get("sceneTransitionMs") or V2_SCENE_FADE_MS),
         "dir": folder,
     }
 
@@ -467,7 +525,13 @@ def import_zip(session: Session, channel: Channel, data: bytes, *, name: str = "
             hook=info["hook"], caption=info["caption"], hashtags=info["hashtags"],
             cover_path=storage.rel(info["cover"]) if info["cover"] else "",
             source_dir=storage.rel(info.get("dir") or folder),
-            scenes_json=json.dumps(info.get("scenes") or [], ensure_ascii=False),
+            scenes_json=json.dumps({
+                "scenes": info.get("scenes") or [],
+                "cover_hold_ms": info.get("cover_hold_ms"),
+                "cover_gone_ms": info.get("cover_gone_ms"),
+                "scene_fade_ms": info.get("scene_fade_ms"),
+            } if info.get("scenes") else [], ensure_ascii=False),
+            captions_json=json.dumps(info.get("captions") or {}, ensure_ascii=False),
             scheduled_date=when))
     batch.total = len(good)
     session.commit()
@@ -609,7 +673,20 @@ def build_item(item_id: int) -> Optional[Path]:
             # 4. Титры поверх, но не поверх обложки.
             cues = _shift_past_cover(_cues_for(item, voice, duration), hold=hold)
             with_subs = raw
-            if setup["subtitles"] and cues:
+            pages = _story_pages(item, cues, duration, hold=hold if story else 0.0)
+            if setup["subtitles"] and pages:
+                # У пакета строки уже разбиты — выводим как есть, своей вёрстки
+                # не навязываем.
+                ass = workdir / "subs.ass"
+                layout = json.loads(item.captions_json or "{}")
+                subtitles.write_story_pages(
+                    pages, ass, size=size, zone=layout.get("zone") or {},
+                    font_px=float(layout.get("font_px") or 64),
+                    canvas_h=float(layout.get("canvas_h") or 1920),
+                    font=_story_font())
+                with_subs = workdir / "subs.mp4"
+                media.burn_subtitles(raw, ass, with_subs)
+            elif setup["subtitles"] and cues:
                 ass = workdir / "subs.ass"
                 subtitles.write_ass(cues, ass, size=size, vertical=True,
                                     style=setup["subtitle_style"])
@@ -751,6 +828,22 @@ def _append_outro(session: Session, client, channel: Channel, item: ArchiveItem,
         return video
 
 
+def _scene_plan(item: ArchiveItem) -> tuple[list, dict]:
+    """Сцены серии и тайминги пакета.
+
+    Первые импорты клали сюда голый список сцен, потом к нему добавились времена
+    обложки и переходов. Читаем оба вида, чтобы старые серии не пришлось
+    переимпортировать.
+    """
+    try:
+        raw = json.loads(item.scenes_json or "[]")
+    except ValueError:
+        return [], {}
+    if isinstance(raw, list):
+        return raw, {}
+    return raw.get("scenes") or [], raw
+
+
 def scene_frames(item: ArchiveItem, duration: float) -> list[tuple[Path, float]]:
     """Кадры серии с длительностями, разложенными по речи.
 
@@ -759,10 +852,7 @@ def scene_frames(item: ArchiveItem, duration: float) -> list[tuple[Path, float]]
     промах на доли секунды не виден. Кадр без файла пропускаем — в пакете бывает
     намеренное повторное использование, но не бывает битых ссылок.
     """
-    try:
-        scenes = json.loads(item.scenes_json or "[]")
-    except ValueError:
-        scenes = []
+    scenes, _ = _scene_plan(item)
     base = storage.abspath(item.source_dir) if item.source_dir else None
     usable: list[dict] = []
     for scene in scenes:
@@ -771,21 +861,65 @@ def scene_frames(item: ArchiveItem, duration: float) -> list[tuple[Path, float]]
             continue
         path = base / asset
         if path.exists():
-            usable.append({"path": path, "words": max(1, int(scene.get("words") or 1))})
+            weight = scene.get("tokens") or scene.get("words") or 1
+            usable.append({"path": path, "weight": max(1, int(weight))})
     if not usable:
         return []
 
-    total_words = sum(s["words"] for s in usable)
+    total_weight = sum(s["weight"] for s in usable)
     frames: list[tuple[Path, float]] = []
     spent = 0.0
     for index, scene in enumerate(usable):
         if index == len(usable) - 1:
             seconds = max(duration - spent, 0.4)
         else:
-            seconds = max(duration * scene["words"] / total_words, 0.4)
+            seconds = max(duration * scene["weight"] / total_weight, 0.4)
         spent += seconds
         frames.append((scene["path"], seconds))
     return frames
+
+
+def _story_font() -> str:
+    """Шрифт титров пакета. Georgia приложена к архиву, но может и не встать."""
+    from . import fonts
+
+    return "Georgia" if fonts.font_path("georgia") else "Georgia"
+
+
+def _story_pages(item: ArchiveItem, cues: list, duration: float,
+                 hold: float = 0.0) -> list[dict]:
+    """Страницы титров пакета со временем показа.
+
+    Страницы приходят готовыми, а времени у них нет — оно появляется только
+    после озвучки. Токены разложены по речи, поэтому страница берёт время своего
+    первого и последнего токена.
+    """
+    try:
+        layout = json.loads(item.captions_json or "{}")
+    except ValueError:
+        return []
+    pages = layout.get("pages") or []
+    total = int(layout.get("total") or 0)
+    if not pages or total <= 0:
+        return []
+
+    marks = subtitles.token_times(cues, total, duration)
+    if not marks:
+        return []
+    out: list[dict] = []
+    for page in pages:
+        first = max(0, min(int(page.get("first") or 0), total - 1))
+        last = max(first, min(int(page.get("last") or first), total - 1))
+        start = marks[first]
+        end = marks[min(last + 1, total)]
+        # Пока висит обложка, титров не видно — но страницу крючка пропускать
+        # нельзя: контракт пакета прямо требует показать её остаток после ухода
+        # обложки, а не потерять вместе с её началом.
+        if start < hold:
+            start = hold
+        out.append({"start": start, "end": max(end, start + 0.4),
+                    "lines": page.get("lines") or []})
+    return [p for p in out if p["end"] > p["start"] + 0.05]
 
 
 def _build_story_v2(session: Session, item: ArchiveItem, setup: dict,
@@ -798,13 +932,14 @@ def _build_story_v2(session: Session, item: ArchiveItem, setup: dict,
         raise ArchiveError("в серии нет ни одного сюжетного кадра — проверьте "
                            "storyboard.json и папку assets")
     cover = storage.abspath(item.cover_path) if item.cover_path else None
+    _, plan = _scene_plan(item)
     raw = workdir / "raw.mp4"
     media.build_story_scene(
         frames, cover if cover and cover.exists() else None, voice, raw, size,
         total, workdir,
-        cover_opaque=V2_COVER_OPAQUE_MS / 1000.0,
-        cover_gone=V2_COVER_GONE_MS / 1000.0,
-        fade=V2_SCENE_FADE_MS / 1000.0)
+        cover_opaque=float(plan.get("cover_hold_ms") or V2_COVER_OPAQUE_MS) / 1000.0,
+        cover_gone=float(plan.get("cover_gone_ms") or V2_COVER_GONE_MS) / 1000.0,
+        fade=float(plan.get("scene_fade_ms") or V2_SCENE_FADE_MS) / 1000.0)
     log.info("Серия %s: собрана из %s сюжетных кадров", item.folder, len(frames))
     return raw
 

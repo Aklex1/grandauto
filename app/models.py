@@ -379,8 +379,12 @@ class ArchiveItem(Base):
     # Папка серии внутри распакованного архива: раскадровку, кадры и раскладку
     # титров читаем при сборке, а не тащим в базу целиком.
     source_dir: Mapped[str] = mapped_column(String(500), default="")
-    # Сцены: [{"id": 1, "asset": "assets/01.png", "words": 23}, …]
+    # Сцены: [{"id": 0, "asset": "assets/01.png", "tokens": 15}, …]
     scenes_json: Mapped[str] = mapped_column(Text, default="")
+    # Готовая раскладка титров пакета: зона, кегль и страницы с уже разбитыми
+    # строками. Переносы считал автор пакета по метрикам Georgia — пересчитывать
+    # их своими значит получить другие строки.
+    captions_json: Mapped[str] = mapped_column(Text, default="")
 
     # planned — ждёт своей даты, queued/running — в работе, done, failed
     status: Mapped[str] = mapped_column(String(24), default="planned", index=True)
