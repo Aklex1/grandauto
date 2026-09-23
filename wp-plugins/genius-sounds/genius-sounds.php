@@ -49,6 +49,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-leads.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-support.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-referral.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-partner-page.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-hub.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-schedule.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-promt.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
@@ -130,6 +131,7 @@ class Genius_Sounds_Plugin {
         GS_Blog::boot();
         GS_Tts_Fallback::boot();
         GS_Transcribe::boot();
+        GS_Voice_Hub::init();
         GS_Api::boot();
         GS_Openapi::boot();
         GS_Weight::boot();
@@ -220,10 +222,11 @@ class Genius_Sounds_Plugin {
         }
         $api = GS_Api_Page::is_page();
         $partner = class_exists('GS_Partner_Page') && GS_Partner_Page::is_page();
+        $voicehub = class_exists('GS_Voice_Hub') && GS_Voice_Hub::is_page();
         $dashboard = GS_Dashboard::enabled() && GS_Dashboard::is_page();
         $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
             || GS_Pages::is_studio_request() || GS_Lab::current_service() || GS_Landing::current()
-            || GS_Songs::is_page() || GS_Course::is_page() || GS_404::is_page() || GS_Slides_Page::is_any() || $blog || $api || $dashboard || $partner;
+            || GS_Songs::is_page() || GS_Course::is_page() || GS_404::is_page() || GS_Slides_Page::is_any() || $blog || $api || $dashboard || $partner || $voicehub;
         if ($ours) {
             // Перекрашиваем шапку и подвал темы под тёмные страницы плагина.
             wp_enqueue_style('genius-sounds-chrome', GS_PLUGIN_URL . 'assets/css/chrome.css', array(), GS_VERSION);
@@ -253,6 +256,15 @@ class Genius_Sounds_Plugin {
                 'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),
                 'nonce'   => wp_create_nonce('wp_rest'),
             ));
+        }
+
+        if ($voicehub) {
+            // Блок дописывается к странице чужого плагина, поэтому стили ему
+            // нужны свои: там, где он выводится, наши таблицы и карточки
+            // иначе остаются без оформления.
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
+            wp_enqueue_style('genius-sounds-api', GS_PLUGIN_URL . 'assets/css/api.css', array('genius-sounds-studio'), GS_VERSION);
         }
 
         if ($dashboard) {
