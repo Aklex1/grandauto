@@ -140,9 +140,13 @@ def style(accent, accent2):
 .gaL__tgbT small{{color:var(--muted);font-size:13.5px}}
 .gaL__tgbGo{{color:var(--acc);font-weight:700;white-space:nowrap}}
 @media (max-width:820px){{.gaL__demo,.gaL__why{{grid-template-columns:1fr}}}}
-/* оверрайд поверх темы: текст в поле чата должен быть виден */
-.ga-chat .ga-chat__input{{color:#eef2fb!important;-webkit-text-fill-color:#eef2fb!important;background:#0f172a!important}}
-.ga-chat .ga-chat__input::placeholder{{color:#64748b!important;-webkit-text-fill-color:#64748b!important}}
+/* оверрайд поверх темы: текст в полях ввода должен быть виден */
+.ga-chat .ga-chat__input,.ga-supform__msg,.ga-supform__contact{{color:#eef2fb!important;
+  -webkit-text-fill-color:#eef2fb!important;background:#0f172a!important;caret-color:#eef2fb}}
+.ga-chat .ga-chat__input::placeholder,.ga-supform__msg::placeholder,.ga-supform__contact::placeholder{{
+  color:#64748b!important;-webkit-text-fill-color:#64748b!important}}
+.ga-supform__msg::spelling-error,.ga-supform__contact::spelling-error,
+.ga-chat__input::spelling-error{{color:#eef2fb;-webkit-text-fill-color:#eef2fb}}
 .ga-chat .ga-msg--user{{color:#0b1220!important}}
 @media (prefers-reduced-motion:reduce){{.gaL__btn,.gaL__feat{{transition:none}}}}
 """)

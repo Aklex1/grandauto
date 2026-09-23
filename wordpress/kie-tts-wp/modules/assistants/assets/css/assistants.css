@@ -73,8 +73,12 @@
 .ga-supmodal__lead{margin:0 0 16px;font-size:13.5px;color:#94a3b8}
 .ga-supform{display:flex;flex-direction:column;gap:10px}
 .ga-supform__msg,.ga-supform__contact{width:100%;padding:11px 13px;border-radius:12px;background:#0f172a!important;
-  border:1px solid #1f2937;color:#eef2fb!important;-webkit-text-fill-color:#eef2fb;font:inherit;resize:vertical}
-.ga-supform__msg::placeholder,.ga-supform__contact::placeholder{color:#64748b!important;-webkit-text-fill-color:#64748b}
+  border:1px solid #1f2937;color:#eef2fb!important;-webkit-text-fill-color:#eef2fb!important;
+  caret-color:#eef2fb;font:inherit;resize:vertical}
+.ga-supform__msg::placeholder,.ga-supform__contact::placeholder{color:#64748b!important;-webkit-text-fill-color:#64748b!important}
+/* проверка орфографии не должна перекрашивать текст в тёмный */
+.ga-supform__msg::spelling-error,.ga-supform__contact::spelling-error{color:#eef2fb;-webkit-text-fill-color:#eef2fb}
+.ga-supform__msg::grammar-error,.ga-supform__contact::grammar-error{color:#eef2fb;-webkit-text-fill-color:#eef2fb}
 .ga-supform__msg:focus,.ga-supform__contact:focus{outline:none;border-color:var(--ga-accent)}
 .ga-supform__send{padding:12px 18px;border-radius:12px;border:none;background:var(--ga-accent);color:#0b1220;
   font:inherit;font-weight:700;cursor:pointer}
@@ -122,8 +126,10 @@
 
 .ga-chat__form{display:flex;gap:10px;align-items:flex-end}
 .ga-chat__input{flex:1;min-height:52px;padding:12px 14px;border-radius:14px;background:#0f172a!important;
-  border:1px solid #1f2937;color:#eef2fb!important;font:inherit;resize:vertical;-webkit-text-fill-color:#eef2fb}
-.ga-chat__input::placeholder{color:#64748b!important;-webkit-text-fill-color:#64748b}
+  border:1px solid #1f2937;color:#eef2fb!important;font:inherit;resize:vertical;
+  -webkit-text-fill-color:#eef2fb!important;caret-color:#eef2fb}
+.ga-chat__input::placeholder{color:#64748b!important;-webkit-text-fill-color:#64748b!important}
+.ga-chat__input::spelling-error,.ga-chat__input::grammar-error{color:#eef2fb;-webkit-text-fill-color:#eef2fb}
 .ga-chat__input:focus{outline:none;border-color:var(--ga-accent)}
 /* кнопка загрузки файла */
 .ga-chat__attach{flex-shrink:0;width:52px;height:52px;display:grid;place-items:center;border-radius:14px;
