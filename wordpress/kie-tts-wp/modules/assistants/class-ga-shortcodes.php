@@ -363,7 +363,7 @@ class GA_Shortcodes
                 . '<a class="ga-support__ask" href="' . esc_url(home_url('/tts-login/')) . '">Страница входа</a></p>';
         }
         echo '</div>';
-        return (string) ob_get_clean();
+        return '<div class="ga-kbwrap">' . (string) ob_get_clean() . '</div>';
     }
 
     public static function bind_telegram($atts = []): string
@@ -408,7 +408,7 @@ class GA_Shortcodes
             }
         }
         echo '</div>';
-        return (string) ob_get_clean();
+        return '<div class="ga-kbwrap">' . (string) ob_get_clean() . '</div>';
     }
 
     public static function knowledge_base($atts = []): string
@@ -534,7 +534,7 @@ class GA_Shortcodes
             <?php endif; ?>
           </div>
         <?php endif;
-        return (string) ob_get_clean();
+        return '<div class="ga-kbwrap">' . (string) ob_get_clean() . '</div>';
     }
 
     private static function bot_username(int $assistant_id): string
