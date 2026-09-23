@@ -28,6 +28,7 @@ class GS_Lab {
     const MAX_IMAGE_BYTES = 10485760;  // 10 МБ
     const MAX_AUDIO_BYTES = 10485760;  // 10 МБ (audio-isolation), для вокала — 20 МБ
     const MAX_AUDIO_BYTES_VOCAL = 20971520;
+    const MAX_VIDEO_BYTES = 62914560;  // 60 МБ
 
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
@@ -576,6 +577,49 @@ class GS_Lab {
                 ),
             ),
 
+            'vupscale' => array(
+                'id'          => 'vupscale',
+                'slug'        => 'uluchshit-kachestvo-video',
+                'page_option' => 'gs_lab_page_vupscale',
+                'menu'        => 'Улучшить видео',
+                'nav'         => 'Улучшить качество видео',
+                'h1'          => 'Улучшить качество видео нейросетью: убрать шум и вернуть резкость',
+                'seo_title'   => 'Улучшить качество видео онлайн — повысить резкость нейросетью',
+                'seo_desc'    => 'Улучшите качество видео онлайн: нейросеть уберёт шум и цифровое мыло, вернёт резкость мелким деталям. Загрузите ролик до минуты и скачайте результат в MP4.',
+                'lead'        => 'Загрузите ролик — нейросеть уберёт шум и цифровое «мыло» от пережатия, вернёт резкость мелким деталям. Подходит для старых записей, съёмки в темноте и видео, которое испортил мессенджер.',
+                'badge'       => 'Реставрация видео',
+                'cost_option' => 'gs_lab_cost_vupscale',
+                'cost'        => 90,
+                'pricing'     => array('unit' => 'second', 'rate' => 6, 'min' => 90, 'max_seconds' => 60),
+                'available'   => true,
+                'inputs'      => array('video'),
+                'accept'      => array(
+                    'video' => 'video/mp4,video/webm,video/quicktime,video/x-m4v',
+                ),
+                'prompt'      => false,
+                'fields'      => array(),
+                'result_kind' => 'video',
+                'poll_seconds'=> 1800,
+                'steps'       => array(
+                    'Загрузите ролик — до минуты и до 60 МБ.',
+                    'Через несколько минут скачайте готовый MP4.',
+                ),
+                'faq'         => array(
+                    array('Что именно улучшается?',
+                          'Убирается шум и зернистость, снимается компрессионное «мыло» от пережатия, возвращается резкость краям и мелким деталям — лицам, тексту на вывесках, фактуре ткани. Размер кадра остаётся прежним: сервис не растягивает видео, а чистит то, что в нём есть.'),
+                    array('Можно ли сделать из плохого видео хорошее?',
+                          'Нет. Модель восстанавливает то, что в записи есть, но размыто: она сопоставляет соседние кадры и достраивает детали по ним. Если объект не попал в кадр или сцена засвечена, взять эти детали неоткуда.'),
+                    array('Сколько это стоит?',
+                          'Шесть рублей за секунду видео, минимум девяносто рублей. Полминуты — 180 ₽, минута — 360 ₽. Цена считается по настоящей длительности файла и показывается до запуска.'),
+                    array('Почему ограничение в минуту?',
+                          'Обработка видео дорогая: она идёт покадрово, и минута ролика — это полторы тысячи картинок. Ограничение защищает от случайного списания крупной суммы за часовую запись. Для длинного видео нарежьте нужный фрагмент.'),
+                    array('Какие форматы принимаются?',
+                          'MP4, WebM, MOV и M4V, до 60 МБ. Со звуком или без — дорожка сохраняется как есть, её никто не трогает.'),
+                    array('Сколько ждать?',
+                          'Примерно столько же, сколько длится ролик, плюс минута. Тридцатисекундное видео обычно готово за полторы-две минуты.'),
+                ),
+            ),
+
             'denoise' => array(
                 'id'          => 'denoise',
                 'slug'        => 'ubrat-shum',
@@ -930,9 +974,12 @@ class GS_Lab {
 
         $check = wp_check_filetype_and_ext($file['tmp_name'], (string) $file['name']);
         $ext = $check['ext'] ? $check['ext'] : strtolower((string) pathinfo($file['name'], PATHINFO_EXTENSION));
-        $allowed = $kind === 'image'
-            ? array('jpg', 'jpeg', 'png')
-            : array('mp3', 'wav', 'aac', 'm4a', 'mp4', 'ogg', 'oga', 'webm');
+        $by_kind = array(
+            'image' => array('jpg', 'jpeg', 'png'),
+            'video' => array('mp4', 'webm', 'mov', 'm4v'),
+            'audio' => array('mp3', 'wav', 'aac', 'm4a', 'mp4', 'ogg', 'oga', 'webm'),
+        );
+        $allowed = isset($by_kind[$kind]) ? $by_kind[$kind] : $by_kind['audio'];
         if (!in_array($ext, $allowed, true)) {
             return $fail('Неподдерживаемый формат: ' . $ext);
         }
@@ -1189,6 +1236,22 @@ class GS_Lab {
                 'ratio'  => $ratio,
             ), array('callback' => $callback));
             return array('ok' => !empty($res['ok']), 'task_id' => (string) $res['task'], 'message' => (string) $res['message']);
+        }
+
+        if ($id === 'vupscale') {
+            // Множитель кадра не передаём. Поставщик его принимает — и «2»,
+            // и «4» проходят проверку, — но размер кадра от этого не
+            // меняется: проверено на своём файле, 464x640 на входе и
+            // 464x640 на выходе. Обещать увеличение, которого нет, нельзя,
+            // поэтому сервис делает то, что делает на самом деле: чистит
+            // запись и возвращает резкость.
+            $res = self::post_json(self::API_JOBS, array(
+                'model' => 'topaz/video-upscale',
+                'input' => array('video_url' => (string) $params['video_url']),
+                'callBackUrl' => $callback,
+            ));
+            $task = $res['ok'] ? (string) ($res['body']['data']['taskId'] ?? '') : '';
+            return array('ok' => $res['ok'] && $task !== '', 'task_id' => $task, 'message' => $res['message']);
         }
 
         if ($id === 'avatar') {

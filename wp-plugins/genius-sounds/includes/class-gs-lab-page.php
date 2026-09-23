@@ -100,8 +100,15 @@ class GS_Lab_Page {
                     <?php foreach ($service['inputs'] as $input): ?>
                         <div class="gs-field">
                             <?php $optional = in_array($input, (array) (isset($service['input_optional']) ? $service['input_optional'] : array()), true); ?>
+                            <?php
+                            // Подпись и пояснение — по виду файла. Раньше здесь
+                            // стояло «фотография или аудиофайл»: третьего вида не
+                            // было, и видео представилось бы аудиофайлом.
+                            $labels = array('image' => 'Фотография', 'audio' => 'Аудиофайл', 'video' => 'Видеофайл');
+                            $label = isset($labels[$input]) ? $labels[$input] : 'Файл';
+                            ?>
                             <label class="gs-label" for="gs-lab-<?php echo esc_attr($input); ?>">
-                                <?php echo $input === 'image' ? 'Фотография' : 'Аудиофайл'; ?><?php echo $optional ? ' (необязательно)' : ''; ?>
+                                <?php echo esc_html($label); ?><?php echo $optional ? ' (необязательно)' : ''; ?>
                             </label>
                             <input id="gs-lab-<?php echo esc_attr($input); ?>" class="gs-input gs-file" type="file"
                                    data-kind="<?php echo esc_attr($input); ?>"
@@ -110,6 +117,16 @@ class GS_Lab_Page {
                                 <?php
                                 if ($input === 'image') {
                                     echo 'JPEG или PNG, до 10 МБ. Лицо анфас, крупно.';
+                                } elseif ($input === 'video') {
+                                    $limit = GS_Lab::max_seconds($service['id']);
+                                    echo 'MP4, WebM, MOV или M4V. До '
+                                        . (int) round(GS_Lab::MAX_VIDEO_BYTES / 1048576) . ' МБ';
+                                    if ($limit > 0) {
+                                        echo $limit < 120
+                                            ? ' и ' . (int) $limit . ' секунд'
+                                            : ' и ' . (int) round($limit / 60) . ' минут';
+                                    }
+                                    echo '.';
                                 } else {
                                     $limit = GS_Lab::max_seconds($service['id']);
                                     $formats = $service['id'] === 'stt'

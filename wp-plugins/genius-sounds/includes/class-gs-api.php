@@ -154,6 +154,15 @@ class GS_Api {
                 'fields' => array('style', 'ratio'),
                 'result' => 'image',
             ),
+            'video-upscale' => array(
+                'id'     => 'video-upscale',
+                'engine' => 'lab',
+                'lab_id' => 'vupscale',
+                'title'  => 'Улучшить качество видео',
+                'about'  => 'Чистка шума и возврат резкости в записи; размер кадра сохраняется.',
+                'input'  => array('video_url' => 'required'),
+                'result' => 'video',
+            ),
             'stt' => array(
                 'id'     => 'stt',
                 'engine' => 'lab',
@@ -605,7 +614,7 @@ class GS_Api {
         foreach ($service['input'] as $field => $rule) {
             $value = isset($params[$field]) ? $params[$field] : '';
 
-            if ($field === 'image_url' || $field === 'audio_url') {
+            if (in_array($field, array('image_url', 'audio_url', 'video_url'), true)) {
                 $url = esc_url_raw((string) $value);
                 if ($url === '') {
                     if ($rule === 'required') {
@@ -640,10 +649,12 @@ class GS_Api {
             }
         }
 
-        // Цена аватара, минусовки и очистки зависит от длины записи —
-        // измеряем её до списания, даже если файл лежит на чужом сервере.
-        if (isset($input['audio_url']) && $service['engine'] === 'lab') {
-            $input['seconds'] = self::remote_duration($input['audio_url']);
+        // Цена аватара, минусовки, очистки и улучшения видео зависит от
+        // длины записи — измеряем её до списания, даже если файл лежит на
+        // чужом сервере.
+        $timed = isset($input['audio_url']) ? 'audio_url' : (isset($input['video_url']) ? 'video_url' : '');
+        if ($timed !== '' && $service['engine'] === 'lab') {
+            $input['seconds'] = self::remote_duration($input[$timed]);
             $limit = GS_Lab::max_seconds($service['lab_id']);
             if ($limit > 0 && $input['seconds'] > $limit + 1) {
                 return new WP_Error(

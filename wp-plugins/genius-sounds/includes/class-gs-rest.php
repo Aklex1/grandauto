@@ -827,7 +827,7 @@ class GS_Rest {
 
     public static function handle_lab_upload($request) {
         $kind = sanitize_key((string) $request->get_param('kind'));
-        if (!in_array($kind, array('image', 'audio'), true)) {
+        if (!in_array($kind, array('image', 'audio', 'video'), true)) {
             return new WP_Error('gs_bad_kind', 'Неизвестный тип файла', array('status' => 400));
         }
         $service_id = sanitize_key((string) $request->get_param('service'));
@@ -841,6 +841,8 @@ class GS_Rest {
         $max = GS_Lab::MAX_IMAGE_BYTES;
         if ($kind === 'audio') {
             $max = $service_id === 'vocal' ? GS_Lab::MAX_AUDIO_BYTES_VOCAL : GS_Lab::MAX_AUDIO_BYTES;
+        } elseif ($kind === 'video') {
+            $max = GS_Lab::MAX_VIDEO_BYTES;
         }
 
         $stored = GS_Lab::store_upload($file, $kind, $max);
@@ -852,7 +854,9 @@ class GS_Rest {
         // и показываем пользователю до запуска обработки.
         $seconds = 0.0;
         $price = GS_Lab::get_cost($service_id);
-        if ($kind === 'audio') {
+        // Видео считается по тем же правилам, что и запись: цена зависит от
+        // длительности, а длинный файл разоряет человека на одном нажатии.
+        if ($kind === 'audio' || $kind === 'video') {
             $seconds = GS_Lab::media_duration(GS_Lab::local_path($stored['url']));
             $limit = GS_Lab::max_seconds($service_id);
             if ($limit > 0 && $seconds > $limit + 1) {
@@ -862,7 +866,9 @@ class GS_Rest {
                 }
                 return new WP_Error(
                     'gs_too_long',
-                    sprintf('Запись длиннее %d мин — загрузите файл покороче', (int) ceil($limit / 60)),
+                    $limit < 120
+                        ? sprintf('Ролик длиннее %d секунд — вырежьте фрагмент покороче', $limit)
+                        : sprintf('Запись длиннее %d мин — загрузите файл покороче', (int) ceil($limit / 60)),
                     array('status' => 400)
                 );
             }
