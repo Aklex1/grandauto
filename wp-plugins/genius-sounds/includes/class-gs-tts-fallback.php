@@ -130,23 +130,53 @@ class GS_Tts_Fallback {
             return $response;
         }
 
+        if (self::retry($task_id) === '') {
+            return $response;
+        }
+
+        $body['status'] = 'pending';
+        $body['fallback'] = true;
+        $response->set_data($body);
+        return $response;
+    }
+
+    /**
+     * Повторить упавшую озвучку запасным голосом.
+     *
+     * Вызывается из двух мест: из кабинета (фильтр на маршрут статуса) и из
+     * нашего публичного API. Раньше дублёр жил только внутри фильтра, и
+     * ключи, которые ходят в API напрямую, получали отказ вместо звука.
+     *
+     * @return string идентификатор задачи-дублёра или пустая строка
+     */
+    public static function retry($task_id) {
+        if (!self::enabled()) {
+            return '';
+        }
+        $task_id = (string) $task_id;
+        $mapped = (string) get_option(self::MAP_PREFIX . $task_id, '');
+        if ($mapped !== '') {
+            return $mapped;
+        }
+
         $generation = class_exists('KIE_TTS_DB') ? KIE_TTS_DB::get_generation_by_task_id($task_id) : null;
         if (!is_array($generation)) {
-            return $response;
+            return '';
         }
         // Дублировать запасную задачу запасной же не надо.
         if (strpos((string) $generation['voice'], 'gemini') !== false) {
-            return $response;
+            return '';
         }
 
         $text = (string) $generation['text'];
         if (trim($text) === '') {
-            return $response;
+            return '';
         }
 
         $created = self::create_task($text, (string) $generation['voice']);
         if (empty($created['ok'])) {
-            return $response;
+            self::log('дублёр не поставился для ' . $task_id . ': ' . (string) $created['message']);
+            return '';
         }
 
         $cost = (float) $generation['cost'];
@@ -157,10 +187,12 @@ class GS_Tts_Fallback {
         update_option(self::MAP_PREFIX . $task_id, $created['task_id'], false);
         self::log('переозвучка после отказа: ' . $task_id . ' → ' . $created['task_id']);
 
-        $body['status'] = 'pending';
-        $body['fallback'] = true;
-        $response->set_data($body);
-        return $response;
+        return (string) $created['task_id'];
+    }
+
+    /** Кому передали работу вместо упавшей задачи. */
+    public static function substitute($task_id) {
+        return (string) get_option(self::MAP_PREFIX . (string) $task_id, '');
     }
 
     /**

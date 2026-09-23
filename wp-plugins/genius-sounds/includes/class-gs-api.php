@@ -922,6 +922,14 @@ class GS_Api {
         }
 
         if ($state['status'] === 'failed') {
+            // Озвучка — основной платный сервис, и отказ поставщика по ней
+            // случается регулярно. Прежде чем признать неудачу, отдаём текст
+            // запасному голосу: у кабинета такая попытка есть давно, а ключи
+            // API до сих пор получали отказ на ровном месте.
+            if ($engine === 'tts' && class_exists('GS_Tts_Fallback')
+                && GS_Tts_Fallback::retry($task_id) !== '') {
+                return array('status' => 'pending', 'files' => array(), 'message' => '');
+            }
             if ($engine !== 'tts') {
                 GS_SFX::refund((int) $task['user_id'], (float) $task['cost']);
             }
@@ -1043,6 +1051,14 @@ class GS_Api {
         $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'message' => '');
         if (!class_exists('KIE_TTS_DB')) {
             return $out;
+        }
+        // Если основной голос упал и работу передали запасному, состояние
+        // лежит уже в строке дублёра — ключ снаружи об этом знать не должен.
+        if (class_exists('GS_Tts_Fallback')) {
+            $substitute = GS_Tts_Fallback::substitute($task_id);
+            if ($substitute !== '') {
+                $task_id = $substitute;
+            }
         }
         $row = KIE_TTS_DB::get_generation_by_task_id($task_id);
         if (!is_array($row)) {
