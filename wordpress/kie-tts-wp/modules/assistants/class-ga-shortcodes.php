@@ -17,6 +17,18 @@ class GA_Shortcodes
     {
         add_shortcode('genius_assistants_gallery', [self::class, 'gallery']);
         add_shortcode('genius_assistant', [self::class, 'widget']);
+        add_shortcode('genius_knowledge_base', [self::class, 'knowledge_base']);
+    }
+
+    private static function kb_assets(): void
+    {
+        wp_enqueue_style('ga-assistants', GA_URL . '/assets/css/assistants.css', [], GA_VERSION);
+        wp_enqueue_script('kie-tts-auth-modal');
+        wp_enqueue_script('ga-kb', GA_URL . '/assets/js/kb.js', [], GA_VERSION, true);
+        wp_localize_script('ga-kb', 'gaKB', [
+            'rest' => esc_url_raw(rest_url(GA_REST_NS . '/')),
+            'nonce' => wp_create_nonce('wp_rest'),
+        ]);
     }
 
     private static function assets(): void
@@ -235,6 +247,71 @@ class GA_Shortcodes
           <?php endif; ?>
         </div>
         <?php
+        return (string) ob_get_clean();
+    }
+
+    public static function knowledge_base($atts = []): string
+    {
+        self::kb_assets();
+        $uid = get_current_user_id();
+        ob_start();
+        if (!$uid): ?>
+          <div class="ga-kb ga-kb--guest">
+            <h3 class="ga-kb__title">Личный кабинет</h3>
+            <p class="ga-kb__lead">Войдите, чтобы вести свою базу знаний и обучить консультанта
+               отвечать по вашим услугам и ценам.
+               <button type="button" class="ga-link kie-auth-open-trigger">Войти</button></p>
+          </div>
+        <?php else:
+          $can = GA_Billing::can_manage_kb($uid);
+          $kb = GA_KB::get($uid);
+          $balance = GA_Billing::balance($uid); ?>
+          <div class="ga-kb" data-can="<?php echo $can ? '1' : '0'; ?>">
+            <div class="ga-kb__head">
+              <h3 class="ga-kb__title">Моя база знаний</h3>
+              <span class="ga-kb__bal">Баланс: <?php echo esc_html(self::money($balance)); ?>&nbsp;₽</span>
+            </div>
+
+            <?php if (!$can): ?>
+              <div class="ga-kb__lock">
+                <p>Загрузка базы знаний доступна после пополнения баланса. Пополните счёт —
+                   и обучите консультанта отвечать по вашим услугам, ценам, срокам и условиям.</p>
+                <a class="ga-kb__topup" href="<?php echo esc_url(home_url('/ai-pomoshnik/dlya-biznesa/')); ?>">
+                  Пополнить баланс</a>
+              </div>
+            <?php else: ?>
+              <p class="ga-kb__lead">Заполните базу — консультант будет отвечать строго по ней:
+                 услуги, цены, сроки, условия, частые вопросы. Вставьте текст или загрузите документ.</p>
+              <form class="ga-kbform">
+                <input type="text" class="ga-kbform__company" maxlength="120"
+                       placeholder="Название компании (необязательно)"
+                       value="<?php echo esc_attr($kb['company']); ?>">
+                <textarea class="ga-kbform__content" rows="12"
+                          placeholder="Например:&#10;Услуги и цены: …&#10;Сроки: …&#10;Условия и гарантии: …&#10;Частые вопросы: …"><?php
+                  echo esc_textarea($kb['content']); ?></textarea>
+                <div class="ga-kbform__row">
+                  <label class="ga-kbform__file" title="Загрузить txt или docx — текст добавится в базу">
+                    <input type="file" accept=".txt,.csv,.md,.docx" hidden>
+                    <span aria-hidden="true">📎</span> Загрузить документ
+                  </label>
+                  <span class="ga-kbform__count"></span>
+                  <button type="submit" class="ga-kbform__save">Сохранить базу</button>
+                </div>
+                <p class="ga-kbform__status" hidden role="status"></p>
+              </form>
+            <?php endif; ?>
+
+            <div class="ga-kb__cta">
+              <div class="ga-kb__ctaText">
+                <strong>🚀 Подключить своего бота с базой и брендингом</strong>
+                <span>Отдельный Telegram-бот и виджет на сайте под вашим брендом, отвечающий вашим
+                   клиентам по вашей базе знаний. Оставьте заявку — подберём и настроим под вас.</span>
+              </div>
+              <button type="button" class="ga-kb__ctaBtn">Оставить заявку</button>
+              <p class="ga-kb__ctaStatus" hidden role="status"></p>
+            </div>
+          </div>
+        <?php endif;
         return (string) ob_get_clean();
     }
 

@@ -203,6 +203,8 @@ class GA_Admin
             sanitize_text_field(wp_unslash($_POST['model'] ?? '')) ?: 'gemini-3-8-flash-openai', false);
         update_option('ga_topup_amounts',
             sanitize_text_field(wp_unslash($_POST['topup_amounts'] ?? '')) ?: '200,300,400,500', false);
+        update_option('ga_kb_assistants',
+            sanitize_text_field(wp_unslash($_POST['kb_assistants'] ?? '')) ?: 'biznes', false);
         // Техподдержка: получатель, токен уведомительного бота, chat_id.
         update_option('ga_support_recipient',
             sanitize_text_field(wp_unslash($_POST['support_recipient'] ?? '')), false);
@@ -549,6 +551,12 @@ class GA_Admin
                 <p class="description">Через запятую. Кнопки в плашке пополнения виджета.
                    Оплата идёт по тому же маршруту ЮMoney, что и микросервисы
                    (<code>/wp-json/tts/v1/topup</code>), на общий баланс.</p></td></tr>
+            <tr><th><label for="ga-set-kb">Личная база — для ассистентов</label></th>
+              <td><input id="ga-set-kb" name="kb_assistants" class="regular-text"
+                         value="<?php echo esc_attr(get_option('ga_kb_assistants', 'biznes')); ?>">
+                <p class="description">Слаги через запятую. Для этих ассистентов личная база знаний
+                   клиента (кабинет) подставляется в его диалоги. Кабинет — шорткод
+                   <code>[genius_knowledge_base]</code> на любой странице.</p></td></tr>
           </table>
 
           <h2 class="title">Техподдержка (кнопки в виджете)</h2>

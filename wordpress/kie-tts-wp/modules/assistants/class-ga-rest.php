@@ -47,6 +47,82 @@ class GA_Rest
             'permission_callback' => static fn() => is_user_logged_in(),
             'callback' => [self::class, 'support'],
         ]);
+
+        // Личный кабинет: база знаний клиента.
+        register_rest_route(GA_REST_NS, '/kb', [
+            [
+                'methods' => 'GET',
+                'permission_callback' => static fn() => is_user_logged_in(),
+                'callback' => [self::class, 'kb_get'],
+            ],
+            [
+                'methods' => 'POST',
+                'permission_callback' => static fn() => is_user_logged_in(),
+                'callback' => [self::class, 'kb_save'],
+            ],
+        ]);
+        register_rest_route(GA_REST_NS, '/kb/extract', [
+            'methods' => 'POST',
+            'permission_callback' => static fn() => is_user_logged_in(),
+            'callback' => [self::class, 'kb_extract'],
+        ]);
+    }
+
+    // ------------------------------------------------------------------ база знаний
+
+    public static function kb_get(WP_REST_Request $request)
+    {
+        $uid = get_current_user_id();
+        $kb = GA_KB::get($uid);
+        return [
+            'ok' => true,
+            'can_manage' => GA_Billing::can_manage_kb($uid),
+            'company' => $kb['company'],
+            'content' => $kb['content'],
+            'max' => GA_KB::MAX,
+            'balance' => GA_Billing::balance($uid),
+        ];
+    }
+
+    public static function kb_save(WP_REST_Request $request)
+    {
+        $uid = get_current_user_id();
+        if (!GA_Billing::can_manage_kb($uid)) {
+            return new WP_REST_Response(['ok' => false,
+                'error' => 'База знаний доступна после пополнения баланса.'], 403);
+        }
+        GA_KB::save($uid, (string) $request->get_param('company'),
+            (string) $request->get_param('content'));
+        return ['ok' => true, 'message' => 'База знаний сохранена.',
+                'balance' => GA_Billing::balance($uid)];
+    }
+
+    public static function kb_extract(WP_REST_Request $request)
+    {
+        $uid = get_current_user_id();
+        if (!GA_Billing::can_manage_kb($uid)) {
+            return new WP_REST_Response(['ok' => false,
+                'error' => 'Доступно после пополнения баланса.'], 403);
+        }
+        $file = $request->get_param('file');
+        if (!is_array($file) || empty($file['data'])) {
+            return new WP_REST_Response(['ok' => false, 'error' => 'Файл не получен.'], 400);
+        }
+        $raw = base64_decode((string) $file['data'], true);
+        if ($raw === false || $raw === '') {
+            return new WP_REST_Response(['ok' => false, 'error' => 'Файл не удалось прочитать.'], 400);
+        }
+        if (strlen($raw) > 8 * 1024 * 1024) {
+            return new WP_REST_Response(['ok' => false, 'error' => 'Файл больше 8 МБ.'], 400);
+        }
+        $text = GA_Chat::extract_upload($raw,
+            sanitize_text_field((string) ($file['mime'] ?? '')),
+            sanitize_file_name((string) ($file['name'] ?? 'file')));
+        if ($text === null) {
+            return new WP_REST_Response(['ok' => false,
+                'error' => 'Формат не поддерживается: пришлите txt или docx.'], 400);
+        }
+        return ['ok' => true, 'text' => mb_substr($text, 0, GA_KB::MAX)];
     }
 
     /** Общий секрет ботов. Генерируется один раз, показывается в настройках. */

@@ -50,6 +50,21 @@ class GA_Billing
         return $user_id > 0 && self::balance($user_id) >= self::price_per_file();
     }
 
+    /**
+     * Может ли пользователь вести свою базу знаний. Функция для оплативших:
+     * нужен вход и положительный баланс (проще говоря — уже платил). Админ — всегда.
+     */
+    public static function can_manage_kb(int $user_id): bool
+    {
+        if (!$user_id) {
+            return false;
+        }
+        if (user_can($user_id, 'manage_options')) {
+            return true;
+        }
+        return self::balance($user_id) > 0;
+    }
+
     /** Баланс пользователя в рублях. */
     public static function balance(int $user_id): float
     {

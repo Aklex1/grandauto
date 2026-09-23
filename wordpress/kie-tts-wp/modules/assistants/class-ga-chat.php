@@ -36,7 +36,7 @@ class GA_Chat
             return $gate;
         }
 
-        $messages = self::build_context($assistant, (int) $thread['id'], $text);
+        $messages = self::build_context($assistant, (int) $thread['id'], $text, $user_id);
         $reply = GA_Kie::chat((string) $assistant['chat_model'], $messages,
             (float) $assistant['temperature']);
 
@@ -113,7 +113,7 @@ class GA_Chat
         }
 
         $thread = GA_Store::thread((int) $assistant['id'], 'web', $external_id, ['user_id' => $user_id]);
-        $system = self::build_system($assistant);
+        $system = self::build_system($assistant, $user_id);
         $messages = [['role' => 'system', 'content' => $system]];
         foreach (GA_Store::history((int) $thread['id'], (int) $assistant['history_depth'] ?: 12) as $row) {
             $messages[] = ['role' => $row['role'], 'content' => (string) $row['content']];
@@ -188,15 +188,23 @@ class GA_Chat
         return null;
     }
 
-    /** Системный промпт + база знаний + дата (общий для текстового и файлового пути). */
-    private static function build_system(array $assistant): string
+    /** Системный промпт + база знаний ассистента + личная база клиента + дата. */
+    private static function build_system(array $assistant, int $user_id = 0): string
     {
         $system = (string) $assistant['system_prompt'];
         $knowledge = trim((string) ($assistant['knowledge'] ?? ''));
         if ($knowledge !== '') {
             $system .= "\n\nБАЗА ЗНАНИЙ\n" . $knowledge;
         }
+        // Личная база оплатившего клиента (напр. для бизнес-консультанта).
+        $system .= GA_KB::for_prompt($user_id, $assistant);
         return $system . "\n\nСегодня " . date_i18n('j F Y') . '.';
+    }
+
+    /** Публичная обёртка извлечения текста из документа — для кабинета базы знаний. */
+    public static function extract_upload(string $raw, string $mime, string $name): ?string
+    {
+        return self::extract_text($raw, $mime, $name);
     }
 
     /** Сколько бесплатных сообщений в сутки положено этому собеседнику. */
@@ -252,9 +260,10 @@ class GA_Chat
     }
 
     /** Системный промпт + база знаний + хвост истории + новая реплика. */
-    private static function build_context(array $assistant, int $thread_id, string $text): array
+    private static function build_context(array $assistant, int $thread_id, string $text,
+                                         int $user_id = 0): array
     {
-        $messages = [['role' => 'system', 'content' => self::build_system($assistant)]];
+        $messages = [['role' => 'system', 'content' => self::build_system($assistant, $user_id)]];
         foreach (GA_Store::history($thread_id, (int) $assistant['history_depth'] ?: 12) as $row) {
             $messages[] = ['role' => $row['role'], 'content' => (string) $row['content']];
         }

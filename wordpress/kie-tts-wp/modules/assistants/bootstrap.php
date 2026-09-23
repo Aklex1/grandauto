@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GA_VERSION', '1.5.1');
+define('GA_VERSION', '1.6.0');
 define('GA_DIR', __DIR__);
 define('GA_URL', rtrim(plugins_url('', __FILE__), '/'));
 define('GA_REST_NS', 'assistants/v1');
@@ -25,6 +25,7 @@ define('GA_REST_NS', 'assistants/v1');
 require_once GA_DIR . '/class-ga-presets.php';
 require_once GA_DIR . '/class-ga-store.php';
 require_once GA_DIR . '/class-ga-billing.php';
+require_once GA_DIR . '/class-ga-kb.php';
 require_once GA_DIR . '/class-ga-kie.php';
 require_once GA_DIR . '/class-ga-chat.php';
 require_once GA_DIR . '/class-ga-telegram.php';
