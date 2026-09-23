@@ -226,6 +226,77 @@
       });
     }
 
+    // ---- Форма техподдержки (модалка) → уведомление владельцу в Telegram ----
+    var supModal = root.querySelector('.ga-supmodal');
+    if (supModal) {
+      var supForm = supModal.querySelector('.ga-supform');
+      var supMsg = supModal.querySelector('.ga-supform__msg');
+      var supContact = supModal.querySelector('.ga-supform__contact');
+      var supSend = supModal.querySelector('.ga-supform__send');
+      var supStatus = supModal.querySelector('.ga-supform__status');
+      var supBusy = false;
+
+      function supOpen() {
+        supModal.hidden = false;
+        if (supStatus) { supStatus.hidden = true; supStatus.textContent = ''; }
+        setTimeout(function () { if (supMsg) supMsg.focus(); }, 30);
+      }
+      function supClose() { supModal.hidden = true; }
+      function supState(text, kind) {
+        if (!supStatus) return;
+        supStatus.textContent = text || '';
+        supStatus.hidden = !text;
+        supStatus.className = 'ga-supform__status' + (kind ? ' is-' + kind : '');
+      }
+
+      root.querySelectorAll('[data-ga-support]').forEach(function (b) {
+        b.addEventListener('click', supOpen);
+      });
+      supModal.querySelectorAll('[data-ga-support-close]').forEach(function (b) {
+        b.addEventListener('click', supClose);
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !supModal.hidden) supClose();
+      });
+
+      if (supForm) {
+        supForm.addEventListener('submit', function (e) {
+          e.preventDefault();
+          if (supBusy) return;
+          var message = (supMsg && supMsg.value || '').trim();
+          if (message.length < 5) { supState('Опишите вопрос подробнее.', 'err'); return; }
+          supBusy = true;
+          if (supSend) supSend.disabled = true;
+          supState('Отправляем…', 'load');
+
+          fetch(gaChat.rest + 'support', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': gaChat.nonce },
+            body: JSON.stringify({
+              slug: slug,
+              message: message,
+              contact: (supContact && supContact.value || '').trim(),
+              page: location.href
+            })
+          })
+            .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+            .then(function (res) {
+              var d = res.data || {};
+              if (d.ok) {
+                supState(d.message || 'Отправлено. Спасибо!', 'ok');
+                if (supForm) supForm.reset();
+                setTimeout(supClose, 1800);
+              } else {
+                supState(d.error || 'Не удалось отправить. Попробуйте позже.', 'err');
+              }
+            })
+            .catch(function () { supState('Сеть не отвечает. Повторите попытку.', 'err'); })
+            .finally(function () { supBusy = false; if (supSend) supSend.disabled = false; });
+        });
+      }
+    }
+
     // Синхронизируем баланс и доступ к загрузке на случай устаревшего кэша страницы.
     // Nonce обязателен: без него WP REST не опознаёт куку и вернёт гостя.
     if (window.gaChat && gaChat.loggedIn && gaChat.rest) {

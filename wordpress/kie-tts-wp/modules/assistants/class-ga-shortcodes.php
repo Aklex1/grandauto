@@ -35,7 +35,6 @@ class GA_Shortcodes
             'loggedIn' => is_user_logged_in(),
             'loginUrl' => home_url('/tts-login/'),
             'topupAmounts' => self::topup_amounts(),
-            'supportUrl' => self::support_url(),
             'currency' => '₽',
         ]);
     }
@@ -52,17 +51,6 @@ class GA_Shortcodes
             }
         }
         return $out ?: [200, 300, 400, 500];
-    }
-
-    /** Куда ведёт «Техническая поддержка» / «Задать вопрос». */
-    private static function support_url(): string
-    {
-        $url = trim((string) get_option('ga_support_url', ''));
-        if ($url !== '') {
-            return $url;
-        }
-        $email = get_option('admin_email');
-        return $email ? 'mailto:' . $email . '?subject=' . rawurlencode('Техническая поддержка Genius') : '#';
     }
 
     /** Баланс в рублях без лишних нулей: 48, 48.5, 120. */
@@ -127,7 +115,6 @@ class GA_Shortcodes
         $can_upload = GA_Billing::can_upload($user_id);
         $price_file = GA_Billing::price_per_file();
         $balance = $user_id ? GA_Billing::balance($user_id) : 0.0;
-        $support_url = self::support_url();
         $topup_amounts = self::topup_amounts();
 
         ob_start(); ?>
@@ -157,10 +144,8 @@ class GA_Shortcodes
                     echo esc_html(self::money($balance)); ?>&nbsp;₽</strong>
                 </div>
                 <div class="ga-support">
-                  <a class="ga-support__main" href="<?php echo esc_url($support_url); ?>"
-                     target="_blank" rel="noopener">🛟 Техническая поддержка</a>
-                  <a class="ga-support__ask" href="<?php echo esc_url($support_url); ?>"
-                     target="_blank" rel="noopener">Задать вопрос</a>
+                  <button type="button" class="ga-support__main" data-ga-support>🛟 Техническая поддержка</button>
+                  <button type="button" class="ga-support__ask" data-ga-support>Задать вопрос</button>
                 </div>
               </div>
               <div class="ga-topup">
@@ -226,6 +211,27 @@ class GA_Shortcodes
 
           <?php if ($assistant['disclaimer']): ?>
             <p class="ga-chat__disclaimer"><?php echo esc_html($assistant['disclaimer']); ?></p>
+          <?php endif; ?>
+
+          <?php if ($user_id): ?>
+            <div class="ga-supmodal" hidden>
+              <div class="ga-supmodal__bg" data-ga-support-close></div>
+              <div class="ga-supmodal__box" role="dialog" aria-modal="true"
+                   aria-label="Техническая поддержка">
+                <button type="button" class="ga-supmodal__x" data-ga-support-close
+                        aria-label="Закрыть">✕</button>
+                <h3 class="ga-supmodal__title">Техническая поддержка</h3>
+                <p class="ga-supmodal__lead">Опишите вопрос — ответим в Telegram или на указанный контакт.</p>
+                <form class="ga-supform">
+                  <textarea class="ga-supform__msg" rows="4" maxlength="2000" required
+                            placeholder="Что случилось? Чем помочь?"></textarea>
+                  <input type="text" class="ga-supform__contact" maxlength="120"
+                         placeholder="Как ответить: @telegram, e-mail или телефон">
+                  <button type="submit" class="ga-supform__send">Отправить</button>
+                  <p class="ga-supform__status" hidden role="status"></p>
+                </form>
+              </div>
+            </div>
           <?php endif; ?>
         </div>
         <?php

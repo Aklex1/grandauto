@@ -61,7 +61,49 @@ class GA_Admin
             case 'save_settings':
                 self::save_settings();
                 break;
+            case 'regen_secret':
+                update_option('ga_bot_secret', wp_generate_password(48, false, false), false);
+                self::redirect(self::SLUG . '-settings', ['ga_msg' => 'secret']);
+                break;
+            case 'resolve_support_chat':
+                self::resolve_support_chat();
+                break;
         }
+    }
+
+    /**
+     * Определяет chat_id владельца по последнему сообщению уведомительному боту:
+     * владелец пишет боту /start, затем жмёт эту кнопку. Личному пользователю
+     * нельзя писать по @username — нужен числовой chat_id, вот мы его и берём.
+     */
+    private static function resolve_support_chat(): void
+    {
+        $token = trim((string) get_option('ga_support_bot_token', ''));
+        if ($token === '') {
+            self::redirect(self::SLUG . '-settings', ['ga_msg' => 'no_bot']);
+        }
+        $updates = GA_Telegram::api($token, 'getUpdates', ['limit' => 20]);
+        if (is_wp_error($updates) || !is_array($updates)) {
+            self::redirect(self::SLUG . '-settings', ['ga_msg' => 'tg_error']);
+        }
+        $want = ltrim(trim((string) get_option('ga_support_recipient', '')), '@');
+        $chat_id = 0;
+        foreach (array_reverse($updates) as $u) {
+            $msg = $u['message'] ?? $u['edited_message'] ?? null;
+            $chat = $msg['chat'] ?? null;
+            if (!$chat || ($chat['type'] ?? '') !== 'private') {
+                continue;
+            }
+            if ($want === '' || strcasecmp((string) ($chat['username'] ?? ''), $want) === 0) {
+                $chat_id = (int) $chat['id'];
+                break;
+            }
+        }
+        if (!$chat_id) {
+            self::redirect(self::SLUG . '-settings', ['ga_msg' => 'no_chat']);
+        }
+        update_option('ga_support_chat_id', (string) $chat_id, false);
+        self::redirect(self::SLUG . '-settings', ['ga_msg' => 'chat_ok']);
     }
 
     private static function save_assistant(): void
@@ -159,12 +201,15 @@ class GA_Admin
         update_option(GA_Billing::OPT_PRICE_FILE, max(0, (float) ($_POST['price_file'] ?? 8)), false);
         update_option(GA_Kie::OPT_MODEL,
             sanitize_text_field(wp_unslash($_POST['model'] ?? '')) ?: 'gemini-3-8-flash-openai', false);
-        update_option('ga_support_url', esc_url_raw(wp_unslash($_POST['support_url'] ?? '')), false);
         update_option('ga_topup_amounts',
             sanitize_text_field(wp_unslash($_POST['topup_amounts'] ?? '')) ?: '200,300,400,500', false);
-        if (!empty($_POST['regen_bot_secret'])) {
-            update_option('ga_bot_secret', wp_generate_password(48, false, false), false);
-        }
+        // Техподдержка: получатель, токен уведомительного бота, chat_id.
+        update_option('ga_support_recipient',
+            sanitize_text_field(wp_unslash($_POST['support_recipient'] ?? '')), false);
+        update_option('ga_support_bot_token',
+            trim(sanitize_text_field(wp_unslash($_POST['support_bot_token'] ?? ''))), false);
+        update_option('ga_support_chat_id',
+            preg_replace('/[^0-9-]/', '', (string) ($_POST['support_chat_id'] ?? '')), false);
         self::redirect(self::SLUG . '-settings', ['ga_msg' => 'saved']);
     }
 
@@ -180,6 +225,10 @@ class GA_Admin
             'bad_token' => ['error', 'Это не похоже на токен бота. Формат: 123456789:AA…'],
             'dup_token' => ['error', 'Такой токен уже добавлен.'],
             'tg_error' => ['error', 'Telegram не принял токен — подробности в колонке «Состояние».'],
+            'secret' => ['updated', 'Секрет ботов обновлён. Не забудьте вписать его в config.json сервиса ботов.'],
+            'chat_ok' => ['updated', 'chat_id получателя определён и сохранён.'],
+            'no_bot' => ['error', 'Сначала укажите токен уведомительного бота и сохраните.'],
+            'no_chat' => ['error', 'Не нашёл сообщений боту. Владелец должен написать боту /start, потом повторите.'],
         ];
         $key = sanitize_key(wp_unslash($_GET['ga_msg'] ?? ''));
         if (isset($messages[$key])) {
@@ -500,12 +549,33 @@ class GA_Admin
                 <p class="description">Через запятую. Кнопки в плашке пополнения виджета.
                    Оплата идёт по тому же маршруту ЮMoney, что и микросервисы
                    (<code>/wp-json/tts/v1/topup</code>), на общий баланс.</p></td></tr>
-            <tr><th><label for="ga-set-support">Ссылка «Техническая поддержка»</label></th>
-              <td><input id="ga-set-support" name="support_url" class="large-text"
-                         value="<?php echo esc_attr(get_option('ga_support_url', '')); ?>"
-                         placeholder="https://t.me/ваш_саппорт или mailto:help@genius-bot.ru">
-                <p class="description">Куда ведут кнопки «Техническая поддержка» и «Задать вопрос»
-                   в виджете. Пусто — письмо на <?php echo esc_html(get_option('admin_email')); ?>.</p></td></tr>
+          </table>
+
+          <h2 class="title">Техподдержка (кнопки в виджете)</h2>
+          <p class="description">
+            Кнопки «Техническая поддержка» и «Задать вопрос» открывают форму. Ответ на неё
+            уходит владельцу в Telegram через уведомительный бот. Если бот не настроен —
+            письмо на <?php echo esc_html(get_option('admin_email')); ?>.
+          </p>
+          <table class="form-table" role="presentation">
+            <tr><th><label for="ga-sup-to">Получатель (Telegram)</label></th>
+              <td><input id="ga-sup-to" name="support_recipient" class="regular-text"
+                         value="<?php echo esc_attr(get_option('ga_support_recipient', '')); ?>"
+                         placeholder="@Alex_mlr_dev">
+                <p class="description">Кому приходят вопросы. Только для справки и поиска chat_id.</p></td></tr>
+            <tr><th><label for="ga-sup-token">Токен уведомительного бота</label></th>
+              <td><input id="ga-sup-token" name="support_bot_token" class="large-text"
+                         value="<?php echo esc_attr(get_option('ga_support_bot_token', '')); ?>"
+                         placeholder="123456789:AA… (например @Genius_Boot_bot)" autocomplete="off" spellcheck="false">
+                <p class="description">Отдельный бот-уведомитель. Получатель должен один раз
+                   написать этому боту <code>/start</code>.</p></td></tr>
+            <tr><th><label for="ga-sup-chat">chat_id получателя</label></th>
+              <td><input id="ga-sup-chat" name="support_chat_id" class="regular-text"
+                         value="<?php echo esc_attr(get_option('ga_support_chat_id', '')); ?>"
+                         placeholder="напр. 123456789">
+                <p class="description">Числовой id — боту нельзя писать по @username личному человеку.
+                   Сохраните токен и получателя, попросите его написать боту <code>/start</code>,
+                   затем нажмите «Определить chat_id».</p></td></tr>
           </table>
           <?php submit_button(); ?>
         </form>
@@ -524,21 +594,23 @@ class GA_Admin
             <td>
               <code style="user-select:all"><?php echo esc_html(GA_Rest::bot_secret()); ?></code>
               <form method="post" style="display:inline;margin-left:10px">
-                <?php wp_nonce_field('ga_save_settings'); ?>
-                <input type="hidden" name="ga_action" value="save_settings">
-                <input type="hidden" name="price" value="<?php echo esc_attr(GA_Billing::price_per_message()); ?>">
-                <input type="hidden" name="price_file" value="<?php echo esc_attr(GA_Billing::price_per_file()); ?>">
-                <input type="hidden" name="guest_free" value="<?php echo (int) GA_Billing::guest_free_limit(); ?>">
-                <input type="hidden" name="model" value="<?php echo esc_attr(GA_Kie::default_model()); ?>">
-                <input type="hidden" name="support_url" value="<?php echo esc_attr(get_option('ga_support_url', '')); ?>">
-                <input type="hidden" name="topup_amounts" value="<?php echo esc_attr(get_option('ga_topup_amounts', '200,300,400,500')); ?>">
-                <input type="hidden" name="regen_bot_secret" value="1">
+                <?php wp_nonce_field('ga_regen_secret'); ?>
+                <input type="hidden" name="ga_action" value="regen_secret">
                 <button class="button" onclick="return confirm('Сгенерировать новый секрет? Старый перестанет работать — не забудьте обновить config.json ботов.')">Сменить секрет</button>
               </form>
               <p class="description">Заголовок запроса: <code>X-GA-Bot-Secret</code>.
                 Слаги ботов: <code>uchitel</code>, <code>ucheba</code>, <code>yurist</code>, <code>biznes</code>.</p>
             </td></tr>
         </table>
+
+        <p>
+          <form method="post" style="display:inline">
+            <?php wp_nonce_field('ga_resolve_support_chat'); ?>
+            <input type="hidden" name="ga_action" value="resolve_support_chat">
+            <button class="button">Определить chat_id получателя поддержки</button>
+          </form>
+          <span class="description" style="margin-left:8px">Сначала получатель пишет боту <code>/start</code>.</span>
+        </p>
 
         <h2>Как устроен баланс</h2>
         <p>

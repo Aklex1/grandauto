@@ -40,6 +40,13 @@ class GA_Rest
             'permission_callback' => [self::class, 'bot_auth'],
             'callback' => [self::class, 'bot_reply'],
         ]);
+
+        // Форма техподдержки: вопрос из виджета → уведомление владельцу в Telegram.
+        register_rest_route(GA_REST_NS, '/support', [
+            'methods' => 'POST',
+            'permission_callback' => static fn() => is_user_logged_in(),
+            'callback' => [self::class, 'support'],
+        ]);
     }
 
     /** Общий секрет ботов. Генерируется один раз, показывается в настройках. */
@@ -265,6 +272,78 @@ class GA_Rest
                     'balance' => $user_id ? GA_Billing::balance($user_id) : null,
                 ], $account);
         }
+    }
+
+    // ------------------------------------------------------------------ техподдержка
+
+    /**
+     * Вопрос из формы поддержки. Летит владельцу в Telegram через уведомительный бот;
+     * если бот не настроен или не ответил — на почту администратора. Простой антиспам:
+     * не больше 5 обращений в час на пользователя.
+     */
+    public static function support(WP_REST_Request $request)
+    {
+        $user = wp_get_current_user();
+        $uid = (int) $user->ID;
+
+        $rl_key = 'ga_support_rl_' . $uid;
+        $count = (int) get_transient($rl_key);
+        if ($count >= 5) {
+            return new WP_REST_Response(['ok' => false,
+                'error' => 'Слишком много обращений подряд. Попробуйте через час.'], 429);
+        }
+
+        $message = trim((string) $request->get_param('message'));
+        if (mb_strlen($message) < 5) {
+            return new WP_REST_Response(['ok' => false,
+                'error' => 'Опишите вопрос подробнее — хотя бы пару предложений.'], 400);
+        }
+        $message = mb_substr(sanitize_textarea_field($message), 0, 2000);
+        $contact = mb_substr(sanitize_text_field((string) $request->get_param('contact')), 0, 120);
+        $slug = sanitize_key((string) $request->get_param('slug'));
+        $assistant = GA_Store::assistant_by_slug($slug);
+        $page = esc_url_raw((string) $request->get_param('page'));
+
+        $name = $user->display_name ?: $user->user_login;
+        $tg_meta = get_user_meta($uid, 'telegram_id', true);
+
+        $text = "🆘 Вопрос в поддержку Genius\n"
+            . 'Помощник: ' . ($assistant ? $assistant['name'] : '—') . "\n"
+            . 'Пользователь: ' . $name . ' (id ' . $uid . ")\n"
+            . 'E-mail: ' . $user->user_email . "\n"
+            . ($tg_meta ? 'Telegram id: ' . $tg_meta . "\n" : '')
+            . ($contact ? 'Контакт для ответа: ' . $contact . "\n" : '')
+            . ($page ? 'Страница: ' . $page . "\n" : '')
+            . "\n" . $message;
+
+        $delivered = self::support_notify($text);
+        if (!$delivered) {
+            $admin = get_option('admin_email');
+            $delivered = (bool) wp_mail($admin, 'Вопрос в поддержку Genius', $text);
+            if (!$delivered) {
+                return new WP_REST_Response(['ok' => false,
+                    'error' => 'Не удалось отправить сообщение. Напишите нам на ' . $admin], 502);
+            }
+        }
+
+        set_transient($rl_key, $count + 1, HOUR_IN_SECONDS);
+        return ['ok' => true, 'message' => 'Спасибо! Вопрос отправлен — ответим в ближайшее время.'];
+    }
+
+    /** Отправка уведомления владельцу через настроенный бот. false — если не настроен/не дошло. */
+    private static function support_notify(string $text): bool
+    {
+        $token = trim((string) get_option('ga_support_bot_token', ''));
+        $chat = trim((string) get_option('ga_support_chat_id', ''));
+        if ($token === '' || $chat === '') {
+            return false;
+        }
+        $result = GA_Telegram::api($token, 'sendMessage', [
+            'chat_id' => $chat,
+            'text' => $text,
+            'disable_web_page_preview' => 'true',
+        ]);
+        return !is_wp_error($result);
     }
 
     /** Сценарии-кнопки для инлайн-клавиатуры бота (label + индекс для callback_data). */
