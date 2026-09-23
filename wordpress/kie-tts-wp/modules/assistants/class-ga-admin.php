@@ -162,6 +162,9 @@ class GA_Admin
         update_option('ga_support_url', esc_url_raw(wp_unslash($_POST['support_url'] ?? '')), false);
         update_option('ga_topup_amounts',
             sanitize_text_field(wp_unslash($_POST['topup_amounts'] ?? '')) ?: '200,300,400,500', false);
+        if (!empty($_POST['regen_bot_secret'])) {
+            update_option('ga_bot_secret', wp_generate_password(48, false, false), false);
+        }
         self::redirect(self::SLUG . '-settings', ['ga_msg' => 'saved']);
     }
 
@@ -506,6 +509,36 @@ class GA_Admin
           </table>
           <?php submit_button(); ?>
         </form>
+
+        <h2>Отдельные телеграм-боты (/opt/aihelpers)</h2>
+        <p class="description">
+          Боты-помощники, развёрнутые отдельным сервисом, обращаются к сайту за ответом и балансом
+          по защищённому маршруту. Скопируйте эти значения в <code>config.json</code> сервиса ботов.
+          Пользователь опознаётся по Telegram-аккаунту: чтобы баланс стал общим, ему нужно один раз
+          войти на сайте через Telegram.
+        </p>
+        <table class="form-table" role="presentation">
+          <tr><th>REST-маршрут</th>
+            <td><code><?php echo esc_html(rest_url(GA_REST_NS . '/bot/reply')); ?></code></td></tr>
+          <tr><th>Секрет ботов</th>
+            <td>
+              <code style="user-select:all"><?php echo esc_html(GA_Rest::bot_secret()); ?></code>
+              <form method="post" style="display:inline;margin-left:10px">
+                <?php wp_nonce_field('ga_save_settings'); ?>
+                <input type="hidden" name="ga_action" value="save_settings">
+                <input type="hidden" name="price" value="<?php echo esc_attr(GA_Billing::price_per_message()); ?>">
+                <input type="hidden" name="price_file" value="<?php echo esc_attr(GA_Billing::price_per_file()); ?>">
+                <input type="hidden" name="guest_free" value="<?php echo (int) GA_Billing::guest_free_limit(); ?>">
+                <input type="hidden" name="model" value="<?php echo esc_attr(GA_Kie::default_model()); ?>">
+                <input type="hidden" name="support_url" value="<?php echo esc_attr(get_option('ga_support_url', '')); ?>">
+                <input type="hidden" name="topup_amounts" value="<?php echo esc_attr(get_option('ga_topup_amounts', '200,300,400,500')); ?>">
+                <input type="hidden" name="regen_bot_secret" value="1">
+                <button class="button" onclick="return confirm('Сгенерировать новый секрет? Старый перестанет работать — не забудьте обновить config.json ботов.')">Сменить секрет</button>
+              </form>
+              <p class="description">Заголовок запроса: <code>X-GA-Bot-Secret</code>.
+                Слаги ботов: <code>uchitel</code>, <code>ucheba</code>, <code>yurist</code>, <code>biznes</code>.</p>
+            </td></tr>
+        </table>
 
         <h2>Как устроен баланс</h2>
         <p>

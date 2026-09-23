@@ -17,6 +17,14 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "content" / "landings"
 E = html.escape
 
+# Телеграм-бот каждого помощника (сервис /opt/aihelpers). Общий баланс с сайтом.
+BOTS = {
+    "uchitel": "Teeacher_ai_bot",
+    "ucheba": "StudyBrain_bot",
+    "yurist": "Doc_Law_AI_bot",
+    "biznes": "Businesss_AI_bot",
+}
+
 
 def _load(name):
     spec = importlib.util.spec_from_file_location(name, ROOT / "tools" / f"{name}.py")
@@ -115,6 +123,16 @@ def style(accent, accent2):
 .gaL__end p{{color:var(--muted);max-width:52ch;margin:0 auto 26px}}
 .gaL__end .gaL__cta{{justify-content:center}}
 
+/* мини-баннер «в Telegram» */
+.gaL__tgb{{display:flex;align-items:center;gap:16px;margin-top:22px;padding:16px 20px;border-radius:16px;
+  background:linear-gradient(92deg,color-mix(in srgb,var(--acc) 20%,var(--panel)),var(--panel));
+  border:1px solid color-mix(in srgb,var(--acc) 45%,transparent);transition:.15s;flex-wrap:wrap}}
+.gaL__tgb:hover{{border-color:var(--acc);transform:translateY(-2px)}}
+.gaL__tgbIc{{font-size:30px;line-height:1;flex-shrink:0}}
+.gaL__tgbT{{display:flex;flex-direction:column;gap:2px;flex:1;min-width:210px}}
+.gaL__tgbT strong{{color:#fff;font-size:17px}}
+.gaL__tgbT small{{color:var(--muted);font-size:13.5px}}
+.gaL__tgbGo{{color:var(--acc);font-weight:700;white-space:nowrap}}
 @media (max-width:820px){{.gaL__demo,.gaL__why{{grid-template-columns:1fr}}}}
 /* оверрайд поверх темы: текст в поле чата должен быть виден */
 .ga-chat .ga-chat__input{{color:#eef2fb!important;-webkit-text-fill-color:#eef2fb!important;background:#0f172a!important}}
@@ -126,7 +144,14 @@ def style(accent, accent2):
 
 def render(item, img):
     slug = item["slug"]
-    bot = lc.BRAND["bot"]
+    bot = BOTS.get(slug, "")
+    tg_banner = (
+        f'<a class="gaL__tgb" href="https://t.me/{E(bot)}?start=web" target="_blank" rel="noopener">'
+        f'<span class="gaL__tgbIc" aria-hidden="true">✈️</span>'
+        f'<span class="gaL__tgbT"><strong>Использовать в Telegram через бота</strong>'
+        f'<small>@{E(bot)} — тот же помощник и общий баланс прямо в мессенджере</small></span>'
+        f'<span class="gaL__tgbGo">Открыть бота →</span></a>'
+    ) if bot else ""
     stats = "".join(f'<div class="gaL__stat"><span class="gaL__statV">{E(v)}</span>'
                     f'<span class="gaL__statL">{E(l)}</span></div>' for v, l in item["stats"])
     feats = "".join(f'<article class="gaL__feat"><i aria-hidden="true">{E(ic)}</i>'
@@ -170,6 +195,7 @@ def render(item, img):
       <p class="gaL__sub">Без регистрации. Вход — почтой, через VK или Telegram, тем же аккаунтом,
          что и остальные сервисы Genius: баланс один на всё.</p>
       [genius_assistant slug="{slug}"]
+      {tg_banner}
     </div>
   </section>
 
