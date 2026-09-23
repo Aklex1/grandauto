@@ -126,6 +126,14 @@ class GS_Tts_Fallback {
             return self::mirror_mapped($response, $body, (string) $mapped);
         }
 
+        // «В работе» — ещё не значит, что работа идёт. Отметку о провале
+        // ставит колбэк поставщика, а его при отказе модели может не быть
+        // вовсе: задача тогда крутится в кабинете до бесконечности. Раз в
+        // минуту спрашиваем поставщика напрямую.
+        if ($status !== 'failed' && $status !== 'completed' && self::stalled($task_id)) {
+            $status = 'failed';
+        }
+
         if ($status !== 'failed') {
             return $response;
         }
@@ -188,6 +196,36 @@ class GS_Tts_Fallback {
         self::log('переозвучка после отказа: ' . $task_id . ' → ' . $created['task_id']);
 
         return (string) $created['task_id'];
+    }
+
+    /**
+     * Задача у поставщика уже провалилась, а колбэк не пришёл?
+     *
+     * Спрашиваем не чаще раза в минуту на задачу: страница опрашивает
+     * состояние каждые пару секунд, и без этой заслонки мы бы устроили
+     * поставщику поток лишних запросов.
+     */
+    private static function stalled($task_id) {
+        $guard = 'gs_tts_ask_' . md5((string) $task_id);
+        if (get_transient($guard)) {
+            return false;
+        }
+        set_transient($guard, 1, MINUTE_IN_SECONDS);
+
+        $key = trim((string) get_option('kie_tts_api_key', ''));
+        if ($key === '') {
+            return false;
+        }
+        $response = wp_remote_get(
+            add_query_arg('taskId', (string) $task_id, 'https://api.kie.ai/api/v1/jobs/recordInfo'),
+            array('timeout' => 20, 'headers' => array('Authorization' => 'Bearer ' . $key))
+        );
+        if (is_wp_error($response)) {
+            return false;
+        }
+        $body = json_decode((string) wp_remote_retrieve_body($response), true);
+        $state = is_array($body) ? (string) ($body['data']['state'] ?? '') : '';
+        return $state === 'fail';
     }
 
     /** Кому передали работу вместо упавшей задачи. */
@@ -304,12 +342,19 @@ class GS_Tts_Fallback {
      * Вспомогательное
      * ------------------------------------------------------------------ */
 
-    private static function register_generation($task_id, $user_id, $text, $cost) {
+    /**
+     * Завести задаче строку в истории генераций.
+     *
+     * Строка — это не только история: по ней базовый плагин списывает
+     * деньги в своём колбэке и по ней же мы находим текст, если озвучку
+     * придётся повторить. Без неё задача живёт сама по себе.
+     */
+    public static function register_generation($task_id, $user_id, $text, $cost, $voice = 'gemini-tts') {
         if (!class_exists('KIE_TTS_DB')) {
             return;
         }
         $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);
-        KIE_TTS_DB::save_generation($user_id, $task_id, $text, 'gemini-tts', $cost, $is_telegram);
+        KIE_TTS_DB::save_generation($user_id, $task_id, $text, (string) $voice, $cost, $is_telegram);
     }
 
     private static function zero_cost($task_id) {

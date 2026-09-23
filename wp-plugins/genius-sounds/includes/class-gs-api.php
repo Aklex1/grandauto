@@ -796,14 +796,28 @@ class GS_Api {
         $voice = isset($input['voice']) ? (string) $input['voice'] : '';
         $callback = get_option('kie_tts_callback_url', rest_url('tts/v1/callback'));
 
+        // Заказ по ключу до сих пор не заводил строку в истории генераций, а
+        // по ней базовый плагин списывает деньги в своём колбэке: озвучка
+        // через API шла бесплатно. По ней же находится текст, если голос
+        // придётся повторить запасным. Поэтому строку заводим сразу.
+        $user_id = (int) (self::$caller['user_id'] ?? 0);
+        $cost = self::price('tts', array('text' => $text));
+
         if (class_exists('KIE_TTS_API')) {
             $created = KIE_TTS_API::create_tts_task($text, $voice !== '' ? $voice : null, array(), $callback);
             if (is_array($created) && (int) ($created['code'] ?? 0) === 200 && !empty($created['data']['taskId'])) {
-                return array('ok' => true, 'task_id' => (string) $created['data']['taskId'], 'message' => '');
+                $task_id = (string) $created['data']['taskId'];
+                GS_Tts_Fallback::register_generation($task_id, $user_id, $text, $cost,
+                    $voice !== '' ? $voice : 'elevenlabs');
+                return array('ok' => true, 'task_id' => $task_id, 'message' => '');
             }
         }
         // Основной голос недоступен — отдаём запасным, лишь бы клиент получил звук.
-        return GS_Tts_Fallback::create_task($text, $voice);
+        $fallback = GS_Tts_Fallback::create_task($text, $voice);
+        if (!empty($fallback['ok'])) {
+            GS_Tts_Fallback::register_generation((string) $fallback['task_id'], $user_id, $text, $cost);
+        }
+        return $fallback;
     }
 
 
@@ -1061,20 +1075,30 @@ class GS_Api {
             }
         }
         $row = KIE_TTS_DB::get_generation_by_task_id($task_id);
-        if (!is_array($row)) {
-            return $out;
-        }
-        $out['ok'] = true;
-        $status = (string) $row['status'];
+        $status = is_array($row) ? (string) $row['status'] : '';
+
         if ($status === 'failed') {
-            $out['status'] = 'failed';
-            $out['message'] = 'Генерация не удалась';
-            return $out;
+            return array('ok' => true, 'status' => 'failed', 'files' => array(),
+                         'message' => 'Генерация не удалась');
         }
         if ($status === 'completed' && !empty($row['audio_url'])) {
-            $out['status'] = 'completed';
-            $out['files'][] = array('label' => 'Аудио', 'url' => (string) $row['audio_url'], 'kind' => 'audio');
+            return array(
+                'ok'      => true,
+                'status'  => 'completed',
+                'message' => '',
+                'files'   => array(array('label' => 'Аудио', 'url' => (string) $row['audio_url'], 'kind' => 'audio')),
+            );
         }
+
+        // Строку в истории заполняет колбэк базового плагина: при заказе по
+        // ключу её может не быть вовсе, а при отказе модели поставщик и сам
+        // колбэк не всегда присылает. Тогда задача висит «в работе» вечно.
+        // Спрашиваем поставщика — он про свою задачу знает точно.
+        $direct = self::jobs_state($task_id);
+        if (!empty($direct['ok']) && $direct['status'] !== 'pending') {
+            return $direct;
+        }
+        $out['ok'] = is_array($row);
         return $out;
     }
 

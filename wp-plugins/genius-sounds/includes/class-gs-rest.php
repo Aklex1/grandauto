@@ -282,6 +282,15 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Служба извлечения звука отказывает по-разному, а пользователю
+        // видно одно и то же «не удалось получить дорожку». Здесь её ответ
+        // виден целиком — без этого чинить нечего (только админ).
+        register_rest_route(self::NS, '/ytaudio/probe', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_ytaudio_probe'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         // Временная проверка форматов запроса к поставщику (только админ).
         register_rest_route(self::NS, '/lab/provider-test', array(
             'methods'             => 'POST',
@@ -1998,6 +2007,21 @@ class GS_Rest {
         $body   = is_array($params) && isset($params['payload']) && is_array($params['payload'])
             ? $params['payload'] : null;
         return rest_ensure_response(GS_MusicAI::probe($path, $method, $body));
+    }
+
+    public static function handle_ytaudio_probe($request) {
+        $params = $request->get_json_params();
+        $url = is_array($params) && !empty($params['url']) ? esc_url_raw((string) $params['url']) : '';
+        $format = is_array($params) && !empty($params['format']) ? (string) $params['format'] : 'mp3';
+        if ($url === '') {
+            return new WP_Error('gs_no_url', 'Нужна ссылка', array('status' => 400));
+        }
+        if (!class_exists('KIE_TTS_API')) {
+            return new WP_Error('gs_no_service', 'Служба извлечения недоступна', array('status' => 503));
+        }
+        return rest_ensure_response(array(
+            'raw' => KIE_TTS_API::create_youtube_audio_task($url, $format),
+        ));
     }
 
     public static function handle_jobs_probe($request) {
