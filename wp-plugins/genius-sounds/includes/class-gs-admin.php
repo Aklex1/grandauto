@@ -14,6 +14,26 @@ class GS_Admin {
     public static function boot() {
         add_action('admin_menu', array(__CLASS__, 'add_menu'));
         add_action('admin_init', array(__CLASS__, 'register_settings'));
+        add_action('admin_notices', array(__CLASS__, 'key_notice'));
+    }
+
+    /**
+     * Пустой ключ поставщика — это остановка всех платных сервисов, а
+     * снаружи она выглядит как «генерация временно недоступна». Настройка
+     * лежит в чужом плагине, стереть её можно одним неудачным сохранением
+     * формы, и узнать об этом лучше здесь, а не от первого рассерженного
+     * пользователя.
+     */
+    public static function key_notice() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        if (trim((string) get_option('kie_tts_api_key', '')) !== '') {
+            return;
+        }
+        echo '<div class="notice notice-error"><p><strong>Не настроен ключ доступа к поставщику.</strong> '
+            . 'Пока поле «API ключ» в настройках озвучки пустое, не работает ни одна платная операция: '
+            . 'ни озвучка, ни картинки, ни видео. Деньги при этом не списываются — задачи просто не ставятся.</p></div>';
     }
 
     public static function add_menu() {
