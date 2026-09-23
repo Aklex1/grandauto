@@ -41,6 +41,18 @@ class GA_Store
                 3, 'ucheba'));
             update_option('ga_mig_ucheba_limit', 1, false);
         }
+        // Приветствие «бизнес»-консультанта называло его демонстрационным — на боевом
+        // это лишнее. Меняем только пока текст не тронут вручную (содержит старую фразу).
+        if (!get_option('ga_mig_biznes_welcome')) {
+            $wpdb->query($wpdb->prepare(
+                'UPDATE ' . self::t('assistants') . ' SET welcome = %s '
+                . 'WHERE slug = %s AND welcome LIKE %s',
+                "Я — ИИ-консультант компании. Отвечаю на вопросы клиентов по базе знаний, "
+                . "уточняю задачу и довожу до заявки.\n\n"
+                . "Напишите вопрос так, как задал бы ваш клиент.",
+                'biznes', '%демонстрац%'));
+            update_option('ga_mig_biznes_welcome', 1, false);
+        }
     }
 
     public static function install(): void
