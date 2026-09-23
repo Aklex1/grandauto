@@ -149,7 +149,8 @@ class GA_Rest
                 return new WP_REST_Response(['ok' => false,
                     'error' => 'Это не похоже на токен бота. Формат: 123456789:AA…'], 400);
             }
-            if (GA_Store::token_by_value($token)) {
+            $dup = GA_Tenant::by_token($token);
+            if (GA_Store::token_by_value($token) || ($dup && (int) $dup['id'] !== (int) $t['id'])) {
                 return new WP_REST_Response(['ok' => false,
                     'error' => 'Этот токен уже используется в системе.'], 400);
             }

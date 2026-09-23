@@ -53,6 +53,17 @@ class GA_Tenant
         return $row ?: null;
     }
 
+    public static function by_token(string $token): ?array
+    {
+        global $wpdb;
+        if ($token === '') {
+            return null;
+        }
+        $row = $wpdb->get_row($wpdb->prepare(
+            'SELECT * FROM ' . self::table() . ' WHERE bot_token = %s', $token), ARRAY_A);
+        return $row ?: null;
+    }
+
     /** Возвращает коробку владельца, создавая пустую при первом обращении. */
     public static function ensure(int $user_id): array
     {
@@ -67,7 +78,7 @@ class GA_Tenant
             'secret' => wp_generate_password(32, false, false),
             'base_slug' => 'biznes',
             'accent' => '#22d3ee',
-            'free_daily' => 10,
+            'free_daily' => 0,
             'is_active' => 1,
             'status' => 'idle',
         ]);
@@ -206,6 +217,13 @@ class GA_Tenant
             return ['ok' => false, 'code' => 'cfg', 'error' => 'Консультант ещё не настроен.'];
         }
         $owner = (int) $tenant['owner_user_id'];
+        // Платформа не должна работать в минус: коробка активна, пока у владельца
+        // есть баланс. Это же прикрывает бесплатный безлимит веб-виджета, если
+        // браузер режет third-party куку посетителя.
+        if (GA_Billing::balance($owner) <= 0) {
+            return ['ok' => false, 'code' => 'no_funds',
+                'error' => 'Извините, консультант временно недоступен. Загляните чуть позже.'];
+        }
         $text = trim(wp_check_invalid_utf8($text, true));
         if ($text === '') {
             return ['ok' => false, 'code' => 'empty', 'error' => 'Пустое сообщение.'];

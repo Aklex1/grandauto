@@ -311,6 +311,7 @@ class GA_Shortcodes
         $rest = esc_url(rest_url(GA_REST_NS . '/tenant/chat'));
         ?><!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
 <title><?php echo $name; ?></title>
 <link rel="stylesheet" href="<?php echo $css; ?>">
 <style>html,body{margin:0;background:transparent}.ga-chat{margin:0;max-width:none;height:100vh;box-sizing:border-box}
@@ -482,7 +483,7 @@ class GA_Shortcodes
                   <div class="ga-boxform__row">
                     <label class="ga-box__inline">Цвет
                       <input type="color" class="ga-box__accent" value="<?php echo esc_attr($t['accent']); ?>"></label>
-                    <label class="ga-box__inline">Бесплатно клиенту в сутки
+                    <label class="ga-box__inline" title="Сколько сообщений клиенту не списывать с вашего баланса. 0 — каждое сообщение с вашего баланса.">Бесплатно клиенту/сутки
                       <input type="number" class="ga-box__free" min="0" style="width:80px"
                              value="<?php echo (int) $t['free_daily']; ?>"></label>
                     <button type="button" class="ga-box__save">Сохранить брендинг</button>

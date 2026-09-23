@@ -166,7 +166,7 @@ class GA_Store
             welcome TEXT NULL,
             persona LONGTEXT NULL,
             accent VARCHAR(16) NOT NULL DEFAULT '#22d3ee',
-            free_daily INT NOT NULL DEFAULT 10,
+            free_daily INT NOT NULL DEFAULT 0,
             bot_token VARCHAR(200) NOT NULL DEFAULT '',
             bot_username VARCHAR(120) NOT NULL DEFAULT '',
             secret VARCHAR(64) NOT NULL DEFAULT '',
