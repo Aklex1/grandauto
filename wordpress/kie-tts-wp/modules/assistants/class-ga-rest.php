@@ -435,7 +435,10 @@ class GA_Rest
     /** Баланс, текст о балансе и ссылки для кнопок бота. Пополнение — редирект на сайт. */
     private static function bot_account(array $assistant, int $user_id, int $tg_id = 0): array
     {
-        $topup = $assistant['landing_url'] ?: home_url('/tts-dashboard/');
+        // Кнопки Telegram требуют абсолютный URL. Ведём через переходник /perehod/,
+        // чтобы после входа человек попадал именно на нужный сервис (не на дашборд).
+        $service = $assistant['landing_url'] ?: '/tts-dashboard/';
+        $topup = add_query_arg('to', $service, home_url('/perehod/'));
         $bind = null;
         if ($user_id) {
             $balance = GA_Billing::balance($user_id);
@@ -447,7 +450,7 @@ class GA_Rest
                 number_format_i18n(GA_Billing::price_per_message(), 0));
         } else {
             $balance = null;
-            $bind = $tg_id ? GA_Billing::bind_url($tg_id) : null;
+            $bind = $tg_id ? GA_Billing::bind_url($tg_id, $service) : null;
             $text = sprintf(
                 "Аккаунт ещё не привязан — сейчас работает гостевой лимит (%d сообщений в сутки).\n"
                 . "Нажмите «Привязать аккаунт», войдите на сайте — и баланс станет общим со всеми "

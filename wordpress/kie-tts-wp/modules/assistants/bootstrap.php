@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GA_VERSION', '1.6.1');
+define('GA_VERSION', '1.6.2');
 define('GA_DIR', __DIR__);
 define('GA_URL', rtrim(plugins_url('', __FILE__), '/'));
 define('GA_REST_NS', 'assistants/v1');
@@ -43,6 +43,7 @@ if (did_action('plugins_loaded')) {
 }
 add_action('rest_api_init', ['GA_Rest', 'register_routes']);
 add_action('init', ['GA_Shortcodes', 'init']);
+add_action('template_redirect', ['GA_Shortcodes', 'maybe_open']);
 
 if (is_admin()) {
     add_action('admin_menu', ['GA_Admin', 'menu']);

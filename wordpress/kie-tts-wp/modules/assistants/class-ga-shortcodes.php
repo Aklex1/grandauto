@@ -19,6 +19,41 @@ class GA_Shortcodes
         add_shortcode('genius_assistant', [self::class, 'widget']);
         add_shortcode('genius_knowledge_base', [self::class, 'knowledge_base']);
         add_shortcode('genius_bind_telegram', [self::class, 'bind_telegram']);
+        add_shortcode('genius_open', [self::class, 'open_page']);
+    }
+
+    /** Только свой путь на этом же сайте — без внешних редиректов. */
+    public static function safe_path(string $raw): string
+    {
+        $raw = trim(wp_unslash($raw));
+        if ($raw === '') {
+            return '';
+        }
+        $p = wp_parse_url($raw);
+        if (!empty($p['host']) || !empty($p['scheme'])) {
+            return '';
+        }
+        $path = '/' . ltrim((string) ($p['path'] ?? ''), '/');
+        $query = isset($p['query']) ? '?' . $p['query'] : '';
+        $frag = isset($p['fragment']) ? '#' . $p['fragment'] : '';
+        return $path . $query . $frag;
+    }
+
+    /**
+     * «Переходник»: бот отправляет сюда с ?to=/сервис. Вошедшего сразу форвардим
+     * на сервис, гостю даём войти — после входа модалка перезагружает эту же
+     * страницу, и форвард срабатывает.
+     */
+    public static function maybe_open(): void
+    {
+        if (!is_page('perehod')) {
+            return;
+        }
+        $to = self::safe_path((string) ($_GET['to'] ?? ''));
+        if ($to !== '' && is_user_logged_in()) {
+            wp_safe_redirect(home_url($to));
+            exit;
+        }
     }
 
     private static function kb_assets(): void
@@ -251,12 +286,36 @@ class GA_Shortcodes
         return (string) ob_get_clean();
     }
 
+    public static function open_page($atts = []): string
+    {
+        self::kb_assets();
+        $to = self::safe_path((string) ($_GET['to'] ?? ''));
+        ob_start();
+        echo '<div class="ga-kb ga-bind">';
+        echo '<h3 class="ga-kb__title">Переход в сервис</h3>';
+        if ($to === '') {
+            echo '<p class="ga-kb__lead">Ссылка неполная. Вернитесь в бота и нажмите кнопку ещё раз.</p>';
+        } elseif (is_user_logged_in()) {
+            // Сюда попадаем, только если серверный редирект не сработал — форвардим сами.
+            echo '<p class="ga-kb__lead">Открываем сервис…</p>'
+                . '<p><a class="ga-support__main" href="' . esc_url(home_url($to)) . '">Открыть сервис</a></p>'
+                . '<script>location.replace(' . wp_json_encode(home_url($to)) . ');</script>';
+        } else {
+            echo '<p class="ga-kb__lead">Войдите, чтобы продолжить — после входа сразу откроется нужный сервис.</p>'
+                . '<p><button type="button" class="ga-support__main kie-auth-open-trigger">Войти</button> '
+                . '<a class="ga-support__ask" href="' . esc_url(home_url('/tts-login/')) . '">Страница входа</a></p>';
+        }
+        echo '</div>';
+        return (string) ob_get_clean();
+    }
+
     public static function bind_telegram($atts = []): string
     {
         self::kb_assets();
         $tg = isset($_GET['tg']) ? (int) $_GET['tg'] : 0;
         $exp = isset($_GET['exp']) ? (int) $_GET['exp'] : 0;
         $sig = isset($_GET['sig']) ? preg_replace('/[^a-f0-9]/', '', (string) $_GET['sig']) : '';
+        $to = self::safe_path((string) ($_GET['to'] ?? ''));
         $uid = get_current_user_id();
 
         ob_start();
@@ -274,8 +333,14 @@ class GA_Shortcodes
         } else {
             $res = GA_Billing::bind_apply($uid, $tg, $exp, $sig);
             if (!empty($res['ok'])) {
-                echo '<p class="ga-kb__lead">✅ Аккаунт Telegram привязан. Вернитесь в бота и наберите '
-                    . '<b>/balance</b> — баланс теперь общий, доступно пополнение.</p>';
+                echo '<p class="ga-kb__lead">✅ Аккаунт Telegram привязан. Баланс теперь общий, доступно пополнение.</p>';
+                if ($to !== '') {
+                    echo '<p><a class="ga-support__main" href="' . esc_url(home_url($to)) . '">Открыть сервис</a></p>'
+                        . '<script>setTimeout(function(){location.replace('
+                        . wp_json_encode(home_url($to)) . ');},1500);</script>';
+                } else {
+                    echo '<p class="ga-kb__lead">Вернитесь в бота и наберите <b>/balance</b>.</p>';
+                }
             } elseif (($res['code'] ?? '') === 'taken') {
                 echo '<p class="ga-kb__lead">Этот Telegram уже привязан к другому аккаунту. '
                     . 'Войдите под ним или напишите в поддержку.</p>';

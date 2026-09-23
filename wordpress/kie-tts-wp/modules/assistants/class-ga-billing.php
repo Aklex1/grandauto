@@ -186,12 +186,14 @@ class GA_Billing
         return substr(hash_hmac('sha256', $tg . '.' . $exp, wp_salt('ga-bind')), 0, 32);
     }
 
-    public static function bind_url(int $tg): string
+    public static function bind_url(int $tg, string $to = ''): string
     {
         $exp = time() + 1800;
-        return add_query_arg(
-            ['tg' => $tg, 'exp' => $exp, 'sig' => self::bind_sign($tg, $exp)],
-            home_url('/privyazka-telegram/'));
+        $args = ['tg' => $tg, 'exp' => $exp, 'sig' => self::bind_sign($tg, $exp)];
+        if ($to !== '') {
+            $args['to'] = $to;
+        }
+        return add_query_arg($args, home_url('/privyazka-telegram/'));
     }
 
     /** @return array{ok:bool,code?:string} */
