@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
+from typing import Optional
 
 from . import config, fonts, storage
 
@@ -743,6 +744,79 @@ def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int,
         "-filter_complex_script", str(script),
         "-af", "apad",
         "-map", "[v]", "-map", "2:a:0", "-t", f"{duration:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(dst),
+    ], timeout=2400)
+    return dst
+
+
+def build_story_scene(frames: list[tuple[Path, float]], cover: Optional[Path],
+                      audio: Path, dst: Path, size: tuple[int, int],
+                      duration: float, workdir: Path, *,
+                      cover_opaque: float = 0.82, cover_gone: float = 1.0,
+                      fade: float = 0.18) -> Path:
+    """Ролик из готовых сюжетных кадров с обложкой в начале.
+
+    Кадры уже нарисованы под вертикаль и разложены по сценам, поэтому ничего не
+    дорисовываем: каждый показывается свой отрезок, смена — короткий кроссфейд.
+    Обложка лежит СВЕРХУ первого кадра и уходит к `cover_gone`: так первый кадр
+    уже на месте, когда она исчезает, и провала в чёрное не возникает.
+
+    frames — список (файл, длительность в секундах) в порядке сцен.
+    """
+    w, h = size
+    workdir.mkdir(parents=True, exist_ok=True)
+    if not frames:
+        raise RuntimeError("нет ни одного кадра для сборки")
+
+    fit = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+           f"setsar=1,fps={FPS},format=yuv420p")
+
+    inputs: list[str] = []
+    parts: list[str] = []
+    for index, (path, seconds) in enumerate(frames):
+        span = max(seconds, 0.1)
+        # Кроссфейд съедает время у следующего куска, поэтому каждый кадр, кроме
+        # первого, держим на длину перехода дольше.
+        hold = span + (fade if index else 0.0)
+        inputs += ["-loop", "1", "-t", f"{hold:.3f}", "-i", str(path)]
+        parts.append(f"[{index}:v]{fit}[f{index}];")
+
+    graph = "".join(parts)
+    current = "f0"
+    offset = frames[0][1]
+    for index in range(1, len(frames)):
+        nxt = f"x{index}"
+        graph += (f"[{current}][f{index}]xfade=transition=fade:duration={fade:.3f}:"
+                  f"offset={max(offset - fade, 0.05):.3f}[{nxt}];")
+        current = nxt
+        offset += frames[index][1]
+
+    audio_index = len(frames)
+    inputs += ["-i", str(audio)]
+
+    if cover is not None and cover.exists():
+        cover_index = audio_index + 1
+        inputs += ["-loop", "1", "-t", f"{max(cover_gone + 0.2, 0.3):.3f}",
+                   "-i", str(cover)]
+        # Обложку не режем: она свёрстана, и наезд срезал бы ей заголовок.
+        graph += (f"[{cover_index}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+                  f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={FPS},"
+                  f"format=yuva420p,"
+                  f"fade=t=out:st={cover_opaque:.3f}:d={max(cover_gone - cover_opaque, 0.05):.3f}"
+                  f":alpha=1[cov];")
+        graph += f"[{current}][cov]overlay=0:0:eof_action=pass[v]"
+    else:
+        graph += f"[{current}]null[v]"
+
+    script = workdir / "story.filter"
+    script.write_text(graph, encoding="utf-8")
+    _ff([
+        *inputs,
+        "-filter_complex_script", str(script),
+        "-af", "apad",
+        "-map", "[v]", f"-map", f"{audio_index}:a:0", "-t", f"{duration:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", str(dst),

@@ -225,7 +225,7 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Main,{font},{size},&H00FFFFFF,&H000000FF,&H00000000,{back},-1,0,0,0,100,100,{spacing},0,{border},{outline},{shadow},{align},{margin_h},{margin_h},{margin_v},1
+Style: Main,{font},{size},{primary},&H000000FF,&H00000000,{back},{bold},0,0,0,100,100,{spacing},0,{border},{outline},{shadow},{align},{margin_h},{margin_h},{margin_v},1
 Style: Title,{font},{title_size},&H00FFFFFF,&H000000FF,&H00000000,{title_back},-1,0,0,0,100,100,0,0,{border},{title_outline},{title_shadow},8,{margin_h},{margin_h},{title_margin},1
 
 [Events]
@@ -241,6 +241,7 @@ SUBTITLE_STYLES = {
     "shorts_plain": "Шортсы — чистый текст без подсветки слова",
     "shorts_outline": "Шортсы с обводкой — для пёстрого фона",
     "classic": "Классический — полупрозрачная плашка под текстом",
+    "story": "Пакет production.v2 — Georgia, без подсветки слова",
 }
 ACCENTS = {
     "shorts": "&H0000E6FF&",       # ASS хранит цвет как BGR: это насыщенный жёлтый
@@ -248,8 +249,10 @@ ACCENTS = {
     "shorts_outline": "&H0000E6FF&",
 }
 # Стили без чёрного контура вокруг букв: читаемость держится на мягкой тени.
-NO_OUTLINE = ("shorts", "shorts_green", "shorts_plain")
+NO_OUTLINE = ("shorts", "shorts_green", "shorts_plain", "story")
 WHITE = "&H00FFFFFF&"
+# Цвет титров пакета production.v2: #F3F0E9. ASS хранит цвет как BGR.
+STORY_WHITE = "&H00E9F0F3&"
 
 
 def normalize_style(style: str) -> str:
@@ -267,7 +270,12 @@ def _style_params(size: tuple[int, int], vertical: bool, font: str,
     w, h = size
     shorts = style != "classic"
 
-    if shorts:
+    if style == "story":
+        # Контракт пакета: Georgia 64 px при холсте 1080×1920, спокойный кегль и
+        # длинные строки — это не «шортсы», где текст кричит в пол-экрана.
+        chars_per_line = 26 if vertical else 40
+        max_share = 0.042 if vertical else 0.05
+    elif shorts:
         # Короткие реплики и крупный кегль — так подписи читаются с телефона
         # и не закрывают половину кадра.
         chars_per_line = 16 if vertical else 30
@@ -313,6 +321,18 @@ def _style_params(size: tuple[int, int], vertical: bool, font: str,
             "title_margin": int(h * (0.08 if vertical else 0.05)),
         }
 
+    if style == "story":
+        # Цвет из контракта (#F3F0E9) и мягкая тень без обводки; зона ниже
+        # середины кадра, чтобы не лезть на лица в сюжетных кадрах.
+        params["margin_v"] = int(h * 0.20)
+        params["shadow"] = max(3, int(font_size * 0.12))
+        params["back"] = "&HA8000000"
+        params["primary"] = STORY_WHITE.rstrip("&")
+        # Контракт просит обычное начертание (regular 400), а не жирное.
+        params["bold"] = 0
+
+    params.setdefault("primary", WHITE.strip("&") and "&H00FFFFFF")
+    params.setdefault("bold", -1)
     params.update({"w": w, "h": h, "font": font, "size": font_size,
                    "margin_h": margin_h, "title_size": title_size, "align": 2})
     return params, chars_per_line
@@ -389,13 +409,15 @@ def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720)
 
     # Реплика длиннее двух строк не влезает в кадр — режем её на несколько,
     # распределяя время пропорционально длине кусков.
-    for cue in split_cues_to_fit(cues, chars_per_line * 2):
+    # У пакета production.v2 страница держит 3–4 строки; у шортсов — две.
+    page_rows = 4 if style == "story" else 2
+    for cue in split_cues_to_fit(cues, chars_per_line * page_rows):
         words = (cue.text or "").split()
         if not words:
             continue
 
         if not accent:
-            text = wrap_lines(cue.text, chars_per_line, max_lines=2)
+            text = wrap_lines(cue.text, chars_per_line, max_lines=page_rows)
             if text:
                 lines.append(f"Dialogue: 0,{_fmt_ass_ts(cue.start)},"
                              f"{_fmt_ass_ts(cue.end)},Main,,0,0,0,,{text}")
@@ -406,7 +428,7 @@ def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720)
                 f"{{\\c{accent}}}{word}{{\\c{WHITE}}}" if i == active else word
                 for i, word in enumerate(words)
             ]
-            text = _wrap_tokens(words, decorated, chars_per_line, max_lines=2)
+            text = _wrap_tokens(words, decorated, chars_per_line, max_lines=page_rows)
             if not text:
                 continue
             # мягкое появление только на первом слове реплики, иначе текст мигал бы

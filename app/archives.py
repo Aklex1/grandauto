@@ -207,6 +207,125 @@ def hashtags_from(meta: dict) -> str:
     return " ".join(str(t) for t in tags)[:500]
 
 
+# --- пакет mens_circle.production.v2 -----------------------------------------
+# Второй формат архива. Отличается принципиально: речь лежит отдельным файлом и
+# является канонической (её нельзя брать из описания для площадки), кадры уже
+# нарисованы и разложены по сценам, а генерировать при импорте запрещено вообще
+# что-либо. Поэтому это не «ещё один разбор папки», а другая ветка сборки.
+MANIFEST_NAME = "production_import.json"
+PACKAGE_V2 = "mens_circle.production.v2"
+PRESET_STORY = "story_v2"
+PRESET_LEGACY = "legacy"
+
+PRESETS = {
+    PRESET_LEGACY: "Обложка фоном под титрами — первый формат архива",
+    PRESET_STORY: "Сюжетные кадры из пакета production.v2",
+}
+
+# Сколько обложка держится в пакете v2: контракт пакета, не наша настройка.
+# Кадр 01 лежит под ней с нулевой секунды, речь идёт непрерывно.
+V2_COVER_OPAQUE_MS = 820
+V2_COVER_GONE_MS = 1000
+V2_SCENE_FADE_MS = 180
+
+
+def read_manifest(root: Path) -> Optional[dict]:
+    """Корневой манифест пакета v2. None — если это архив прежнего формата."""
+    for candidate in sorted(root.rglob(MANIFEST_NAME)):
+        data = _read_json(candidate)
+        if str(data.get("packageFormat") or "").strip() == PACKAGE_V2:
+            data["_root"] = candidate.parent
+            return data
+    return None
+
+
+def _script_name(language: str) -> str:
+    return f"script_{(language or 'en').split('-')[0].lower()}.txt"
+
+
+def _clean_script(path: Path) -> str:
+    """Канонический текст речи — байт в байт, только с нормализацией UTF-8.
+
+    Ни сокращать, ни дополнять нельзя: озвучивается ровно он, и по нему же потом
+    сверяется распознавание.
+    """
+    text = path.read_text(encoding="utf-8-sig")
+    # Переводы строк внутри абзаца речи не значат ничего, но двойной перевод —
+    # это пауза между абзацами, и её мы сохраняем.
+    return "\n".join(line.strip() for line in text.splitlines()).strip()
+
+
+def _scenes_from(storyboard: dict, folder: Path) -> list[dict]:
+    """Сцены серии: порядок, кадр и сколько слов на сцену приходится.
+
+    Число слов нужно, чтобы разложить сцены по времени речи: точных таймингов до
+    озвучки нет, а слова — единственная общая мера между текстом и звуком.
+    """
+    scenes: list[dict] = []
+    raw = storyboard.get("scenes") or storyboard.get("items") or []
+    for index, scene in enumerate(raw):
+        if not isinstance(scene, dict):
+            continue
+        asset = (scene.get("asset") or scene.get("image") or scene.get("background")
+                 or scene.get("assetPath") or "")
+        if isinstance(asset, dict):
+            asset = asset.get("path") or asset.get("file") or ""
+        beats = scene.get("beats") or []
+        words = 0
+        for beat in beats:
+            text = (beat.get("text") if isinstance(beat, dict) else str(beat)) or ""
+            words += len(text.split())
+        if not words:
+            words = len(str(scene.get("text") or "").split())
+        scenes.append({
+            "id": scene.get("id", scene.get("sceneId", index + 1)),
+            "asset": str(asset),
+            "words": words,
+            "exists": bool(asset) and (folder / str(asset)).exists(),
+        })
+    return scenes
+
+
+def read_reel_v2(folder: Path, language: str) -> Optional[dict]:
+    """Одна папка `reels/NNN` пакета v2."""
+    meta = _read_json(folder / META_NAME) if (folder / META_NAME).exists() else {}
+    lang = (meta.get("language") or language or "en").strip()[:10]
+    script = folder / _script_name(lang)
+    if not script.exists():
+        # Язык в манифесте и язык файла могут разойтись — ищем любой script_*.txt,
+        # но молча подменять канонический файл описанием площадки нельзя.
+        found = sorted(folder.glob("script_*.txt"))
+        if not found:
+            return None
+        script = found[0]
+        lang = script.stem.split("_", 1)[-1][:10]
+
+    narration = _clean_script(script)
+    if not narration:
+        return None
+
+    pub = _read_json(folder / "publication_metadata.json")
+    copy = _read_json(folder / COPY_NAME) if (folder / COPY_NAME).exists() else {}
+    storyboard = _read_json(folder / "storyboard.json")
+    scenes = _scenes_from(storyboard, folder)
+    cover = next((folder / name for name in COVER_NAMES if (folder / name).exists()), None)
+
+    platforms = pub.get("platforms") or pub
+    caption = (platforms.get("instagram") or {}).get("caption") or ""
+    return {
+        "folder": folder.name,
+        "language": lang,
+        "title": title_from({"platforms": platforms}, copy, folder.name),
+        "narration": narration,
+        "hook": (copy.get("hook") or "").strip(),
+        "caption": caption.strip(),
+        "hashtags": hashtags_from({"platforms": platforms}),
+        "cover": cover,
+        "scenes": scenes,
+        "dir": folder,
+    }
+
+
 def read_folder(folder: Path) -> Optional[dict]:
     """Разбираем одну папку архива. None — если это не папка серии."""
     meta = _read_json(folder / META_NAME) if (folder / META_NAME).exists() else {}
@@ -298,23 +417,48 @@ def import_zip(session: Session, channel: Channel, data: bytes, *, name: str = "
     finally:
         tmp.unlink(missing_ok=True)
 
-    folders = _series_dirs(root)
-    if not folders:
+    # Формат определяем ДО разбора: у пакета v2 своя речь, свои кадры и запрет на
+    # любую генерацию, и подсовывать ему логику прежнего архива нельзя.
+    manifest = read_manifest(root)
+    if manifest is not None:
+        reel_root = manifest["_root"]
+        lang = str(manifest.get("language") or "en")[:10]
+        folders = sorted((reel_root / "reels").glob("*"),
+                         key=lambda p: (_folder_order(p.name), p.name)) \
+            if (reel_root / "reels").is_dir() else _series_dirs(root)
+        folders = [f for f in folders if f.is_dir()]
+        parsed = [(f, read_reel_v2(f, lang)) for f in folders]
+        preset, package = PRESET_STORY, PACKAGE_V2
+    else:
+        lang = ""
+        folders = _series_dirs(root)
+        parsed = [(f, read_folder(f)) for f in folders]
+        preset, package = PRESET_LEGACY, ""
+
+    good = [(folder, data_) for folder, data_ in parsed if data_]
+    if not good:
         shutil.rmtree(root, ignore_errors=True)
-        raise ArchiveError("в архиве не нашлось ни одной папки серии — "
-                           "внутри каждой ждём metadata.json или cover_copy.json")
+        raise ArchiveError(
+            "в архиве не нашлось ни одной папки серии — ждём либо пакет "
+            f"{PACKAGE_V2} с {MANIFEST_NAME} и reels/NNN/script_*.txt, либо "
+            "прежний формат с metadata.json и cover_copy.json в каждой папке")
 
     batch = ArchiveBatch(
         channel_id=channel.id, name=(name or root.name)[:200], path=storage.rel(root),
         cover_mode=cover_mode if cover_mode in COVER_MODES else "uploaded",
-        per_day=max(0, min(50, per_day)))
+        per_day=max(0, min(50, per_day)), preset=preset, package_format=package,
+        language=lang)
+    if preset == PRESET_STORY:
+        # Пакет запрещает генерацию, чужие титры, музыку и концовку — ставим это
+        # настройками сразу, чтобы человеку не пришлось помнить про каждую.
+        batch.cover_mode = "uploaded"
+        batch.music_mode = "off"
+        batch.outro_mode = "off"
+        batch.subtitle_style = "story"
     session.add(batch)
     session.commit()
 
-    parsed = [(folder, read_folder(folder)) for folder in folders]
-    good = [(folder, data_) for folder, data_ in parsed if data_]
     dates = schedule_dates(len(good), batch.per_day)
-
     for (folder, info), when in zip(good, dates):
         session.add(ArchiveItem(
             batch_id=batch.id, channel_id=channel.id, folder=info["folder"],
@@ -322,13 +466,16 @@ def import_zip(session: Session, channel: Channel, data: bytes, *, name: str = "
             language=info["language"], narration=info["narration"],
             hook=info["hook"], caption=info["caption"], hashtags=info["hashtags"],
             cover_path=storage.rel(info["cover"]) if info["cover"] else "",
+            source_dir=storage.rel(info.get("dir") or folder),
+            scenes_json=json.dumps(info.get("scenes") or [], ensure_ascii=False),
             scheduled_date=when))
     batch.total = len(good)
     session.commit()
 
     skipped = len(parsed) - len(good)
     session.add(Event(level="info", stage="archive",
-                      message=f"Архив «{batch.name}»: принято серий {len(good)}"
+                      message=f"Архив «{batch.name}» ({PRESETS.get(preset, preset)}): "
+                              f"принято серий {len(good)}"
                               + (f", пропущено {skipped} (нет текста)" if skipped else "")))
     session.commit()
     log.info("Архив %s: серий %s, пропущено %s", batch.name, len(good), skipped)
@@ -437,19 +584,30 @@ def build_item(item_id: int) -> Optional[Path]:
                 item.credits = float(spoken.credits or 0.0)
 
             # 2. Фон. Обложка из архива — бесплатно; генерация только если просят.
-            cover = _cover_for(session, client, channel, batch, item, workdir)
+            # Пакет v2 генерацию запрещает прямо, поэтому там её не спрашиваем.
+            if batch is not None and batch.preset == PRESET_STORY:
+                cover = storage.abspath(item.cover_path) if item.cover_path else None
+            else:
+                cover = _cover_for(session, client, channel, batch, item, workdir)
 
-            # 3. Ролик: обложка секунду как есть, дальше притемнённая под титры.
-            total = duration + setup["tail_sec"]
-            raw = workdir / "raw.mp4"
-            media.build_cover_scene(
-                cover, voice, raw, size, total, workdir,
-                hold=setup["cover_hold"], fade=COVER_FADE, dim=setup["cover_dim"],
-                zoom_end=setup["cover_zoom"])
+            # 3. Видеоряд. У пакета v2 кадры уже нарисованы и разложены по
+            # сценам — там обложка уходит к секунде и дальше идёт сюжет; у
+            # прежнего формата единственная картинка и есть фон.
+            story = (batch is not None and batch.preset == PRESET_STORY)
+            hold = (V2_COVER_GONE_MS / 1000.0) if story else setup["cover_hold"]
+            if story:
+                raw = _build_story_v2(session, item, setup, voice, duration, size,
+                                      workdir)
+            else:
+                total = duration + setup["tail_sec"]
+                raw = workdir / "raw.mp4"
+                media.build_cover_scene(
+                    cover, voice, raw, size, total, workdir,
+                    hold=setup["cover_hold"], fade=COVER_FADE, dim=setup["cover_dim"],
+                    zoom_end=setup["cover_zoom"])
 
             # 4. Титры поверх, но не поверх обложки.
-            cues = _shift_past_cover(_cues_for(item, voice, duration),
-                                     hold=setup["cover_hold"])
+            cues = _shift_past_cover(_cues_for(item, voice, duration), hold=hold)
             with_subs = raw
             if setup["subtitles"] and cues:
                 ass = workdir / "subs.ass"
@@ -591,6 +749,64 @@ def _append_outro(session: Session, client, channel: Channel, item: ArchiveItem,
                           message=f"Серия {item.folder}: концовка не добавлена ({exc})"))
         session.commit()
         return video
+
+
+def scene_frames(item: ArchiveItem, duration: float) -> list[tuple[Path, float]]:
+    """Кадры серии с длительностями, разложенными по речи.
+
+    Точных таймингов слов до озвучки нет, поэтому делим время пропорционально
+    числу слов в сценах: это единственная общая мера между текстом и звуком, и
+    промах на доли секунды не виден. Кадр без файла пропускаем — в пакете бывает
+    намеренное повторное использование, но не бывает битых ссылок.
+    """
+    try:
+        scenes = json.loads(item.scenes_json or "[]")
+    except ValueError:
+        scenes = []
+    base = storage.abspath(item.source_dir) if item.source_dir else None
+    usable: list[dict] = []
+    for scene in scenes:
+        asset = str(scene.get("asset") or "")
+        if not asset or base is None:
+            continue
+        path = base / asset
+        if path.exists():
+            usable.append({"path": path, "words": max(1, int(scene.get("words") or 1))})
+    if not usable:
+        return []
+
+    total_words = sum(s["words"] for s in usable)
+    frames: list[tuple[Path, float]] = []
+    spent = 0.0
+    for index, scene in enumerate(usable):
+        if index == len(usable) - 1:
+            seconds = max(duration - spent, 0.4)
+        else:
+            seconds = max(duration * scene["words"] / total_words, 0.4)
+        spent += seconds
+        frames.append((scene["path"], seconds))
+    return frames
+
+
+def _build_story_v2(session: Session, item: ArchiveItem, setup: dict,
+                    voice: Path, duration: float, size: tuple[int, int],
+                    workdir: Path) -> Path:
+    """Видеоряд пакета v2: обложка секунду, дальше сюжетные кадры по сценам."""
+    total = duration + setup["tail_sec"]
+    frames = scene_frames(item, total)
+    if not frames:
+        raise ArchiveError("в серии нет ни одного сюжетного кадра — проверьте "
+                           "storyboard.json и папку assets")
+    cover = storage.abspath(item.cover_path) if item.cover_path else None
+    raw = workdir / "raw.mp4"
+    media.build_story_scene(
+        frames, cover if cover and cover.exists() else None, voice, raw, size,
+        total, workdir,
+        cover_opaque=V2_COVER_OPAQUE_MS / 1000.0,
+        cover_gone=V2_COVER_GONE_MS / 1000.0,
+        fade=V2_SCENE_FADE_MS / 1000.0)
+    log.info("Серия %s: собрана из %s сюжетных кадров", item.folder, len(frames))
+    return raw
 
 
 def channel_motion(channel: Channel) -> str:

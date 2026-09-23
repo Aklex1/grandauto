@@ -899,6 +899,7 @@ def channel_page(channel_id: int, request: Request, tab: str = "plan",
             select(ArchiveItem).where(ArchiveItem.channel_id == channel.id)
             .order_by(ArchiveItem.batch_id.desc(), ArchiveItem.idx)).scalars().all(),
         archive_cover_modes=archives.COVER_MODES,
+        archive_presets=archives.PRESETS,
         archive_defaults={"cover_dim": archives.COVER_DIM,
                           "cover_hold": archives.COVER_HOLD,
                           "cover_zoom": archives.COVER_ZOOM,

@@ -312,6 +312,12 @@ class ArchiveBatch(Base):
     # uploaded — берём обложку из архива, generate — рисуем свою,
     # auto — из архива, а если её там нет, то рисуем.
     cover_mode: Mapped[str] = mapped_column(String(16), default="uploaded")
+    # Как собирать: "legacy" — обложка фоном под титрами (первый формат архива),
+    # "story_v2" — пакет mens_circle.production.v2 с готовыми сюжетными кадрами,
+    # раскадровкой и каноническим текстом речи.
+    preset: Mapped[str] = mapped_column(String(24), default="legacy")
+    package_format: Mapped[str] = mapped_column(String(64), default="")
+    language: Mapped[str] = mapped_column(String(10), default="")
     # Сколько роликов в день выпускать. Ноль — все разом, без расписания.
     per_day: Mapped[int] = mapped_column(Integer, default=0)
     total: Mapped[int] = mapped_column(Integer, default=0)
@@ -370,6 +376,11 @@ class ArchiveItem(Base):
     caption: Mapped[str] = mapped_column(Text, default="")
     hashtags: Mapped[str] = mapped_column(Text, default="")
     cover_path: Mapped[str] = mapped_column(String(500), default="")
+    # Папка серии внутри распакованного архива: раскадровку, кадры и раскладку
+    # титров читаем при сборке, а не тащим в базу целиком.
+    source_dir: Mapped[str] = mapped_column(String(500), default="")
+    # Сцены: [{"id": 1, "asset": "assets/01.png", "words": 23}, …]
+    scenes_json: Mapped[str] = mapped_column(Text, default="")
 
     # planned — ждёт своей даты, queued/running — в работе, done, failed
     status: Mapped[str] = mapped_column(String(24), default="planned", index=True)

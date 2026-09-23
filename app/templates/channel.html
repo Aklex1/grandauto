@@ -496,6 +496,14 @@
     сорвалось {{ rows | selectattr('status', 'equalto', 'failed') | list | length }} ·
     обложка: {{ archive_cover_modes.get(batch.cover_mode, batch.cover_mode) }}
   </p>
+  <p class="small muted">Сборка: {{ archive_presets.get(batch.preset, batch.preset) }}
+    {% if batch.package_format %}<code>{{ batch.package_format }}</code>{% endif %}</p>
+  {% if batch.preset == 'story_v2' %}
+  <p class="small muted">Пакет задаёт правила сам: речь берётся из
+    <code>script_*.txt</code> байт в байт, кадры и обложка — только из архива,
+    генерация картинок, музыка и рекламная концовка выключены. Настройки ниже
+    действуют на то, что пакет оставляет на усмотрение завода.</p>
+  {% endif %}
   {% if batch.paused %}<p class="badge" style="background:#5b4a22">Архив на паузе:
     расписание его пропускает, серии запускаются только вручную.</p>{% endif %}
   <div class="row" style="gap:8px;flex-wrap:wrap">
