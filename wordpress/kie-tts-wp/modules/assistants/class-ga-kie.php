@@ -43,13 +43,46 @@ class GA_Kie
         ];
     }
 
+    /** Резервные модели: если основная упала (как gemini-3-8 → 500), пробуем их по очереди. */
+    public static function fallbacks(): array
+    {
+        $raw = (string) get_option('ga_fallback_models', 'gemini-3-6-flash-openai,gemini-3-5-flash-openai');
+        return array_filter(array_map('trim', explode(',', $raw)));
+    }
+
+    /**
+     * Основной вызов с фолбеками: сначала модель ассистента, затем резервные.
+     * Возвращает первый успешный ответ или последнюю ошибку.
+     */
     public static function chat(string $model, array $messages, float $temperature = 0.4)
+    {
+        $primary = trim($model ?: self::default_model(), '/');
+        $chain = array_merge([$primary], self::fallbacks());
+        $seen = [];
+        $last = null;
+        foreach ($chain as $m) {
+            $m = trim($m, '/');
+            if ($m === '' || isset($seen[$m])) {
+                continue;
+            }
+            $seen[$m] = true;
+            $res = self::chat_once($m, $messages, $temperature);
+            if (!is_wp_error($res)) {
+                return $res;
+            }
+            $last = $res;
+            // модель недоступна — пробуем следующую из цепочки
+        }
+        return $last ?: new WP_Error('ga_kie', 'KIE недоступен.');
+    }
+
+    /** Один вызов конкретной модели. */
+    private static function chat_once(string $model, array $messages, float $temperature)
     {
         $key = self::api_key();
         if (!$key) {
             return new WP_Error('ga_no_key', 'Не задан ключ KIE API.');
         }
-        $model = trim($model ?: self::default_model(), '/');
         $url = 'https://api.kie.ai/' . $model . '/v1/chat/completions';
 
         $response = wp_remote_post($url, [

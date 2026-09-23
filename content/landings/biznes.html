@@ -78,6 +78,25 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
 .gaL__feat h3{font-size:17px}
 .gaL__feat p{color:var(--muted);font-size:14.5px}
 
+/* два способа */
+.gaL__ways{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:6px}
+.gaL__way{display:flex;flex-direction:column;gap:10px;padding:24px 22px;border-radius:18px;
+  background:var(--panel);border:1px solid var(--line2)}
+.gaL__way--accent{background:linear-gradient(150deg,color-mix(in srgb,var(--acc) 16%,var(--panel)),var(--panel));
+  border-color:color-mix(in srgb,var(--acc) 45%,transparent)}
+.gaL__wayIco{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:13px;
+  color:var(--acc);background:color-mix(in srgb,var(--acc) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--acc) 30%,transparent)}
+.gaL__wayIco svg{width:26px;height:26px}
+.gaL__way h3{font-size:19px}
+.gaL__way p{color:var(--muted);font-size:14.5px}
+.gaL__wayList{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.gaL__wayList li{position:relative;padding-left:22px;color:#d4dcec;font-size:14px}
+.gaL__wayList li::before{content:"";position:absolute;left:3px;top:8px;width:8px;height:8px;border-radius:50%;background:var(--acc)}
+.gaL__wayTag{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ink);background:var(--acc);border-radius:6px;padding:3px 9px;align-self:flex-start}
+.gaL__way .gaL__btn{margin-top:auto;align-self:flex-start}
+
 /* demo */
 .gaL__demo{display:grid;gap:18px;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);align-items:start}
 .gaL__ask,.gaL__ans{border-radius:16px;border:1px solid var(--line2);padding:18px 20px}
@@ -125,9 +144,13 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
 .gaL__tgbT small{color:var(--muted);font-size:13.5px}
 .gaL__tgbGo{color:var(--acc);font-weight:700;white-space:nowrap}
 @media (max-width:820px){.gaL__demo,.gaL__why{grid-template-columns:1fr}}
-/* оверрайд поверх темы: текст в поле чата должен быть виден */
-.ga-chat .ga-chat__input{color:#eef2fb!important;-webkit-text-fill-color:#eef2fb!important;background:#0f172a!important}
-.ga-chat .ga-chat__input::placeholder{color:#64748b!important;-webkit-text-fill-color:#64748b!important}
+/* оверрайд поверх темы: текст в полях ввода должен быть виден */
+.ga-chat .ga-chat__input,.ga-supform__msg,.ga-supform__contact{color:#eef2fb!important;
+  -webkit-text-fill-color:#eef2fb!important;background:#0f172a!important;caret-color:#eef2fb}
+.ga-chat .ga-chat__input::placeholder,.ga-supform__msg::placeholder,.ga-supform__contact::placeholder{
+  color:#64748b!important;-webkit-text-fill-color:#64748b!important}
+.ga-supform__msg::spelling-error,.ga-supform__contact::spelling-error,
+.ga-chat__input::spelling-error{color:#eef2fb;-webkit-text-fill-color:#eef2fb}
 .ga-chat .ga-msg--user{color:#0b1220!important}
 @media (prefers-reduced-motion:reduce){.gaL__btn,.gaL__feat{transition:none}}
 </style>
@@ -190,6 +213,36 @@ body:has(.gp) .l-header .w-btn,body:has(.gaL) .l-header .w-btn{color:#fff!import
         <img class="gaL__whyImg" src="{IMG}/biznes-card.webp" alt="" loading="lazy"
              width="1200" height="896">
         <div class="gaL__whyList"><div class="gaL__whyItem"><h3>Отвечает первым, спрашивает вторым</h3><p>Сначала ответ на заданный вопрос, и только потом уточнение. Не наоборот — именно на этом ломаются чат-боты.</p></div><div class="gaL__whyItem"><h3>Не придумывает цены</h3><p>Чего нет в базе знаний, того для него не существует. Вместо выдуманной суммы — передача менеджеру.</p></div><div class="gaL__whyItem"><h3>Один вопрос за раз</h3><p>Никаких анкет из пяти полей до первого ответа. Диалог, а не форма.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gaL__sec" id="dlya-biznesa">
+    <div class="gaL__in">
+      <span class="gaL__ey">Два способа</span>
+      <h2 class="gaL__h2">Пользуйтесь сами — или подключите для бизнеса</h2>
+      <p class="gaL__sub">Один аккаунт и один баланс на всё: и на чат здесь, и на вашу коробку.</p>
+      <div class="gaL__ways">
+        <article class="gaL__way">
+          <span class="gaL__wayIco"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 6v7a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V14.5H5.5A1.5 1.5 0 0 1 4 13z"/><path d="M8.5 9.7h.01M12 9.7h.01M15.5 9.7h.01"/></svg></span>
+          <h3>Здесь, в чате — платно и сразу</h3>
+          <p>Задавайте вопросы прямо на этой странице. Первые сообщения бесплатно, дальше —
+             с общего баланса Genius, единого на все сервисы.</p>
+          <a class="gaL__btn gaL__btn--ghost" href="#probovat">Попробовать здесь</a>
+        </article>
+        <article class="gaL__way gaL__way--accent">
+          <span class="gaL__wayTag">Коробка</span>
+          <span class="gaL__wayIco"><svg class="gaL__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4.5a1.6 1.6 0 0 0-3 0c0 .5.3.9.3 1.4 0 .6-.5 1-1.1 1H7.5v2.7c0 .6-.4 1.1-1 1.1-.5 0-.9-.4-1.4-.4a1.6 1.6 0 0 0 0 3.2c.5 0 .9-.4 1.4-.4.6 0 1 .5 1 1.1V17h2.7c.6 0 1.1.4 1.1 1 0 .5-.4.9-.4 1.4a1.6 1.6 0 0 0 3.2 0c0-.5-.4-.9-.4-1.4 0-.6.5-1 1.1-1h2.7v-2.7c0-.6.4-1 .9-1 .5 0 .9.4 1.4.4a1.6 1.6 0 0 0 0-3.2c-.5 0-.9.4-1.4.4-.5 0-.9-.5-.9-1.1V7.9h-2.7c-.6 0-1.1-.4-1.1-1 0-.5.3-.9.3-1.4z"/></svg></span>
+          <h3>Своё решение — для бизнеса или клиентов</h3>
+          <p>Свой Telegram-бот и чат-виджет на ваш сайт под вашим брендом, со своей базой знаний.
+             Отвечает вашим клиентам — тратит тот же ваш баланс.</p>
+          <ul class="gaL__wayList">
+            <li>Свой бот и код чата для встройки на любой сайт</li>
+            <li>Своя база знаний и персонализация консультанта</li>
+            <li>Единый баланс — пополняете один раз</li>
+          </ul>
+          <a class="gaL__btn gaL__btn--main" href="/moya-baza/">Открыть личный кабинет</a>
+        </article>
       </div>
     </div>
   </section>

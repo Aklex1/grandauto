@@ -93,6 +93,25 @@ def style(accent, accent2):
 .gaL__feat h3{{font-size:17px}}
 .gaL__feat p{{color:var(--muted);font-size:14.5px}}
 
+/* два способа */
+.gaL__ways{{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:6px}}
+.gaL__way{{display:flex;flex-direction:column;gap:10px;padding:24px 22px;border-radius:18px;
+  background:var(--panel);border:1px solid var(--line2)}}
+.gaL__way--accent{{background:linear-gradient(150deg,color-mix(in srgb,var(--acc) 16%,var(--panel)),var(--panel));
+  border-color:color-mix(in srgb,var(--acc) 45%,transparent)}}
+.gaL__wayIco{{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:13px;
+  color:var(--acc);background:color-mix(in srgb,var(--acc) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--acc) 30%,transparent)}}
+.gaL__wayIco svg{{width:26px;height:26px}}
+.gaL__way h3{{font-size:19px}}
+.gaL__way p{{color:var(--muted);font-size:14.5px}}
+.gaL__wayList{{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}}
+.gaL__wayList li{{position:relative;padding-left:22px;color:#d4dcec;font-size:14px}}
+.gaL__wayList li::before{{content:"";position:absolute;left:3px;top:8px;width:8px;height:8px;border-radius:50%;background:var(--acc)}}
+.gaL__wayTag{{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ink);background:var(--acc);border-radius:6px;padding:3px 9px;align-self:flex-start}}
+.gaL__way .gaL__btn{{margin-top:auto;align-self:flex-start}}
+
 /* demo */
 .gaL__demo{{display:grid;gap:18px;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);align-items:start}}
 .gaL__ask,.gaL__ans{{border-radius:16px;border:1px solid var(--line2);padding:18px 20px}}
@@ -237,6 +256,36 @@ def render(item, img):
         <img class="gaL__whyImg" src="{img}/{slug}-card.webp" alt="" loading="lazy"
              width="1200" height="896">
         <div class="gaL__whyList">{whys}</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gaL__sec" id="dlya-biznesa">
+    <div class="gaL__in">
+      <span class="gaL__ey">Два способа</span>
+      <h2 class="gaL__h2">Пользуйтесь сами — или подключите для бизнеса</h2>
+      <p class="gaL__sub">Один аккаунт и один баланс на всё: и на чат здесь, и на вашу коробку.</p>
+      <div class="gaL__ways">
+        <article class="gaL__way">
+          <span class="gaL__wayIco">{li.svg('chat')}</span>
+          <h3>Здесь, в чате — платно и сразу</h3>
+          <p>Задавайте вопросы прямо на этой странице. Первые сообщения бесплатно, дальше —
+             с общего баланса Genius, единого на все сервисы.</p>
+          <a class="gaL__btn gaL__btn--ghost" href="#probovat">Попробовать здесь</a>
+        </article>
+        <article class="gaL__way gaL__way--accent">
+          <span class="gaL__wayTag">Коробка</span>
+          <span class="gaL__wayIco">{li.svg('puzzle')}</span>
+          <h3>Своё решение — для бизнеса или клиентов</h3>
+          <p>Свой Telegram-бот и чат-виджет на ваш сайт под вашим брендом, со своей базой знаний.
+             Отвечает вашим клиентам — тратит тот же ваш баланс.</p>
+          <ul class="gaL__wayList">
+            <li>Свой бот и код чата для встройки на любой сайт</li>
+            <li>Своя база знаний и персонализация консультанта</li>
+            <li>Единый баланс — пополняете один раз</li>
+          </ul>
+          <a class="gaL__btn gaL__btn--main" href="/moya-baza/">Открыть личный кабинет</a>
+        </article>
       </div>
     </div>
   </section>

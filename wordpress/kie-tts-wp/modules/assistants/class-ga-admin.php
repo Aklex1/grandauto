@@ -201,6 +201,9 @@ class GA_Admin
         update_option(GA_Billing::OPT_PRICE_FILE, max(0, (float) ($_POST['price_file'] ?? 8)), false);
         update_option(GA_Kie::OPT_MODEL,
             sanitize_text_field(wp_unslash($_POST['model'] ?? '')) ?: 'gemini-3-6-flash-openai', false);
+        update_option('ga_fallback_models',
+            sanitize_text_field(wp_unslash($_POST['fallback_models'] ?? ''))
+                ?: 'gemini-3-6-flash-openai,gemini-3-5-flash-openai', false);
         update_option('ga_topup_amounts',
             sanitize_text_field(wp_unslash($_POST['topup_amounts'] ?? '')) ?: '200,300,400,500', false);
         update_option('ga_kb_assistants',
@@ -545,6 +548,11 @@ class GA_Admin
             <tr><th><label for="ga-set-model">Модель по умолчанию</label></th>
               <td><input id="ga-set-model" name="model" class="regular-text"
                          value="<?php echo esc_attr(GA_Kie::default_model()); ?>"></td></tr>
+            <tr><th><label for="ga-set-fallback">Резервные модели</label></th>
+              <td><input id="ga-set-fallback" name="fallback_models" class="large-text"
+                         value="<?php echo esc_attr(get_option('ga_fallback_models', 'gemini-3-6-flash-openai,gemini-3-5-flash-openai')); ?>">
+                <p class="description">Через запятую. Если основная модель упадёт (как недавно
+                   gemini-3-8 → 500), ассистент автоматически пробует их по очереди. Порядок = приоритет.</p></td></tr>
             <tr><th><label for="ga-set-topup">Суммы пополнения, ₽</label></th>
               <td><input id="ga-set-topup" name="topup_amounts" class="regular-text"
                          value="<?php echo esc_attr(get_option('ga_topup_amounts', '200,300,400,500')); ?>">
