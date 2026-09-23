@@ -265,6 +265,7 @@ class Genius_Sounds_Plugin {
             wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
             wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
             wp_enqueue_style('genius-sounds-api', GS_PLUGIN_URL . 'assets/css/api.css', array('genius-sounds-studio'), GS_VERSION);
+            wp_enqueue_style('genius-sounds-voicehub', GS_PLUGIN_URL . 'assets/css/voicehub.css', array('genius-sounds-api'), GS_VERSION);
         }
 
         if ($dashboard) {

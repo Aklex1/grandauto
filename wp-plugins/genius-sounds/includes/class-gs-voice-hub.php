@@ -345,7 +345,7 @@ class GS_Voice_Hub {
             array('Статья в блог', '10 000 знаков', 10000, 'около 10 минут'),
             array('Урок курса', '8 000 знаков', 8000, 'около 8 минут'),
             array('Каталог из 100 карточек', '40 000 знаков', 40000, 'около 40 минут'),
-            array('Курс из 10 уроков', '80 000 знаков', 80000, 'около 80 минут'),
+            array('Курс из 10 уроков', '80 000 знаков', 80000, 'около 1 часа 20 минут'),
             array('Небольшая книга', '300 000 знаков', 300000, 'около 5 часов'),
         );
     }
@@ -365,7 +365,7 @@ class GS_Voice_Hub {
                 </p>
 
                 <div class="gs-api__tablewrap">
-                    <table class="gs-api__table">
+                    <table class="gs-api__table gs-voicehub__table">
                         <thead>
                             <tr>
                                 <th>Что озвучиваем</th>
@@ -379,11 +379,11 @@ class GS_Voice_Hub {
                             <?php foreach (self::volumes() as $row): ?>
                                 <?php $sum = self::price($row[2]); ?>
                                 <tr>
-                                    <td><?php echo esc_html($row[0]); ?></td>
-                                    <td><?php echo esc_html($row[1]); ?></td>
-                                    <td><?php echo esc_html(self::rub($sum)); ?></td>
-                                    <td><?php echo esc_html(self::rub(round($sum * (100 + self::DIALOGUE_EXTRA) / 100))); ?></td>
-                                    <td><?php echo esc_html($row[3]); ?></td>
+                                    <td data-label="Что озвучиваем"><?php echo esc_html($row[0]); ?></td>
+                                    <td data-label="Объём текста"><?php echo esc_html($row[1]); ?></td>
+                                    <td data-label="Цена"><?php echo esc_html(self::rub($sum)); ?></td>
+                                    <td data-label="Диалоговый режим"><?php echo esc_html(self::rub(round($sum * (100 + self::DIALOGUE_EXTRA) / 100))); ?></td>
+                                    <td data-label="Примерная длительность"><?php echo esc_html($row[3]); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

@@ -1,0 +1,151 @@
+/**
+ * Genius Sounds — блок, который дописывается к страницам озвучки.
+ *
+ * Страницы рисует чужой плагин, а оформление им задаёт тема: заголовки на
+ * них выходят тёмно-синими, и на тёмном фоне их попросту не видно. На
+ * своих страницах этой беды нет — там у заголовков наши классы. Здесь
+ * проще покрасить всё внутри блока явно, чем развешивать классы по каждой
+ * строчке чужой разметки.
+ *
+ * Остальное (карточки, таблицы, кнопки) берётся из api.css и studio.css.
+ */
+
+.gs-voicehub {
+    margin: 32px 0 0;
+}
+
+.gs-voicehub h2,
+.gs-voicehub h3 {
+    color: var(--gs-api-text);
+}
+
+.gs-voicehub h2 {
+    margin: 0 0 14px;
+    font-size: clamp(21px, 2.6vw, 26px);
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+}
+
+.gs-voicehub h3 {
+    margin: 26px 0 10px;
+    font-size: 18px;
+    line-height: 1.3;
+}
+
+/* Заголовок карточки — не раздел: у него свой размер и свой отступ. */
+.gs-voicehub .gs-cross__card h3 {
+    margin: 0 0 8px;
+    font-size: 16.5px;
+}
+
+.gs-voicehub p,
+.gs-voicehub li {
+    color: var(--gs-api-muted);
+    font-size: 15.5px;
+    line-height: 1.7;
+}
+
+.gs-voicehub .gs-api__list {
+    margin: 0 0 16px;
+    padding-left: 20px;
+}
+
+.gs-voicehub .gs-api__list li {
+    margin: 0 0 8px;
+}
+
+/* Цена в карточке — то, ради чего карточку и читают. */
+.gs-voicehub .gs-cross__card strong {
+    color: var(--gs-api-text);
+    white-space: nowrap;
+}
+
+.gs-voicehub .gs-btn {
+    margin: 6px 12px 16px 0;
+}
+
+/* ------------------------------------------------------------- телефон
+   Таблица цен на узком экране уезжала вправо вместе со столбцом «Цена» —
+   то есть ровно с тем, ради чего страницу и открыли. Поэтому здесь она
+   перестаёт быть таблицей и становится списком карточек: подпись слева,
+   значение справа. Прокрутка на странице цен неуместна. */
+
+@media (max-width: 640px) {
+    .gs-voicehub .gs-api__tablewrap {
+        overflow: visible;
+    }
+
+    .gs-voicehub__table,
+    .gs-voicehub__table tbody,
+    .gs-voicehub__table tr,
+    .gs-voicehub__table td {
+        display: block;
+        width: auto;
+        /* Тема держит на таблицах min-width в 560px — ради горизонтальной
+           прокрутки. Без этой строки карточки остаются шире экрана, и
+           столбец с ценой снова уезжает за край. */
+        min-width: 0;
+    }
+
+    .gs-voicehub__table thead {
+        display: none;
+    }
+
+    .gs-voicehub__table tr {
+        margin: 0 0 12px;
+        padding: 6px 0;
+        border: 1px solid var(--gs-api-line);
+        border-radius: 14px;
+        background: var(--gs-api-surface-2);
+    }
+
+    .gs-voicehub__table td {
+        display: flex;
+        gap: 14px;
+        justify-content: space-between;
+        align-items: baseline;
+        border: 0;
+        padding: 7px 14px;
+        text-align: right;
+    }
+
+    .gs-voicehub__table td::before {
+        content: attr(data-label);
+        flex: 0 0 auto;
+        color: var(--gs-api-muted);
+        font-size: 13px;
+        text-align: left;
+    }
+
+    /* Первая строка карточки — её заголовок: подпись «Что озвучиваем» в нём лишняя. */
+    .gs-voicehub__table td:first-child {
+        justify-content: flex-start;
+        padding-top: 12px;
+        font-weight: 600;
+        text-align: left;
+    }
+
+    .gs-voicehub__table td:first-child::before {
+        display: none;
+    }
+}
+
+/* --------------------------------------------------- заглушка соседа
+   У самих страниц озвучки заголовки тоже тёмно-синие на тёмном фоне:
+   «Тарифы генерации», «Платные модели», «Форматы вывода» на телефоне
+   не читаются вовсе. Рисует их плагин озвучки, и трогать его нельзя —
+   но этот лист грузится только на трёх его страницах, так что вернуть
+   заголовкам видимость можно и отсюда, ничего чужого не переписывая.
+   Переменная здесь не годится: она объявлена на .gs-api, а эти
+   заголовки лежат вне нашего блока. */
+
+.api-docs-page h2,
+.api-docs-page h3,
+.api-docs-page .zv-hero-header h1 {
+    color: #e8edf7;
+}
+
+.api-docs-page .api-docs-card p,
+.api-docs-page .api-docs-card li {
+    color: #a7b4c8;
+}
