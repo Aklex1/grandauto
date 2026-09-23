@@ -168,10 +168,10 @@ class GS_Api {
                 'engine' => 'lab',
                 'lab_id' => 'dub',
                 'title'  => 'Дубляж видео',
-                'about'  => 'Новая речь поверх ролика с подгонкой движения губ; при желании с переводом.',
+                'about'  => 'Речь из ролика распознаётся, переводится и озвучивается заново, губы подгоняются под неё. Свой текст в speech заменяет распознанный.',
                 'input'  => array(
                     'video_url' => 'required',
-                    'speech'    => 'required',
+                    'speech'    => 'optional',
                     'lang'      => 'optional',
                 ),
                 'fields' => array('speech', 'lang'),
