@@ -72,6 +72,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-api-keys.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-api.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-rank.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-wheel.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-backup.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-api-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rest.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-admin.php';
@@ -137,6 +138,7 @@ class Genius_Sounds_Plugin {
         GS_Voice_Hub::init();
         GS_Voice_Rank::boot();
         GS_Wheel::boot();
+        GS_Backup::boot();
         GS_Api::boot();
         GS_Openapi::boot();
         GS_Weight::boot();

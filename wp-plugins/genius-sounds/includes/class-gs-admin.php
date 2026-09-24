@@ -743,6 +743,59 @@ class GS_Admin {
 
         ob_start();
         ?>
+        <h2 id="gs-backup">Резерв настроек</h2>
+        <?php $backup_notice = get_transient('gs_backup_notice'); ?>
+        <?php if ($backup_notice): ?>
+            <div class="notice notice-info inline"><p><?php echo esc_html($backup_notice); ?></p></div>
+            <?php delete_transient('gs_backup_notice'); ?>
+        <?php endif; ?>
+        <p class="description" style="max-width:660px">
+            Снимок настроек берётся сам: перед каждым сохранением настроек в админке и раз в
+            сутки. Хранятся десять последних. Восстановление возвращает значения поимённо и
+            ничего не удаляет — настройка, которой в снимке нет, остаётся как есть.
+        </p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
+            <?php wp_nonce_field('gs_backup_now'); ?>
+            <input type="hidden" name="action" value="gs_backup_now">
+            <?php submit_button('Сделать снимок сейчас', 'secondary', 'submit', false); ?>
+        </form>
+        <?php $snapshots = GS_Backup::index(); ?>
+        <?php if (!$snapshots): ?>
+            <p class="description">Снимков пока нет — первый появится при ближайшем сохранении настроек.</p>
+        <?php else: ?>
+            <table class="widefat striped" style="max-width:900px">
+                <thead><tr><th>Когда</th><th>Настроек</th><th>Кто</th><th>Почему</th><th>Восстановить</th></tr></thead>
+                <tbody>
+                    <?php foreach ($snapshots as $sid => $row): ?>
+                        <tr>
+                            <td><?php echo esc_html(wp_date('d.m.Y H:i', (int) $row['time'])); ?></td>
+                            <td><?php echo (int) $row['count']; ?></td>
+                            <td><?php echo esc_html((string) $row['by']); ?></td>
+                            <td><?php echo esc_html((string) $row['reason']); ?></td>
+                            <td>
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                    <?php wp_nonce_field('gs_backup_restore'); ?>
+                                    <input type="hidden" name="action" value="gs_backup_restore">
+                                    <input type="hidden" name="snapshot" value="<?php echo (int) $sid; ?>">
+                                    <select name="mode">
+                                        <option value="empty">только пустые сейчас</option>
+                                        <option value="all">все значения из снимка</option>
+                                    </select>
+                                    <?php submit_button('Восстановить', 'small', 'submit', false); ?>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <p class="description" style="max-width:660px">
+                «Только пустые сейчас» — обычный случай после обнуления: вернутся настройки,
+                которые сейчас потерялись, а те, что вы успели поправить руками, останутся.
+                Перед любым восстановлением снимается ещё один снимок, так что откатиться
+                можно и назад.
+            </p>
+        <?php endif; ?>
+
         <h2 id="gs-voices">Образцы голосов</h2>
         <?php $voice_notice = get_transient('gs_voice_samples_notice'); ?>
         <?php if ($voice_notice): ?>
