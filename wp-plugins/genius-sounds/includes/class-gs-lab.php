@@ -1208,11 +1208,31 @@ class GS_Lab {
         return $out;
     }
 
+    /** Сколько помним о том, что служба извлечения лежит. */
+    const YTA_DOWN_KEY = 'gs_yta_down';
+    const YTA_DOWN_TTL = 900;
+
+    /** Лежит ли служба извлечения прямо сейчас. */
+    public static function ytaudio_down() {
+        return (bool) get_transient(self::YTA_DOWN_KEY);
+    }
+
     /** Отказ службы извлечения — на языке пользователя. */
     private static function ytaudio_error($message) {
         $low = mb_strtolower((string) $message);
         if (strpos($low, 'ключ') !== false || strpos($low, 'key') !== false) {
             return 'Служба извлечения звука не приняла ключ доступа — её нужно обновить на сервере.';
+        }
+        // «Не удалось соединиться» и «не ответила вовремя» — разные беды.
+        // Первое значит, что машины со службой просто нет на связи, и совет
+        // «попробуйте через минуту» тут превращается в обман: человек будет
+        // пробовать весь день. Такое состояние запоминаем и честно говорим
+        // о нём на странице сервиса.
+        if (strpos($low, 'failed to connect') !== false || strpos($low, 'connection refused') !== false
+            || strpos($low, 'could not connect') !== false || strpos($low, 'couldn\'t connect') !== false) {
+            set_transient(self::YTA_DOWN_KEY, 1, self::YTA_DOWN_TTL);
+            return 'Служба извлечения звука сейчас не на связи. Это наша поломка, не ваша — '
+                 . 'мы уже знаем о ней. Пока можно загрузить файл с устройства.';
         }
         if (strpos($low, 'timeout') !== false || strpos($low, 'таймаут') !== false || strpos($low, 'timed out') !== false) {
             return 'Служба извлечения звука не ответила вовремя. Попробуйте ещё раз через минуту.';
