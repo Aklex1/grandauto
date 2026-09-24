@@ -57,6 +57,11 @@ COVER_ZOOM = 1.08
 # Хвост после последнего слова: под него доигрывает музыка.
 TAIL_SECONDS = 1.2
 
+# Насколько короче ожидаемого может быть сохранённая озвучка, чтобы ей ещё
+# верить. Ниже — провайдер оборвал текст, и такой файл нельзя подставлять при
+# пересборке: иначе брак закрепится навсегда.
+VOICE_MIN_RATIO = 0.75
+
 # Файлы, которые мы понимаем внутри папки.
 COVER_NAMES = ("cover.png", "cover.jpg", "cover.jpeg", "cover.webp")
 META_NAME = "metadata.json"
@@ -360,6 +365,22 @@ def read_reel_v2(folder: Path, language: str) -> Optional[dict]:
     montage_path = folder / "montage.json"
     montage = _read_json(montage_path) if montage_path.exists() else {}
     cover_plan = montage.get("cover") or {}
+    raw_canvas = montage.get("canvas") or {}
+    canvas = [int(raw_canvas.get("width") or 1080), int(raw_canvas.get("height") or 1920)]
+
+    # fontFile в раскладке указан относительно папки серии: ../../shared/Georgia.ttf
+    font_dir = None
+    font_ref = str(layout.get("fontFile") or "")
+    if font_ref:
+        candidate = (folder / font_ref).resolve()
+        if candidate.exists():
+            font_dir = candidate.parent
+    if font_dir is None:
+        for up in (folder.parent.parent, folder.parent, folder):
+            shared = up / "shared"
+            if (shared / "Georgia.ttf").exists():
+                font_dir = shared
+                break
     cover = next((folder / name for name in COVER_NAMES if (folder / name).exists()), None)
 
     platforms = pub.get("platforms") or pub
@@ -380,6 +401,13 @@ def read_reel_v2(folder: Path, language: str) -> Optional[dict]:
         "cover_hold_ms": float(cover_plan.get("holdUntilMs") or V2_COVER_OPAQUE_MS),
         "cover_gone_ms": float(cover_plan.get("clearAtMs") or V2_COVER_GONE_MS),
         "scene_fade_ms": float(montage.get("sceneTransitionMs") or V2_SCENE_FADE_MS),
+        # Холст задаёт пакет: 1080×1920. Брать разрешение канала нельзя — вся
+        # раскладка титров посчитана под эти пиксели, и 720p её ужимает.
+        "canvas": canvas,
+        # Шрифт приложен к пакету. Без него libass подставит свой, буквы станут
+        # шире, готовые строки перестанут помещаться в зону и libass переверстает
+        # их сам — отсюда и «слова прыгают на другую строку».
+        "font_dir": str(font_dir) if font_dir else "",
         "dir": folder,
     }
 
@@ -533,6 +561,8 @@ def import_zip(session: Session, channel: Channel, data: bytes, *, name: str = "
                 "cover_hold_ms": info.get("cover_hold_ms"),
                 "cover_gone_ms": info.get("cover_gone_ms"),
                 "scene_fade_ms": info.get("scene_fade_ms"),
+                "canvas": info.get("canvas"),
+                "font_dir": info.get("font_dir"),
             } if info.get("scenes") else [], ensure_ascii=False),
             captions_json=json.dumps(info.get("captions") or {}, ensure_ascii=False),
             scheduled_date=when))
@@ -629,11 +659,11 @@ def build_item(item_id: int) -> Optional[Path]:
             lang = _voice_language(item)
             cached = voice_cache_path(channel, item, setup)
             voice: Path
-            if cached.exists() and storage.media_duration(cached) > 0.5:
+            reuse = _usable_voice(cached, item.narration, setup["voice_speed"])
+            if reuse is not None:
                 # Тот же текст тем же голосом уже озвучен: при повторной загрузке
                 # архива и при пересборке платить второй раз незачем.
-                voice = cached
-                duration = storage.media_duration(cached)
+                voice, duration = cached, reuse
                 item.credits = 0.0
                 log.info("Серия %s: озвучка взята с диска (%.1f с)", item.folder, duration)
             else:
@@ -661,10 +691,21 @@ def build_item(item_id: int) -> Optional[Path]:
             # сценам — там обложка уходит к секунде и дальше идёт сюжет; у
             # прежнего формата единственная картинка и есть фон.
             story = (batch is not None and batch.preset == PRESET_STORY)
-            hold = (V2_COVER_GONE_MS / 1000.0) if story else setup["cover_hold"]
+            _, plan = _scene_plan(item)
+            if story:
+                # Холст задаёт пакет: вся раскладка титров посчитана под него.
+                canvas = plan.get("canvas") or []
+                if len(canvas) == 2 and canvas[0] > 0 and canvas[1] > 0:
+                    size = (int(canvas[0]), int(canvas[1]))
+                hold = float(plan.get("cover_gone_ms") or V2_COVER_GONE_MS) / 1000.0
+            else:
+                hold = setup["cover_hold"]
+
+            cues = _cues_for(item, voice, duration)
+            marks = _token_marks(item, cues, duration) if story else None
             if story:
                 raw = _build_story_v2(session, item, setup, voice, duration, size,
-                                      workdir)
+                                      workdir, marks=marks)
             else:
                 total = duration + setup["tail_sec"]
                 raw = workdir / "raw.mp4"
@@ -674,9 +715,10 @@ def build_item(item_id: int) -> Optional[Path]:
                     zoom_end=setup["cover_zoom"])
 
             # 4. Титры поверх, но не поверх обложки.
-            cues = _shift_past_cover(_cues_for(item, voice, duration), hold=hold)
+            cues = _shift_past_cover(cues, hold=hold)
             with_subs = raw
-            pages = _story_pages(item, cues, duration, hold=hold if story else 0.0)
+            pages = _story_pages(item, cues, duration, hold=hold if story else 0.0,
+                                 marks=marks)
             if setup["subtitles"] and pages:
                 # У пакета строки уже разбиты — выводим как есть, своей вёрстки
                 # не навязываем.
@@ -688,7 +730,13 @@ def build_item(item_id: int) -> Optional[Path]:
                     canvas_h=float(layout.get("canvas_h") or 1920),
                     font=_story_font())
                 with_subs = workdir / "subs.mp4"
-                media.burn_subtitles(raw, ass, with_subs)
+                # Шрифт лежит в самом пакете: libass ищет по имени через
+                # fontconfig и файлы вне системных каталогов сам не находит.
+                font_dir = plan.get("font_dir") or ""
+                media.burn_subtitles(
+                    raw, ass, with_subs,
+                    fontsdir=Path(font_dir) if font_dir and Path(font_dir).exists()
+                    else None)
             elif setup["subtitles"] and cues:
                 ass = workdir / "subs.ass"
                 subtitles.write_ass(cues, ass, size=size, vertical=True,
@@ -847,13 +895,19 @@ def _scene_plan(item: ArchiveItem) -> tuple[list, dict]:
     return raw.get("scenes") or [], raw
 
 
-def scene_frames(item: ArchiveItem, duration: float) -> list[tuple[Path, float]]:
+def scene_frames(item: ArchiveItem, duration: float,
+                 marks: Optional[list] = None,
+                 total_span: Optional[float] = None) -> list[tuple[Path, float]]:
     """Кадры серии с длительностями, разложенными по речи.
 
-    Точных таймингов слов до озвучки нет, поэтому делим время пропорционально
-    числу слов в сценах: это единственная общая мера между текстом и звуком, и
-    промах на доли секунды не виден. Кадр без файла пропускаем — в пакете бывает
-    намеренное повторное использование, но не бывает битых ссылок.
+    Сцены живут на той же шкале, что и титры: у каждой известно, сколько токенов
+    речи она занимает, а `marks` говорит, когда каждый токен звучит. Поэтому
+    кадр меняется ровно на первом слове своей сцены.
+
+    Раньше время делилось пропорционально на всю длину ролика вместе с хвостом
+    после речи — и каждая следующая сцена отставала всё сильнее: к концу
+    полуминутного ролика набегала секунда. Хвост речи не содержит, поэтому он
+    достаётся последнему кадру целиком.
     """
     scenes, _ = _scene_plan(item)
     base = storage.abspath(item.source_dir) if item.source_dir else None
@@ -869,28 +923,77 @@ def scene_frames(item: ArchiveItem, duration: float) -> list[tuple[Path, float]]
     if not usable:
         return []
 
+    span = total_span if total_span is not None else duration
     total_weight = sum(s["weight"] for s in usable)
+
+    # Начало каждой сцены — момент её первого слова.
+    starts: list[float] = []
+    if marks:
+        index = 0
+        for scene in usable:
+            at = marks[min(index, len(marks) - 1)]
+            starts.append(float(at))
+            index += scene["weight"]
+    else:
+        at = 0.0
+        for scene in usable:
+            starts.append(at)
+            at += duration * scene["weight"] / total_weight
+    starts[0] = 0.0
+
     frames: list[tuple[Path, float]] = []
-    spent = 0.0
     for index, scene in enumerate(usable):
-        if index == len(usable) - 1:
-            seconds = max(duration - spent, 0.4)
-        else:
-            seconds = max(duration * scene["weight"] / total_weight, 0.4)
-        spent += seconds
-        frames.append((scene["path"], seconds))
+        # Последнему кадру достаётся и хвост после речи: там слов уже нет.
+        end = starts[index + 1] if index + 1 < len(starts) else span
+        frames.append((scene["path"], max(end - starts[index], 0.4)))
     return frames
 
 
-def _story_font() -> str:
-    """Шрифт титров пакета. Georgia приложена к архиву, но может и не встать."""
-    from . import fonts
+def _usable_voice(path: Path, text: str, speed: float) -> Optional[float]:
+    """Годится ли сохранённая озвучка. Возвращает её длину или None.
 
-    return "Georgia" if fonts.font_path("georgia") else "Georgia"
+    Кэш экономит деньги, но он же умеет закреплять брак: если провайдер оборвал
+    текст на полуслове, обрезанный файл будет подставляться при каждой
+    пересборке, и ролик никогда не починится. Поэтому перед тем как взять
+    готовое, сверяем длину с ожидаемой по тексту: короче трёх четвертей — значит
+    озвучено не всё, и надо просить заново.
+    """
+    if not path.exists():
+        return None
+    duration = storage.media_duration(path)
+    if duration <= 0.5:
+        return None
+    expected = tts.expected_seconds(text or "", speed or 1.0)
+    if expected > 0 and duration < expected * VOICE_MIN_RATIO:
+        log.warning("Озвучка в кэше короче текста (%.1f с при ожидаемых %.1f) — "
+                    "озвучиваю заново", duration, expected)
+        path.unlink(missing_ok=True)
+        return None
+    return duration
+
+
+def _story_font() -> str:
+    """Имя шрифта титров. Файл берётся из пакета через fontsdir."""
+    return "Georgia"
+
+
+def _token_marks(item: ArchiveItem, cues: list, duration: float) -> list:
+    """Когда звучит каждый токен серии. Общая шкала для кадров и титров."""
+    try:
+        layout = json.loads(item.captions_json or "{}")
+    except ValueError:
+        return []
+    total = int(layout.get("total") or 0)
+    if total <= 0:
+        # Раскладки нет — считаем по словам самого текста.
+        total = len((item.narration or "").split())
+    if total <= 0:
+        return []
+    return subtitles.token_times(cues, total, duration)
 
 
 def _story_pages(item: ArchiveItem, cues: list, duration: float,
-                 hold: float = 0.0) -> list[dict]:
+                 hold: float = 0.0, marks: Optional[list] = None) -> list[dict]:
     """Страницы титров пакета со временем показа.
 
     Страницы приходят готовыми, а времени у них нет — оно появляется только
@@ -906,7 +1009,7 @@ def _story_pages(item: ArchiveItem, cues: list, duration: float,
     if not pages or total <= 0:
         return []
 
-    marks = subtitles.token_times(cues, total, duration)
+    marks = marks or subtitles.token_times(cues, total, duration)
     if not marks:
         return []
     out: list[dict] = []
@@ -929,10 +1032,10 @@ def _story_pages(item: ArchiveItem, cues: list, duration: float,
 
 def _build_story_v2(session: Session, item: ArchiveItem, setup: dict,
                     voice: Path, duration: float, size: tuple[int, int],
-                    workdir: Path) -> Path:
+                    workdir: Path, marks: Optional[list] = None) -> Path:
     """Видеоряд пакета v2: обложка секунду, дальше сюжетные кадры по сценам."""
     total = duration + setup["tail_sec"]
-    frames = scene_frames(item, total)
+    frames = scene_frames(item, duration, marks=marks, total_span=total)
     if not frames:
         raise ArchiveError("в серии нет ни одного сюжетного кадра — проверьте "
                            "storyboard.json и папку assets")
