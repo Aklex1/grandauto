@@ -254,6 +254,12 @@ class GS_Links {
             array('url' => GS_Pages::get_studio_url(), 'title' => 'Генератор звуков'),
         );
         foreach (GS_Lab::available_services() as $service) {
+            // Сервис может работать, но не занимать место в шапке: пунктов
+            // там конечное число, и каждый лишний отодвигает те, за которые
+            // платят. Сама страница и API при этом остаются на месте.
+            if (isset($service['in_nav']) && !$service['in_nav']) {
+                continue;
+            }
             $links[] = array('url' => GS_Lab::get_url($service['id']), 'title' => $service['nav']);
         }
         $links[] = array('url' => self::neurohub_url(), 'title' => 'Нейросети');

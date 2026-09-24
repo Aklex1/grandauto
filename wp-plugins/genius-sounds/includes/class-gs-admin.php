@@ -59,6 +59,24 @@ class GS_Admin {
             ));
         }
 
+        // Тариф чата и ИИ-помощников. Раньше он жил только в коде, и чтобы
+        // поменять цену, надо было выкатывать плагин. Цена у поставщика
+        // меняется сама по себе — значит и наша должна меняться из админки.
+        foreach (array(GS_OpenAI::OPT_IN => GS_OpenAI::IN_DEFAULT,
+                       GS_OpenAI::OPT_OUT => GS_OpenAI::OUT_DEFAULT) as $chat_option => $chat_default) {
+            register_setting('gs_settings_group', $chat_option, array(
+                'type'              => 'number',
+                'sanitize_callback' => function ($value) use ($chat_option, $chat_default) {
+                    // Пустое поле в форме — не повод обнулить тариф.
+                    if ($value === null || $value === '') {
+                        return (float) get_option($chat_option, $chat_default);
+                    }
+                    $value = (float) $value;
+                    return $value >= 0 ? $value : (float) $chat_default;
+                },
+            ));
+        }
+
         foreach (GS_Lab::services() as $lab_id => $lab) {
             register_setting('gs_settings_group', 'gs_lab_enabled_' . $lab_id, array(
                 'type'              => 'string',
@@ -900,6 +918,23 @@ class GS_Admin {
                                     <?php checked(GS_Blog::enabled()); ?>>
                                 оформлять блог и статьи в стилистике микросервисов
                             </label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Чат и ИИ-помощники</th>
+                        <td>
+                            <p>
+                                <input name="<?php echo esc_attr(GS_OpenAI::OPT_IN); ?>" type="number" step="1" min="0"
+                                       value="<?php echo esc_attr(GS_OpenAI::rate('in')); ?>" class="small-text"> ₽
+                                за млн токенов запроса,
+                                <input name="<?php echo esc_attr(GS_OpenAI::OPT_OUT); ?>" type="number" step="1" min="0"
+                                       value="<?php echo esc_attr(GS_OpenAI::rate('out')); ?>" class="small-text"> ₽
+                                за млн токенов ответа
+                            </p>
+                            <p class="description">
+                                Себестоимость у поставщика — около 37 ₽ и 294 ₽ за те же миллионы.
+                                Ниже этих чисел чат работает в убыток.
+                            </p>
                         </td>
                     </tr>
                     <tr>

@@ -173,6 +173,10 @@ class GS_Lab {
                 'page_option' => 'gs_lab_page_vocal',
                 'menu'        => 'Убрать вокал',
                 'nav'         => 'Убрать вокал',
+                // В шапке не показываем: место в меню отдано тем сервисам,
+                // которые приносят деньги. Страница, каталог и API работают
+                // по-прежнему — убран только пункт навигации.
+                'in_nav'      => false,
                 'h1'          => 'Убрать вокал из песни онлайн: минусовка за пару минут',
                 'seo_title'   => 'Убрать вокал из песни онлайн — сделать минусовку бесплатно',
                 'seo_desc'    => 'Уберите вокал из песни онлайн и получите минусовку: нейросеть отделит голос от музыки и отдаст две дорожки — инструментал и вокал. Загрузите трек и скачайте результат в MP3.',
@@ -1385,13 +1389,6 @@ class GS_Lab {
             return array('ok' => !empty($res['ok']), 'task_id' => (string) $res['task'], 'message' => (string) $res['message']);
         }
 
-        if ($id === 'denoise') {
-            $res = GS_Provider::job('denoise', array(
-                'audio_url' => (string) $params['audio_url'],
-            ), array('callback' => $callback));
-            return array('ok' => !empty($res['ok']), 'task_id' => (string) $res['task'], 'message' => (string) $res['message']);
-        }
-
         if ($id === 'stt') {
             $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
             $link = trim((string) ($fields['source_url'] ?? ''));
@@ -1502,10 +1499,16 @@ class GS_Lab {
             return array('ok' => $res['ok'] && $task !== '', 'task_id' => $task, 'message' => $res['message']);
         }
 
-        if ($id === 'vocal') {
+        // Разделение дорожек обслуживает две разные задачи: «убрать вокал»
+        // отдаёт минусовку, «убрать шум» — ту же дорожку с голосом, только
+        // без всего остального. Модель одна, отличаются лишь тем, какой стем
+        // показываем человеку.
+        if ($id === 'vocal' || $id === 'denoise') {
+            // audioId сюда слать нельзя: поставщик считает его ссылкой на
+            // свою прежнюю задачу и отвечает «retry with taskId and audioId».
+            // Со своей строкой запрос падал всегда — сервис не работал.
             $res = self::post_json(self::API_VOCAL, array(
                 'audioUrl'    => (string) $params['audio_url'],
-                'audioId'     => 'gs-' . wp_generate_password(16, false, false),
                 'type'        => 'separate_vocal',
                 'stemName'    => 'Vocals',
                 'callBackUrl' => $callback,
@@ -1656,7 +1659,7 @@ class GS_Lab {
             return $out;
         }
 
-        if ($id === 'vocal') {
+        if ($id === 'vocal' || $id === 'denoise') {
             $res = self::get_json(self::API_VOCAL_INFO, array('taskId' => $task_id));
             if (!$res['ok']) {
                 $out['message'] = $res['message'];
@@ -1668,12 +1671,22 @@ class GS_Lab {
 
             if (in_array($flag, array('CREATE_TASK_FAILED', 'GENERATE_AUDIO_FAILED', 'CALLBACK_EXCEPTION'), true)) {
                 $out['status'] = 'failed';
-                $out['message'] = 'Не удалось разделить дорожки';
+                $out['message'] = $id === 'denoise'
+                    ? 'Не удалось очистить запись'
+                    : 'Не удалось разделить дорожки';
                 return $out;
             }
             $resp = isset($data['response']) && is_array($data['response']) ? $data['response'] : array();
             if (!empty($resp['instrumentalUrl']) || !empty($resp['vocalUrl'])) {
                 $out['status'] = 'completed';
+                if ($id === 'denoise') {
+                    // Пришедший за чистым голосом не должен разбираться, какой
+                    // из двух файлов ему нужен: отдаём один, и тот самый.
+                    if (!empty($resp['vocalUrl'])) {
+                        $out['files'][] = array('label' => 'Чистый голос', 'url' => (string) $resp['vocalUrl'], 'kind' => 'audio');
+                    }
+                    return $out;
+                }
                 if (!empty($resp['instrumentalUrl'])) {
                     $out['files'][] = array('label' => 'Минусовка (инструментал)', 'url' => (string) $resp['instrumentalUrl'], 'kind' => 'audio');
                 }
