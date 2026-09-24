@@ -73,11 +73,19 @@ def main(argv: list) -> int:
     want = int(argv[0]) if argv and argv[0].isdigit() else 0
     with session_scope() as session:
         query = select(ArchiveBatch).order_by(ArchiveBatch.id)
-        if want:
-            query = query.where(ArchiveBatch.id == want)
-        batches = session.execute(query).scalars().all()
+        batches = session.execute(
+            query.where(ArchiveBatch.id == want) if want else query).scalars().all()
+        if want and not batches:
+            # Номер канала перепутать с номером архива проще простого — они
+            # рядом в панели. Пробуем прочитать аргумент вторым способом.
+            batches = session.execute(
+                query.where(ArchiveBatch.channel_id == want)).scalars().all()
+            if batches:
+                print(f"архива #{want} нет, но есть архивы канала {want} — "
+                      f"показываю их")
         if not batches:
-            print("архивов нет")
+            print(f"архивов нет" + (f" ни с номером {want}, ни у канала {want}"
+                                    if want else ""))
             return 0
 
         for batch in batches:
