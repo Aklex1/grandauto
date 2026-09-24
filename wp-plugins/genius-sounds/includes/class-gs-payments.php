@@ -32,6 +32,7 @@ class GS_Payments {
         add_filter('rest_request_after_callbacks', array(__CLASS__, 'mark_payment'), 20, 3);
         add_filter('rest_pre_dispatch', array(__CLASS__, 'guard_notification'), 10, 3);
         add_action('admin_post_gs_payment_credit', array(__CLASS__, 'handle_credit'));
+        add_action('admin_post_gs_balance_adjust', array(__CLASS__, 'handle_adjust'));
     }
 
     /* ---------------------------------------------------------------------
@@ -150,6 +151,82 @@ class GS_Payments {
      * Зачисление идёт через тот же метод платёжного плагина, что и
      * обычное, поэтому история и статусы остаются согласованными.
      */
+    /** Журнал ручных правок баланса. */
+    const OPT_ADJUST_LOG = 'gs_balance_adjust_log';
+    const ADJUST_KEEP    = 50;
+
+    /**
+     * Ручная правка баланса.
+     *
+     * Это не платёж, и в журнал платежей правка не попадает: денег не
+     * приходило. Нужна она для честных случаев — вернуть человеку за сбой,
+     * которого не заметил автомат, или положить на проверку нового сервиса.
+     * Раньше такого инструмента не было, и единственным способом что-то
+     * поправить оставалось провести несуществующий платёж, то есть соврать
+     * в учёте.
+     *
+     * Каждая правка пишется в журнал: кто сделал, кому, сколько и зачем.
+     * Инструмент «дать себе денег» без такого следа заводить нельзя.
+     */
+    public static function handle_adjust() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_balance_adjust');
+
+        $who = sanitize_text_field(wp_unslash((string) ($_POST['who'] ?? '')));
+        $amount = round((float) ($_POST['amount'] ?? 0), 2);
+        $reason = sanitize_text_field(wp_unslash((string) ($_POST['reason'] ?? '')));
+
+        $user = is_numeric($who) ? get_user_by('id', (int) $who) : get_user_by('login', $who);
+        if (!$user) {
+            $user = get_user_by('email', $who);
+        }
+
+        $done = false;
+        if (!$user) {
+            $message = 'Не нашёл такого пользователя';
+        } elseif ($reason === '') {
+            $message = 'Без причины правку не делаем';
+        } elseif ($amount == 0) {
+            $message = 'Сумма не может быть нулевой';
+        } else {
+            // Знак решает, что делаем: плюс кладёт на баланс, минус списывает.
+            $done = $amount > 0
+                ? GS_SFX::refund((int) $user->ID, $amount)
+                : GS_SFX::charge((int) $user->ID, abs($amount));
+            $message = $done ? 'Баланс изменён' : 'Не удалось изменить баланс';
+        }
+
+        if ($done) {
+            $log = get_option(self::OPT_ADJUST_LOG, array());
+            if (!is_array($log)) {
+                $log = array();
+            }
+            array_unshift($log, array(
+                'time'    => current_time('mysql'),
+                'by'      => wp_get_current_user()->user_login,
+                'user'    => $user->user_login,
+                'amount'  => $amount,
+                'reason'  => $reason,
+                'balance' => class_exists('KIE_TTS_DB')
+                    ? (float) KIE_TTS_DB::get_user_balance((int) $user->ID)
+                    : 0.0,
+            ));
+            update_option(self::OPT_ADJUST_LOG, array_slice($log, 0, self::ADJUST_KEEP), false);
+        }
+
+        set_transient('gs_adjust_notice', $message, 60);
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-balance-adjust');
+        exit;
+    }
+
+    /** Последние правки — для показа в админке. */
+    public static function adjust_log() {
+        $log = get_option(self::OPT_ADJUST_LOG, array());
+        return is_array($log) ? $log : array();
+    }
+
     public static function handle_credit() {
         if (!current_user_can('manage_options')) {
             wp_die('Недостаточно прав');
