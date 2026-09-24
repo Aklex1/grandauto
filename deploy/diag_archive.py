@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import func, select
 
-from app import archives, storage
+from app import archives, storage, tts
 from app.db import session_scope
 from app.models import ArchiveBatch, ArchiveItem
 
@@ -44,6 +44,19 @@ def show_item(item: ArchiveItem, deep: bool) -> None:
         if plan:
             print(f"    тайминг пакета: обложка до {plan.get('cover_gone_ms')} мс, "
                   f"переход {plan.get('scene_fade_ms')} мс")
+
+    # Сохранённая озвучка: по ней слышно, шумит ли сам голос или шум добавила
+    # сборка. Файл можно скопировать и послушать отдельно.
+    from app.models import Channel as _Channel
+    with session_scope() as inner:
+        channel = inner.get(_Channel, item.channel_id)
+        voice = archives.voice_cache_path(channel, item) if channel else None
+    if voice is not None and voice.exists():
+        print(f"    озвучка в кэше: {voice}")
+        print(f"      длина {storage.media_duration(voice):.1f} с, "
+              f"ожидается по тексту {tts.expected_seconds(item.narration):.0f} с")
+    else:
+        print("    озвучка в кэше: нет")
 
     try:
         layout = json.loads(item.captions_json or "{}")
