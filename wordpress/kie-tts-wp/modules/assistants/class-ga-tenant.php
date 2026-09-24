@@ -225,6 +225,16 @@ class GA_Tenant
             return ['ok' => false, 'code' => 'no_funds',
                 'error' => 'Извините, консультант временно недоступен. Загляните чуть позже.'];
         }
+        // Ограничение частоты на собеседника: каждое сообщение платное для владельца,
+        // поэтому не даём одному клиенту сжечь баланс потоком сообщений.
+        $rl = 'ga_tenrl_' . (int) $tenant['id'] . '_' . $channel . '_' . substr(md5($customer), 0, 16);
+        $hits = (int) get_transient($rl);
+        if ($hits >= 25) {
+            return ['ok' => false, 'code' => 'rate',
+                'error' => 'Слишком много сообщений подряд. Подождите минуту.'];
+        }
+        set_transient($rl, $hits + 1, MINUTE_IN_SECONDS);
+
         $text = trim(wp_check_invalid_utf8($text, true));
         if ($text === '') {
             return ['ok' => false, 'code' => 'empty', 'error' => 'Пустое сообщение.'];

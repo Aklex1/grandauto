@@ -263,9 +263,17 @@ class GA_Billing
             // $existing — старый аккаунт того же человека. Сливаем его в текущий,
             // чтобы не плодить два баланса: переносим остаток и переезжаем.
             $old = self::balance($existing);
-            if ($old > 0 && self::charge($existing, $old, sprintf('Слияние в аккаунт #%d', $user_id))) {
-                self::credit($user_id, $old, 'Перенос со старого Telegram-аккаунта');
-                $merged = $old;
+            if ($old > 0) {
+                // Порядок с откатом, чтобы деньги не потерялись при сбое одной из
+                // операций: сначала зачисляем, потом списываем; не вышло списать —
+                // откатываем зачисление. Слияние засчитываем только если прошли обе.
+                if (self::credit($user_id, $old, 'Перенос со старого Telegram-аккаунта')) {
+                    if (self::charge($existing, $old, sprintf('Слияние в аккаунт #%d', $user_id))) {
+                        $merged = $old;
+                    } else {
+                        self::charge($user_id, $old, 'Откат слияния');
+                    }
+                }
             }
             foreach (['telegram_id', 'kie_tts_telegram_id', 'tg_id'] as $meta_key) {
                 delete_user_meta($existing, $meta_key);

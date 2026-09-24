@@ -197,6 +197,17 @@ class GA_Rest
         if (!$t || !$t['is_active']) {
             return new WP_REST_Response(['ok' => false, 'error' => 'Консультант недоступен.'], 404);
         }
+        // Виджет публичный, а каждое сообщение списывает с баланса владельца —
+        // ограничиваем частоту по IP, чтобы спамом нельзя было слить его счёт.
+        $ip = GA_Chat::client_ip_hash();
+        $rl = 'ga_tench_' . (int) $t['id'] . '_' . substr($ip ?: 'na', 0, 16);
+        $hits = (int) get_transient($rl);
+        if ($hits >= 20) {
+            return new WP_REST_Response(['ok' => false,
+                'error' => 'Слишком много сообщений подряд. Подождите минуту.'], 429);
+        }
+        set_transient($rl, $hits + 1, MINUTE_IN_SECONDS);
+
         $res = GA_Tenant::reply($t, 'web', 'v' . self::visitor_id(),
             (string) $request->get_param('text'));
         if (!$res['ok']) {
