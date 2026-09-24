@@ -74,6 +74,7 @@ class GS_Api_Page {
             'start'    => 'Быстрый старт',
             'tools'    => 'Спецификация и примеры',
             'services' => 'Что можно вызвать',
+            'voices'   => 'Голоса и рейтинг',
             'more'     => 'Видео, музыка, расшифровка',
             'files'    => 'Свои файлы',
             'webhook'  => 'Вебхук',
@@ -264,6 +265,8 @@ class GS_Api_Page {
                     (<code>sfx</code>, <code>ambient</code>, <code>loop</code>).
                 </p>
             </section>
+
+            <?php echo GS_Voice_Rank::render(); ?>
 
             <section class="gs-api__section" id="more">
                 <h2 class="gs-section-title">Видео, музыка и расшифровка</h2>

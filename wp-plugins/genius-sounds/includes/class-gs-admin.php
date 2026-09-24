@@ -743,6 +743,31 @@ class GS_Admin {
 
         ob_start();
         ?>
+        <h2 id="gs-voices">Образцы голосов</h2>
+        <?php $voice_notice = get_transient('gs_voice_samples_notice'); ?>
+        <?php if ($voice_notice): ?>
+            <div class="notice notice-info inline"><p><?php echo esc_html($voice_notice); ?></p></div>
+            <?php delete_transient('gs_voice_samples_notice'); ?>
+        <?php endif; ?>
+        <?php $voice_ready = GS_Voice_Rank::ranked(GS_Voice_Rank::TOP); ?>
+        <?php $voice_done = count(array_filter($voice_ready, function ($row) { return $row['sample'] !== ''; })); ?>
+        <p class="description" style="max-width:640px">
+            Короткая фраза, наговоренная самыми ходовыми голосами, — чтобы в разделе API
+            их можно было послушать, а не выбирать по названию. Работает в два приёма:
+            первое нажатие ставит задачи, второе через минуту забирает готовое.
+            Сейчас готово <?php echo (int) $voice_done; ?> из <?php echo (int) GS_Voice_Rank::TOP; ?>.
+        </p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:14px">
+            <?php wp_nonce_field('gs_voice_samples'); ?>
+            <input type="hidden" name="action" value="gs_voice_samples">
+            <?php submit_button('Сделать образцы', 'secondary', 'submit', false); ?>
+        </form>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:14px">
+            <?php wp_nonce_field('gs_voice_forget'); ?>
+            <input type="hidden" name="action" value="gs_voice_forget">
+            <?php submit_button('Забыть неудачи', 'link', 'submit', false); ?>
+        </form>
+
         <h2 id="gs-payments">Платежи по сервисам</h2>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
             <?php wp_nonce_field('gs_yoomoney_reset'); ?>

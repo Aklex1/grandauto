@@ -1112,7 +1112,13 @@ class GS_Api {
     }
 
     /** Озвучка живёт в общей истории генераций. */
-    private static function state_from_generations($task_id) {
+    /**
+     * Состояние озвучки по журналу генераций.
+     *
+     * Публичный, потому что этим же путём ходит рейтинг голосов, когда
+     * делает образцы: задача та же самая, читать её иначе незачем.
+     */
+    public static function state_from_generations($task_id) {
         $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'message' => '');
         if (!class_exists('KIE_TTS_DB')) {
             return $out;
