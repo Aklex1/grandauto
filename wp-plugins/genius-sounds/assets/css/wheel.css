@@ -151,3 +151,273 @@
         font-weight: 600;
     }
 }
+
+/* ===================================================== сам инструмент
+   Примерку рисует чужой плагин, и выглядела она как вставка из другого
+   сайта: белая карточка на тёмной странице, три кнопки трёх разных
+   цветов — зелёная, синяя, оранжевая, — а подписи опций серым по серому,
+   их просто не было видно.
+
+   Плагин не трогаем, перекрашиваем отсюда. Селекторы начинаются с
+   html body, чтобы перебить его собственные стили весом, а не !important:
+   с восклицательными знаками потом невозможно ничего поправить.
+
+   Палитра — та же, что у микросервисов: тёмная подложка, синие карточки,
+   один акцент на главной кнопке. */
+
+html body .wheel-fitment-container {
+    --w-surface: #111a2b;
+    --w-surface-2: #0b1120;
+    --w-line: rgba(148, 163, 184, 0.16);
+    --w-text: #e8edf7;
+    --w-muted: #a7b4c8;
+    --w-accent: #a5b4fc;
+    color: var(--w-muted);
+}
+
+html body .wheel-fitment-header h1 {
+    color: var(--w-text);
+}
+
+html body .wheel-fitment-header p {
+    color: var(--w-muted);
+}
+
+html body .wheel-fitment-content {
+    border: 1px solid var(--w-line);
+    border-radius: 20px;
+    background: var(--w-surface);
+    box-shadow: none;
+}
+
+/* ------------------------------------------------------------- баланс */
+
+html body .wheel-fitment-container .balance-info {
+    /* Акцентной полосы слева здесь не будет: у плашки скруглённые края,
+       и толстая линия на них ломается в дугу. */
+    border: 1px solid var(--w-line);
+    border-radius: 14px;
+    background: var(--w-surface-2);
+    color: var(--w-muted);
+}
+
+html body .wheel-fitment-container .balance-info p,
+html body .wheel-fitment-container .cost-info {
+    color: var(--w-muted);
+}
+
+html body .wheel-fitment-container .balance-info span,
+html body .wheel-fitment-container .cost-info span {
+    color: var(--w-text);
+    font-weight: 700;
+}
+
+html body .wheel-fitment-container .first-trial-message {
+    color: var(--w-accent);
+}
+
+/* ------------------------------------------------------------- кнопки
+   Было три цвета на четыре кнопки. Стало: одна главная с акцентом,
+   остальные ровные, а выбранная вкладка подсвечена рамкой. */
+
+html body .wheel-fitment-container .btn-support,
+html body .wheel-fitment-container .btn-secondary,
+html body .wheel-fitment-container .btn-logout,
+html body .wheel-fitment-container .amount-btn,
+html body .wheel-fitment-container .history-back-btn {
+    border: 1px solid var(--w-line);
+    border-radius: 12px;
+    background: var(--w-surface-2);
+    color: var(--w-text);
+    box-shadow: none;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+html body .wheel-fitment-container .btn-support:hover,
+html body .wheel-fitment-container .btn-secondary:hover,
+html body .wheel-fitment-container .btn-logout:hover,
+html body .wheel-fitment-container .amount-btn:hover,
+html body .wheel-fitment-container .history-back-btn:hover {
+    border-color: var(--w-accent);
+    color: var(--w-text);
+}
+
+html body .wheel-fitment-container .history-tab.active,
+html body .wheel-fitment-container .amount-btn.active {
+    border-color: var(--w-accent);
+    background: rgba(165, 180, 252, 0.12);
+    color: var(--w-text);
+}
+
+html body .wheel-fitment-container .btn-primary,
+html body .wheel-fitment-container .btn-telegram {
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #fff;
+    box-shadow: none;
+}
+
+html body .wheel-fitment-container .btn-primary:disabled,
+html body .wheel-fitment-container .btn-primary[disabled] {
+    background: var(--w-surface-2);
+    color: var(--w-muted);
+    opacity: 0.6;
+}
+
+/* --------------------------------------------------------- опции и поля */
+
+html body .wheel-fitment-container .generation-options {
+    border: 1px solid var(--w-line);
+    border-radius: 14px;
+    background: var(--w-surface-2);
+}
+
+html body .wheel-fitment-container .generation-options h4,
+html body .wheel-fitment-container .payment-section h3,
+html body .wheel-fitment-container .history-header h3,
+html body .wheel-fitment-container .loading-title,
+html body .wheel-fitment-container .support-modal-content h3 {
+    color: var(--w-text);
+}
+
+/* Подписи опций были серым по серому — прочесть, за что списывают
+   двадцать пять рублей, было нельзя. */
+html body .wheel-fitment-container .opt-checkbox {
+    color: var(--w-text);
+}
+
+html body .wheel-fitment-container .opt-price {
+    color: var(--w-accent);
+    font-weight: 600;
+}
+
+html body .wheel-fitment-container .opt-checkbox-box {
+    border-color: var(--w-line);
+    background: var(--w-surface);
+}
+
+html body .wheel-fitment-container select,
+html body .wheel-fitment-container input[type="text"],
+html body .wheel-fitment-container input[type="email"],
+html body .wheel-fitment-container textarea {
+    border: 1px solid var(--w-line);
+    border-radius: 10px;
+    background: var(--w-surface);
+    color: var(--w-text);
+}
+
+html body .wheel-fitment-container input::placeholder,
+html body .wheel-fitment-container textarea::placeholder {
+    color: rgba(167, 180, 200, 0.7);
+}
+
+/* ------------------------------------------------------------ загрузка */
+
+html body .wheel-fitment-container .upload-item > *:first-child,
+html body .wheel-fitment-container .upload-section h3,
+html body .wheel-fitment-container .upload-item label {
+    color: var(--w-text);
+}
+
+html body .wheel-fitment-container .upload-area {
+    border: 1px dashed rgba(165, 180, 252, 0.4);
+    border-radius: 14px;
+    background: var(--w-surface-2);
+}
+
+html body .wheel-fitment-container .upload-area:hover {
+    border-color: var(--w-accent);
+}
+
+html body .wheel-fitment-container .upload-placeholder {
+    color: var(--w-muted);
+}
+
+/* ------------------------------------------- оплата, история, окна, итог */
+
+html body .wheel-fitment-container .payment-section,
+html body .wheel-fitment-container .history-content,
+html body .wheel-fitment-container .result-section,
+html body .wheel-fitment-container .loading-section,
+html body .wheel-fitment-container .auth-section,
+html body .wheel-fitment-container .auth-after-trial-block {
+    border: 1px solid var(--w-line);
+    border-radius: 14px;
+    background: var(--w-surface-2);
+    color: var(--w-muted);
+}
+
+html body .wheel-fitment-container .support-modal-content,
+html body .wheel-fitment-container .insufficient-funds-modal {
+    border: 1px solid var(--w-line);
+    border-radius: 16px;
+    background: var(--w-surface);
+    color: var(--w-muted);
+}
+
+html body .wheel-fitment-container .support-modal-overlay {
+    background: rgba(6, 10, 20, 0.72);
+}
+
+html body .wheel-fitment-container .support-modal-close {
+    color: var(--w-muted);
+}
+
+html body .wheel-fitment-container .history-empty,
+html body .wheel-fitment-container .loading-status,
+html body .wheel-fitment-container .support-form-note,
+html body .wheel-fitment-container .auth-after-trial-message {
+    color: var(--w-muted);
+}
+
+html body .wheel-fitment-container a {
+    color: var(--w-accent);
+}
+
+/* Вкладки «Новая примерка» и «История» плагин красит селекторами с
+   атрибутом — .btn-history.history-tab[data-tab="history"].active, — и по
+   весу они перебивают общее правило выше. Поэтому здесь адресно, тем же
+   набором: синяя и оранжевая кнопки в тёмной странице выглядели как
+   светофор. */
+
+html body .wheel-fitment-container .btn-history.history-tab[data-tab="new"],
+html body .wheel-fitment-container .btn-history.history-tab[data-tab="history"],
+html body .wheel-fitment-container .btn-history.history-tab[data-tab="new"]:hover,
+html body .wheel-fitment-container .btn-history.history-tab[data-tab="history"]:hover {
+    border: 1px solid var(--w-line);
+    background: var(--w-surface-2);
+    color: var(--w-text);
+}
+
+html body .wheel-fitment-container .btn-history.history-tab[data-tab="new"].active,
+html body .wheel-fitment-container .btn-history.history-tab[data-tab="history"].active,
+html body .wheel-fitment-container .btn-history.history-tab[data-tab="new"].active:hover,
+html body .wheel-fitment-container .btn-history.history-tab[data-tab="history"].active:hover {
+    border-color: var(--w-accent);
+    background: rgba(165, 180, 252, 0.14);
+    color: var(--w-text);
+}
+
+/* Плашка пробной примерки была светло-зелёной — единственное светлое
+   пятно на всей странице. */
+html body .wheel-fitment-container .first-trial-message {
+    border: 1px solid rgba(165, 180, 252, 0.28);
+    background: rgba(165, 180, 252, 0.1);
+    color: var(--w-accent);
+}
+
+/* Крутилка и точки ожидания остались прежнего синего — единственное
+   пятно чужого цвета. Обводка задана атрибутом в самой картинке, но
+   CSS его перебивает. */
+
+html body .wheel-fitment-container .spinner-circle,
+html body .wheel-fitment-container .spinner-inner {
+    stroke: var(--w-accent);
+}
+
+html body .wheel-fitment-container .spinner-dot,
+html body .wheel-fitment-container .loading-dots span {
+    background: var(--w-accent);
+    fill: var(--w-accent);
+}
