@@ -54,7 +54,7 @@ class GS_Api {
      *   jobs — прямой вызов моделей, lab/sfx/tts — наши же микросервисы.
      */
     public static function services() {
-        return array(
+        $services = array(
             'photo-video' => array(
                 'id'     => 'photo-video',
                 'engine' => 'jobs',
@@ -247,6 +247,25 @@ class GS_Api {
                 'result' => 'audio',
             ),
         );
+
+        // Музыкальные операции сверх генерации трека: продлить, перепеть,
+        // добавить вокал, выгрузить в WAV и так далее. Держим их отдельным
+        // реестром — там своя механика и свои адреса, — но снаружи они
+        // такие же операции, как все.
+        foreach (GS_Suno::operations() as $suno_id => $op) {
+            $services[$suno_id] = array(
+                'id'      => $suno_id,
+                'engine'  => 'suno',
+                'suno_id' => $suno_id,
+                'title'   => $op['title'],
+                'about'   => $op['about'],
+                'input'   => $op['input'],
+                'result'  => $op['result'],
+                'price'   => $op['price'],
+            );
+        }
+
+        return $services;
     }
 
     public static function get_service($id) {
@@ -742,6 +761,13 @@ class GS_Api {
         if ($service['engine'] === 'tts') {
             return self::dispatch_tts($input);
         }
+        if ($service['engine'] === 'suno') {
+            // Тот же обратный вызов, что у лаборатории: задачи Suno ходят
+            // через него давно, отдельный маршрут заводить незачем.
+            $callback = add_query_arg('token', GS_SFX::callback_token(),
+                                      rest_url(GS_Rest::NS . '/lab/callback'));
+            return GS_Suno::start($service['suno_id'], $input, $callback);
+        }
         // Модель выбирает адаптер: у каждой из этих операций есть замены,
         // и при сбое одной задача уходит соседней вместо отказа человеку.
         $prepared = call_user_func($service['build'], $service, $input);
@@ -942,6 +968,9 @@ class GS_Api {
             $state = self::state_sfx($task_id);
         } elseif ($engine === 'tts') {
             $state = self::state_from_generations($task_id);
+        } elseif ($engine === 'suno') {
+            $service = self::get_service($task['service']);
+            $state = GS_Suno::state($service['suno_id'], $task_id);
         } else {
             $service = self::get_service($task['service']);
             $state = self::jobs_state($task_id);

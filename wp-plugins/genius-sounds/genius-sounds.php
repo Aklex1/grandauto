@@ -62,6 +62,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-keywords.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-neurohub.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-manual.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-lab.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-suno.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-lab-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-blog.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-tts-fallback.php';
