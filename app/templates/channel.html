@@ -530,6 +530,10 @@
       <input name="per_day" type="number" min="0" max="50" value="{{ batch.per_day }}"
              style="width:70px" title="0 — без расписания">
       <button class="btn btn-sm">Пересчитать расписание</button></form>
+    {% set ready = rows | selectattr('status', 'equalto', 'done') | list | length %}
+    {% if ready %}
+    <a class="btn btn-sm" href="/archives/{{ batch.id }}/download">Скачать все ({{ ready }})</a>
+    {% endif %}
     <form method="post" action="/archives/{{ batch.id }}/drop" class="inline-form"
           onsubmit="return confirm('Убрать архив «{{ batch.name }}» вместе со списком серий? Готовые ролики останутся на диске.')">
       <button class="btn btn-sm btn-ghost">Убрать</button></form>

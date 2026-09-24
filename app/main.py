@@ -681,6 +681,97 @@ def archive_item_run(item_id: int, session: Session = Depends(get_session),
     return RedirectResponse(f"/channels/{item.channel_id}?tab=archive", status_code=303)
 
 
+class _ZipSink:
+    """Приёмник для zipfile, который отдаёт байты наружу кусками.
+
+    Сотня готовых роликов — это гигабайты: в память такой архив не соберёшь, а
+    писать его во временный файл значит требовать вдвое больше места на диске.
+    Поэтому zip собирается на лету и сразу уходит в ответ.
+    """
+
+    def __init__(self) -> None:
+        self.buffer = bytearray()
+        self.offset = 0
+
+    def write(self, data: bytes) -> int:
+        self.buffer += data
+        return len(data)
+
+    def tell(self) -> int:
+        return self.offset + len(self.buffer)
+
+    def flush(self) -> None:
+        return None
+
+    def take(self) -> bytes:
+        chunk = bytes(self.buffer)
+        self.offset += len(chunk)
+        self.buffer.clear()
+        return chunk
+
+
+def _zip_stream(files: list):
+    """Генератор кусков zip-архива из списка (имя в архиве, путь на диске)."""
+    import zipfile
+
+    sink = _ZipSink()
+    # ZIP_STORED без сжатия: mp4 уже сжат, а повторное сжатие только греет
+    # процессор и ничего не экономит.
+    with zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED) as archive:
+        for arcname, path in files:
+            with archive.open(arcname, "w") as target, open(path, "rb") as source:
+                while True:
+                    chunk = source.read(1 << 20)
+                    if not chunk:
+                        break
+                    target.write(chunk)
+                    data = sink.take()
+                    if data:
+                        yield data
+            data = sink.take()
+            if data:
+                yield data
+    tail = sink.take()
+    if tail:
+        yield tail
+
+
+@app.get("/archives/{batch_id}/download")
+def archive_download_all(batch_id: int, session: Session = Depends(get_session),
+                         _user: str = Depends(require_user)):
+    """Все готовые ролики архива одним zip."""
+    from fastapi.responses import StreamingResponse
+
+    from .models import ArchiveBatch, ArchiveItem
+
+    batch = session.get(ArchiveBatch, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Архив не найден")
+    rows = session.execute(
+        select(ArchiveItem).where(ArchiveItem.batch_id == batch_id,
+                                  ArchiveItem.status == "done")
+        .order_by(ArchiveItem.idx)).scalars().all()
+
+    files = []
+    for item in rows:
+        path = storage.abspath(item.video_path) if item.video_path else None
+        if path is None or not path.exists():
+            continue
+        name = f"{item.folder}_{storage.slugify(item.title, 50) or 'reel'}{path.suffix}"
+        files.append((name, path))
+    if not files:
+        raise HTTPException(status_code=404, detail="Готовых роликов пока нет")
+
+    stem = storage.slugify(Path(batch.name).stem, 60) or f"archive{batch.id}"
+    total = sum(path.stat().st_size for _, path in files)
+    log.info("Архив %s: отдаю %s роликов одним файлом (%.1f ГБ)",
+             batch_id, len(files), total / (1 << 30))
+    return StreamingResponse(
+        _zip_stream(files), media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{stem}_videos.zip"',
+                 "X-Reels-Count": str(len(files))})
+
+
 @app.post("/archives/{batch_id}/settings")
 async def archive_settings(batch_id: int, request: Request,
                            session: Session = Depends(get_session),
