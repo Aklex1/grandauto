@@ -71,6 +71,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-transcribe.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-api-keys.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-api.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-rank.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-wheel.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-api-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rest.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-admin.php';
@@ -135,6 +136,7 @@ class Genius_Sounds_Plugin {
         GS_Transcribe::boot();
         GS_Voice_Hub::init();
         GS_Voice_Rank::boot();
+        GS_Wheel::boot();
         GS_Api::boot();
         GS_Openapi::boot();
         GS_Weight::boot();
@@ -210,6 +212,12 @@ class Genius_Sounds_Plugin {
         // Подвал у темы один на весь сайт, и порядок в нём нужен везде —
         // в том числе на страницах, которые рисуем не мы.
         wp_enqueue_style('genius-sounds-footer', GS_PLUGIN_URL . 'assets/css/footer.css', array(), GS_VERSION);
+
+        // Посадочная примерки дисков: страницу рисует чужой плагин, стили
+        // ей нужны свои.
+        if (class_exists('GS_Wheel') && GS_Wheel::is_page()) {
+            wp_enqueue_style('genius-sounds-wheel', GS_PLUGIN_URL . 'assets/css/wheel.css', array(), GS_VERSION);
+        }
 
         $blog = GS_Blog::enabled() && (GS_Blog::is_single_post() || GS_Blog::is_blog_list());
         $neurohub = GS_Links::is_neurohub();

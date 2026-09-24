@@ -356,6 +356,10 @@ class GS_Links {
                     <?php foreach (GS_Lab::available_services() as $svc): ?>
                         <a href="<?php echo esc_url(GS_Lab::get_url($svc['id'])); ?>"><?php echo esc_html($svc['menu']); ?></a> ·
                     <?php endforeach; ?>
+                    <?php if (class_exists('GS_Wheel')): ?>
+                        <?php // В меню примерку не выносим — вес она набирает отсюда. ?>
+                        <a href="<?php echo esc_url(GS_Wheel::url()); ?>">Примерка дисков</a> ·
+                    <?php endif; ?>
                     <a href="<?php echo esc_url(GS_Pages::get_showcase_url()); ?>">Звуки, созданные нейросетью</a>
                 </p>
                 <ul class="gs-footer-links__list">
