@@ -255,14 +255,17 @@ class GS_Suno {
         if ($id === 'music-instrumental') {
             $payload['uploadUrl'] = $audio;
             $payload['tags'] = mb_substr($style !== '' ? $style : 'acoustic', 0, 200);
-            $payload['negativeTags'] = mb_substr($avoid, 0, 200);
+            // Пустым это поле поставщик не принимает — отвечает отказом, хотя
+            // «чего избегать» человек указывать не обязан. Подставляем то, от
+            // чего хуже не станет ни одной записи.
+            $payload['negativeTags'] = mb_substr($avoid !== '' ? $avoid : 'noise, distortion', 0, 200);
             $payload['title'] = mb_substr($title !== '' ? $title : 'Аккомпанемент', 0, 80);
             return $payload;
         }
         if ($id === 'music-vocals') {
             $payload['upload_url'] = $audio;
             $payload['style'] = mb_substr($style !== '' ? $style : 'pop', 0, 200);
-            $payload['negativeTags'] = mb_substr($avoid, 0, 200);
+            $payload['negativeTags'] = mb_substr($avoid !== '' ? $avoid : 'noise, distortion', 0, 200);
             $payload['title'] = mb_substr($title !== '' ? $title : 'Вокал', 0, 80);
             return $payload;
         }
