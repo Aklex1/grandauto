@@ -136,6 +136,9 @@ def resolve(batch: Optional[ArchiveBatch], channel: Channel) -> dict:
         "outro_about": pick("outro_about", channel.outro_about or ""),
         "outro_source": pick("outro_source", channel.outro_source or "builtin"),
         "outro_text": pick("outro_text", channel.outro_text or ""),
+        # Пусто — Georgia из пакета и выравнивание из его же раскладки.
+        "caption_font": caption_font_choice(pick("caption_font", "")),
+        "caption_align": pick("caption_align", ""),
     }
 
 
@@ -724,19 +727,17 @@ def build_item(item_id: int) -> Optional[Path]:
                 # не навязываем.
                 ass = workdir / "subs.ass"
                 layout = json.loads(item.captions_json or "{}")
+                canvas = plan.get("canvas") or [1080, 1920]
                 subtitles.write_story_pages(
                     pages, ass, size=size, zone=layout.get("zone") or {},
                     font_px=float(layout.get("font_px") or 64),
-                    canvas_h=float(layout.get("canvas_h") or 1920),
-                    font=_story_font())
+                    canvas_h=float(canvas[1] or 1920),
+                    canvas_w=float(canvas[0] or 1080),
+                    align=setup["caption_align"],
+                    font=setup["caption_font"] or _story_font())
                 with_subs = workdir / "subs.mp4"
-                # Шрифт лежит в самом пакете: libass ищет по имени через
-                # fontconfig и файлы вне системных каталогов сам не находит.
-                font_dir = plan.get("font_dir") or ""
-                media.burn_subtitles(
-                    raw, ass, with_subs,
-                    fontsdir=Path(font_dir) if font_dir and Path(font_dir).exists()
-                    else None)
+                media.burn_subtitles(raw, ass, with_subs,
+                                     fontsdir=_caption_fonts_dir(setup, plan))
             elif setup["subtitles"] and cues:
                 ass = workdir / "subs.ass"
                 subtitles.write_ass(cues, ass, size=size, vertical=True,
@@ -767,6 +768,15 @@ def build_item(item_id: int) -> Optional[Path]:
                         music_db=setup["music_volume_db"],
                         fade_out=setup["tail_sec"])
                     final_src = mixed
+
+            # 6. Общий уровень громкости: провайдер отдаёт разную громкость от
+            # запроса к запросу, и в ленте из ста роликов это слышно.
+            leveled = workdir / "leveled.mp4"
+            try:
+                media.normalize_loudness(final_src, leveled)
+                final_src = leveled
+            except Exception as exc:  # noqa: BLE001 — ролик важнее выравнивания
+                log.warning("Серия %s: громкость не выровнена: %s", item.folder, exc)
 
             final = out_dir / f"{item.idx:03d}_{storage.slugify(item.title, 50) or 'reel'}.mp4"
             shutil.copyfile(final_src, final)
@@ -973,8 +983,34 @@ def _usable_voice(path: Path, text: str, speed: float) -> Optional[float]:
 
 
 def _story_font() -> str:
-    """Имя шрифта титров. Файл берётся из пакета через fontsdir."""
+    """Имя шрифта титров по умолчанию. Файл берётся из пакета через fontsdir."""
     return "Georgia"
+
+
+def caption_font_choice(key: str) -> str:
+    """Название семейства для ASS по выбору в панели. Пусто — Georgia пакета."""
+    from . import fonts
+
+    if not key:
+        return ""
+    return fonts.font_family(key)
+
+
+def _caption_fonts_dir(setup: dict, plan: dict) -> Optional[Path]:
+    """Где лежит файл шрифта титров.
+
+    libass ищет шрифты через fontconfig и файлы вне системных каталогов сам не
+    находит: ни Georgia из пакета, ни скачанные шрифты завода. Поэтому каталог
+    передаём явно — свой у каждого случая.
+    """
+    from . import fonts
+
+    if setup.get("caption_font"):
+        return Path(fonts.FONTS_DIR)
+    font_dir = plan.get("font_dir") or ""
+    if font_dir and Path(font_dir).exists():
+        return Path(font_dir)
+    return None
 
 
 def _token_marks(item: ArchiveItem, cues: list, duration: float) -> list:

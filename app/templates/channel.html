@@ -579,6 +579,20 @@
           <option value="{{ key }}" {% if batch.subtitle_style == key %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select></label>
+      <label>Шрифт титров
+        <select name="caption_font">
+          <option value="">Georgia — из самого пакета</option>
+          {% for f in font_list %}
+          <option value="{{ f.key }}" {% if batch.caption_font == f.key %}selected{% endif %}>{{ f.title }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Выравнивание титров
+        <select name="caption_align">
+          <option value="">как в раскладке пакета</option>
+          <option value="left" {% if batch.caption_align == 'left' %}selected{% endif %}>по левому краю</option>
+          <option value="center" {% if batch.caption_align == 'center' %}selected{% endif %}>по центру</option>
+          <option value="right" {% if batch.caption_align == 'right' %}selected{% endif %}>по правому краю</option>
+        </select></label>
       <label>Шрифт концовки
         <select name="title_font">
           <option value="">как у канала</option>

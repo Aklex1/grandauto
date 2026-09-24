@@ -225,8 +225,8 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Main,{font},{size},{primary},&H000000FF,&H00000000,{back},{bold},0,0,0,100,100,{spacing},0,{border},{outline},{shadow},{align},{margin_h},{margin_h},{margin_v},1
-Style: Title,{font},{title_size},&H00FFFFFF,&H000000FF,&H00000000,{title_back},-1,0,0,0,100,100,0,0,{border},{title_outline},{title_shadow},8,{margin_h},{margin_h},{title_margin},1
+Style: Main,{font},{size},{primary},&H000000FF,&H00000000,{back},{bold},0,0,0,100,100,{spacing},0,{border},{outline},{shadow},{align},{margin_l},{margin_r},{margin_v},1
+Style: Title,{font},{title_size},&H00FFFFFF,&H000000FF,&H00000000,{title_back},-1,0,0,0,100,100,0,0,{border},{title_outline},{title_shadow},8,{margin_l},{margin_r},{title_margin},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -334,7 +334,8 @@ def _style_params(size: tuple[int, int], vertical: bool, font: str,
     params.setdefault("primary", WHITE.strip("&") and "&H00FFFFFF")
     params.setdefault("bold", -1)
     params.update({"w": w, "h": h, "font": font, "size": font_size,
-                   "margin_h": margin_h, "title_size": title_size, "align": 2})
+                   "margin_h": margin_h, "margin_l": margin_h, "margin_r": margin_h,
+                   "title_size": title_size, "align": 2})
     return params, chars_per_line
 
 
@@ -440,9 +441,18 @@ def write_ass(cues: list[Cue], dst: Path, *, size: tuple[int, int] = (1280, 720)
     return dst
 
 
+# Как эталонный рендер выравнивает строки внутри зоны: textAlign из zone.align.
+STORY_ALIGN = {"left": 7, "center": 8, "right": 9}
+
+# Короче этого шага показывать слово отдельно бессмысленно: на экране это
+# мелькание, а не набор текста.
+MIN_REVEAL_STEP = 0.08
+
+
 def write_story_pages(pages: list[dict], dst: Path, *, size: tuple[int, int],
                       zone: dict, font_px: float, canvas_h: float = 1920.0,
-                      font: str = "Georgia") -> Path:
+                      font: str = "Georgia", canvas_w: float = 1080.0,
+                      align: str = "") -> Path:
     """Титры по готовым страницам пакета production.v2.
 
     Строки уже разбиты автором пакета по метрикам Georgia под ширину зоны, и
@@ -454,20 +464,28 @@ def write_story_pages(pages: list[dict], dst: Path, *, size: tuple[int, int],
     """
     w, h = size
     scale = h / max(canvas_h, 1.0)
+    scale_x = w / max(canvas_w, 1.0)
     font_size = max(14, int(round(font_px * scale)))
-    zone_x = float(zone.get("x") or 0) * (w / max(zone.get("canvas_w") or 1080, 1))
-    margin_h = max(0, int(round(zone_x)))
+
+    # Текстовый блок должен совпасть с зоной, а не просто отступить от краёв:
+    # поэтому правый отступ считается от правого края зоны, а не равен левому.
+    zone_x = float(zone.get("x") or 0)
+    zone_w = float(zone.get("width") or (canvas_w - 2 * zone_x))
+    margin_l = max(0, int(round(zone_x * scale_x)))
+    margin_r = max(0, int(round((canvas_w - zone_x - zone_w) * scale_x)))
     # Зона задана от верха холста, поэтому и выравнивание берём верхнее: иначе
     # блок «поедет» вниз тем сильнее, чем больше в нём строк.
     margin_v = max(0, int(round(float(zone.get("y") or 0) * scale)))
+    side = (align or str(zone.get("align") or "center")).strip().lower()
 
     params = {
         "w": w, "h": h, "font": font, "size": font_size,
         "primary": STORY_WHITE.rstrip("&"), "bold": 0,
         "back": "&HA8000000", "border": 1, "outline": 0,
         "shadow": max(2, int(font_size * 0.12)), "spacing": 0,
-        "margin_h": margin_h or int(w * 0.08), "margin_v": margin_v,
-        "align": 8, "title_size": font_size, "title_outline": 0,
+        "margin_l": margin_l or int(w * 0.08),
+        "margin_r": margin_r or int(w * 0.08), "margin_v": margin_v,
+        "align": STORY_ALIGN.get(side, 8), "title_size": font_size, "title_outline": 0,
         "title_shadow": 0, "title_back": "&HA8000000",
         "title_margin": margin_v,
     }
@@ -490,12 +508,20 @@ def write_story_pages(pages: list[dict], dst: Path, *, size: tuple[int, int],
                        f"Main,,0,0,0,,{{\\fad(140,120)}}" + "\\N".join(rows))
             continue
 
-        shown = 0
+        # Слова, прозвучавшие ещё под обложкой, отдельными шагами не показываем:
+        # иначе в первую же секунду страница мигнёт столько раз, сколько слов
+        # осталось за кадром. Они появляются сразу, одним шагом.
+        steps: list[tuple[float, int]] = []
         for step, mark in enumerate(words):
             at = max(float(mark), start)
-            until = float(words[step + 1]) if step + 1 < len(words) else end
-            until = min(max(until, at + 0.02), end)
-            shown = step + 1
+            if steps and at - steps[-1][0] < MIN_REVEAL_STEP:
+                steps[-1] = (steps[-1][0], step + 1)
+            else:
+                steps.append((at, step + 1))
+
+        for index, (at, shown) in enumerate(steps):
+            until = steps[index + 1][0] if index + 1 < len(steps) else end
+            until = min(max(until, at + MIN_REVEAL_STEP), end)
             index = 0
             painted: list[str] = []
             for row in rows:
@@ -509,7 +535,7 @@ def write_story_pages(pages: list[dict], dst: Path, *, size: tuple[int, int],
                     parts.append(word if index <= shown
                                  else "{\\alpha&HFF&}" + word + "{\\alpha&H00&}")
                 painted.append(" ".join(parts))
-            prefix = "{\\fad(140,0)}" if step == 0 else ""
+            prefix = "{\\fad(140,0)}" if index == 0 else ""
             out.append(f"Dialogue: 0,{_fmt_ass_ts(at)},{_fmt_ass_ts(until)},"
                        f"Main,,0,0,0,,{prefix}" + "\\N".join(painted))
     dst.write_text("\n".join(out) + "\n", encoding="utf-8")

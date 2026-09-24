@@ -751,6 +751,29 @@ def build_still_scene(background: Path, audio: Path, dst: Path, size: tuple[int,
     return dst
 
 
+# Целевая громкость по EBU R128. −16 LUFS — то, к чему приводят звук площадки
+# вертикальных роликов: тише звучит вяло, громче они прижмут сами.
+LOUDNESS_LUFS = -16.0
+LOUDNESS_PEAK = -1.5
+
+
+def normalize_loudness(src: Path, dst: Path, target: float = LOUDNESS_LUFS) -> Path:
+    """Приводим звук к общему уровню.
+
+    Провайдер озвучки отдаёт разную громкость от запроса к запросу, и в ленте из
+    ста роликов это слышно: один приходится делать тише, следующий громче.
+    loudnorm считает воспринимаемую громкость, а не пик, поэтому выравнивает
+    именно то, что слышит ухо.
+    """
+    _ff([
+        "-i", str(src),
+        "-af", f"loudnorm=I={target}:TP={LOUDNESS_PEAK}:LRA=11",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(dst),
+    ], timeout=1800)
+    return dst
+
+
 def build_story_scene(frames: list[tuple[Path, float]], cover: Optional[Path],
                       audio: Path, dst: Path, size: tuple[int, int],
                       duration: float, workdir: Path, *,

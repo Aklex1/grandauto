@@ -335,6 +335,10 @@ class ArchiveBatch(Base):
 
     subtitle_style: Mapped[str] = mapped_column(String(20), default="")
     title_font: Mapped[str] = mapped_column(String(32), default="")
+    # Шрифт титров на весь архив. Пусто — Georgia из самого пакета.
+    caption_font: Mapped[str] = mapped_column(String(64), default="")
+    # Выравнивание строк: пусто — как записано в раскладке пакета.
+    caption_align: Mapped[str] = mapped_column(String(10), default="")
     # "" — как у канала, "on" — включить, "off" — выключить
     subtitles_mode: Mapped[str] = mapped_column(String(8), default="")
     music_mode: Mapped[str] = mapped_column(String(8), default="")

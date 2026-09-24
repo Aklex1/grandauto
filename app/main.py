@@ -804,7 +804,13 @@ async def archive_settings(batch_id: int, request: Request,
     batch.subtitles_mode = mode("subtitles_mode")
     style = str(form.get("subtitle_style") or "")
     batch.subtitle_style = style if style in subtitles.SUBTITLE_STYLES else ""
-    batch.title_font = fonts.normalize(str(form.get("title_font") or ""))         if form.get("title_font") else ""
+    batch.title_font = fonts.normalize(str(form.get("title_font") or "")) \
+        if form.get("title_font") else ""
+    caption_font = str(form.get("caption_font") or "")
+    batch.caption_font = fonts.normalize(caption_font) if caption_font else ""
+    caption_align = str(form.get("caption_align") or "")
+    batch.caption_align = (caption_align
+                           if caption_align in ("left", "center", "right") else "")
     batch.music_mode = mode("music_mode")
     batch.music_volume_db = num("music_volume_db", -40.0, 0.0, 0.0)
 
