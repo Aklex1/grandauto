@@ -26,10 +26,6 @@ class GS_Suno {
 
     const API = 'https://api.kie.ai/api/v1';
 
-    /** Готовый ответ синхронной операции живёт столько же, сколько задача. */
-    const SYNC_PREFIX = 'gs_suno_sync_';
-    const SYNC_TTL    = 172800;
-
     /**
      * Реестр операций.
      *
@@ -165,23 +161,27 @@ class GS_Suno {
 
         $data = isset($res['body']['data']) ? $res['body']['data'] : array();
 
-        // Синхронные операции результат отдают сразу же. Заводим для них
-        // свой номер задачи и кладём ответ рядом: снаружи такая операция
-        // ничем не отличается от остальных, а второй запрос к поставщику
-        // за уже полученным ответом никому не нужен.
+        // Две операции отвечают сразу, без очереди. Результат отдаём наверх
+        // вместе с номером задачи, чтобы он лёг в саму запись о задаче.
+        // Раньше он жил во временном хранилище: не забрал за двое суток —
+        // деньги списаны, ответ пропал, а задача навсегда осталась «в
+        // работе». Запись о задаче живёт столько, сколько нужно.
         if (!empty($op['sync'])) {
-            $task_id = 'gs-sync-' . wp_generate_password(24, false, false);
-            set_transient(self::SYNC_PREFIX . $task_id, self::sync_result($id, $data), self::SYNC_TTL);
-            return array('ok' => true, 'task_id' => $task_id, 'message' => '');
+            $ready = self::sync_result($id, $data);
+            return array(
+                'ok'      => true,
+                'task_id' => 'gs-sync-' . wp_generate_password(24, false, false),
+                'status'  => 'completed',
+                'files'   => $ready['files'],
+                'text'    => $ready['text'],
+                'message' => '',
+            );
         }
 
         $task = is_array($data) ? (string) ($data['taskId'] ?? '') : '';
         if ($task === '') {
             return array('ok' => false, 'task_id' => '', 'message' => 'Поставщик не вернул номер задачи');
         }
-        // Запоминаем, какой операции принадлежит задача: адрес состояния у
-        // WAV, видео и музыки разный, а в опросе на руках только номер.
-        set_transient(self::SYNC_PREFIX . 'op_' . $task, $id, self::SYNC_TTL);
         return array('ok' => true, 'task_id' => $task, 'message' => '');
     }
 
@@ -299,14 +299,18 @@ class GS_Suno {
     public static function state($id, $task_id) {
         $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'text' => '', 'message' => '');
 
-        $ready = get_transient(self::SYNC_PREFIX . $task_id);
-        if (is_array($ready)) {
-            return array_merge($out, $ready, array('ok' => true, 'status' => 'completed'));
-        }
-
         $op = self::get($id);
-        if (!$op || $op['info'] === '') {
-            $out['message'] = 'Задача не найдена';
+        if (!$op) {
+            $out['message'] = 'Неизвестная операция';
+            return $out;
+        }
+        if ($op['info'] === '') {
+            // Синхронная операция: её ответ записан в саму задачу при
+            // постановке, и опрашивать тут нечего. Сюда попадаем только если
+            // запись о задаче потерялась — это отказ, а не ожидание.
+            $out['ok'] = true;
+            $out['status'] = 'failed';
+            $out['message'] = 'Ответ этой задачи не сохранился';
             return $out;
         }
 

@@ -540,6 +540,11 @@ class GS_Api {
             KIE_TTS_DB::save_generation($user_id, $task_id, 'API: ' . $service['title'], 'api:' . $service_id, $cost, $is_telegram);
         }
 
+        // Часть операций отвечает сразу, без очереди. Их результат кладём
+        // в запись о задаче тут же: иначе он существует только в ответе на
+        // этот запрос, а по номеру задачи клиент потом ничего не получит.
+        $ready = !empty($created['status']) && $created['status'] === 'completed';
+
         update_option(self::TASK_PREFIX . $task_id, array(
             'user_id'   => $user_id,
             'service'   => $service_id,
@@ -547,8 +552,9 @@ class GS_Api {
             'cost'      => $cost,
             'callback'  => $callback,
             'secret'    => (string) self::$caller['secret'],
-            'status'    => 'pending',
-            'files'     => array(),
+            'status'    => $ready ? 'completed' : 'pending',
+            'files'     => $ready ? (array) ($created['files'] ?? array()) : array(),
+            'text'      => $ready ? (string) ($created['text'] ?? '') : '',
             'created'   => time(),
             'notified'  => 0,
         ), false);
@@ -556,7 +562,7 @@ class GS_Api {
         return rest_ensure_response(array(
             'task_id' => $task_id,
             'service' => $service_id,
-            'status'  => 'pending',
+            'status'  => $ready ? 'completed' : 'pending',
             'cost'    => $cost,
             'balance' => GS_SFX::get_balance($user_id),
         ));
