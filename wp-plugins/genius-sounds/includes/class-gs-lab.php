@@ -746,12 +746,9 @@ class GS_Lab {
         if (!$service) {
             return false;
         }
-        // Вокал и шумоподавление живут на отдельном поставщике. Если его ключа
-        // нет, сервис всё равно можно открыть во временном ручном режиме.
-        if (class_exists('GS_MusicAI') && GS_MusicAI::handles($id)
-            && !GS_MusicAI::ready($id) && !GS_Manual::enabled($id)) {
-            return false;
-        }
+        // Проверки на ключ music.ai здесь больше нет: разделение дорожек
+        // и шумоподавление выполняет основной поставщик, и отсутствие
+        // необязательного запасного пути не делает сервис недоступным.
         $option = get_option('gs_lab_enabled_' . $id, null);
         if ($option === null || $option === '') {
             return !empty($service['available']);
@@ -1291,8 +1288,15 @@ class GS_Lab {
     public static function create_task($id, $params) {
         $callback = add_query_arg('token', GS_SFX::callback_token(), rest_url(GS_Rest::NS . '/lab/callback'));
 
-        // Разделение дорожек и шумоподавление — на отдельном поставщике,
-        // а пока его нет — заказом в ручную очередь.
+        // Разделение дорожек и шумоподавление писались под отдельного
+        // поставщика, которого так и не подключили, и держались на ручной
+        // очереди. Теперь обе задачи умеет основной поставщик — он и стоит
+        // по умолчанию, а music.ai и ручная обработка остались запасными
+        // путями на случай, если один заказ придётся сделать вручную.
+        //
+        // Раньше здесь был тупик: без ключа music.ai и без ручного режима
+        // запрос возвращал «Инструмент сейчас недоступен», а рабочая ветка
+        // ниже не получала управление вовсе.
         if (class_exists('GS_MusicAI') && GS_MusicAI::handles($id)) {
             if (GS_MusicAI::ready($id)) {
                 return GS_MusicAI::create_job($id, (string) $params['audio_url']);
@@ -1300,7 +1304,6 @@ class GS_Lab {
             if (GS_Manual::enabled($id)) {
                 return GS_Manual::create_order($id, $params);
             }
-            return array('ok' => false, 'task_id' => '', 'message' => 'Инструмент сейчас недоступен');
         }
 
         // Модель и её параметры знает адаптер: если она ляжет, он сам
