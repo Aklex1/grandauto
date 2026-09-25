@@ -342,17 +342,52 @@ class GS_Links {
      * Меню
      * ------------------------------------------------------------------ */
 
+    /**
+     * Это меню сайта, а не случайный вызов wp_nav_menu?
+     *
+     * Обычный признак — закреплённое за темой место. Но Impreza рисует
+     * шапку своим построителем и theme_location не передаёт: место можно
+     * назначить, а фильтр всё равно не сработает. Поэтому принимаем и
+     * меню, закреплённое за каким-либо местом темы, как бы его ни звали.
+     */
+    private static function is_site_menu($args) {
+        if (!empty($args->theme_location)) {
+            return true;
+        }
+        $menu = isset($args->menu) ? $args->menu : null;
+        $menu_id = 0;
+        if (is_object($menu) && isset($menu->term_id)) {
+            $menu_id = (int) $menu->term_id;
+        } elseif (is_numeric($menu)) {
+            $menu_id = (int) $menu;
+        } elseif (is_string($menu) && $menu !== '') {
+            $found = wp_get_nav_menu_object($menu);
+            $menu_id = $found ? (int) $found->term_id : 0;
+        }
+        if ($menu_id <= 0) {
+            return false;
+        }
+        $bound = array_map('intval', array_values((array) get_nav_menu_locations()));
+        return in_array($menu_id, $bound, true);
+    }
+
     public static function add_menu_items($items, $args) {
         if (is_admin() || !self::menu_enabled()) {
             return $items;
         }
-        // Только закреплённые за темой меню (шапка и подвал), не случайные вызовы.
-        if (empty($args->theme_location)) {
+        if (!self::is_site_menu($args)) {
             return $items;
         }
 
         foreach (self::nav_links() as $link) {
-            if ($link['url'] === '' || strpos($items, esc_url($link['url'])) !== false) {
+            // Сравниваем по пути, а не по полному адресу: в меню ссылки
+            // записаны относительными («/ubrat-shum/»), а сервисы отдают
+            // абсолютные. Побуквенное сравнение не совпадало никогда — и
+            // фильтр дописывал бы вторую копию каждого пункта.
+            $path = self::path_of($link['url']);
+            if ($path === ''
+                || strpos($items, $path . '/') !== false
+                || strpos($items, $path . '"') !== false) {
                 continue;
             }
             $items .= sprintf(
