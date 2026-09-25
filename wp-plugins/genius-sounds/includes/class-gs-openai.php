@@ -185,7 +185,7 @@ class GS_OpenAI {
             // Списываем после ответа: заранее цена неизвестна. Если списать
             // не удалось, ответ всё равно отдаём — он уже стоил нам денег у
             // поставщика, и отнимать его у человека вторично незачем.
-            GS_SFX::charge($user_id, min($cost, $balance));
+            GS_SFX::charge($user_id, min($cost, $balance), 'api');
         }
         if (class_exists('KIE_TTS_DB')) {
             $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);

@@ -448,10 +448,18 @@ class GS_Api {
 
     public static function handle_balance($request) {
         $user_id = (int) self::$caller['user_id'];
-        return rest_ensure_response(array(
+        // Разработчику важно понимать, что часть денег — подарок и потратить
+        // её можно только здесь, а не на сайте. Показываем разбивку явно.
+        $trial = class_exists('GS_Api_Keys') ? GS_Api_Keys::trial_left($user_id) : 0.0;
+        $out = array(
             'balance'  => GS_SFX::get_balance($user_id),
             'currency' => 'RUB',
-        ));
+        );
+        if ($trial > 0) {
+            $out['trial'] = $trial;
+            $out['trial_note'] = 'Пробные деньги за выпуск ключа: тратятся только на запросы к API.';
+        }
+        return rest_ensure_response($out);
     }
 
     /**
@@ -532,7 +540,13 @@ class GS_Api {
 
         // Озвучку списывает колбэк базового плагина — по строке истории,
         // которую мы заводим ниже. Дважды за одно и то же не берём.
-        if ($cost > 0 && $service['engine'] !== 'tts' && !GS_SFX::charge($user_id, $cost)) {
+        // Сколько из оплаты уйдёт подаренными: понадобится при возврате,
+        // иначе подарок вернулся бы человеку обычными деньгами и утёк бы
+        // на микросервисы через одну неудачную задачу.
+        $trial_part = class_exists('GS_Api_Keys')
+            ? min($cost, GS_Api_Keys::trial_left($user_id))
+            : 0.0;
+        if ($cost > 0 && $service['engine'] !== 'tts' && !GS_SFX::charge($user_id, $cost, 'api')) {
             return new WP_Error('gs_api_charge', 'Не удалось списать средства с баланса', array('status' => 500));
         }
         if (class_exists('KIE_TTS_DB')) {
@@ -550,6 +564,7 @@ class GS_Api {
             'service'   => $service_id,
             'engine'    => $service['engine'],
             'cost'      => $cost,
+            'trial'     => $trial_part,
             'callback'  => $callback,
             'secret'    => (string) self::$caller['secret'],
             'status'    => $ready ? 'completed' : 'pending',
@@ -997,6 +1012,12 @@ class GS_Api {
             }
             if ($engine !== 'tts') {
                 GS_SFX::refund_charge((int) $task['user_id'], (float) $task['cost']);
+                // Подаренная часть возвращается подарком, а не свободными
+                // деньгами: иначе одна неудачная задача превращала бы её
+                // в обычный баланс.
+                if (!empty($task['trial']) && class_exists('GS_Api_Keys')) {
+                    GS_Api_Keys::trial_return((int) $task['user_id'], (float) $task['trial']);
+                }
             }
             if (class_exists('KIE_TTS_DB')) {
                 KIE_TTS_DB::update_generation_status($task_id, 'failed');

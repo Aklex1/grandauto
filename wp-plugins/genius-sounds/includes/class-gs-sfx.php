@@ -383,8 +383,51 @@ class GS_SFX {
         return (float) KIE_TTS_DB::get_user_balance($user_id, false);
     }
 
-    public static function charge($user_id, $amount) {
+    /**
+     * Сколько денег человек может потратить здесь, на сайте.
+     *
+     * Баланс один на всё, но пробные деньги за ключ API помечены: они лежат
+     * на общем счету и в эту сумму не входят. Иначе подарок «для проверки
+     * API» уходил бы на генерацию звуков, что и происходило.
+     */
+    public static function spendable($user_id) {
+        $balance = self::get_balance($user_id);
+        if (!class_exists('GS_Api_Keys')) {
+            return $balance;
+        }
+        return max(0.0, round($balance - GS_Api_Keys::trial_left($user_id), 2));
+    }
+
+    /** Понятное объяснение отказа, когда денег хватает, но они подаренные. */
+    public static function trial_note($user_id) {
+        if (!class_exists('GS_Api_Keys')) {
+            return '';
+        }
+        $left = GS_Api_Keys::trial_left($user_id);
+        if ($left <= 0) {
+            return '';
+        }
+        return sprintf(
+            ' На счету есть ещё %.2f ₽, но это пробные деньги за выпуск ключа: они тратятся только на запросы к API.',
+            $left
+        );
+    }
+
+    /**
+     * Списание с баланса.
+     *
+     * @param string $context 'site' — обычная работа на сайте, подаренное
+     *                        трогать нельзя; 'api' — запрос к API, подарок
+     *                        расходуется в первую очередь; 'admin' — ручная
+     *                        правка из админки, ограничения не при чём.
+     */
+    public static function charge($user_id, $amount, $context = 'site') {
         if (!self::balance_available()) {
+            return false;
+        }
+        if ($context === 'site' && (float) $amount > self::spendable($user_id)) {
+            // Денег на счету хватает, но это подарок за ключ API. Отказываем
+            // здесь, а не в базе: иначе списались бы именно подаренные.
             return false;
         }
         $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);
@@ -397,6 +440,11 @@ class GS_SFX {
         // Доля партнёра считается со всех трат, а не только с озвучки:
         // раньше человек приводил друга, тот работал с микросервисами, и
         // партнёру не доставалось ничего.
+        if ($ok && $context === 'api' && class_exists('GS_Api_Keys')) {
+            // Подарок расходуем первым: иначе он остался бы висеть вечно,
+            // а человек тратил бы свои деньги.
+            GS_Api_Keys::trial_take($user_id, $amount);
+        }
         if ($ok && class_exists('GS_Referral')) {
             GS_Referral::note_spend($user_id, $amount);
         }

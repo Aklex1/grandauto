@@ -610,12 +610,15 @@ class GS_Rest {
         $key   = isset($params['key']) ? sanitize_text_field((string) $params['key']) : '';
 
         $cost    = GS_SFX::get_cost();
-        $balance = GS_SFX::get_balance($user_id);
+        // Считаем не весь баланс, а доступный: пробные деньги за ключ API
+        // лежат на том же счету, но тратятся только на запросы к API.
+        $balance = GS_SFX::spendable($user_id);
 
         if ($balance < $cost) {
             return new WP_Error(
                 'gs_insufficient_balance',
-                sprintf('Недостаточно средств. Баланс: %.2f ₽, нужно: %.2f ₽', $balance, $cost),
+                sprintf('Недостаточно средств. Баланс: %.2f ₽, нужно: %.2f ₽.', $balance, $cost)
+                    . GS_SFX::trial_note($user_id),
                 array('status' => 402, 'balance' => $balance, 'cost' => $cost)
             );
         }
@@ -1120,11 +1123,13 @@ class GS_Rest {
         }
 
         $cost = GS_Lab::price($service_id, $seconds);
-        $balance = GS_SFX::get_balance($user_id);
+        // Доступное, а не всё: подарок за ключ API сюда не считается.
+        $balance = GS_SFX::spendable($user_id);
         if ($balance < $cost) {
             return new WP_Error(
                 'gs_insufficient_balance',
-                sprintf('Недостаточно средств. Баланс: %.2f ₽, нужно: %.2f ₽', $balance, $cost),
+                sprintf('Недостаточно средств. Баланс: %.2f ₽, нужно: %.2f ₽.', $balance, $cost)
+                    . GS_SFX::trial_note($user_id),
                 array('status' => 402, 'balance' => $balance, 'cost' => $cost)
             );
         }
@@ -1270,7 +1275,8 @@ class GS_Rest {
 
         $cost = GS_Voice::voice_cost();
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
-            return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
+            return new WP_Error('gs_charge_failed',
+                'На балансе не хватает средств.' . GS_SFX::trial_note($user_id), array('status' => 402));
         }
 
         try {
@@ -1481,7 +1487,8 @@ class GS_Rest {
 
         $cost = GS_Voice::song_cost();
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
-            return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
+            return new WP_Error('gs_charge_failed',
+                'На балансе не хватает средств.' . GS_SFX::trial_note($user_id), array('status' => 402));
         }
 
         // Плата снята до запуска, поэтому любая неожиданность здесь — включая
@@ -1907,7 +1914,8 @@ class GS_Rest {
 
         $cost = GS_Slides_Page::cost() + count($illustrations) * GS_Slides_Page::pic_cost();
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
-            return new WP_Error('gs_charge_failed', 'На балансе не хватает средств', array('status' => 402));
+            return new WP_Error('gs_charge_failed',
+                'На балансе не хватает средств.' . GS_SFX::trial_note($user_id), array('status' => 402));
         }
 
         // Деньги сняты до запуска, поэтому любая неожиданность ниже —

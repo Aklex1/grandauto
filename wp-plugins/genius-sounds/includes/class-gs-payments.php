@@ -194,7 +194,7 @@ class GS_Payments {
             // Знак решает, что делаем: плюс кладёт на баланс, минус списывает.
             $done = $amount > 0
                 ? GS_SFX::refund((int) $user->ID, $amount)
-                : GS_SFX::charge((int) $user->ID, abs($amount));
+                : GS_SFX::charge((int) $user->ID, abs($amount), 'admin');
             $message = $done ? 'Баланс изменён' : 'Не удалось изменить баланс';
         }
 

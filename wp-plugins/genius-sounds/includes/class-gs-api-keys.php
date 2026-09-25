@@ -34,6 +34,17 @@ class GS_Api_Keys {
     const TRIAL_META = 'gs_api_trial_given';
     const TRIAL_DEFAULT = 50;
 
+    /**
+     * Сколько подаренных денег у человека осталось.
+     *
+     * Баланс в системе один на все сервисы, и подарок ложится туда же,
+     * откуда списывают звуки и озвучку. Поэтому подарок помечаем отдельно:
+     * сумма лежит на общем балансе, но тратить её можно только на запросы
+     * к API — ради чего её и дарят. На сайте эти деньги не видны как
+     * доступные, и списать их микросервисом нельзя.
+     */
+    const TRIAL_LEFT = 'gs_api_trial_left';
+
     /** Сколько всего отдаём на пробы за месяц; ноль — без предела. */
     const OPT_TRIAL_BUDGET = 'gs_api_trial_budget';
     const TRIAL_BUDGET_DEFAULT = 3000;
@@ -158,9 +169,50 @@ class GS_Api_Keys {
         if (!GS_SFX::refund($user_id, $amount)) {
             return 0.0;
         }
+        // Помечаем подарок: на общем балансе он лежит рядом с настоящими
+        // деньгами, но тратить его можно только на запросы к API.
+        self::trial_mark($user_id, $amount);
         self::remember_device($user_id);
         self::trial_spend($amount);
         return $amount;
+    }
+
+    /** Остаток подарка: эти деньги можно потратить только через API. */
+    public static function trial_left($user_id) {
+        $user_id = (int) $user_id;
+        if ($user_id <= 0) {
+            return 0.0;
+        }
+        return max(0.0, round((float) get_user_meta($user_id, self::TRIAL_LEFT, true), 2));
+    }
+
+    /** Пометить подаренную сумму. */
+    private static function trial_mark($user_id, $amount) {
+        $amount = (float) $amount;
+        if ($amount <= 0) {
+            return;
+        }
+        update_user_meta((int) $user_id, self::TRIAL_LEFT, round(self::trial_left($user_id) + $amount, 2));
+    }
+
+    /**
+     * Списать подаренное: вызывается при оплате запроса к API.
+     *
+     * @return float сколько удалось взять из подарка
+     */
+    public static function trial_take($user_id, $amount) {
+        $left = self::trial_left($user_id);
+        $take = min($left, max(0.0, (float) $amount));
+        if ($take <= 0) {
+            return 0.0;
+        }
+        update_user_meta((int) $user_id, self::TRIAL_LEFT, round($left - $take, 2));
+        return round($take, 2);
+    }
+
+    /** Вернуть подаренное обратно в подарок — при возврате за сбой. */
+    public static function trial_return($user_id, $amount) {
+        self::trial_mark($user_id, $amount);
     }
 
     /* ---------------------------------------------------------------------
