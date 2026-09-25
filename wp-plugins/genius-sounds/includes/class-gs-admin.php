@@ -1283,6 +1283,29 @@ class GS_Admin {
                             <label><input type="checkbox" name="<?php echo esc_attr(GS_Links::OPT_FOOTER); ?>" value="1" <?php checked(GS_Links::footer_enabled()); ?>>
                                 блок ссылок на каталог в подвале сайта</label>
                             <p class="description">Без них каталог не получает внутреннего веса: на него не ссылается ни одна страница сайта.</p>
+
+                            <?php $lost = GS_Links::missing_from_menu(); ?>
+                            <?php if ($lost): ?>
+                                <div class="notice notice-warning inline" style="margin:10px 0 0;padding:8px 12px">
+                                    <p style="margin:0 0 6px"><strong>В меню сайта нет этих рабочих сервисов:</strong></p>
+                                    <ul style="margin:0 0 6px 18px;list-style:disc">
+                                        <?php foreach ($lost as $row): ?>
+                                            <li><?php echo esc_html($row['title']); ?> —
+                                                <code><?php echo esc_html(wp_make_link_relative($row['url'])); ?></code></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                    <p class="description" style="margin:0">
+                                        Подстановка пунктов работает только у меню с закреплённым за темой местом.
+                                        Если меню собрано руками, добавьте пункты в
+                                        <a href="<?php echo esc_url(admin_url('nav-menus.php')); ?>">Внешний вид → Меню</a>:
+                                        сервис работает и берёт деньги, но человеку его в шапке не найти.
+                                    </p>
+                                </div>
+                            <?php else: ?>
+                                <p class="description" style="color:#2f7d32">
+                                    ✓ Все рабочие сервисы есть в меню сайта.
+                                </p>
+                            <?php endif; ?>
                         </td>
                     </tr>
                     <tr>

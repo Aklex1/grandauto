@@ -268,6 +268,66 @@ class GS_Links {
     }
 
     /**
+     * Путь без домена, якоря и хвостовой косой черты.
+     *
+     * Сравнивать адреса как есть нельзя: в меню ссылки записаны
+     * относительными («/tts-pricing»), а сервисы отдают абсолютные.
+     * Без приведения к одному виду проверка объявляла пропавшим всё
+     * подряд, включая то, что в меню стоит.
+     */
+    private static function path_of($url) {
+        $url = strtok((string) $url, '#?');
+        $url = wp_make_link_relative((string) $url);
+        return untrailingslashit($url);
+    }
+
+    /**
+     * Рабочие сервисы, которых нет ни в одном меню сайта.
+     *
+     * Подстановка пунктов работает только там, где у меню есть закреплённое
+     * за темой место. В Impreza его можно не назначать — меню тогда собрано
+     * руками, фильтр не срабатывает, и новый сервис молча остаётся без
+     * пункта. Так «Дубляж видео» и «Убрать вокал» месяцами не показывались
+     * в шапке, хотя работали и стоили денег.
+     *
+     * Здесь ничего не чиним автоматически: меню — зона владельца сайта.
+     * Просто говорим, чего в нём не хватает.
+     *
+     * @return array<int,array{title:string,url:string}>
+     */
+    public static function missing_from_menu() {
+        $known = array();
+        foreach (wp_get_nav_menus() as $menu) {
+            foreach ((array) wp_get_nav_menu_items($menu->term_id) as $item) {
+                if (!is_object($item)) {
+                    continue;
+                }
+                $url = (string) ($item->url ?? '');
+                if ($url === '' && !empty($item->object_id)) {
+                    $url = (string) get_permalink((int) $item->object_id);
+                }
+                $url = self::path_of($url);
+                if ($url !== '') {
+                    $known[$url] = true;
+                }
+            }
+        }
+        if (!$known) {
+            // Меню нет вовсе — сообщать не о чем, иначе покажем весь список.
+            return array();
+        }
+
+        $missing = array();
+        foreach (self::nav_links() as $link) {
+            $url = self::path_of((string) $link['url']);
+            if ($url !== '' && empty($known[$url])) {
+                $missing[] = array('title' => (string) $link['title'], 'url' => (string) $link['url']);
+            }
+        }
+        return $missing;
+    }
+
+    /**
      * Пункты для меню сайта: родитель «Звуки и видео» и вложенные инструменты.
      * Плоским списком семь пунктов не помещаются в шапку и обрезаются.
      */
