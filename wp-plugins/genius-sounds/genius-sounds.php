@@ -216,6 +216,10 @@ class Genius_Sounds_Plugin {
         // в том числе на страницах, которые рисуем не мы.
         wp_enqueue_style('genius-sounds-footer', GS_PLUGIN_URL . 'assets/css/footer.css', array(), GS_VERSION);
 
+        // Шапка тоже одна на весь сайт: пунктов в меню больше, чем влезает
+        // в один ряд, и перенос нужен на всех страницах, а не только на наших.
+        wp_enqueue_style('genius-sounds-header', GS_PLUGIN_URL . 'assets/css/header.css', array(), GS_VERSION);
+
         // Посадочная примерки дисков: страницу рисует чужой плагин, стили
         // ей нужны свои.
         if (class_exists('GS_Wheel') && GS_Wheel::is_page()) {
