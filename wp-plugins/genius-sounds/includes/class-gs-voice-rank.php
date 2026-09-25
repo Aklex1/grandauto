@@ -215,8 +215,13 @@ class GS_Voice_Rank {
         }
 
         // Шаг второй: ставим задачи на тех, у кого образца ещё нет.
+        //
+        // Если движок лежит, ставим ровно одну задачу — пробную. Двенадцать
+        // запросов в упавший сервис не приблизят результат, а список неудач
+        // раздуют так, что потом непонятно, что пробовать заново.
+        $limit = self::engine_down() ? 1 : self::TOP;
         $queued = 0;
-        foreach (self::ranked(self::TOP) as $voice) {
+        foreach (array_slice(self::ranked(self::TOP), 0, $limit) as $voice) {
             $id = $voice['id'];
             if (!empty($samples[$id]) || !empty($pending[$id]) || !empty($failed[$id])) {
                 continue;
@@ -232,14 +237,36 @@ class GS_Voice_Rank {
         update_option(self::OPT_PENDING, $pending, false);
         update_option(self::OPT_FAILED, $failed, false);
 
-        set_transient('gs_voice_samples_notice', sprintf(
+        $notice = sprintf(
             'Забрано готовых: %d, поставлено новых: %d, ждут очереди: %d, '
             . 'не вышло совсем: %d. Нажмите ещё раз через минуту, чтобы забрать '
             . 'поставленные. Неудачные повторно не ставятся — чтобы очистить '
             . 'список неудач, нажмите «Забыть неудачи».',
-            $taken, $queued, count($pending), count($failed)), 60);
+            $taken, $queued, count($pending), count($failed));
+        if (self::engine_down()) {
+            $notice .= ' Похоже, движок озвучки у поставщика не отвечает: '
+                . 'все задачи возвращаются с отказом. Образцы появятся сами, '
+                . 'когда он оживёт — ставим по одной пробной задаче за нажатие, '
+                . 'чтобы не копить пустые неудачи.';
+        }
+        set_transient('gs_voice_samples_notice', $notice, 60);
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-voices');
         exit;
+    }
+
+    /**
+     * Похоже ли, что движок озвучки лёг.
+     *
+     * Отличаем «образцы ещё не делали» от «образцы не выходят». Признак
+     * простой: задачи ставились, все до одной провалились, и ни одного
+     * готового образца нет. Так было 24 сентября, когда двенадцать голосов
+     * подряд вернули у поставщика «Internal Error» — и молчащая страница
+     * выглядела как наша недоделка, хотя дело было не в нас.
+     */
+    public static function engine_down() {
+        $failed = count(self::stored(self::OPT_FAILED));
+        $ready  = count(self::stored(self::OPT_SAMPLES));
+        return $ready === 0 && $failed >= 3;
     }
 
     private static function stored($option) {
@@ -296,6 +323,14 @@ class GS_Voice_Rank {
                 чаще всего. Голос можно не указывать вовсе — тогда возьмётся тот,
                 что стоит по умолчанию.
             </p>
+
+            <?php if (!$heard && self::engine_down()): ?>
+                <p class="gs-api__text">
+                    Образцы звучания временно недоступны: движок озвучки у поставщика
+                    не принимает задачи. Список голосов и их идентификаторы работают
+                    как обычно — образцы вернутся, когда поставщик починит сервис.
+                </p>
+            <?php endif; ?>
 
             <?php if ($heard): ?>
                 <p class="gs-api__text">Послушать:</p>

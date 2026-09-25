@@ -388,6 +388,8 @@ class GS_Rest {
             }
             $out[] = array(
                 'когда'    => (string) ($row['created_at'] ?? ''),
+                'задача'   => (string) ($row['task_id'] ?? ''),
+                'файл'     => (string) ($row['audio_url'] ?? ''),
                 'кто'      => $balances[$uid]['login'],
                 'user_id'  => $uid,
                 'что'      => (string) ($row['voice'] ?? ''),
