@@ -398,6 +398,37 @@ class GS_Rest {
             );
         }
 
+        // Ключи API по владельцам: живой ли это был человек или подарок
+        // забрали, не приступая к работе.
+        $keys = array();
+        if ($request->get_param('keys') && class_exists('GS_Api_Keys')) {
+            $by_user = array();
+            foreach (GS_Api_Keys::index() as $record) {
+                $uid = (int) ($record['user_id'] ?? 0);
+                if (!isset($by_user[$uid])) {
+                    $by_user[$uid] = array('ключей' => 0, 'вызовов' => 0, 'последний' => '', 'выдан' => '');
+                }
+                $by_user[$uid]['ключей']++;
+                $by_user[$uid]['вызовов'] += (int) ($record['calls'] ?? 0);
+                $used = (string) ($record['last_used'] ?? '');
+                if ($used > $by_user[$uid]['последний']) {
+                    $by_user[$uid]['последний'] = $used;
+                }
+                $made = (string) ($record['created'] ?? '');
+                if ($by_user[$uid]['выдан'] === '' || $made < $by_user[$uid]['выдан']) {
+                    $by_user[$uid]['выдан'] = $made;
+                }
+            }
+            foreach ($by_user as $uid => $row) {
+                $user = $uid > 0 ? get_user_by('id', $uid) : null;
+                $row['user_id'] = $uid;
+                $row['логин'] = $user ? $user->user_login : 'УДАЛЁН';
+                $row['подарок'] = $uid > 0 ? (string) get_user_meta($uid, 'gs_api_trial_given', true) : '';
+                $row['баланс'] = ($uid > 0 && class_exists('GS_SFX')) ? GS_SFX::get_balance($uid) : 0.0;
+                $keys[] = $row;
+            }
+        }
+
         // Сверка: одинаковый баланс у разных людей выглядит подозрительно,
         // поэтому рядом показываем, что лежит в самой таблице балансов.
         $raw = array();
@@ -422,6 +453,7 @@ class GS_Rest {
             'всего'     => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}"),
             'показано'  => count($out),
             'записи'    => $out,
+            'ключи'     => $keys,
             'сверка'    => $raw,
         ));
     }
