@@ -17,6 +17,7 @@ class GS_Pages {
     const SHOWCASE_SLUG = 'ai-zvuki';
 
     const RETURN_ARG    = 'gs_return';
+    const TTS_TEXT_ARG  = 'gs_text';
     const RETURN_COOKIE = 'gs_return_to';
 
     public static function boot() {
@@ -205,6 +206,21 @@ class GS_Pages {
         return add_query_arg(self::RETURN_ARG, rawurlencode($return_url), $url);
     }
 
+    /**
+     * Озвучка текста. Второй аргумент переносит в неё текст, который человек
+     * успел написать в студии звуков: скрипт кабинета подставит его в поле,
+     * чтобы переход не стоил повторного набора.
+     */
+    public static function get_tts_url($text = '') {
+        $url  = self::get_dashboard_url();
+        $text = trim((string) $text);
+        if ($text !== '') {
+            $text = function_exists('mb_substr') ? mb_substr($text, 0, 900, 'UTF-8') : substr($text, 0, 900);
+            $url  = add_query_arg(self::TTS_TEXT_ARG, rawurlencode($text), $url);
+        }
+        return $url;
+    }
+
     public static function get_dashboard_url() {
         $pid = (int) get_option('kie_tts_dashboard_page_id');
         $url = $pid > 0 ? get_permalink($pid) : '';
@@ -274,8 +290,17 @@ class GS_Pages {
                     <span class="gs-chip">MP3</span>
                     <span class="gs-chip">коммерческое использование</span>
                     <a class="gs-chip gs-chip--link" href="<?php echo esc_url(GS_Catalog::base_url()); ?>">Каталог готовых звуков</a>
+                    <a class="gs-chip gs-chip--voice" href="<?php echo esc_url(self::get_tts_url()); ?>">Нужен голос — в озвучку текста</a>
                 </div>
+                <p class="gs-hero__warn">
+                    Здесь создаются шумы и эффекты. Слова нейросеть не выговаривает:
+                    если нужно, чтобы текст произнесли вслух, это <a href="<?php echo esc_url(self::get_tts_url()); ?>">озвучка текста</a>.
+                </p>
             </section>
+
+            <?php echo GS_Intent::render_router('sfx'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo GS_Intent::render_switch($prefill, 'studio'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <div class="gs-studio__layout">
                 <form class="gs-panel gs-form" id="gs-sfx-form" novalidate>
@@ -284,7 +309,7 @@ class GS_Pages {
                         <textarea id="gs-prompt" class="gs-textarea" name="prompt" rows="3" maxlength="400"
                                   placeholder="Например: тяжёлая железная дверь закрывается с гулким эхом"><?php echo esc_textarea($prefill); ?></textarea>
                         <div class="gs-field__foot">
-                            <span class="gs-hint">Чем конкретнее описание — тем точнее результат.</span>
+                            <span class="gs-hint">Опишите звук, а не реплику: «тяжёлая дверь», «дождь по жести». Текст для произнесения — в <a href="<?php echo esc_url(self::get_tts_url()); ?>">озвучке</a>.</span>
                             <span class="gs-counter"><span id="gs-prompt-count">0</span>/400</span>
                         </div>
                     </div>
@@ -424,6 +449,10 @@ class GS_Pages {
                     <article class="gs-tip">
                         <h3>Не просите музыку</h3>
                         <p>Для чистых эффектов выбирайте тип «Отдельный эффект» — мы сами добавим «no music, no voices».</p>
+                    </article>
+                    <article class="gs-tip gs-tip--voice">
+                        <h3>Речь — в другом сервисе</h3>
+                        <p>Реплику в кавычках здесь не произнесут: получится бормотание. Для слов — <a href="<?php echo esc_url(self::get_tts_url()); ?>">озвучка текста</a>, 60+ голосов на 30 языках.</p>
                     </article>
                 </div>
             </section>

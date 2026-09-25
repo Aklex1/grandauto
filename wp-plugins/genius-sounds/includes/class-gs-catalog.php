@@ -688,6 +688,10 @@ class GS_Catalog {
                 </form>
             </section>
 
+            <?php echo GS_Intent::render_switch($query, 'search'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo GS_Intent::render_router('catalog'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <?php echo self::render_cta('', 'index'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php if ($query === '' && $page === 1) {
@@ -711,7 +715,10 @@ class GS_Catalog {
                 <div class="gs-empty">
                     <div class="gs-empty__icon" aria-hidden="true">🤷</div>
                     <p class="gs-empty__text">По запросу ничего не нашлось. Попробуйте другое слово — или создайте нужный звук сами.</p>
-                    <a class="gs-btn gs-btn--primary" href="<?php echo esc_url(GS_Pages::get_studio_url($query)); ?>">Сгенерировать звук</a>
+                    <div class="gs-empty__actions">
+                        <a class="gs-btn gs-btn--primary" href="<?php echo esc_url(GS_Pages::get_studio_url($query)); ?>">Сгенерировать звук</a>
+                        <a class="gs-btn gs-btn--ghost" href="<?php echo esc_url(GS_Pages::get_tts_url()); ?>">Озвучить текст голосом</a>
+                    </div>
                 </div>
             <?php else: ?>
                 <ul class="gs-cat-grid">
@@ -874,6 +881,8 @@ class GS_Catalog {
                     <span class="gs-chip gs-chip--ok"><?php echo esc_html(self::plural_sounds($total)); ?></span>
                     <span class="gs-chip">MP3</span>
                     <span class="gs-chip">бесплатно</span>
+                    <a class="gs-chip gs-chip--link" href="<?php echo esc_url(GS_Pages::get_studio_url(self::short_title($title))); ?>">Сгенерировать свой звук</a>
+                    <a class="gs-chip gs-chip--voice" href="<?php echo esc_url(GS_Pages::get_tts_url()); ?>">Нужен голос — в озвучку</a>
                 </div>
             </section>
 
@@ -922,7 +931,10 @@ class GS_Catalog {
                     <div class="gs-empty__icon" aria-hidden="true">🎧</div>
                     <h2 class="gs-empty__title">Звуки этой подборки скоро появятся</h2>
                     <p class="gs-empty__text">Подборка ещё наполняется. Не ждите — соберите нужный звук нейросетью прямо сейчас.</p>
-                    <a class="gs-btn gs-btn--primary" href="<?php echo esc_url(GS_Pages::get_studio_url(self::short_title($title))); ?>">Сгенерировать звук</a>
+                    <div class="gs-empty__actions">
+                        <a class="gs-btn gs-btn--primary" href="<?php echo esc_url(GS_Pages::get_studio_url(self::short_title($title))); ?>">Сгенерировать звук</a>
+                        <a class="gs-btn gs-btn--ghost" href="<?php echo esc_url(GS_Pages::get_tts_url()); ?>">Озвучить текст голосом</a>
+                    </div>
                 </div>
             <?php endif; ?>
 
@@ -945,37 +957,58 @@ class GS_Catalog {
 
     /**
      * Призыв сделать звук самому — ведёт в студию генерации внутри сайта.
+     *
+     * Рядом со звуком стоит вторая дорожка — озвучка текста. Раньше её тут
+     * не было, и часть людей пыталась получить голос в генераторе звуков:
+     * писали реплику в поле «Опишите звук», платили и получали шум.
      */
     public static function render_cta($topic = '', $context = 'index') {
         $studio = GS_Pages::get_studio_url($topic);
+        $tts    = GS_Pages::get_tts_url();
         $placeholder = $topic !== ''
             ? sprintf('Например: %s, кинематографично, 3 секунды', mb_strtolower($topic))
             : 'Например: раскат грома вдалеке, глубокий бас, 4 секунды';
 
         ob_start();
         ?>
-        <section class="gs-cta">
-            <div class="gs-cta__text">
-                <span class="gs-cta__badge">Нейросеть Suno</span>
-                <h2 class="gs-cta__title">
-                    <?php if ($context === 'category' && $topic !== ''): ?>
-                        Не нашли нужный звук в подборке «<?php echo esc_html($topic); ?>»?
-                    <?php else: ?>
-                        Нужного звука нет в каталоге?
-                    <?php endif; ?>
-                </h2>
-                <p class="gs-cta__lead">Опишите звук словами — и получите готовый уникальный эффект за несколько секунд. Без авторских прав, сразу в MP3.</p>
+        <section class="gs-cta gs-cta--split">
+            <div class="gs-cta__lane gs-cta__lane--sfx">
+                <div class="gs-cta__text">
+                    <span class="gs-cta__badge">Звук и эффекты</span>
+                    <h2 class="gs-cta__title">
+                        <?php if ($context === 'category' && $topic !== ''): ?>
+                            Не нашли нужный звук в подборке «<?php echo esc_html($topic); ?>»?
+                        <?php else: ?>
+                            Нужного звука нет в каталоге?
+                        <?php endif; ?>
+                    </h2>
+                    <p class="gs-cta__lead">Опишите звук словами — и получите готовый уникальный эффект за несколько секунд. Без авторских прав, сразу в MP3.</p>
+                </div>
+
+                <form class="gs-cta__form" method="get" action="<?php echo esc_url(GS_Pages::get_studio_url()); ?>">
+                    <label class="gs-cta__label" for="gs-cta-prompt-<?php echo esc_attr($context); ?>">Опишите звук</label>
+                    <div class="gs-cta__row">
+                        <input id="gs-cta-prompt-<?php echo esc_attr($context); ?>" class="gs-cta__input" type="text" name="prompt"
+                               placeholder="<?php echo esc_attr($placeholder); ?>" autocomplete="off">
+                        <button class="gs-btn gs-btn--primary gs-cta__submit" type="submit">Создать звук</button>
+                    </div>
+                    <p class="gs-cta__hint">Генерация идёт в <a href="<?php echo esc_url($studio); ?>">студии звуков</a> прямо на сайте — результат сразу можно скачать.</p>
+                </form>
             </div>
 
-            <form class="gs-cta__form" method="get" action="<?php echo esc_url(GS_Pages::get_studio_url()); ?>">
-                <label class="gs-cta__label" for="gs-cta-prompt-<?php echo esc_attr($context); ?>">Опишите звук</label>
-                <div class="gs-cta__row">
-                    <input id="gs-cta-prompt-<?php echo esc_attr($context); ?>" class="gs-cta__input" type="text" name="prompt"
-                           placeholder="<?php echo esc_attr($placeholder); ?>" autocomplete="off">
-                    <button class="gs-btn gs-btn--primary gs-cta__submit" type="submit">Создать звук</button>
+            <div class="gs-cta__lane gs-cta__lane--tts">
+                <div class="gs-cta__text">
+                    <span class="gs-cta__badge gs-cta__badge--voice">Голос и речь</span>
+                    <h2 class="gs-cta__title">Нужно, чтобы текст произнесли вслух?</h2>
+                    <p class="gs-cta__lead">Это другой сервис. Генератор звуков слова не выговаривает — реплику озвучивает <strong>озвучка текста</strong>: 60+ живых голосов, русский и ещё 30 языков, скорость и интонация.</p>
                 </div>
-                <p class="gs-cta__hint">Генерация идёт в <a href="<?php echo esc_url($studio); ?>">студии звуков</a> прямо на сайте — результат сразу можно скачать.</p>
-            </form>
+                <ul class="gs-cta__list">
+                    <li>Реплики для роликов и рилсов</li>
+                    <li>Закадровый голос и аудиокниги</li>
+                    <li>Автоответчик, боты, объявления</li>
+                </ul>
+                <a class="gs-btn gs-btn--ghost gs-cta__submit" href="<?php echo esc_url($tts); ?>">Открыть озвучку текста</a>
+            </div>
         </section>
         <?php
         return ob_get_clean();

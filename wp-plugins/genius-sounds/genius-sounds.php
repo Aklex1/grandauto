@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.6.0
+ * Version:     2.6.1
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '2.6.0');
+define('GS_VERSION', '2.6.1');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -27,6 +27,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-weight.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-importer.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sfx.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-pages.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-intent.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-seo.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-index.php';
@@ -429,6 +430,9 @@ class Genius_Sounds_Plugin {
                 'topupUrl'  => GS_Pages::get_dashboard_url(),
                 'cost'      => GS_SFX::get_cost(),
                 'presets'   => GS_SFX::get_presets(),
+                // Разводка «звук или голос»: скрипт подставляет текст в адрес озвучки.
+                'ttsUrl'    => GS_Pages::get_tts_url(),
+                'ttsArg'    => GS_Pages::TTS_TEXT_ARG,
             ));
         }
     }

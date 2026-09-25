@@ -39,11 +39,115 @@
         again:     document.getElementById('gs-result-again'),
 
         history:     document.getElementById('gs-history'),
-        historyList: document.getElementById('gs-history-list')
+        historyList: document.getElementById('gs-history-list'),
+
+        switchBox:  document.getElementById('gs-speech-switch'),
+        switchLink: document.querySelector('[data-gs-switch-link]')
     };
 
     var polling = null;
     var pollStarted = 0;
+
+    /* ------------------------------------------------------------------ звук или голос
+     *
+     * Часть людей приходит сюда за озвучкой: пишут реплику в кавычках и
+     * ждут, что её произнесут. Suno соберёт из этого шум, деньги спишутся.
+     * Правила те же, что в GS_Intent на сервере: держим их рядом.
+     */
+
+    var SPEECH_STRONG = [
+        'закадровый голос', 'закадровым голосом', 'голос за кадром',
+        'озвучить текст', 'озвучка текста', 'текст для озвучки',
+        'озвучь текст', 'voiceover', 'voice over', 'войсовер'
+    ];
+    var SPEECH_VERBS = [
+        'скажи', 'сказал', 'сказать', 'говорит', 'говорить', 'говорят',
+        'произнес', 'произнёс', 'произнос', 'проговор', 'озвуч', 'наговор',
+        'прочита', 'прочти', 'зачита', 'читает', 'читай', 'читать',
+        'приветствует', 'представляется',
+        ' say ', ' says ', 'speak', 'narrat'
+    ];
+    var SPEECH_NOUNS = [
+        'голос', 'диктор', 'озвучк', 'речь', 'реплик', 'монолог', 'диалог',
+        'интонац', 'тембр', 'фраз', 'текст', 'закадров',
+        'voice', 'tts'
+    ];
+    var QUOTED = /[«"“„']\s*([^«»"“”„']{6,})\s*[»"”“']/;
+
+    function quotedPart(text) {
+        var m = QUOTED.exec(text || '');
+        return m ? m[1].trim() : '';
+    }
+
+    function speechScore(text) {
+        text = (text || '').trim();
+        if (!text) {
+            return 0;
+        }
+        var low = text.toLowerCase();
+        var score = 0;
+        var i;
+
+        for (i = 0; i < SPEECH_STRONG.length; i++) {
+            if (low.indexOf(SPEECH_STRONG[i]) !== -1) {
+                return 3;
+            }
+        }
+
+        var quote = quotedPart(text);
+        if (quote) {
+            score += quote.length >= 25 ? 3 : 2;
+        }
+
+        for (i = 0; i < SPEECH_VERBS.length; i++) {
+            if (low.indexOf(SPEECH_VERBS[i]) !== -1) {
+                score += 2;
+                break;
+            }
+        }
+
+        // Слова про голос считаем не больше двух: без глагола речи
+        // «гул голосов в кафе» должен остаться звуком.
+        var nouns = 0;
+        for (i = 0; i < SPEECH_NOUNS.length; i++) {
+            if (low.indexOf(SPEECH_NOUNS[i]) !== -1) {
+                nouns++;
+                if (nouns >= 2) {
+                    break;
+                }
+            }
+        }
+        score += nouns;
+
+        return score;
+    }
+
+    function looksLikeSpeech(text) {
+        return speechScore(text) >= 3;
+    }
+
+    /** Подсказку показываем и обновляем ссылку: текст уходит в озвучку как есть. */
+    function updateSwitch() {
+        if (!els.switchBox) {
+            return;
+        }
+        var text = els.prompt.value.trim();
+        var show = looksLikeSpeech(text);
+        els.switchBox.hidden = !show;
+        if (show && els.switchLink && cfg.ttsUrl) {
+            var carry = quotedPart(text) || text;
+            var sep = cfg.ttsUrl.indexOf('?') === -1 ? '?' : '&';
+            els.switchLink.href = cfg.ttsUrl + sep + (cfg.ttsArg || 'gs_text')
+                + '=' + encodeURIComponent(carry.slice(0, 900));
+        }
+        if (!show) {
+            speechConfirmed = false;
+        }
+    }
+
+    // Первое нажатие на «Создать звук» с текстом-репликой не тратит деньги:
+    // сначала предупреждение, и только повторное нажатие запускает генерацию.
+    var speechConfirmed = false;
     var POLL_INTERVAL = 4000;
     var POLL_TIMEOUT = 5 * 60 * 1000;
 
@@ -116,8 +220,12 @@
         return checked ? checked.value : 'sfx';
     }
 
-    els.prompt.addEventListener('input', updateCounter);
+    els.prompt.addEventListener('input', function () {
+        updateCounter();
+        updateSwitch();
+    });
     updateCounter();
+    updateSwitch();
 
     els.model.addEventListener('change', updateModelHint);
     updateModelHint();
@@ -139,6 +247,7 @@
         }
         els.prompt.value = button.getAttribute('data-prompt') || '';
         updateCounter();
+        updateSwitch();
         var mode = button.getAttribute('data-mode');
         if (mode) {
             selectMode(mode);
@@ -168,6 +277,19 @@
         if (!prompt) {
             note('Опишите звук, который нужно создать', 'error');
             els.prompt.focus();
+            return;
+        }
+
+        if (looksLikeSpeech(prompt) && !speechConfirmed) {
+            speechConfirmed = true;
+            updateSwitch();
+            if (els.switchBox) {
+                els.switchBox.hidden = false;
+                els.switchBox.classList.add('is-alarm');
+                els.switchBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            note('Похоже, вы хотите, чтобы текст произнесли голосом — это озвучка, а не генератор звуков. '
+                + 'Перейдите по кнопке выше или нажмите «Создать звук» ещё раз, если вам действительно нужен шум.', 'error');
             return;
         }
 

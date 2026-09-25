@@ -1192,3 +1192,260 @@ body.gs-topup-open {
         padding: 12px 13px;
     }
 }
+
+/* ---------------------------------------------------------------- Звук или голос
+ *
+ * Два сервиса легко спутать: и там и там «сделать аудио по тексту». Люди
+ * приходили в генератор звуков за репликой и получали шум. Поэтому обе
+ * дороги теперь видны рядом и выглядят по-разному: звук — синий, голос —
+ * зелёный. Одинаковое оформление тут сработало бы против нас.
+ */
+
+.gs-cta--split {
+    grid-template-columns: 1.08fr 1fr;
+    align-items: stretch;
+}
+
+.gs-cta__lane {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.gs-cta__lane--tts {
+    padding: clamp(16px, 2.2vw, 22px);
+    border: 1px solid rgba(52, 211, 153, 0.34);
+    border-radius: var(--gs-radius);
+    background:
+        radial-gradient(ellipse 80% 90% at 100% 0%, rgba(52, 211, 153, 0.12), transparent 62%),
+        rgba(8, 12, 20, 0.5);
+}
+
+.gs-cta__badge--voice {
+    background: rgba(52, 211, 153, 0.15);
+    color: var(--gs-ok);
+}
+
+.gs-cta__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 7px;
+    color: var(--gs-muted);
+    font-size: 14px;
+}
+
+.gs-cta__list li {
+    position: relative;
+    padding-left: 22px;
+}
+
+.gs-cta__list li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--gs-ok);
+    font-weight: 700;
+}
+
+.gs-cta__lane--tts .gs-cta__submit {
+    margin-top: auto;
+    align-self: flex-start;
+    border-color: rgba(52, 211, 153, 0.5);
+    color: #d1fae5;
+}
+
+.gs-cta__lane--tts .gs-cta__submit:hover {
+    border-color: var(--gs-ok);
+    background: rgba(52, 211, 153, 0.14);
+    color: #fff;
+}
+
+/* Развилка: куда идти за звуком, а куда за голосом. */
+
+.gs-router {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin: clamp(20px, 3vw, 28px) 0;
+}
+
+.gs-wrap .gs-router__lane {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+    color: var(--gs-text);
+    text-decoration: none;
+    transition: border-color 0.18s var(--gs-ease), background 0.18s var(--gs-ease), transform 0.18s var(--gs-ease);
+}
+
+.gs-wrap .gs-router__lane:hover {
+    border-color: var(--gs-border-strong);
+    background: var(--gs-surface-hover);
+    transform: translateY(-2px);
+}
+
+.gs-wrap .gs-router__lane.is-active {
+    border-color: var(--gs-border-strong);
+    background:
+        linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(15, 21, 32, 0.6));
+    cursor: default;
+}
+
+.gs-router__lane:last-child:hover {
+    border-color: rgba(52, 211, 153, 0.5);
+}
+
+.gs-router__icon {
+    font-size: 24px;
+    line-height: 1;
+}
+
+.gs-router__body {
+    display: block;
+    min-width: 0;
+}
+
+.gs-router__title {
+    display: block;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.gs-router__text {
+    display: block;
+    margin-top: 3px;
+    color: var(--gs-muted);
+    font-size: 13.5px;
+    line-height: 1.45;
+}
+
+.gs-router__mark {
+    color: var(--gs-primary-light);
+    font-size: 12.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.gs-router__lane:last-child .gs-router__mark {
+    color: var(--gs-ok);
+}
+
+/* Адресная подсказка: похоже, человеку нужна озвучка. */
+
+.gs-switch {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+    margin: clamp(18px, 2.6vw, 26px) 0;
+    padding: clamp(16px, 2.4vw, 22px);
+    border: 1px solid rgba(52, 211, 153, 0.42);
+    border-radius: var(--gs-radius);
+    background:
+        radial-gradient(ellipse 60% 100% at 0% 0%, rgba(52, 211, 153, 0.14), transparent 60%),
+        var(--gs-surface);
+}
+
+.gs-switch.is-alarm {
+    border-color: #fbbf24;
+    box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.16);
+}
+
+.gs-switch__icon {
+    font-size: 28px;
+    line-height: 1;
+}
+
+.gs-switch__title {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 17px;
+}
+
+.gs-switch__text {
+    margin: 0;
+    color: var(--gs-muted);
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+.gs-switch__text strong {
+    color: var(--gs-text);
+}
+
+.gs-wrap .gs-switch__btn {
+    white-space: nowrap;
+}
+
+/* Кнопки в пустых состояниях: звук и голос рядом. */
+
+.gs-empty__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.gs-chip--voice {
+    border-color: rgba(52, 211, 153, 0.45);
+    color: #6ee7b7;
+}
+
+.gs-hero__warn {
+    max-width: 78ch;
+    margin-top: 14px;
+    padding: 11px 14px;
+    border-left: 3px solid var(--gs-ok);
+    border-radius: 0 var(--gs-radius-sm) var(--gs-radius-sm) 0;
+    background: rgba(52, 211, 153, 0.08);
+    color: var(--gs-muted);
+    font-size: 14px;
+}
+
+.gs-hero__warn a,
+.gs-switch__text a,
+.gs-tip--voice a {
+    color: #6ee7b7;
+}
+
+.gs-tip--voice {
+    border-color: rgba(52, 211, 153, 0.34) !important;
+}
+
+@media (max-width: 900px) {
+    .gs-cta--split,
+    .gs-router {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 680px) {
+    .gs-switch {
+        grid-template-columns: auto 1fr;
+        align-items: start;
+    }
+
+    .gs-switch__btn {
+        grid-column: 1 / -1;
+        justify-content: center;
+        width: 100%;
+    }
+
+    .gs-router__lane {
+        grid-template-columns: auto 1fr;
+    }
+
+    .gs-router__mark {
+        grid-column: 2;
+    }
+}
