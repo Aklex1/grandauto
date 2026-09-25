@@ -327,6 +327,14 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Кто и с каким балансом запускал генерации: вопрос операционный,
+        // а в админке такой сводки нет. Только чтение и только админу.
+        register_rest_route(self::NS, '/diag/balances', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_diag_balances'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         // Почему очередь отправки в индекс не двигается.
         register_rest_route(self::NS, '/diag/cron', array(
             'methods'             => 'GET',
@@ -338,6 +346,83 @@ class GS_Rest {
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_showcase_add'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+    }
+
+    /**
+     * Последние генерации и баланс их авторов.
+     *
+     * Отвечает на простой вопрос: не уходит ли работа людям, у которых на
+     * счету пусто. Ничего не меняет, наружу не отдаёт ни почты, ни токенов —
+     * только логин, суммы и состояние задач.
+     */
+    public static function handle_diag_balances($request) {
+        global $wpdb;
+        $limit = max(1, min(200, (int) $request->get_param('limit') ?: 50));
+        $table = $wpdb->prefix . 'kie_tts_generations';
+
+        $cols = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+        if (!is_array($cols) || !$cols) {
+            return new WP_Error('gs_no_table', 'Журнала генераций нет', array('status' => 500));
+        }
+
+        $rows = $wpdb->get_results(
+            "SELECT * FROM {$table} ORDER BY id DESC LIMIT " . (int) $limit,
+            ARRAY_A
+        );
+        if (!is_array($rows)) {
+            $rows = array();
+        }
+
+        // Баланс спрашиваем по одному разу на человека, а не на строку.
+        $balances = array();
+        $out = array();
+        foreach ($rows as $row) {
+            $uid = (int) ($row['user_id'] ?? 0);
+            if (!array_key_exists($uid, $balances)) {
+                $user = $uid > 0 ? get_user_by('id', $uid) : null;
+                $balances[$uid] = array(
+                    'login'   => $user ? $user->user_login : ($uid > 0 ? 'нет такого пользователя' : 'гость'),
+                    'balance' => ($uid > 0 && class_exists('GS_SFX')) ? GS_SFX::get_balance($uid) : 0.0,
+                );
+            }
+            $out[] = array(
+                'когда'    => (string) ($row['created_at'] ?? ''),
+                'кто'      => $balances[$uid]['login'],
+                'user_id'  => $uid,
+                'что'      => (string) ($row['voice'] ?? ''),
+                'название' => mb_substr((string) ($row['text'] ?? ''), 0, 40),
+                'списано'  => isset($row['cost']) ? (float) $row['cost'] : null,
+                'статус'   => (string) ($row['status'] ?? ''),
+                'баланс'   => $balances[$uid]['balance'],
+            );
+        }
+
+        // Сверка: одинаковый баланс у разных людей выглядит подозрительно,
+        // поэтому рядом показываем, что лежит в самой таблице балансов.
+        $raw = array();
+        if ($request->get_param('raw')) {
+            $like = $wpdb->esc_like($wpdb->prefix . 'kie_tts') . '%';
+            $tables = $wpdb->get_col($wpdb->prepare('SHOW TABLES LIKE %s', $like));
+            $raw['таблицы'] = is_array($tables) ? $tables : array();
+            foreach ((array) $raw['таблицы'] as $t) {
+                $tcols = $wpdb->get_col("SHOW COLUMNS FROM {$t}");
+                if (!is_array($tcols) || !in_array('balance', $tcols, true)) {
+                    continue;
+                }
+                $raw['таблица_балансов'] = $t;
+                $raw['колонки'] = $tcols;
+                $raw['строки'] = $wpdb->get_results("SELECT * FROM {$t} ORDER BY id DESC LIMIT 40", ARRAY_A);
+                break;
+            }
+        }
+
+        return rest_ensure_response(array(
+            'колонки'   => $cols,
+            'всего'     => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}"),
+            'показано'  => count($out),
+            'записи'    => $out,
+            'сверка'    => $raw,
         ));
     }
 
