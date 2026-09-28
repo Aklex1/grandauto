@@ -548,6 +548,20 @@ class GS_Rest {
         $out['людей_с_входом_через_телеграм'] = (int) $wpdb->get_var(
             "SELECT COUNT(*) FROM {$wpdb->users} WHERE user_login LIKE 'telegram\\_%'");
 
+        // Куда ЮMoney кладёт деньги. Номер кошелька показываем хвостом:
+        // сверить его с кошельком владельца этого достаточно.
+        if (class_exists('KIE_TTS_Payment')) {
+            $wallet = (string) KIE_TTS_Payment::get_yoomoney_receiver();
+            $out['кошелёк'] = $wallet === '' ? 'не задан'
+                : '…' . substr($wallet, -4) . ' (' . strlen($wallet) . ' цифр)';
+        }
+        if (isset($pay) && $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $pay)) === $pay) {
+            $out['закрытые_платежи_бота'] = $wpdb->get_results(
+                "SELECT label, user_id, amount, created_at, completed_at
+                   FROM {$pay} WHERE status = 'completed' AND label LIKE 'topup\\_telegram\\_%'
+               ORDER BY id DESC LIMIT 10", ARRAY_A);
+        }
+
         $tg = (int) $request->get_param('telegram_id');
         if ($tg > 0) {
             $who = array('telegram_id' => $tg);
