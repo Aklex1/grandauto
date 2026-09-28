@@ -9245,6 +9245,10 @@ async def main():
     import autopost_moderation
     autopost_moderation.setup(dp, bot)
 
+    # Антиспам в группе: удаление сообщений со ссылками от участников
+    import group_antispam
+    group_antispam.setup(dp, bot)
+
     # Каждая задача изолирована: если упадёт фоновая, бот продолжит отвечать,
     # а ошибка попадёт в лог. Раньше падение любой из них останавливало всё.
     async def guarded(coro, name: str):
