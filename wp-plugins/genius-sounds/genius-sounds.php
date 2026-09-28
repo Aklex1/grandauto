@@ -321,6 +321,10 @@ class Genius_Sounds_Plugin {
                 'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),
                 'page'    => (string) $gift['id'],
                 'packs'   => $packs,
+                // Номер счётчика Метрики — для целей конвейера. Берём из
+                // настроек плагина статистики, чтобы он был в одном месте.
+                'metrika' => (string) get_option('wp-yandex-metrika_counter_id',
+                    get_option('wp_yandex_metrika_counter_id', '96805847')),
             ));
         }
 

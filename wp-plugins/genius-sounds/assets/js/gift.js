@@ -32,6 +32,21 @@
         return el.type === 'checkbox' ? (el.checked ? '1' : '') : String(el.value || '').trim();
     }
 
+    /**
+     * Цель в Метрике.
+     *
+     * Без целей кампанию в Директе не на что настраивать: клики видно, а
+     * что после них произошло — нет. Три точки: текст собран, человек пошёл
+     * платить, песня готова. Номер счётчика берём со страницы, чтобы не
+     * дублировать его в двух местах.
+     */
+    function goal(name) {
+        try {
+            if (typeof window.ym !== 'function' || !cfg.metrika) { return; }
+            window.ym(cfg.metrika, 'reachGoal', name);
+        } catch (e) {}
+    }
+
     function say(node, text, kind) {
         if (!node) { return; }
         node.textContent = text || '';
@@ -86,6 +101,7 @@
             if (data && data.ok) {
                 say(status, '');
                 remember(data.order);
+                goal('gift_lyrics');
                 showLyrics(data.lyrics);
             } else {
                 say(status, (data && data.message) ? data.message : 'Не получилось собрать текст. Попробуйте ещё раз.', 'err');
@@ -130,6 +146,7 @@
             if (data && data.ok && data.link) {
                 say(status2, 'Откройте оплату в новой вкладке. Как только платёж пройдёт, песня начнёт записываться — '
                     + 'вернитесь на эту страницу, она сама покажет результат.');
+                goal('gift_pay');
                 window.open(data.link, '_blank', 'noopener');
                 watch();
             } else {
@@ -159,6 +176,7 @@
                 if (!data || !data.status) { return; }
                 if (data.status === 'done' && data.files && data.files.length) {
                     stop();
+                    goal('gift_done');
                     showTracks(data.files);
                 } else if (data.status === 'failed') {
                     stop();
