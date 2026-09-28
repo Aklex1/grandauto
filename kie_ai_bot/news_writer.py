@@ -37,11 +37,19 @@ logger = logging.getLogger("news.writer")
 
 CHAT_URL = "https://api.kie.ai/{model}/v1/chat/completions"
 
-# Порядок как у сайта: сначала дешёвая быстрая модель, потом запасная.
+# Порядок моделей. Первым идёт gpt-5-2, потому что у ключа бота текстовый
+# канал gemini не включён: поставщик отвечает «The channel is not supported».
+# Держать gemini первым — значит терять запрос и секунды на каждом посте.
+# Если канал включат, порядок меняется одной настройкой.
 MODELS = [m.strip() for m in
-          os.getenv("NEWS_WRITER_MODELS", "gemini-2.5-flash,gpt-5-2").split(",")
+          os.getenv("NEWS_WRITER_MODELS", "gpt-5-2,gemini-2.5-flash").split(",")
           if m.strip()]
 TIMEOUT = int(os.getenv("NEWS_WRITER_TIMEOUT", "90") or 90)
+
+# Модель, которая ответила в прошлый раз: пробуем её первой. Живёт до
+# перезапуска бота — если канал у модели включат или отключат, перезапуск
+# всё выяснит заново.
+_preferred: Optional[str] = None
 ENABLED = os.getenv("NEWS_WRITER_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
 
 # Пост должен помещаться под медиа одним сообщением.
@@ -241,6 +249,19 @@ def _parse(content: str) -> Optional[dict]:
         return None
 
 
+def _remember_model(model: str) -> None:
+    """Модель ответила — в следующий раз начинаем с неё."""
+    global _preferred
+    _preferred = model
+
+
+def _order() -> List[str]:
+    """Порядок моделей на эту попытку: удачная из прошлого раза — первой."""
+    if _preferred and _preferred in MODELS:
+        return [_preferred] + [m for m in MODELS if m != _preferred]
+    return list(MODELS)
+
+
 async def _ask(model: str, user: str) -> Optional[str]:
     payload = {
         "model": model,
@@ -356,7 +377,7 @@ async def write_rubric(rubric: str, items: Optional[List[dict]] = None) -> Draft
                  'useful всегда true: рубрику ведём по расписанию, а не по новизне.')
 
     last = "модель не ответила"
-    for model in MODELS:
+    for model in _order():
         try:
             content = await _ask(model, user)
         except Exception as e:
@@ -371,6 +392,7 @@ async def write_rubric(rubric: str, items: Optional[List[dict]] = None) -> Draft
         if not text:
             last = f"{model}: пустые поля в ответе"
             continue
+        _remember_model(model)
         return Draft(useful=True, reason=_clean(data.get("reason"), 200), text=text, model=model)
 
     return Draft(useful=False, reason=last)
@@ -397,7 +419,7 @@ async def write(title: str, summary: str, source: str = "") -> Draft:
              "Верни JSON по инструкции.")
 
     last = "модель не ответила"
-    for model in MODELS:
+    for model in _order():
         try:
             content = await _ask(model, user)
         except Exception as e:
@@ -411,11 +433,13 @@ async def write(title: str, summary: str, source: str = "") -> Draft:
         if not data.get("useful"):
             reason = _clean(data.get("reason"), 200) or "не полезно читателю"
             logger.info("[писатель] новость отбракована (%s): %s", model, reason)
+            _remember_model(model)
             return Draft(useful=False, reason=reason, model=model)
         text = _assemble(data)
         if not text:
             last = f"{model}: пустые поля в ответе"
             continue
+        _remember_model(model)
         return Draft(useful=True, reason=_clean(data.get("reason"), 200), text=text, model=model)
 
     return Draft(useful=True, reason=last)   # полезность неизвестна, текста нет
