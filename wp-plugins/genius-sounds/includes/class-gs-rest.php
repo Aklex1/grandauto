@@ -348,6 +348,26 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Анкета «песня в подарок» — открытый маршрут: заявку оставляют без
+        // регистрации, иначе половина людей уходит на шаге входа.
+        register_rest_route(self::NS, '/gift/lead', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_gift_lead'),
+            'permission_callback' => '__return_true',
+        ));
+
+        register_rest_route(self::NS, '/gift/samples', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_gift_samples'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
+        register_rest_route(self::NS, '/gift/art', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_gift_art'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/balance/home', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_balance_home'),
@@ -631,6 +651,178 @@ class GS_Rest {
         $out['потерянные_оплаты'] = GS_Balance_Home::credit_lost(!$apply);
         $out['осталось_в_базе_бота'] = GS_Balance_Home::still_in_bot();
         return rest_ensure_response($out);
+    }
+
+    /* ---------------------------------------------------------------------
+     * Песня в подарок
+     * ------------------------------------------------------------------ */
+
+    public static function handle_gift_lead($request) {
+        if (!class_exists('GS_Gift')) {
+            return new WP_Error('gs_no_gift', 'Приём анкет не подключён', array('status' => 500));
+        }
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $res = GS_Gift::accept($params);
+        return rest_ensure_response(array(
+            'ok'      => !empty($res['ok']),
+            'message' => (string) ($res['message'] ?? ''),
+        ));
+    }
+
+    /**
+     * Примеры песен для посадочной.
+     *
+     * Два приёма, как и у образцов голоса: сначала ставим задачи, потом
+     * забираем готовое. В один приём нельзя — песня пишется минуты, а
+     * запрос из админки успевает оборваться по таймауту.
+     */
+    public static function handle_gift_samples($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        if (!empty($params['start']) && is_array($params['start'])) {
+            $out = array();
+            foreach ($params['start'] as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $res = GS_Lab::create_task('music', array(
+                    'prompt' => (string) ($item['prompt'] ?? ''),
+                    'fields' => array(
+                        'instrumental' => false,
+                        'lyrics'       => (string) ($item['lyrics'] ?? ''),
+                        'style'        => (string) ($item['style'] ?? ''),
+                        'title'        => (string) ($item['title'] ?? ''),
+                    ),
+                ));
+                $out[] = array(
+                    'title'   => (string) ($item['title'] ?? ''),
+                    'ok'      => !empty($res['ok']),
+                    'task_id' => (string) ($res['task_id'] ?? ''),
+                    'message' => (string) ($res['message'] ?? ''),
+                );
+            }
+            return rest_ensure_response(array('started' => $out));
+        }
+
+        if (!empty($params['check']) && is_array($params['check'])) {
+            $out = array();
+            foreach ($params['check'] as $task_id) {
+                $state = GS_Lab::fetch_task('music', (string) $task_id);
+                $out[] = array(
+                    'task_id' => (string) $task_id,
+                    'status'  => (string) ($state['status'] ?? ''),
+                    'files'   => isset($state['files']) ? $state['files'] : array(),
+                    'message' => (string) ($state['message'] ?? ''),
+                );
+            }
+            return rest_ensure_response(array('checked' => $out));
+        }
+
+        if (isset($params['save']) && is_array($params['save'])) {
+            $rows = array();
+            foreach ($params['save'] as $row) {
+                if (!is_array($row) || empty($row['url'])) {
+                    continue;
+                }
+                $stored = class_exists('GS_Songs') ? GS_Songs::store_copy((string) $row['url']) : '';
+                $rows[] = array(
+                    'title' => (string) ($row['title'] ?? 'Пример'),
+                    'about' => (string) ($row['about'] ?? ''),
+                    'style' => (string) ($row['style'] ?? ''),
+                    'url'   => $stored !== '' ? $stored : (string) $row['url'],
+                );
+            }
+            GS_Gift::set_samples($rows);
+        }
+
+        return rest_ensure_response(array('samples' => GS_Gift::samples()));
+    }
+
+    /**
+     * Картинки страниц подарка.
+     *
+     * Ссылку поставщика не сохраняем: она живёт считаные дни, а страница
+     * должна работать и через год. Поэтому файл сразу перекладывается в
+     * медиатеку сайта, и в опции остаётся уже наш адрес.
+     */
+    public static function handle_gift_art($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        if (!empty($params['start']) && is_array($params['start'])) {
+            $out = array();
+            foreach ($params['start'] as $key => $prompt) {
+                $res = GS_Provider::job('image', array(
+                    'prompt' => (string) $prompt,
+                    'ratio'  => (string) ($params['ratio'] ?? '16:9'),
+                ));
+                $out[sanitize_key($key)] = array(
+                    'ok'      => !empty($res['ok']),
+                    'task'    => (string) ($res['task'] ?? ''),
+                    'route'   => (string) ($res['route'] ?? ''),
+                    'message' => (string) ($res['message'] ?? ''),
+                );
+            }
+            return rest_ensure_response(array('started' => $out));
+        }
+
+        if (!empty($params['check']) && is_array($params['check'])) {
+            $out = array();
+            foreach ($params['check'] as $key => $task) {
+                $state = GS_Provider::job_state((string) $task, (string) ($params['route'] ?? ''));
+                $urls = !empty($state['urls']) ? (array) $state['urls'] : array();
+                $saved = '';
+                if (!empty($params['save']) && $urls) {
+                    $saved = self::gift_sideload((string) $urls[0], sanitize_key($key));
+                    if ($saved !== '') {
+                        GS_Gift::set_art(array($key => $saved));
+                    }
+                }
+                $out[sanitize_key($key)] = array(
+                    'state'   => (string) ($state['state'] ?? ''),
+                    'urls'    => $urls,
+                    'saved'   => $saved,
+                    'message' => (string) ($state['message'] ?? ''),
+                );
+            }
+            return rest_ensure_response(array('checked' => $out, 'art' => get_option(GS_Gift::OPT_ART, array())));
+        }
+
+        return rest_ensure_response(array('art' => get_option(GS_Gift::OPT_ART, array())));
+    }
+
+    /** Переложить картинку поставщика в медиатеку сайта. */
+    private static function gift_sideload($url, $key) {
+        $response = wp_remote_get($url, array('timeout' => 120));
+        if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
+            return '';
+        }
+        $body = wp_remote_retrieve_body($response);
+        if (strlen($body) < 5000) {
+            return '';
+        }
+        $upload = wp_upload_bits('gift-' . $key . '.png', null, $body);
+        if (!empty($upload['error'])) {
+            return '';
+        }
+        $id = wp_insert_attachment(array(
+            'post_mime_type' => 'image/png',
+            'post_title'     => 'Песня в подарок: ' . $key,
+            'post_status'    => 'inherit',
+        ), $upload['file']);
+        if (!$id) {
+            return (string) $upload['url'];
+        }
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+        wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $upload['file']));
+        return (string) wp_get_attachment_url($id);
     }
 
     /** Состояние планировщика и очереди IndexNow. */

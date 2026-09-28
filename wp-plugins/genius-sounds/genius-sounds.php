@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.6.3
+ * Version:     2.7.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '2.6.3');
+define('GS_VERSION', '2.7.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -30,6 +30,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-pages.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-intent.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-return.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-balance-home.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-gift.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-seo.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-index.php';
@@ -114,6 +115,7 @@ class Genius_Sounds_Plugin {
         GS_Pages::boot();
         GS_Return::boot();
         GS_Balance_Home::boot();
+        GS_Gift::boot();
         GS_Seo::boot();
         GS_Sitemap::boot();
         GS_Index::boot();
@@ -161,6 +163,7 @@ class Genius_Sounds_Plugin {
         GS_Slides_Page::ensure_pages();
         GS_Api_Page::ensure_page();
         GS_Partner_Page::ensure_page();
+        GS_Gift::ensure_pages();
         flush_rewrite_rules();
     }
 
@@ -181,6 +184,7 @@ class Genius_Sounds_Plugin {
         GS_Slides_Page::register_shortcodes();
         GS_Api_Page::register_shortcodes();
         GS_Partner_Page::register_shortcodes();
+        GS_Gift::register_shortcodes();
 
         // Разовая инициализация после обновления версии плагина.
         //
@@ -199,6 +203,7 @@ class Genius_Sounds_Plugin {
                 GS_Slides_Page::ensure_pages();
                 GS_Api_Page::ensure_page();
                 GS_Partner_Page::ensure_page();
+                GS_Gift::ensure_pages();
                 add_action('shutdown', 'flush_rewrite_rules');
             } catch (Throwable $e) {
                 error_log('genius-sounds: инициализация не удалась — ' . $e->getMessage());
@@ -298,6 +303,19 @@ class Genius_Sounds_Plugin {
                 'apiUrl' => GS_Api_Page::get_url(),
                 'sttUrl' => GS_Lab::get_url('stt'),
                 'ytUrl'  => GS_Lab::get_url('ytaudio'),
+            ));
+        }
+
+        // Песня в подарок: свой праздничный вид и своя анкета. Стилей
+        // микросервисов здесь нет намеренно — страница светлая и не должна
+        // выглядеть как рабочий инструмент.
+        $gift = class_exists('GS_Gift') ? GS_Gift::current() : null;
+        if ($gift) {
+            wp_enqueue_style('genius-sounds-gift', GS_PLUGIN_URL . 'assets/css/gift.css', array(), GS_VERSION);
+            wp_enqueue_script('genius-sounds-gift', GS_PLUGIN_URL . 'assets/js/gift.js', array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-gift', 'GS_GIFT', array(
+                'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),
+                'page'    => (string) $gift['id'],
             ));
         }
 

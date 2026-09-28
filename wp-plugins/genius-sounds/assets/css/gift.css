@@ -1,0 +1,733 @@
+/**
+ * Песня в подарок: праздничное оформление.
+ *
+ * Остальной сайт — тёмный и рабочий: так уместно выглядеть инструменту для
+ * работы со звуком. Подарок так выглядеть не должен, поэтому здесь светлый
+ * фон, тёплый градиент и крупная типографика. Палитра одна на все страницы
+ * блока и живёт в переменных: менять праздничность — здесь, а не в тридцати
+ * правилах.
+ */
+
+.gs-gift-page {
+    --gg-ink: #2a1338;
+    --gg-ink-soft: #5c4668;
+    --gg-paper: #fff8f2;
+    --gg-card: #ffffff;
+    --gg-line: #f0dfe8;
+    --gg-hot: #d81e5b;
+    --gg-hot-dark: #b3134a;
+    --gg-gold: #f5a623;
+    --gg-violet: #7b2cbf;
+    --gg-mint: #128a6a;
+    --gg-shadow: 0 18px 44px rgba(120, 40, 90, .14);
+    --gg-radius: 20px;
+    background: var(--gg-paper);
+}
+
+/**
+ * Тема оборачивает шорткод в свою секцию с отступами и боковыми полями.
+ * Для обложки это лишнее: праздничный градиент должен идти во всю ширину
+ * экрана, а не карточкой посередине. Верхний отступ у внутреннего
+ * контейнера трогать нельзя — это компенсация фиксированной шапки, без
+ * неё обложка уедет под меню.
+ */
+.gs-gift-page .l-main .l-section {
+    padding: 0;
+}
+
+.gs-gift-page .l-main .l-section-h {
+    max-width: none;
+    padding-left: 0;
+    padding-right: 0;
+    padding-bottom: 0;
+}
+
+.gs-gift-page .gs-gift-hero,
+.gs-gift-page .gs-gift-sec {
+    box-sizing: border-box;
+}
+
+/* --------------------------------------------------------------------- */
+/* Обложка                                                               */
+/* --------------------------------------------------------------------- */
+
+.gs-gift-hero {
+    position: relative;
+    overflow: hidden;
+    padding: 64px 16px 56px;
+    color: #fff;
+    background:
+        radial-gradient(1200px 520px at 12% -10%, rgba(245, 166, 35, .55), transparent 60%),
+        radial-gradient(900px 480px at 88% 8%, rgba(216, 30, 91, .55), transparent 62%),
+        linear-gradient(135deg, #4a1259 0%, #7b2cbf 48%, #d81e5b 100%);
+}
+
+/* Бумажные кружочки: праздник без картинок, одним фоном. */
+.gs-gift-hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: .5;
+    background-image:
+        radial-gradient(circle, rgba(255, 255, 255, .9) 2px, transparent 2px),
+        radial-gradient(circle, rgba(255, 214, 102, .9) 2px, transparent 2px),
+        radial-gradient(circle, rgba(255, 255, 255, .6) 1.5px, transparent 1.5px);
+    background-size: 120px 120px, 170px 170px, 90px 90px;
+    background-position: 10px 20px, 60px 90px, 100px 40px;
+}
+
+.gs-gift-hero.has-art::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: var(--gs-gift-hero);
+    background-size: cover;
+    background-position: center;
+    opacity: .3;
+    mix-blend-mode: screen;
+}
+
+.gs-gift-hero__in {
+    position: relative;
+    z-index: 2;
+    max-width: 860px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.gs-gift-badge {
+    display: inline-block;
+    margin: 0 0 18px;
+    padding: 7px 16px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .18);
+    border: 1px solid rgba(255, 255, 255, .35);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .02em;
+}
+
+.gs-gift-h1 {
+    margin: 0 0 18px;
+    font-size: clamp(30px, 6vw, 54px);
+    line-height: 1.1;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    color: #fff;
+}
+
+.gs-gift-lead {
+    margin: 0 auto 14px;
+    max-width: 660px;
+    font-size: clamp(16px, 2.2vw, 19px);
+    line-height: 1.6;
+    color: rgba(255, 255, 255, .95);
+}
+
+.gs-gift-intro {
+    margin: 0 auto 26px;
+    max-width: 620px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, .8);
+}
+
+.gs-gift-cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 34px;
+}
+
+.gs-gift-btn {
+    display: inline-block;
+    padding: 15px 30px;
+    border: 0;
+    border-radius: 999px;
+    font-size: 16px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+}
+
+.gs-gift-btn--main {
+    background: linear-gradient(135deg, var(--gg-gold), #ff6b35 60%, var(--gg-hot));
+    color: #fff;
+    box-shadow: 0 12px 28px rgba(216, 30, 91, .38);
+}
+
+.gs-gift-btn--main:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 34px rgba(216, 30, 91, .46);
+    color: #fff;
+}
+
+.gs-gift-btn--ghost {
+    background: rgba(255, 255, 255, .14);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, .5);
+}
+
+.gs-gift-btn--ghost:hover {
+    background: rgba(255, 255, 255, .24);
+    color: #fff;
+}
+
+/* Кнопка в карточке пакета: своя, тише главной, но всё-таки кнопка —
+   без фона тема рисует её обычной синей ссылкой. */
+.gs-gift-btn--small {
+    padding: 11px 22px;
+    font-size: 15px;
+    background: #fff4f8;
+    color: var(--gg-hot);
+    border: 1.5px solid var(--gg-hot);
+}
+
+.gs-gift-btn--small:hover {
+    background: var(--gg-hot);
+    color: #fff;
+}
+
+.gs-gift-pack.is-best .gs-gift-btn--small {
+    background: linear-gradient(135deg, var(--gg-gold), var(--gg-hot));
+    border-color: transparent;
+    color: #fff;
+}
+
+.gs-gift-pack.is-best .gs-gift-btn--small:hover {
+    box-shadow: 0 10px 22px rgba(216, 30, 91, .35);
+    color: #fff;
+}
+
+.gs-gift-btn--send {
+    width: 100%;
+    margin-top: 6px;
+}
+
+.gs-gift-marks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.gs-gift-marks li {
+    flex: 1 1 180px;
+    max-width: 240px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, .14);
+    border: 1px solid rgba(255, 255, 255, .28);
+}
+
+.gs-gift-marks strong {
+    display: block;
+    font-size: 19px;
+    font-weight: 800;
+    color: #ffe08a;
+}
+
+.gs-gift-marks span {
+    display: block;
+    margin-top: 4px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, .82);
+}
+
+/* --------------------------------------------------------------------- */
+/* Общие секции                                                          */
+/* --------------------------------------------------------------------- */
+
+.gs-gift-sec {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 48px 16px;
+    color: var(--gg-ink);
+}
+
+.gs-gift-h2 {
+    margin: 0 0 8px;
+    font-size: clamp(22px, 3.4vw, 32px);
+    line-height: 1.2;
+    font-weight: 800;
+    letter-spacing: -.01em;
+    color: var(--gg-ink);
+}
+
+.gs-gift-note {
+    margin: 0 0 24px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--gg-ink-soft);
+}
+
+.gs-gift-note a,
+.gs-gift-text a,
+.gs-gift-faq a {
+    color: var(--gg-hot);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+}
+
+.gs-gift-note a:hover,
+.gs-gift-text a:hover {
+    color: var(--gg-hot-dark);
+}
+
+.gs-gift-small {
+    margin: 14px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--gg-ink-soft);
+}
+
+/* --------------------------------------------------------------------- */
+/* Примеры песен                                                         */
+/* --------------------------------------------------------------------- */
+
+.gs-gift-samples {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+}
+
+.gs-gift-sample {
+    padding: 22px;
+    border-radius: var(--gg-radius);
+    background: var(--gg-card);
+    border: 1px solid var(--gg-line);
+    box-shadow: var(--gg-shadow);
+}
+
+.gs-gift-sample h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gg-ink);
+}
+
+.gs-gift-sample p {
+    margin: 0 0 14px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--gg-ink-soft);
+}
+
+.gs-gift-sample audio {
+    width: 100%;
+    height: 40px;
+}
+
+.gs-gift-sample__style {
+    margin: 12px 0 0;
+    font-size: 13px;
+    color: var(--gg-violet);
+}
+
+/* --------------------------------------------------------------------- */
+/* Шаги                                                                  */
+/* --------------------------------------------------------------------- */
+
+.gs-gift-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 18px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: none;
+}
+
+.gs-gift-steps li {
+    position: relative;
+    padding: 26px 22px 22px;
+    border-radius: var(--gg-radius);
+    background: var(--gg-card);
+    border: 1px solid var(--gg-line);
+}
+
+.gs-gift-steps__num {
+    position: absolute;
+    top: -14px;
+    left: 22px;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gg-violet), var(--gg-hot));
+    color: #fff;
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.gs-gift-steps strong {
+    display: block;
+    margin: 6px 0 8px;
+    font-size: 17px;
+    color: var(--gg-ink);
+}
+
+.gs-gift-steps li > span:not(.gs-gift-steps__num) {
+    display: block;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--gg-ink-soft);
+}
+
+/* --------------------------------------------------------------------- */
+/* Пакеты                                                                */
+/* --------------------------------------------------------------------- */
+
+.gs-gift-packs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    margin-bottom: 20px;
+}
+
+.gs-gift-pack {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 26px 22px;
+    border-radius: var(--gg-radius);
+    background: var(--gg-card);
+    border: 1px solid var(--gg-line);
+    box-shadow: var(--gg-shadow);
+}
+
+.gs-gift-pack.is-best {
+    border-color: var(--gg-hot);
+    box-shadow: 0 20px 48px rgba(216, 30, 91, .2);
+}
+
+.gs-gift-pack__flag {
+    position: absolute;
+    top: -13px;
+    left: 22px;
+    margin: 0;
+    padding: 5px 14px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--gg-gold), var(--gg-hot));
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.gs-gift-pack h3 {
+    margin: 6px 0 4px;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--gg-ink);
+}
+
+.gs-gift-pack__price {
+    margin: 0 0 16px;
+    font-size: 34px;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    background: linear-gradient(135deg, var(--gg-violet), var(--gg-hot));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.gs-gift-pack ul {
+    flex: 1 1 auto;
+    margin: 0 0 18px;
+    padding: 0;
+    list-style: none;
+}
+
+.gs-gift-pack li {
+    position: relative;
+    padding: 0 0 9px 24px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--gg-ink-soft);
+}
+
+.gs-gift-pack li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--gg-mint);
+    font-weight: 700;
+}
+
+.gs-gift-pack .gs-gift-btn {
+    align-self: flex-start;
+}
+
+/* --------------------------------------------------------------------- */
+/* Анкета                                                                */
+/* --------------------------------------------------------------------- */
+
+.gs-gift-formsec {
+    padding-top: 8px;
+}
+
+.gs-gift-form {
+    padding: 30px;
+    border-radius: 26px;
+    background:
+        linear-gradient(#fff, #fff) padding-box,
+        linear-gradient(135deg, var(--gg-gold), var(--gg-hot) 55%, var(--gg-violet)) border-box;
+    border: 2px solid transparent;
+    box-shadow: var(--gg-shadow);
+}
+
+.gs-gift-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.gs-gift-field {
+    display: block;
+}
+
+.gs-gift-field > span {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gg-ink);
+}
+
+.gs-gift-field input[type="text"],
+.gs-gift-field select,
+.gs-gift-field textarea {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 13px 14px;
+    border: 1px solid var(--gg-line);
+    border-radius: 14px;
+    background: #fffdfb;
+    color: var(--gg-ink);
+    font-size: 15px;
+    font-family: inherit;
+    line-height: 1.45;
+}
+
+.gs-gift-field textarea {
+    resize: vertical;
+    min-height: 130px;
+}
+
+.gs-gift-field input:focus,
+.gs-gift-field select:focus,
+.gs-gift-field textarea:focus {
+    outline: none;
+    border-color: var(--gg-hot);
+    box-shadow: 0 0 0 3px rgba(216, 30, 91, .14);
+}
+
+.gs-gift-field small {
+    display: block;
+    margin-top: 7px;
+    font-size: 13px;
+    color: var(--gg-ink-soft);
+}
+
+.gs-gift-field--wide {
+    margin-bottom: 16px;
+}
+
+.gs-gift-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 18px;
+    font-size: 15px;
+    color: var(--gg-ink);
+    cursor: pointer;
+}
+
+.gs-gift-check input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--gg-hot);
+}
+
+.gs-gift-status {
+    margin: 14px 0 0;
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 1em;
+}
+
+.gs-gift-status.is-ok {
+    color: var(--gg-mint);
+    font-weight: 600;
+}
+
+.gs-gift-status.is-err {
+    color: var(--gg-hot);
+    font-weight: 600;
+}
+
+/* --------------------------------------------------------------------- */
+/* Текст и вопросы                                                       */
+/* --------------------------------------------------------------------- */
+
+.gs-gift-prose .gs-gift-h2 {
+    margin-top: 34px;
+}
+
+.gs-gift-prose .gs-gift-h2:first-child {
+    margin-top: 0;
+}
+
+.gs-gift-text {
+    font-size: 16px;
+    line-height: 1.7;
+    color: #3d2b4a;
+}
+
+.gs-gift-text p {
+    margin: 0 0 16px;
+}
+
+.gs-gift-text ul,
+.gs-gift-text ol {
+    margin: 0 0 16px;
+    padding-left: 22px;
+}
+
+.gs-gift-text li {
+    margin-bottom: 9px;
+}
+
+.gs-gift-faq details {
+    margin-bottom: 12px;
+    padding: 18px 22px;
+    border-radius: 16px;
+    background: var(--gg-card);
+    border: 1px solid var(--gg-line);
+}
+
+.gs-gift-faq summary {
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--gg-ink);
+    list-style: none;
+}
+
+.gs-gift-faq summary::-webkit-details-marker {
+    display: none;
+}
+
+.gs-gift-faq summary::after {
+    content: "+";
+    float: right;
+    margin-left: 12px;
+    color: var(--gg-hot);
+    font-size: 20px;
+    line-height: 1;
+    font-weight: 700;
+}
+
+.gs-gift-faq details[open] summary::after {
+    content: "−";
+}
+
+.gs-gift-faq details > div {
+    margin-top: 10px;
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--gg-ink-soft);
+}
+
+.gs-gift-faq details > div p {
+    margin: 0 0 10px;
+}
+
+/* --------------------------------------------------------------------- */
+/* Перелинковка                                                          */
+/* --------------------------------------------------------------------- */
+
+.gs-gift-cross ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin: 0 0 20px;
+    padding: 0;
+    list-style: none;
+}
+
+.gs-gift-cross li {
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: var(--gg-card);
+    border: 1px solid var(--gg-line);
+}
+
+.gs-gift-cross li a {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--gg-hot);
+    text-decoration: none;
+}
+
+.gs-gift-cross li a:hover {
+    color: var(--gg-hot-dark);
+    text-decoration: underline;
+}
+
+.gs-gift-cross li span {
+    display: block;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--gg-ink-soft);
+}
+
+/* --------------------------------------------------------------------- */
+/* Телефоны                                                              */
+/* --------------------------------------------------------------------- */
+
+@media (max-width: 600px) {
+    .gs-gift-hero {
+        padding: 44px 16px 40px;
+    }
+
+    .gs-gift-sec {
+        padding: 34px 16px;
+    }
+
+    .gs-gift-form {
+        padding: 22px 18px;
+        border-radius: 20px;
+    }
+
+    .gs-gift-cta {
+        flex-direction: column;
+    }
+
+    .gs-gift-btn {
+        text-align: center;
+    }
+
+    .gs-gift-marks li {
+        flex: 1 1 100%;
+        max-width: none;
+    }
+
+    .gs-gift-pack__price {
+        font-size: 30px;
+    }
+}
