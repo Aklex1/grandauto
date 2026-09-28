@@ -9266,6 +9266,10 @@ async def main():
     if news_moderation.enabled():
         news_moderation.setup(dp, bot)
 
+    # Подарок за подписку: кнопка «Я подписался» перепроверяет членство
+    import pin_gift
+    pin_gift.setup(dp, bot)
+
     # Каждая задача изолирована: если упадёт фоновая, бот продолжит отвечать,
     # а ошибка попадёт в лог. Раньше падение любой из них останавливало всё.
     async def guarded(coro, name: str):

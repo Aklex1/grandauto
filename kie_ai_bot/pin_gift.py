@@ -19,7 +19,9 @@ import logging
 import os
 from typing import Optional, Tuple
 
-from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import (BufferedInputFile, CallbackQuery, InlineKeyboardButton,
+                           InlineKeyboardMarkup, Message)
 
 from database import get_connection, update_balance
 
@@ -36,6 +38,17 @@ GENERATIONS = int(os.getenv("PIN_GIFT_GENERATIONS", "3") or 3)
 BONUS = GENERATION_PRICE * GENERATIONS
 
 FILE_NAME = "50-promptov-genius-bot.txt"
+
+# Канал, подписку на который проверяем перед выдачей. Пусто — не проверяем.
+# Принимает и @имя, и числовой id вида -100…
+CHANNEL = os.getenv("PIN_GIFT_CHANNEL", "").strip()
+CHANNEL_TITLE = os.getenv("PIN_GIFT_CHANNEL_TITLE", "Промты для нейросетей").strip()
+CHANNEL_URL = os.getenv(
+    "PIN_GIFT_CHANNEL_URL",
+    "https://t.me/" + CHANNEL.lstrip("@") if CHANNEL and not CHANNEL.startswith("-") else "",
+).strip()
+# Подписан ли — это членство в канале. Эти статусы считаем подпиской.
+_MEMBER_STATUSES = ("creator", "administrator", "member")
 
 PROMPTS_HEADER = """50 РАБОЧИХ ПРОМПТОВ ДЛЯ НЕЙРОСЕТЕЙ
 Подарок подписчикам канала «Нейросети» — genius-bot.ru
@@ -235,15 +248,53 @@ def _keyboard() -> InlineKeyboardMarkup:
     )
 
 
-async def handle(message: Message, param: str) -> bool:
+async def is_subscribed(bot: Bot, user_id: int) -> Optional[bool]:
     """
-    Переход по ссылке из закрепа. True — подарок выдан, приветствие не нужно.
-    """
-    source = parse_payload(param)
-    if source is None:
-        return False
+    Подписан ли человек на канал.
 
-    user_id = message.from_user.id
+    None означает «проверить не смогли»: бот не админ канала, канал указан
+    неверно или Телеграм не ответил. В этом случае подарок выдаём — терять
+    человека из-за нашей же настройки хуже, чем выдать лишний файл.
+    """
+    if not CHANNEL:
+        return True
+    try:
+        member = await bot.get_chat_member(CHANNEL, user_id)
+    except Exception as e:
+        logger.warning("[pin_gift] подписку %s проверить не удалось (%s): %s", user_id, CHANNEL, e)
+        return None
+    status = getattr(member, "status", "")
+    status = getattr(status, "value", status)   # aiogram отдаёт enum
+    return str(status) in _MEMBER_STATUSES
+
+
+def _subscribe_keyboard(source: str) -> InlineKeyboardMarkup:
+    """Кнопки для неподписавшегося: сначала канал, потом повторная проверка."""
+    rows = []
+    if CHANNEL_URL:
+        rows.append([InlineKeyboardButton(text="📣 Подписаться на канал", url=CHANNEL_URL)])
+    rows.append([InlineKeyboardButton(text="✅ Я подписался — забрать подарок",
+                                      callback_data=f"pin_sub_{source}"[:64])])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _ask_to_subscribe(message: Message, source: str) -> None:
+    await message.answer(
+        "🎁 <b>Подарок ждёт вас</b>\n\n"
+        f"{total_prompts()} промптов на каждый день и {GENERATIONS} бесплатные генерации "
+        "изображений — за подписку на канал "
+        f"«{CHANNEL_TITLE}».\n\n"
+        "Подпишитесь и нажмите «Я подписался» — файл и бонус придут сразу.",
+        parse_mode="HTML", reply_markup=_subscribe_keyboard(source))
+
+
+async def give(message: Message, source: str, user_id: int) -> None:
+    """
+    Выдача подарка: файл всегда, баланс — один раз на человека.
+
+    user_id передаём отдельно: при нажатии кнопки message принадлежит боту,
+    и message.from_user там — сам бот, а не человек.
+    """
     granted, bonus = claim(user_id, source)
 
     document = BufferedInputFile(build_file(), filename=FILE_NAME)
@@ -275,4 +326,44 @@ async def handle(message: Message, param: str) -> bool:
         await message.answer(caption, parse_mode="HTML", reply_markup=_keyboard())
 
     logger.info("[pin_gift] подарок: user=%s source=%s начислено=%s", user_id, source, granted)
+
+
+async def handle(message: Message, param: str) -> bool:
+    """
+    Переход по ссылке из закрепа. True — подарок обработан, приветствие не нужно.
+
+    Если задан канал, сначала проверяем подписку: подарок за подписку,
+    который выдают без подписки, подписчиков не приносит.
+    """
+    source = parse_payload(param)
+    if source is None:
+        return False
+
+    subscribed = await is_subscribed(message.bot, message.from_user.id)
+    if subscribed is False:
+        await _ask_to_subscribe(message, source)
+        return True
+
+    await give(message, source, message.from_user.id)
     return True
+
+
+def setup(dp: Dispatcher, bot: Bot) -> None:
+    """Кнопка «Я подписался»: проверяем ещё раз и выдаём."""
+
+    @dp.callback_query(F.data.startswith("pin_sub_"))
+    async def recheck(callback: CallbackQuery) -> None:
+        source = (callback.data or "")[len("pin_sub_"):] or PAYLOAD
+        subscribed = await is_subscribed(bot, callback.from_user.id)
+        if subscribed is False:
+            await callback.answer("Подписки пока не видно. Подпишитесь и нажмите ещё раз.",
+                                  show_alert=True)
+            return
+        await callback.answer("Спасибо! Отправляю подарок")
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await give(callback.message, source, callback.from_user.id)
+
+    logger.info("[pin_gift] проверка подписки: %s", CHANNEL or "выключена")
