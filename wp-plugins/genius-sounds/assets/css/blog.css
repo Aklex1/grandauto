@@ -723,3 +723,61 @@ body.gs-post-page .gs-promt__shots img {
         grid-template-columns: 1fr;
     }
 }
+
+/* --------------------------------------------------------------------- */
+/* Врезка «песня в подарок» в статьях кластера                            */
+/* --------------------------------------------------------------------- */
+
+/* Блог тёмный, а посадочная праздничная и светлая. Врезка держит середину:
+   тёплая рамка и градиентная кнопка узнаются как та же линия, но фон
+   остаётся читаемым внутри тёмной статьи.
+   Высота здесь важнее украшений: врезка стоит перед текстом и не должна
+   отодвигать первый абзац за пределы экрана. */
+.gs-gift-inline {
+    margin: 0 0 24px;
+    padding: 14px 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(245, 166, 35, .45);
+    background: linear-gradient(135deg, rgba(123, 44, 191, .18), rgba(216, 30, 91, .14));
+}
+
+.gs-gift-inline p {
+    margin: 0 0 10px;
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+.gs-gift-inline p:last-child {
+    margin-bottom: 0;
+}
+
+.gs-gift-inline strong {
+    color: #ffd166;
+}
+
+.gs-gift-inline__go {
+    display: inline-block;
+    padding: 9px 22px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #f5a623, #d81e5b);
+    color: #fff !important;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none !important;
+}
+
+.gs-gift-inline__go:hover {
+    box-shadow: 0 10px 24px rgba(216, 30, 91, .35);
+    color: #fff !important;
+}
+
+@media (max-width: 600px) {
+    .gs-gift-inline {
+        padding: 16px 16px;
+    }
+
+    .gs-gift-inline__go {
+        display: block;
+        text-align: center;
+    }
+}

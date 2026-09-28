@@ -43,7 +43,59 @@ class GS_Gift {
         add_filter('body_class', array(__CLASS__, 'body_class'));
         add_action('wp_head', array(__CLASS__, 'head'));
         add_filter('document_title_parts', array(__CLASS__, 'title_parts'));
+        // Врезка в статьях кластера идёт до блока инструментов в конце.
+        add_filter('the_content', array(__CLASS__, 'insert_promo'), 9);
     }
+
+    /* ---------------------------------------------------------------------
+     * Врезка в статьях кластера
+     * ------------------------------------------------------------------ */
+
+    /** Метка потока публикаций, по которой узнаём свои статьи. */
+    const LANE = 'podarok';
+
+    /**
+     * Врезка со ссылкой на посадочную — в начале статьи.
+     *
+     * Текст статьи начинается на 707-м пикселе (десктоп) и на 554-м
+     * (телефон), а первый экран — 900 и 844. Значит после вводного абзаца
+     * врезка в первый экран уже не попадает: измерено. Поэтому ставим её
+     * перед текстом, но держим в две строки.
+     *
+     * Размер здесь и есть содержание решения. Развёрнутый рекламный блок
+     * сверху отодвигает ответ, за которым человек пришёл, и статья,
+     * начинающаяся с продажи, теряет и читателя, и позиции. Строчка с
+     * ценой и сроком ничего не отодвигает: кому надо — нажмёт, остальные
+     * читают дальше.
+     */
+    public static function insert_promo($content) {
+        if (is_admin() || !is_singular('post') || !in_the_loop() || !is_main_query()) {
+            return $content;
+        }
+        $post = get_post();
+        if (!($post instanceof WP_Post)) {
+            return $content;
+        }
+        if ((string) get_post_meta($post->ID, '_gs_queue_lane', true) !== self::LANE) {
+            return $content;
+        }
+        if (strpos($content, 'gs-gift-inline') !== false) {
+            return $content;
+        }
+
+        return self::promo_html() . $content;
+    }
+
+    public static function promo_html() {
+        $url = self::get_url(self::root());
+        return '<aside class="gs-gift-inline">'
+            . '<p><strong>Песня в подарок.</strong> Вы заполняете анкету про человека — текст '
+            . 'песни видите сразу и бесплатно, готовая песня приходит через десять минут. '
+            . 'От ' . (int) self::PRICE_SONG . ' ₽.</p>'
+            . '<p><a class="gs-gift-inline__go" href="' . esc_url($url) . '">Заполнить анкету</a></p>'
+            . '</aside>';
+    }
+
 
     public static function register_shortcodes() {
         add_shortcode('genius_gift', array(__CLASS__, 'render'));

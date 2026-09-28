@@ -1,0 +1,116 @@
+/**
+ * Липкая панель со ссылкой на сервис.
+ *
+ * Снизу, а не сверху: наверху уже стоит фиксированная шапка сайта, и вторая
+ * полоса рядом с ней съедала бы треть экрана телефона. Внизу панель не
+ * спорит ни с шапкой, ни с текстом.
+ */
+
+.gs-sticky {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 900;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(18, 10, 26, .96);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid rgba(245, 166, 35, .4);
+    transform: translateY(105%);
+    transition: transform .25s ease;
+}
+
+.gs-sticky.is-on {
+    transform: translateY(0);
+}
+
+.gs-sticky__in {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 1080px;
+    margin: 0 auto;
+}
+
+.gs-sticky__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: #f3ecf7;
+}
+
+.gs-sticky__text strong {
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    color: #ffd166;
+}
+
+.gs-sticky__text span {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: rgba(243, 236, 247, .78);
+    /* Текст длиннее двух строк на телефоне выталкивает кнопку за экран. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.gs-sticky__go {
+    flex: 0 0 auto;
+    display: inline-block;
+    padding: 11px 24px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #f5a623, #d81e5b);
+    color: #fff !important;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none !important;
+    white-space: nowrap;
+}
+
+.gs-sticky__go:hover {
+    box-shadow: 0 8px 20px rgba(216, 30, 91, .4);
+    color: #fff !important;
+}
+
+.gs-sticky__x {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .1);
+    color: rgba(243, 236, 247, .8);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.gs-sticky__x:hover {
+    background: rgba(255, 255, 255, .18);
+    color: #fff;
+}
+
+@media (max-width: 600px) {
+    .gs-sticky__in {
+        gap: 10px;
+    }
+
+    .gs-sticky__text strong {
+        font-size: 14px;
+    }
+
+    /* На телефоне описание съедает место у кнопки — оставляем название. */
+    .gs-sticky__text span {
+        display: none;
+    }
+
+    .gs-sticky__go {
+        padding: 10px 18px;
+        font-size: 14px;
+    }
+}

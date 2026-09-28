@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.7.1
+ * Version:     2.8.1
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '2.7.1');
+define('GS_VERSION', '2.8.1');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -31,6 +31,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-intent.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-return.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-balance-home.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-gift.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-sticky.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-seo.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-index.php';
@@ -116,6 +117,7 @@ class Genius_Sounds_Plugin {
         GS_Return::boot();
         GS_Balance_Home::boot();
         GS_Gift::boot();
+        GS_Sticky::boot();
         GS_Seo::boot();
         GS_Sitemap::boot();
         GS_Index::boot();
@@ -304,6 +306,12 @@ class Genius_Sounds_Plugin {
                 'sttUrl' => GS_Lab::get_url('stt'),
                 'ytUrl'  => GS_Lab::get_url('ytaudio'),
             ));
+        }
+
+        // Липкая панель со ссылкой на сервис — в статьях блога.
+        if (class_exists('GS_Sticky') && GS_Sticky::needed()) {
+            wp_enqueue_style('genius-sounds-sticky', GS_PLUGIN_URL . 'assets/css/sticky.css', array(), GS_VERSION);
+            wp_enqueue_script('genius-sounds-sticky', GS_PLUGIN_URL . 'assets/js/sticky.js', array(), GS_VERSION, true);
         }
 
         // Песня в подарок: свой праздничный вид и своя анкета. Стилей
