@@ -49,6 +49,8 @@ class GS_Schedule {
             'api'     => 'Статьи про API',
             'service' => 'Статьи о микросервисах',
             'podarok' => 'Песня в подарок',
+            'pretenzia' => 'Претензии',
+            'prikaz'    => 'Судебные приказы',
         );
     }
 
@@ -75,6 +77,11 @@ class GS_Schedule {
             // статье в неделю.
             'podarok' => array('enabled' => 1, 'per_day' => 2, 'hours' => array(10, 15),
                                'days' => array(1, 2, 3, 4, 5, 6, 7)),
+            // Юридические кластеры: по две статьи в день у каждого, часы свои.
+            'pretenzia' => array('enabled' => 1, 'per_day' => 2, 'hours' => array(8, 17),
+                                 'days' => array(1, 2, 3, 4, 5, 6, 7)),
+            'prikaz'    => array('enabled' => 1, 'per_day' => 2, 'hours' => array(14, 21),
+                                 'days' => array(1, 2, 3, 4, 5, 6, 7)),
         );
     }
 

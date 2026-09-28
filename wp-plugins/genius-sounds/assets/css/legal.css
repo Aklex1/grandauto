@@ -1,0 +1,288 @@
+/*
+ * Юридический блок: претензии и судебные приказы.
+ *
+ * Спокойный деловой вид: человек пришёл с проблемой и деньгами, и праздничная
+ * палитра подарочных страниц тут читалась бы как несерьёзность. Сетка та же,
+ * что в остальных разделах, — карточки на светлом фоне и один синий акцент.
+ */
+
+.gs-legal {
+    --lg-ink: #14162b;
+    --lg-muted: #5b6078;
+    --lg-line: #e3e6ef;
+    --lg-brand: #2f5bff;
+    --lg-soft: #eef2ff;
+    --lg-card: #fff;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 16px 48px;
+    color: var(--lg-ink);
+    font-size: 16px;
+    line-height: 1.55;
+}
+
+.gs-legal h1 {
+    font-size: clamp(26px, 4.4vw, 40px);
+    line-height: 1.12;
+    letter-spacing: -.02em;
+    margin: 0 0 14px;
+}
+
+.gs-legal h2 {
+    font-size: clamp(21px, 3vw, 30px);
+    letter-spacing: -.01em;
+    margin: 0 0 18px;
+}
+
+.gs-legal section {
+    padding: 34px 0;
+    border-top: 1px solid var(--lg-line);
+}
+
+.gs-legal .gs-legal-hero {
+    border-top: 0;
+    padding-top: 22px;
+    display: grid;
+    grid-template-columns: 1.05fr .95fr;
+    gap: 28px;
+    align-items: start;
+}
+
+.gs-legal-crumbs {
+    font-size: 13.5px;
+    color: var(--lg-muted);
+    padding: 14px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.gs-legal-crumbs a { color: var(--lg-muted); }
+.gs-legal-crumbs b { color: var(--lg-ink); font-weight: 600; }
+
+.gs-legal-lead {
+    font-size: clamp(16px, 2vw, 18.5px);
+    color: var(--lg-muted);
+    margin: 0 0 18px;
+}
+
+.gs-legal-bullets { list-style: none; padding: 0; margin: 0 0 18px; }
+
+.gs-legal-bullets li {
+    position: relative;
+    padding-left: 28px;
+    margin: 9px 0;
+}
+
+.gs-legal-bullets li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    top: 1px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #dcfce7;
+    color: #16a34a;
+    font-size: 12px;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+}
+
+.gs-legal-trust {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    color: var(--lg-muted);
+    font-size: 14px;
+    margin: 0;
+}
+
+.gs-legal-card {
+    background: var(--lg-card);
+    border: 1px solid var(--lg-line);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 24px rgba(20, 22, 43, .06);
+}
+
+.gs-legal-card p { color: var(--lg-muted); margin: 8px 0 0; }
+.gs-legal-card b { font-size: 17px; }
+
+.gs-legal-grid2, .gs-legal-grid3, .gs-legal-grid4 { display: grid; gap: 14px; }
+.gs-legal-grid2 { grid-template-columns: repeat(2, 1fr); }
+.gs-legal-grid3 { grid-template-columns: repeat(3, 1fr); }
+.gs-legal-grid4 { grid-template-columns: repeat(4, 1fr); }
+
+/* Веер дочерних страниц */
+.gs-legal-case {
+    display: block;
+    background: var(--lg-card);
+    border: 1px solid var(--lg-line);
+    border-radius: 14px;
+    padding: 14px 16px;
+    text-decoration: none;
+    color: var(--lg-ink);
+    transition: border-color .15s, transform .08s;
+}
+
+.gs-legal-case:hover { border-color: var(--lg-brand); }
+.gs-legal-case:active { transform: translateY(1px); }
+.gs-legal-case b { display: block; font-size: 15.5px; }
+
+.gs-legal-case span {
+    display: block;
+    color: var(--lg-muted);
+    font-size: 13.5px;
+    margin-top: 4px;
+}
+
+.gs-legal-back { margin: 16px 0 0; }
+.gs-legal-back a { color: var(--lg-brand); text-decoration: none; }
+
+/* Форма */
+.gs-legal-form label {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    margin: 14px 0 6px;
+}
+
+.gs-legal-form textarea,
+.gs-legal-form input[type="text"],
+.gs-legal-form input[type="date"] {
+    width: 100%;
+    border: 1px solid var(--lg-line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font: inherit;
+    background: #fff;
+    color: var(--lg-ink);
+}
+
+.gs-legal-form textarea { resize: vertical; min-height: 130px; }
+
+.gs-legal-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.gs-legal-plan {
+    border: 2px solid var(--lg-line);
+    border-radius: 12px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-weight: 400 !important;
+    margin: 0 !important;
+}
+
+.gs-legal-plan input { position: absolute; opacity: 0; }
+.gs-legal-plan b { display: block; font-size: 19px; }
+.gs-legal-plan span { color: var(--lg-muted); font-size: 12.5px; line-height: 1.35; }
+.gs-legal-plan:has(input:checked) { border-color: var(--lg-brand); background: var(--lg-soft); }
+
+.gs-legal-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin-top: 16px;
+    border: 0;
+    border-radius: 12px;
+    padding: 15px 22px;
+    background: var(--lg-brand);
+    color: #fff;
+    font: 600 16px/1 inherit;
+    cursor: pointer;
+    transition: box-shadow .2s, transform .08s;
+}
+
+.gs-legal-btn:hover { box-shadow: 0 8px 20px rgba(47, 91, 255, .3); }
+.gs-legal-btn:active { transform: translateY(1px); }
+.gs-legal-btn[disabled] { opacity: .6; cursor: default; }
+
+.gs-legal-note {
+    font-size: 12.5px;
+    color: var(--lg-muted);
+    margin: 10px 0 0;
+    text-align: center;
+}
+
+.gs-legal-note.is-ok { color: #16a34a; }
+.gs-legal-note.is-err { color: #b42318; }
+
+/* Счётчик срока */
+.gs-legal-deadline__row {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 16px;
+    align-items: end;
+}
+
+.gs-legal-deadline label { font-weight: 600; font-size: 14px; display: block; }
+
+.gs-legal-deadline input[type="date"] {
+    width: 100%;
+    margin-top: 6px;
+    border: 1px solid var(--lg-line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font: inherit;
+}
+
+.gs-legal-deadline__out { margin: 0; font-size: 17px; font-weight: 600; }
+.gs-legal-deadline__out.is-warn { color: #b45309; }
+.gs-legal-deadline__out.is-ok { color: #16a34a; }
+
+/* Тарифы */
+.gs-legal-price__sum {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    margin: 6px 0 10px;
+}
+
+.gs-legal-price ul { padding-left: 20px; margin: 0; color: var(--lg-muted); }
+.gs-legal-price li { margin: 6px 0; }
+.gs-legal-price--full { border-color: var(--lg-brand); }
+
+/* Вопросы */
+.gs-legal-faq details {
+    background: var(--lg-card);
+    border: 1px solid var(--lg-line);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+}
+
+.gs-legal-faq summary {
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+}
+
+.gs-legal-faq summary::-webkit-details-marker { display: none; }
+.gs-legal-faq summary::after { content: "+"; float: right; color: var(--lg-brand); font-weight: 700; }
+.gs-legal-faq details[open] summary::after { content: "–"; }
+.gs-legal-faq details p { color: var(--lg-muted); margin: 10px 0 0; }
+
+.gs-legal-disclaimer {
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #7c2d12;
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-size: 14px;
+    margin: 26px 0 0;
+}
+
+@media (max-width: 900px) {
+    .gs-legal .gs-legal-hero,
+    .gs-legal-grid2,
+    .gs-legal-grid3,
+    .gs-legal-deadline__row { grid-template-columns: 1fr; }
+    .gs-legal-grid4 { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 520px) {
+    .gs-legal-grid4, .gs-legal-plans { grid-template-columns: 1fr; }
+    .gs-legal section { padding: 26px 0; }
+}
