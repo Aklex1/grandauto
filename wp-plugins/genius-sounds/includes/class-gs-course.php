@@ -86,9 +86,20 @@ class GS_Course {
      * Страница
      * ------------------------------------------------------------------ */
 
+    /**
+     * Страница курса.
+     *
+     * Цитату заполняем не для вида: содержимое страницы — один шорткод, и
+     * сторонний SEO-блок темы собирал из него описание для выдачи —
+     * «[genius_course]». Цитату он берёт раньше содержимого.
+     */
     public static function ensure_page() {
         $page_id = (int) get_option(self::OPT_PAGE);
         if ($page_id > 0 && get_post($page_id)) {
+            $post = get_post($page_id);
+            if ($post && trim((string) $post->post_excerpt) === '') {
+                wp_update_post(array('ID' => $page_id, 'post_excerpt' => self::SEO_DESC));
+            }
             return;
         }
         $existing = get_page_by_path(self::SLUG);
@@ -98,12 +109,14 @@ class GS_Course {
                 'ID'           => $page_id,
                 'post_title'   => self::SEO_TITLE,
                 'post_content' => '[genius_course]',
+                'post_excerpt' => self::SEO_DESC,
                 'post_status'  => 'publish',
             ));
         } else {
             $page_id = (int) wp_insert_post(array(
                 'post_title'   => self::SEO_TITLE,
                 'post_content' => '[genius_course]',
+                'post_excerpt' => self::SEO_DESC,
                 'post_status'  => 'publish',
                 'post_type'    => 'page',
                 'post_name'    => self::SLUG,
