@@ -89,6 +89,15 @@ class GS_Yoomoney {
             return self::reply(false, 'none', 'уведомление без метки');
         }
 
+        // Песня в подарок: метка своя, зачисления на баланс нет — деньги
+        // сразу за конкретный заказ, и по уведомлению запускается запись.
+        if (class_exists('GS_Gift') && strpos($label, GS_Gift::LABEL_PREFIX) === 0) {
+            $result = GS_Gift::paid($label);
+            self::remember($label, $amount, !empty($result['ok']) ? 'зачислено' : 'ошибка',
+                (string) ($result['message'] ?? ''), $params, 'подарок');
+            return self::reply(!empty($result['ok']), 'gift', (string) ($result['message'] ?? ''));
+        }
+
         if (strpos($label, 'kie-neurohub|') === 0) {
             $result = self::forward_internal('/neurohub/v1/yoomoney-callback', $params);
             self::remember($label, $amount, $result['ok'] ? 'зачислено' : 'ошибка', $result['message'], $params, 'neurohub');

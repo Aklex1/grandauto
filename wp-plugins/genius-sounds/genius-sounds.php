@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.7.0
+ * Version:     2.7.1
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '2.7.0');
+define('GS_VERSION', '2.7.1');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -313,9 +313,14 @@ class Genius_Sounds_Plugin {
         if ($gift) {
             wp_enqueue_style('genius-sounds-gift', GS_PLUGIN_URL . 'assets/css/gift.css', array(), GS_VERSION);
             wp_enqueue_script('genius-sounds-gift', GS_PLUGIN_URL . 'assets/js/gift.js', array(), GS_VERSION, true);
+            $packs = array();
+            foreach (GS_Gift::packs() as $key => $pack) {
+                $packs[] = array('key' => $key, 'title' => $pack['title'], 'price' => (int) $pack['price']);
+            }
             wp_localize_script('genius-sounds-gift', 'GS_GIFT', array(
                 'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),
                 'page'    => (string) $gift['id'],
+                'packs'   => $packs,
             ));
         }
 

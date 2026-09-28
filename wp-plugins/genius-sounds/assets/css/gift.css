@@ -731,3 +731,73 @@
         font-size: 30px;
     }
 }
+
+/* --------------------------------------------------------------------- */
+/* Текст песни и готовые треки                                           */
+/* --------------------------------------------------------------------- */
+
+.gs-gift-h3 {
+    margin: 26px 0 8px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--gg-ink);
+}
+
+.gs-gift-result,
+.gs-gift-done {
+    margin-top: 22px;
+    padding-top: 22px;
+    border-top: 1px dashed var(--gg-line);
+}
+
+/* Текст песни показываем как есть: разметка куплетов и переносы строк —
+   часть смысла, и превращать их в сплошной абзац нельзя. */
+.gs-gift-lyrics {
+    margin: 0 0 18px;
+    padding: 20px;
+    border-radius: 16px;
+    background: #fffaf5;
+    border: 1px solid var(--gg-line);
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--gg-ink);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 420px;
+    overflow: auto;
+}
+
+.gs-gift-pay {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.gs-gift-track {
+    margin-bottom: 16px;
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: var(--gg-card);
+    border: 1px solid var(--gg-line);
+}
+
+.gs-gift-track p {
+    margin: 0 0 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--gg-ink);
+}
+
+.gs-gift-track audio {
+    width: 100%;
+    height: 40px;
+}
+
+.gs-gift-track a {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gg-hot);
+}

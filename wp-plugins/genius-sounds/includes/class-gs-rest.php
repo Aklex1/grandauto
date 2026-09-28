@@ -356,6 +356,31 @@ class GS_Rest {
             'permission_callback' => '__return_true',
         ));
 
+        // Конвейер заказа: текст сразу и бесплатно, песня после оплаты.
+        register_rest_route(self::NS, '/gift/start', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_gift_start'),
+            'permission_callback' => '__return_true',
+        ));
+
+        register_rest_route(self::NS, '/gift/pay', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_gift_pay'),
+            'permission_callback' => '__return_true',
+        ));
+
+        register_rest_route(self::NS, '/gift/state', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_gift_state'),
+            'permission_callback' => '__return_true',
+        ));
+
+        register_rest_route(self::NS, '/gift/force', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_gift_force'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/gift/samples', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_gift_samples'),
@@ -670,6 +695,50 @@ class GS_Rest {
             'ok'      => !empty($res['ok']),
             'message' => (string) ($res['message'] ?? ''),
         ));
+    }
+
+    public static function handle_gift_start($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $res = GS_Gift::start($params);
+        return rest_ensure_response(array(
+            'ok'      => !empty($res['ok']),
+            'order'   => (string) ($res['order'] ?? ''),
+            'lyrics'  => (string) ($res['lyrics'] ?? ''),
+            'message' => (string) ($res['message'] ?? ''),
+        ));
+    }
+
+    public static function handle_gift_pay($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $link = GS_Gift::pay_link((string) ($params['order'] ?? ''), (string) ($params['pack'] ?? 'song'));
+        return rest_ensure_response(array(
+            'ok'      => $link !== '',
+            'link'    => $link,
+            'message' => $link === '' ? 'Не получилось создать ссылку на оплату' : '',
+        ));
+    }
+
+    public static function handle_gift_force($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $res = GS_Gift::force((string) ($params['order'] ?? ''));
+        return rest_ensure_response(array(
+            'ok'      => !empty($res['ok']),
+            'message' => (string) ($res['message'] ?? ''),
+            'state'   => GS_Gift::state((string) ($params['order'] ?? '')),
+        ));
+    }
+
+    public static function handle_gift_state($request) {
+        return rest_ensure_response(GS_Gift::state((string) $request->get_param('order')));
     }
 
     /**
