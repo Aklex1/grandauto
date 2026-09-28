@@ -88,6 +88,12 @@ def _parse_channels(raw: str) -> dict:
 
 CHANNELS = _parse_channels(os.getenv("PIN_GIFT_CHANNELS", ""))
 
+# Что делать, когда подписку проверить не удалось: бот не админ чата, чат
+# указан неверно, Телеграм не ответил. 1 — просим подписаться (подарок не
+# уходит), 0 — выдаём. По умолчанию строго: подарок за подписку, выданный
+# без подписки, подписчиков не приносит, а раздаёт файлы даром.
+STRICT = os.getenv("PIN_GIFT_STRICT", "1").strip().lower() in ("1", "true", "yes", "on")
+
 
 def channel_for(source: str) -> Optional[dict]:
     """
@@ -341,14 +347,17 @@ def _subscribe_keyboard(source: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def _ask_to_subscribe(message: Message, source: str) -> None:
+async def _ask_to_subscribe(message: Message, source: str, unknown: bool = False) -> None:
     place = channel_for(source) or {}
     title = place.get("title") or "нашем канале"
+    tail = ("Подпишитесь и нажмите «Я подписался» — файл и бонус придут сразу."
+            if not unknown else
+            "Проверить подписку сейчас не получилось. Нажмите «Я подписался» — "
+            "попробуем ещё раз.")
     await message.answer(
         "🎁 <b>Подарок ждёт вас</b>\n\n"
         f"{total_prompts()} промптов на каждый день и {GENERATIONS} бесплатные генерации "
-        f"изображений — за подписку на «{title}».\n\n"
-        "Подпишитесь и нажмите «Я подписался» — файл и бонус придут сразу.",
+        f"изображений — за подписку на «{title}».\n\n" + tail,
         parse_mode="HTML", reply_markup=_subscribe_keyboard(source))
 
 
@@ -404,8 +413,8 @@ async def handle(message: Message, param: str) -> bool:
         return False
 
     subscribed = await is_subscribed(message.bot, message.from_user.id, source)
-    if subscribed is False:
-        await _ask_to_subscribe(message, source)
+    if subscribed is False or (subscribed is None and STRICT):
+        await _ask_to_subscribe(message, source, unknown=subscribed is None)
         return True
 
     await give(message, source, message.from_user.id)
@@ -419,9 +428,12 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
     async def recheck(callback: CallbackQuery) -> None:
         source = (callback.data or "")[len("pin_sub_"):] or PAYLOAD
         subscribed = await is_subscribed(bot, callback.from_user.id, source)
-        if subscribed is False:
-            await callback.answer("Подписки пока не видно. Подпишитесь и нажмите ещё раз.",
-                                  show_alert=True)
+        if subscribed is False or (subscribed is None and STRICT):
+            await callback.answer(
+                "Подписки пока не видно. Подпишитесь и нажмите ещё раз."
+                if subscribed is False else
+                "Не удалось проверить подписку. Попробуйте через минуту или напишите нам.",
+                show_alert=True)
             return
         await callback.answer("Спасибо! Отправляю подарок")
         try:
@@ -431,4 +443,11 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
         await give(callback.message, source, callback.from_user.id)
 
     places = ", ".join("%s → %s" % (k, v["chat"]) for k, v in CHANNELS.items())
-    logger.info("[pin_gift] проверка подписки: %s", places or CHANNEL or "выключена")
+    if places or CHANNEL:
+        logger.info("[pin_gift] проверка подписки: %s (строго: %s)",
+                    places or CHANNEL, "да" if STRICT else "нет")
+    else:
+        # Молчать здесь нельзя: подарок будет уходить всем, а выглядеть это
+        # будет как сломанная проверка.
+        logger.error("[pin_gift] канал не настроен (PIN_GIFT_CHANNELS) — "
+                     "подарок выдаётся без проверки подписки")
