@@ -7,11 +7,18 @@
  * появляется, когда человек начал читать всерьёз, и дальше едет вместе с
  * ним.
  *
- * Куда вести, решает сама статья. Материалы подарочного кластера ведут на
- * посадочную «Песня в подарок», остальные — на тот микросервис, ссылка на
- * который в тексте уже стоит. Второе важнее, чем кажется: тридцать статей
- * про транскрибацию не должны звать в подарки, а статья про удаление
- * вокала — вести именно туда, где вокал и удаляют.
+ * Куда вести, решает сама статья, и порядок правил тут важнее списка адресов:
+ *
+ * 1. Подарочный кластер — на посадочную «Песня в подарок».
+ * 2. Статьи про заработок на нейросетях — на обучение, а не на музыку:
+ *    человек, который читает «сколько платят за ИИ-видео», пришёл не
+ *    сочинять песню, и кнопка «создать музыку» для него мимо.
+ * 3. Всё остальное — на тот ресурс, на который в статье больше всего
+ *    ссылок. Не на первый по порядку: почти в каждом лонгриде есть блок
+ *    «что ещё пригодится», и по первой ссылке статья «сгенерировать песню
+ *    по тексту» уводила в удаление вокала. Главный инструмент автор
+ *    упоминает несколько раз, сопутствующие — один.
+ * 4. Если ссылок одинаково много или их нет вовсе — по теме заголовка.
  *
  * Панель закрывается крестиком и после этого не показывается сутки: реклама,
  * которую нельзя убрать, раздражает сильнее, чем помогает.
@@ -61,47 +68,266 @@ class GS_Sticky {
             );
         }
 
-        return self::service_from_content((string) $post->post_content);
+        $topic = mb_strtolower($post->post_title . ' ' . $post->post_name);
+
+        // Тема заработка перебивает ссылки в тексте: такая статья почти всегда
+        // упоминает по дороге и озвучку, и музыку, но человеку нужно не это.
+        if (self::about_money($topic)) {
+            return self::card('course');
+        }
+
+        return self::card(self::choose($topic, (string) $post->post_content));
     }
 
     /**
-     * Сервис, ссылка на который стоит в тексте статьи.
+     * Статья про то, как на нейросетях заработать.
      *
-     * Берём первый по порядку появления, а не первый по списку сервисов:
-     * автор статьи ставит главную ссылку раньше сопутствующих, и это лучшая
-     * подсказка о том, ради чего статья написана.
+     * Список намеренно короткий и однозначный. «Клиент», «заказчик» и
+     * «продавать» сюда не годятся: с ними под заработок попадают примерка
+     * дисков и цены на озвучку для покупателя, то есть ровно те статьи, где
+     * нужна кнопка сервиса.
      */
-    private static function service_from_content($content) {
-        if (!class_exists('GS_Lab') || $content === '') {
-            return null;
-        }
-        $best = null;
-        $at = PHP_INT_MAX;
-
-        foreach (GS_Lab::available_services() as $service) {
-            $slug = isset($service['slug']) ? (string) $service['slug'] : '';
-            if ($slug === '') {
-                continue;
-            }
-            $pos = strpos($content, '/' . $slug . '/');
-            if ($pos !== false && $pos < $at) {
-                $at = $pos;
-                $best = $service;
+    private static function about_money($topic) {
+        $words = array(
+            'заработ', 'зарабат', 'подработ', 'монетиз', 'фриланс', 'доход',
+            'сколько платят', 'zarabot', 'zarabat', 'podrabot', 'monetiz',
+            'frilans', 'dohod',
+        );
+        foreach ($words as $word) {
+            if (mb_strpos($topic, $word) !== false) {
+                return true;
             }
         }
-        if (!$best) {
-            return null;
+        return false;
+    }
+
+    /**
+     * Ключ ресурса для этой статьи: сначала по ссылкам, потом по теме.
+     *
+     * @return string ключ из self::candidates()
+     */
+    private static function choose($topic, $content) {
+        $counts = array();
+        $first = array();
+
+        foreach (self::candidates() as $key => $path) {
+            $needle = '/' . $path . '/';
+            $n = substr_count($content, $needle);
+            if ($n > 0) {
+                $counts[$key] = $n;
+                $first[$key] = strpos($content, $needle);
+            }
         }
 
-        $lead = (string) ($best['lead'] ?? '');
-        if (mb_strlen($lead) > 120) {
-            $lead = rtrim(mb_substr($lead, 0, 117), " ,.;:—-") . '…';
+        if (!$counts) {
+            return self::by_topic($topic);
+        }
+
+        $top = max($counts);
+        $tied = array_keys($counts, $top, true);
+        if (count($tied) === 1) {
+            return $tied[0];
+        }
+
+        // Ничья: столько же ссылок у нескольких ресурсов — обычно это блок
+        // «что ещё пригодится» в конце. Спрашиваем заголовок, и только если
+        // он молчит, берём того, кто упомянут раньше.
+        $want = self::by_topic($topic);
+        if (in_array($want, $tied, true)) {
+            return $want;
+        }
+        usort($tied, function ($a, $b) use ($first) {
+            return $first[$a] - $first[$b];
+        });
+        return $tied[0];
+    }
+
+    /**
+     * Все адреса, по которым узнаём ресурс в тексте: ключ => путь.
+     *
+     * Микросервисы берём из GS_Lab, чтобы новый сервис попадал в панель сам,
+     * остальное — из таблицы страниц.
+     */
+    private static function candidates() {
+        $out = array();
+        if (class_exists('GS_Lab')) {
+            foreach (GS_Lab::available_services() as $service) {
+                $slug = isset($service['slug']) ? (string) $service['slug'] : '';
+                $id = isset($service['id']) ? (string) $service['id'] : '';
+                if ($slug !== '' && $id !== '') {
+                    $out['svc:' . $id] = $slug;
+                }
+            }
+        }
+        foreach (self::places() as $key => $place) {
+            $out[$key] = $place['path'];
+        }
+        return $out;
+    }
+
+    /**
+     * Страницы вне GS_Lab: обучение, чужие кабинеты, каталог, посадочные.
+     *
+     * Адрес держим относительным, а не полной ссылкой: домен подставит
+     * home_url, и на копии сайта панель не уведёт на живой.
+     */
+    private static function places() {
+        return array(
+            'course' => array(
+                'path'  => class_exists('GS_Course') ? GS_Course::SLUG : 'obuchenie-zarabotku-na-neirosetyah',
+                'title' => 'Заработок на нейросетях',
+                'text'  => 'Обучение: какие услуги покупают, сколько они стоят и где брать первых клиентов.',
+                'cta'   => 'Открыть обучение',
+            ),
+            'neurohub' => array(
+                'path'  => 'neurohub',
+                'title' => 'Нейрохаб',
+                'text'  => 'Промты, картинки и текст в одном окне — без подписок и зарубежных карт.',
+                'cta'   => 'Открыть нейрохаб',
+            ),
+            'tts' => array(
+                'path'  => 'tts-dashboard',
+                'title' => 'Озвучка текста',
+                'text'  => 'Живые голоса с паузами и интонацией. Первые минуты — бесплатно.',
+                'cta'   => 'Озвучить текст',
+            ),
+            'api' => array(
+                'path'  => 'api',
+                'title' => 'API для разработчиков',
+                'text'  => 'Озвучка, музыка, видео и картинки одним ключом. Пробный баланс при выпуске.',
+                'cta'   => 'Получить ключ',
+            ),
+            'showwheel' => array(
+                'path'  => 'showwheel',
+                'title' => 'Примерка дисков',
+                'text'  => 'Загрузите фото машины — покажем, как на ней сядут выбранные диски.',
+                'cta'   => 'Примерить диски',
+            ),
+            'sounds' => array(
+                'path'  => 'sound-generator',
+                'title' => 'Генератор звуков',
+                'text'  => 'Опишите звук словами — получите готовый файл для монтажа.',
+                'cta'   => 'Создать звук',
+            ),
+            'catalog' => array(
+                'path'  => 'sounds-catalog',
+                'title' => 'Каталог звуков',
+                'text'  => 'Тысячи готовых звуков и шумов: послушать и скачать без регистрации.',
+                'cta'   => 'Открыть каталог',
+            ),
+            'slides' => array(
+                'path'  => 'sozdat-prezentaciyu',
+                'title' => 'Презентация за минуту',
+                'text'  => 'Тема и пара тезисов — готовые слайды с текстом и картинками.',
+                'cta'   => 'Собрать презентацию',
+            ),
+            'assistant' => array(
+                'path'  => 'ai-pomoshnik',
+                'title' => 'ИИ-помощник',
+                'text'  => 'Отвечает на вопросы, пишет тексты и разбирает документы.',
+                'cta'   => 'Спросить',
+            ),
+            'photo' => array(
+                'path'  => 'ozhivit-foto',
+                'title' => 'Оживить фото',
+                'text'  => 'Снимок превращается в короткое видео: взгляд, улыбка, поворот головы.',
+                'cta'   => 'Оживить фото',
+            ),
+            'gift' => array(
+                'path'  => 'pesnya-v-podarok',
+                'title' => 'Песня в подарок',
+                'text'  => 'Анкета про человека — текст сразу и бесплатно, песня через десять минут.',
+                'cta'   => 'Заполнить анкету',
+            ),
+        );
+    }
+
+    /**
+     * Тема заголовка — на случай ничьей по ссылкам и статей без ссылок.
+     *
+     * Список идёт от частного к общему: «убрать вокал из песни» должно
+     * попасть в удаление вокала, а не в генерацию музыки по слову «песня».
+     */
+    private static function by_topic($topic) {
+        $map = array(
+            'svc:vocal'    => array('убрать вокал', 'вокал из', 'минусовк', 'караоке'),
+            'svc:denoise'  => array('убрать шум', 'шумоподавл', 'очистить звук', 'убрать эхо', 'шум с записи'),
+            'svc:stt'      => array('транскриб', 'расшифров', 'аудио в текст', 'субтитр', 'стенограмм'),
+            'svc:ytaudio'  => array('звук из видео', 'аудио из видео', 'youtube', 'ютуб'),
+            'svc:dub'      => array('дубляж', 'перевести видео', 'перевод видео'),
+            'svc:vupscale' => array('качество видео', 'апскейл', 'разрешение видео'),
+            'svc:cover'    => array('обложка'),
+            'svc:lyrics'   => array('текст песни', 'слова песни', 'стихи'),
+            'svc:avatar'   => array('говорящий аватар', 'аватар', 'фото заговорил', 'фото в видео'),
+            'photo'        => array('оживить фото', 'анимация фото'),
+            'svc:voicesong' => array('своим голосом', 'свой голос', 'клон голоса', 'копия голоса'),
+            'svc:music'    => array('песн', 'музык', 'трек', 'саундтрек', 'мелоди', 'припев'),
+            'slides'       => array('презентац', 'слайд'),
+            'showwheel'    => array('диск', 'колёс', 'колес', 'шина'),
+            'assistant'    => array('чат-бот', 'ии-помощник', 'ассистент'),
+            'api'          => array('api', 'интеграц', 'телеграм-бот', 'бота', 'вебхук'),
+            'tts'          => array('озвуч', 'голос', 'диктор', 'аудиокниг', 'подкаст'),
+            'sounds'       => array('звук', 'шум', 'sfx'),
+        );
+        $known = self::candidates();
+        foreach ($map as $key => $words) {
+            if (!isset($known[$key])) {
+                continue;   // сервис отключён — не предлагаем его
+            }
+            foreach ($words as $word) {
+                if (mb_strpos($topic, $word) !== false) {
+                    return $key;
+                }
+            }
+        }
+        // Промты, картинки, видеогенераторы и прочие «как сделать в
+        // нейросети» — всё это делается в нейрохабе.
+        return 'neurohub';
+    }
+
+    /**
+     * Карточка панели по ключу ресурса.
+     *
+     * @return array{url:string,title:string,text:string,cta:string}
+     */
+    private static function card($key) {
+        if (strpos($key, 'svc:') === 0 && class_exists('GS_Lab')) {
+            $id = substr($key, 4);
+            foreach (GS_Lab::available_services() as $service) {
+                if ((string) ($service['id'] ?? '') === $id) {
+                    $lead = (string) ($service['lead'] ?? '');
+                    if (mb_strlen($lead) > 120) {
+                        $lead = rtrim(mb_substr($lead, 0, 117), " ,.;:—-") . '…';
+                    }
+                    return array(
+                        'url'   => GS_Lab::get_url($id),
+                        'title' => (string) ($service['menu'] ?? 'Инструмент'),
+                        'text'  => $lead,
+                        'cta'   => 'Открыть',
+                    );
+                }
+            }
+            $key = 'neurohub';
+        }
+
+        $places = self::places();
+        if (!isset($places[$key])) {
+            $key = 'neurohub';
+        }
+        $place = $places[$key];
+
+        if ($key === 'course' && class_exists('GS_Course')) {
+            $url = GS_Course::get_url();
+        } elseif ($key === 'gift' && class_exists('GS_Gift')) {
+            $url = GS_Gift::get_url(GS_Gift::root());
+        } else {
+            $url = home_url('/' . $place['path'] . '/');
         }
         return array(
-            'url'   => GS_Lab::get_url($best['id']),
-            'title' => (string) ($best['menu'] ?? 'Инструмент'),
-            'text'  => $lead,
-            'cta'   => 'Открыть',
+            'url'   => $url,
+            'title' => $place['title'],
+            'text'  => $place['text'],
+            'cta'   => $place['cta'],
         );
     }
 
