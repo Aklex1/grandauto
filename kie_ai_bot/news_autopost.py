@@ -443,7 +443,7 @@ async def publish_item(bot: Bot, item: news_sources.NewsItem, kind: str = "news"
 
     draft_text — готовый пост от редактора (news_writer). Если он есть,
     пересказ ленты не собираем: в нём нет ни мнения, ни пользы читателю."""
-    label = "кейсы" if kind == "case" else "новости"
+    label = {"case": "кейсы", "rubric": "рубрики"}.get(kind, "новости")
     with_cta = cta_due()
 
     if draft_text:
@@ -681,14 +681,76 @@ def pick_plan_post(plan: List[dict], weekday: Optional[int] = None) -> Optional[
     return None
 
 
+async def publish_generated_rubric(bot: Bot) -> bool:
+    """
+    Рубричный пост, собранный редактором из свежего материала.
+
+    Нужен, когда контент-план на этот день исчерпан: рубрика у дня остаётся
+    (воскресенье — челлендж, вторник — промпт), а готового поста в плане уже
+    нет. Материал берём из лент по числу, которое рубрике нужно: дайджесту
+    «главное за неделю» — пять новостей, «проверил сам» — одну, а промпту и
+    челленджу материал не нужен вовсе.
+
+    Использованные новости помечаем вышедшими: иначе они уйдут ещё раз
+    отдельным постом.
+    """
+    if not news_writer.ENABLED:
+        return False
+
+    weekday = datetime.now(timezone.utc).weekday()
+    rubric = WEEKDAY_RUBRICS.get(weekday, "")
+    spec = news_writer.RUBRIC_SPECS.get(rubric)
+    if not spec:
+        return False
+
+    need = int(spec.get("items", 0))
+    items = await pick_fresh(limit=need, kind="news") if need else []
+    if need and not items:
+        logger.info("[рубрики] для «%s» нет свежего материала", rubric)
+        return False
+
+    draft = await news_writer.write_rubric(
+        rubric,
+        [{"title": i.title, "summary": i.summary, "source": i.source} for i in items],
+    )
+    if not draft.useful or not draft.text:
+        logger.info("[рубрики] «%s» не собралась: %s", rubric, draft.reason)
+        return False
+
+    # Рубричный пост идёт без картинки из ленты: она к нему не относится.
+    carrier = items[0] if items else None
+    item = news_sources.NewsItem(
+        title=f"{rubric}: {draft.text.splitlines()[0][:80]}",
+        summary="", source=carrier.source if carrier else "",
+        link=carrier.link if carrier else "", image="", published=None,
+    )
+
+    import news_moderation
+
+    if news_moderation.enabled():
+        news_moderation.expire_old()
+        if await news_moderation.send_for_review(bot, item, draft.text):
+            for used in items:
+                remember("news", url=used.link, title=used.title, source=used.source)
+            logger.info("[рубрики] «%s» ушла на проверку", rubric)
+            return True
+
+    published = await publish_item(bot, item, kind="rubric", draft_text=draft.text)
+    if published:
+        for used in items:
+            remember("news", url=used.link, title=used.title, source=used.source)
+        logger.info("[рубрики] «%s» опубликована редактором (%s)", rubric, draft.model)
+    return published
+
+
 async def publish_one_plan(bot: Bot) -> bool:
     plan = load_plan()
-    if not plan:
-        return False
-    chosen = pick_plan_post(plan)
+    chosen = pick_plan_post(plan) if plan else None
     if chosen is None:
-        logger.info("[новости] контент-план закончился (%s постов)", len(plan))
-        return False
+        if plan:
+            logger.info("[новости] контент-план закончился (%s постов) — собираем рубрику сами",
+                        len(plan))
+        return await publish_generated_rubric(bot)
     index, post = chosen
     logger.info("[новости] пост плана №%s, рубрика «%s»", index, post.get("rubric", ""))
     return await publish_plan_post(bot, post, index)
