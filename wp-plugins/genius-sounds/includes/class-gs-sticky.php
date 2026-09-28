@@ -76,7 +76,46 @@ class GS_Sticky {
             return self::card('course');
         }
 
+        // Раздел промтов: ведём не в пустой нейрохаб, а в нейрохаб с промтом
+        // из этой самой статьи. Человек пришёл за конкретным кадром — пусть
+        // получит его нажатием одной кнопки, а не копированием текста.
+        $promt = self::promt_card($post);
+        if ($promt !== null) {
+            return $promt;
+        }
+
         return self::card(self::choose($topic, (string) $post->post_content));
+    }
+
+    /**
+     * Панель статьи с промтом: ссылка с уже подставленным промтом.
+     *
+     * Адрес берём из самой статьи — её кнопка «Создать такое же фото» уже
+     * собрана при публикации, и промт в ней тот, к которому нарисован
+     * пример. Пересобирать его из меты — значит рискнуть разойтись с
+     * картинкой, если промтов в статье несколько.
+     *
+     * @return array{url:string,title:string,text:string,cta:string}|null
+     */
+    private static function promt_card($post) {
+        $url = '';
+        if (preg_match('~href="([^"]*/neurohub/\?p=[^"]+)"~', (string) $post->post_content, $m)) {
+            $url = html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
+        } else {
+            $prompt = (string) get_post_meta($post->ID, '_gs_promt', true);
+            if ($prompt !== '' && class_exists('GS_Promt')) {
+                $url = GS_Promt::try_url($prompt);
+            }
+        }
+        if ($url === '') {
+            return null;
+        }
+        return array(
+            'url'   => $url,
+            'title' => 'Повторить это фото',
+            'text'  => 'Промт из статьи уже подставлен — останется нажать «Создать».',
+            'cta'   => 'Создать фото',
+        );
     }
 
     /**
