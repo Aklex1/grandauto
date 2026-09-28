@@ -237,12 +237,33 @@ class GS_Yoomoney {
         if ($after === null || $after > $before + 0.001) {
             return $result;
         }
+        // Возвращаем платёж в незакрытые. Пока он помечен закрытым, повторное
+        // уведомление от ЮMoney ничего не исправит, кнопка ручного зачисления
+        // считает работу сделанной, и деньги остаются только в кошельке.
+        // В таком виде платёж виден в админке и зачисляется одним нажатием,
+        // как только доступ к базе с балансами починят.
+        self::reopen($label);
         return array(
             'ok' => false,
             'message' => sprintf(
-                'платёж закрыт, но баланс не изменился (%s ₽ до и после) — зачислите вручную',
+                'платёж закрыт, но баланс не изменился (%s ₽ до и после) — '
+                . 'вернули в незакрытые, зачислите вручную',
                 number_format($before, 2, ',', ' ')
             ),
+        );
+    }
+
+    /** Снять с платежа отметку «закрыт»: зачисления по нему не было. */
+    private static function reopen($label) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kie_tts_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return;
+        }
+        $wpdb->update(
+            $table,
+            array('status' => 'pending', 'completed_at' => null),
+            array('label' => (string) $label)
         );
     }
 

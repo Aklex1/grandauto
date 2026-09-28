@@ -342,6 +342,12 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        register_rest_route(self::NS, '/diag/bot', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_diag_bot'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/showcase', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_showcase_add'),
@@ -458,6 +464,128 @@ class GS_Rest {
             'ключи'     => $keys,
             'сверка'    => $raw,
         ));
+    }
+
+    /**
+     * Где лежат деньги телеграм-пользователя.
+     *
+     * У людей из бота баланс живёт не в таблице сайта, а во внешней базе
+     * бота: сайт ходит туда напрямую по mysqli. Если эта база недоступна
+     * или человека в ней нет, платёжный маршрут всё равно закрывает
+     * платёж — деньги приходят, а баланс остаётся нулевым. Проверяем это
+     * делом: соединение, строка в базе бота, строка на сайте и метки
+     * пользователя. Пароль не показываем — только сам факт, что он задан.
+     */
+    public static function handle_diag_bot($request) {
+        global $wpdb;
+        $out = array();
+
+        $out['подключение'] = array(
+            'хост'   => (string) get_option('kie_tts_db_host', 'akklexb6.beget.tech'),
+            'база'   => (string) get_option('kie_tts_db_name', 'akklexb6_neuro'),
+            'логин'  => (string) get_option('kie_tts_db_user', 'akklexb6_neuro'),
+            'порт'   => (int) get_option('kie_tts_db_port', 3306),
+            'пароль' => trim((string) get_option('kie_tts_db_password', '')) !== '' ? 'задан' : 'по умолчанию в коде',
+            'mysqli' => extension_loaded('mysqli') ? 'есть' : 'НЕТ',
+        );
+
+        $conn = class_exists('KIE_TTS_DB') ? KIE_TTS_DB::get_bot_connection() : null;
+        $out['соединение'] = $conn ? 'установлено' : 'НЕ УСТАНОВЛЕНО';
+
+        // Почему не установлено — важнее самого факта: «неизвестный хост»,
+        // «доступ запрещён» и «порт закрыт» лечатся по-разному. Заодно
+        // пробуем localhost: сайт и база бота могут стоять на одном хостинге.
+        // Доступы берём только из настроек, в коде их нет.
+        if (!$conn && extension_loaded('mysqli')) {
+            $login = (string) get_option('kie_tts_db_user', '');
+            $secret = (string) get_option('kie_tts_db_password', '');
+            $base = (string) get_option('kie_tts_db_name', '');
+            $port = (int) get_option('kie_tts_db_port', 3306);
+            $hosts = array_unique(array(
+                (string) get_option('kie_tts_db_host', ''),
+                'localhost',
+                '127.0.0.1',
+            ));
+            $out['попытки'] = array();
+            foreach ($hosts as $host) {
+                if ($host === '') {
+                    continue;
+                }
+                $probe = @new mysqli($host, $login, $secret, $base, $port);
+                $error = (string) $probe->connect_error;
+                $out['попытки'][$host] = $error === '' ? 'подключилось' : $error;
+                if ($error === '') {
+                    $probe->close();
+                }
+            }
+        }
+
+        if ($conn) {
+            $out['таблицы'] = array();
+            if ($res = $conn->query('SHOW TABLES')) {
+                while ($row = $res->fetch_array()) {
+                    $out['таблицы'][] = (string) $row[0];
+                }
+            }
+            if ($res = $conn->query('SELECT COUNT(*) FROM users')) {
+                $row = $res->fetch_array();
+                $out['людей_в_базе_бота'] = (int) $row[0];
+            }
+            if ($res = $conn->query('SELECT telegram_id, username, balance FROM users ORDER BY id DESC LIMIT 10')) {
+                $out['последние_в_базе_бота'] = $res->fetch_all(MYSQLI_ASSOC);
+            }
+        }
+
+        // Масштаб: у людей из бота баланс лежит в недоступной базе, поэтому
+        // важно видеть, сколько их и сколько денег прошло мимо баланса.
+        $pay = $wpdb->prefix . 'kie_tts_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $pay)) === $pay) {
+            $out['платежи_из_бота'] = $wpdb->get_results(
+                "SELECT status, COUNT(*) AS сколько, SUM(amount) AS сумма
+                   FROM {$pay} WHERE label LIKE 'topup\\_telegram\\_%'
+               GROUP BY status", ARRAY_A);
+        }
+        $out['людей_с_входом_через_телеграм'] = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$wpdb->users} WHERE user_login LIKE 'telegram\\_%'");
+
+        $tg = (int) $request->get_param('telegram_id');
+        if ($tg > 0) {
+            $who = array('telegram_id' => $tg);
+            if ($conn) {
+                $stmt = $conn->prepare('SELECT telegram_id, username, balance FROM users WHERE telegram_id = ?');
+                if ($stmt) {
+                    $stmt->bind_param('i', $tg);
+                    $stmt->execute();
+                    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                    $who['в_базе_бота'] = $rows ? $rows[0] : 'нет такой строки';
+                    $stmt->close();
+                }
+            }
+            if (class_exists('KIE_TTS_DB')) {
+                $who['читает_сайт'] = (float) KIE_TTS_DB::get_user_balance($tg, true);
+            }
+            $user = get_user_by('login', 'telegram_' . $tg);
+            if ($user) {
+                $who['wp_user_id'] = (int) $user->ID;
+                $who['метка_телеграма'] = (string) get_user_meta($user->ID, 'telegram_id', true);
+                $who['признак_бота'] = get_user_meta($user->ID, 'is_telegram_user', true) ? 'да' : 'нет';
+                $table = $wpdb->prefix . 'kie_tts_balance';
+                $who['строка_на_сайте'] = $wpdb->get_row($wpdb->prepare(
+                    "SELECT * FROM {$table} WHERE user_id = %d", $user->ID), ARRAY_A);
+                $pay = $wpdb->prefix . 'kie_tts_payments';
+                $who['платежи'] = $wpdb->get_results($wpdb->prepare(
+                    "SELECT label, amount, tokens, status, is_telegram, created_at, completed_at
+                       FROM {$pay} WHERE user_id = %d ORDER BY id DESC LIMIT 10", $user->ID), ARRAY_A);
+            } else {
+                $who['wp_user_id'] = 'нет пользователя telegram_' . $tg;
+            }
+            $out['человек'] = $who;
+        }
+
+        if ($conn) {
+            $conn->close();
+        }
+        return rest_ensure_response($out);
     }
 
     /** Состояние планировщика и очереди IndexNow. */
