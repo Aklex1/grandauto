@@ -1,0 +1,17 @@
+[Unit]
+Description=KIE AI YooMoney webhook for mobile app (:8002)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kie_ai_bot
+ExecStart=/opt/kie_ai_bot/venv/bin/gunicorn -w 2 -b 0.0.0.0:8002 --timeout 60 webhook_server_app:app
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kie-app-webhook
+
+[Install]
+WantedBy=multi-user.target

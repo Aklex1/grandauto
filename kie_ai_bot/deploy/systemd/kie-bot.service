@@ -1,0 +1,17 @@
+[Unit]
+Description=KIE AI Telegram Bot (aiogram polling + KIE callbacks on :8010)
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kie_ai_bot
+ExecStart=/opt/kie_ai_bot/venv/bin/python main.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kie-bot
+
+[Install]
+WantedBy=multi-user.target
