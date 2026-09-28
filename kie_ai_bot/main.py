@@ -6880,6 +6880,17 @@ async def start_handler(message: Message, state: FSMContext):
                     parse_mode="HTML",
                 )
 
+        # Подарок из закрепа группы: файл с промптами и три бесплатные
+        # генерации. Дальше приветствие не нужно — человек пришёл за подарком.
+        if param:
+            try:
+                import pin_gift
+
+                if await pin_gift.handle(message, param):
+                    return
+            except Exception as _e:
+                logging.error(f"[start_handler] подарок из закрепа не выдан: {_e}")
+
         # Проверка админа через функцию из config
         is_admin = check_admin(user_id, username)
         
