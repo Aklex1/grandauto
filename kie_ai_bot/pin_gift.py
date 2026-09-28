@@ -31,6 +31,10 @@ logger = logging.getLogger("pin_gift")
 # места размещения той же ссылки.
 PAYLOAD = "pin"
 PAYLOAD_PREFIX = "pin_"
+# Дополнительные метки, которые тоже наши. «promt» нужен, чтобы в канале
+# промптов ссылка читалась по-человечески, а не «pin_promt».
+EXTRA_PAYLOADS = {p.strip() for p in os.getenv("PIN_GIFT_PAYLOADS", "promt,group").split(",")
+                  if p.strip()}
 
 # Одна генерация фото стоит 5 ₽, значит три — пятнадцать.
 GENERATION_PRICE = float(os.getenv("PIN_GIFT_PRICE", "5") or 5)
@@ -39,16 +43,72 @@ BONUS = GENERATION_PRICE * GENERATIONS
 
 FILE_NAME = "50-promptov-genius-bot.txt"
 
-# Канал, подписку на который проверяем перед выдачей. Пусто — не проверяем.
-# Принимает и @имя, и числовой id вида -100…
+# Куда смотреть за подпиской. Ссылка одна, а мест размещения несколько, и
+# требовать от читателя канала промптов подписку на группу — значит терять
+# его на пустом месте. Поэтому канал привязан к метке ссылки.
+#
+# PIN_GIFT_CHANNELS="pin:-1001711115341|Нейросети|https://t.me/…;promt:@promtnanobanana7|Промты для нейросетей"
+#   метка : чат [| название | ссылка]
+# Метки, которых нет в списке, проверяются по PIN_GIFT_CHANNEL — общей
+# настройке. Пусто и там — подписку не проверяем вовсе.
 CHANNEL = os.getenv("PIN_GIFT_CHANNEL", "").strip()
-CHANNEL_TITLE = os.getenv("PIN_GIFT_CHANNEL_TITLE", "Промты для нейросетей").strip()
-CHANNEL_URL = os.getenv(
-    "PIN_GIFT_CHANNEL_URL",
-    "https://t.me/" + CHANNEL.lstrip("@") if CHANNEL and not CHANNEL.startswith("-") else "",
-).strip()
-# Подписан ли — это членство в канале. Эти статусы считаем подпиской.
+CHANNEL_TITLE = os.getenv("PIN_GIFT_CHANNEL_TITLE", "нашем канале").strip()
+CHANNEL_URL = os.getenv("PIN_GIFT_CHANNEL_URL", "").strip()
+
+# Подписан ли — это членство в чате. Эти статусы считаем подпиской.
 _MEMBER_STATUSES = ("creator", "administrator", "member")
+
+
+def _public_url(chat: str) -> str:
+    """Ссылка на чат по его @имени. У числового id ссылки нет — только инвайт."""
+    chat = (chat or "").strip()
+    if chat.startswith("@"):
+        return "https://t.me/" + chat[1:]
+    return ""
+
+
+def _parse_channels(raw: str) -> dict:
+    out = {}
+    for piece in (raw or "").split(";"):
+        piece = piece.strip()
+        if not piece or ":" not in piece:
+            continue
+        source, spec = piece.split(":", 1)
+        parts = [p.strip() for p in spec.split("|")]
+        chat = parts[0]
+        if not source.strip() or not chat:
+            continue
+        out[source.strip()] = {
+            "chat": chat,
+            "title": parts[1] if len(parts) > 1 and parts[1] else "нашем канале",
+            "url": parts[2] if len(parts) > 2 and parts[2] else _public_url(chat),
+        }
+    return out
+
+
+CHANNELS = _parse_channels(os.getenv("PIN_GIFT_CHANNELS", ""))
+
+
+def channel_for(source: str) -> Optional[dict]:
+    """
+    Чат, подписку на который проверяем для этой метки.
+
+    None — проверять нечего: ни своей записи, ни общей настройки.
+    """
+    if source in CHANNELS:
+        return CHANNELS[source]
+    if CHANNEL:
+        return {
+            "chat": CHANNEL,
+            "title": CHANNEL_TITLE,
+            "url": CHANNEL_URL or _public_url(CHANNEL),
+        }
+    # Метка не описана, а проверка вообще настроена — берём запись метки
+    # «pin», иначе первую. Иначе подарок забирают по выдуманной ссылке вида
+    # ?start=pin_whatever, и подписка перестаёт быть условием.
+    if CHANNELS:
+        return CHANNELS.get(PAYLOAD) or next(iter(CHANNELS.values()))
+    return None
 
 PROMPTS_HEADER = """50 РАБОЧИХ ПРОМПТОВ ДЛЯ НЕЙРОСЕТЕЙ
 Подарок подписчикам канала «Нейросети» — genius-bot.ru
@@ -167,8 +227,8 @@ def parse_payload(param: str) -> Optional[str]:
     if not param:
         return None
     value = param.strip()
-    if value == PAYLOAD:
-        return PAYLOAD
+    if value == PAYLOAD or value in EXTRA_PAYLOADS:
+        return value[:64]
     if value.startswith(PAYLOAD_PREFIX) and len(value) > len(PAYLOAD_PREFIX):
         return value[:64]
     return None
@@ -248,20 +308,22 @@ def _keyboard() -> InlineKeyboardMarkup:
     )
 
 
-async def is_subscribed(bot: Bot, user_id: int) -> Optional[bool]:
+async def is_subscribed(bot: Bot, user_id: int, source: str = PAYLOAD) -> Optional[bool]:
     """
-    Подписан ли человек на канал.
+    Подписан ли человек на чат, который отвечает за эту метку ссылки.
 
-    None означает «проверить не смогли»: бот не админ канала, канал указан
+    None означает «проверить не смогли»: бот не админ чата, чат указан
     неверно или Телеграм не ответил. В этом случае подарок выдаём — терять
     человека из-за нашей же настройки хуже, чем выдать лишний файл.
     """
-    if not CHANNEL:
+    place = channel_for(source)
+    if not place:
         return True
     try:
-        member = await bot.get_chat_member(CHANNEL, user_id)
+        member = await bot.get_chat_member(place["chat"], user_id)
     except Exception as e:
-        logger.warning("[pin_gift] подписку %s проверить не удалось (%s): %s", user_id, CHANNEL, e)
+        logger.warning("[pin_gift] подписку %s проверить не удалось (%s): %s",
+                       user_id, place["chat"], e)
         return None
     status = getattr(member, "status", "")
     status = getattr(status, "value", status)   # aiogram отдаёт enum
@@ -270,20 +332,22 @@ async def is_subscribed(bot: Bot, user_id: int) -> Optional[bool]:
 
 def _subscribe_keyboard(source: str) -> InlineKeyboardMarkup:
     """Кнопки для неподписавшегося: сначала канал, потом повторная проверка."""
+    place = channel_for(source) or {}
     rows = []
-    if CHANNEL_URL:
-        rows.append([InlineKeyboardButton(text="📣 Подписаться на канал", url=CHANNEL_URL)])
+    if place.get("url"):
+        rows.append([InlineKeyboardButton(text="📣 Подписаться", url=place["url"])])
     rows.append([InlineKeyboardButton(text="✅ Я подписался — забрать подарок",
                                       callback_data=f"pin_sub_{source}"[:64])])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def _ask_to_subscribe(message: Message, source: str) -> None:
+    place = channel_for(source) or {}
+    title = place.get("title") or "нашем канале"
     await message.answer(
         "🎁 <b>Подарок ждёт вас</b>\n\n"
         f"{total_prompts()} промптов на каждый день и {GENERATIONS} бесплатные генерации "
-        "изображений — за подписку на канал "
-        f"«{CHANNEL_TITLE}».\n\n"
+        f"изображений — за подписку на «{title}».\n\n"
         "Подпишитесь и нажмите «Я подписался» — файл и бонус придут сразу.",
         parse_mode="HTML", reply_markup=_subscribe_keyboard(source))
 
@@ -339,7 +403,7 @@ async def handle(message: Message, param: str) -> bool:
     if source is None:
         return False
 
-    subscribed = await is_subscribed(message.bot, message.from_user.id)
+    subscribed = await is_subscribed(message.bot, message.from_user.id, source)
     if subscribed is False:
         await _ask_to_subscribe(message, source)
         return True
@@ -354,7 +418,7 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
     @dp.callback_query(F.data.startswith("pin_sub_"))
     async def recheck(callback: CallbackQuery) -> None:
         source = (callback.data or "")[len("pin_sub_"):] or PAYLOAD
-        subscribed = await is_subscribed(bot, callback.from_user.id)
+        subscribed = await is_subscribed(bot, callback.from_user.id, source)
         if subscribed is False:
             await callback.answer("Подписки пока не видно. Подпишитесь и нажмите ещё раз.",
                                   show_alert=True)
@@ -366,4 +430,5 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
             pass
         await give(callback.message, source, callback.from_user.id)
 
-    logger.info("[pin_gift] проверка подписки: %s", CHANNEL or "выключена")
+    places = ", ".join("%s → %s" % (k, v["chat"]) for k, v in CHANNELS.items())
+    logger.info("[pin_gift] проверка подписки: %s", places or CHANNEL or "выключена")
