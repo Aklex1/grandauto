@@ -68,6 +68,17 @@ class GS_Sticky {
             );
         }
 
+        // Юридические кластеры: статья ведёт на свою страницу блока, а не на
+        // нейрохаб. Ссылка на неё в тексте уже стоит — берём её, иначе
+        // посадочную кластера.
+        $lane = (string) get_post_meta($post->ID, '_gs_queue_lane', true);
+        if (class_exists('GS_Legal') && ($lane === GS_Legal::LANE_CLAIM || $lane === GS_Legal::LANE_ORDER)) {
+            $legal = self::legal_card($lane, (string) $post->post_content);
+            if ($legal !== null) {
+                return $legal;
+            }
+        }
+
         $topic = mb_strtolower($post->post_title . ' ' . $post->post_name);
 
         // Тема заработка перебивает ссылки в тексте: такая статья почти всегда
@@ -115,6 +126,38 @@ class GS_Sticky {
             'title' => 'Повторить это фото',
             'text'  => 'Промт из статьи уже подставлен — останется нажать «Создать».',
             'cta'   => 'Создать фото',
+        );
+    }
+
+    /**
+     * Карточка юридического блока: страница из текста или посадочная кластера.
+     */
+    private static function legal_card($lane, $content) {
+        $root = $lane === GS_Legal::LANE_ORDER ? 'order' : 'claim';
+        $best = null;
+        $at = PHP_INT_MAX;
+
+        foreach (GS_Legal::children($root) as $id => $child) {
+            $pos = strpos($content, '/' . $child['slug'] . '/');
+            if ($pos !== false && $pos < $at) {
+                $at = $pos;
+                $best = $id;
+            }
+        }
+        $id = $best !== null ? $best : $root;
+        $page = GS_Legal::page($id);
+        if (!$page) {
+            return null;
+        }
+        return array(
+            'url'   => GS_Legal::get_url($id),
+            'title' => (string) $page['menu'],
+            'text'  => $lane === GS_Legal::LANE_ORDER
+                ? 'Опишите ситуацию — соберём возражение и посчитаем срок. От '
+                  . (int) GS_Legal::PRICE_BASE . ' ₽.'
+                : 'Опишите ситуацию — соберём претензию со статьями и расчётом. От '
+                  . (int) GS_Legal::PRICE_BASE . ' ₽.',
+            'cta'   => 'Составить документ',
         );
     }
 
