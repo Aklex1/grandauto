@@ -35,6 +35,7 @@ from aiogram import Bot
 from aiogram.types import URLInputFile
 
 import news_sources
+import news_writer
 
 logger = logging.getLogger("news")
 
@@ -73,6 +74,10 @@ SLOTS = [s.strip() for s in os.getenv("NEWS_SLOTS", "plan,news,case,news").split
          if s.strip() in ("plan", "news", "case")]
 # Как часто проверять расписание, секунды
 TICK_INTERVAL = _env_int("NEWS_TICK_INTERVAL", 300)
+# Сколько новостей показать отбору, прежде чем сдаться. Отбраковка — норма:
+# в лентах хватает раундов инвестиций и бенчмарков, которые нашему читателю
+# не нужны, поэтому за один слот проверяем несколько материалов подряд
+WRITER_CANDIDATES = _env_int("NEWS_WRITER_CANDIDATES", 6)
 
 FOOTER = os.getenv("NEWS_FOOTER", "")
 BOT_URL = os.getenv("NEWS_BOT_URL", "https://t.me/Neuro_HubAI_bot")
@@ -420,13 +425,30 @@ async def _page_image(link: str) -> Optional[str]:
         return None
 
 
-async def publish_item(bot: Bot, item: news_sources.NewsItem, kind: str = "news") -> bool:
+def dress_draft(text: str, with_cta: bool = False) -> str:
+    """Готовый черновик от редактора: добавляем только ссылку на бота и подвал.
+    Сам текст не трогаем — он уже собран по шаблону канала."""
+    parts = [text.strip()]
+    if with_cta and BOT_URL and BOT_CTA:
+        parts.append(f'<a href="{escape(BOT_URL)}">{escape(BOT_CTA)}</a>')
+    if FOOTER:
+        parts.append(FOOTER)
+    return "\n\n".join(p for p in parts if p)
+
+
+async def publish_item(bot: Bot, item: news_sources.NewsItem, kind: str = "news",
+                       draft_text: str = "") -> bool:
     """Публикует материал из ленты: новость или разбор «как это применить».
-    Различаются только вёрсткой текста и пометкой в журнале."""
+    Различаются только вёрсткой текста и пометкой в журнале.
+
+    draft_text — готовый пост от редактора (news_writer). Если он есть,
+    пересказ ленты не собираем: в нём нет ни мнения, ни пользы читателю."""
     label = "кейсы" if kind == "case" else "новости"
     with_cta = cta_due()
 
-    if kind == "case":
+    if draft_text:
+        text = strip_external_links(dress_draft(draft_text, with_cta=with_cta))
+    elif kind == "case":
         # Подробная статья-инструкция на сайте, ссылку на неё даём в посте
         import blog_publisher
 
@@ -486,8 +508,8 @@ async def publish_item(bot: Bot, item: news_sources.NewsItem, kind: str = "news"
     return True
 
 
-async def publish_news(bot: Bot, item: news_sources.NewsItem) -> bool:
-    return await publish_item(bot, item, "news")
+async def publish_news(bot: Bot, item: news_sources.NewsItem, draft_text: str = "") -> bool:
+    return await publish_item(bot, item, "news", draft_text=draft_text)
 
 
 async def publish_case(bot: Bot, item: news_sources.NewsItem) -> bool:
@@ -548,11 +570,54 @@ async def pick_fresh_cases(limit: int = 1) -> List[news_sources.NewsItem]:
 
 
 async def publish_one_news(bot: Bot) -> bool:
-    items = await pick_fresh(limit=1, kind="news")
+    """
+    Одна новость в канал.
+
+    При включённом редакторе (NEWS_WRITER_ENABLED) новость сначала проходит
+    отбор: полезна ли она обычному человеку. Отбракованную помечаем как
+    просмотренную — иначе она будет всплывать каждый час и каждый раз стоить
+    запроса к модели. Если редактор выключен или не ответил, публикуем
+    по-старому: пересказ ленты хуже поста по шаблону, но лучше тишины.
+    """
+    limit = WRITER_CANDIDATES if news_writer.ENABLED else 1
+    items = await pick_fresh(limit=limit, kind="news")
     if not items:
         logger.info("[новости] свежих материалов не нашлось — все уже выходили")
         return False
-    return await publish_news(bot, items[0])
+
+    if not news_writer.ENABLED:
+        return await publish_news(bot, items[0])
+
+    for item in items:
+        try:
+            draft = await news_writer.write(item.title, item.summary, item.source)
+        except Exception as e:
+            logger.warning("[новости] редактор не сработал (%s) — публикуем как есть", e)
+            return await publish_news(bot, item)
+
+        if not draft.useful:
+            remember("skip", url=item.link, title=item.title, source=item.source)
+            continue
+        if not draft.text:
+            logger.info("[новости] редактор не дал текста (%s) — публикуем как есть",
+                        draft.reason)
+            return await publish_news(bot, item)
+
+        # Предпросмотр: черновик от модели сначала смотрит человек. Слот
+        # считается занятым — иначе бот в тот же час возьмёт следующую
+        # новость и завалит модератора черновиками.
+        import news_moderation
+
+        if news_moderation.enabled():
+            news_moderation.expire_old()
+            if await news_moderation.send_for_review(bot, item, draft.text):
+                return True
+            logger.warning("[новости] черновик не доставлен модераторам — публикуем сами")
+
+        return await publish_news(bot, item, draft_text=draft.text)
+
+    logger.info("[новости] отбор не пропустил ни одной из %d новостей", len(items))
+    return False
 
 
 async def publish_one_case(bot: Bot) -> bool:
@@ -566,15 +631,67 @@ async def publish_one_case(bot: Bot) -> bool:
     return await publish_one_news(bot)
 
 
+# Какая рубрика у какого дня недели. Ключевое слово ищем в названии рубрики
+# поста: в плане они с эмодзи и уточнениями («🎯 Челлендж недели»), и
+# сравнивать строки целиком было бы хрупко.
+WEEKDAY_RUBRICS = {
+    0: "главное за неделю",
+    1: "промпт дня",
+    2: "проверил сам",
+    3: "батл",
+    4: "кейс",
+    5: "нейрофейл",
+    6: "челлендж",
+}
+
+
+def published_plan_indexes() -> set:
+    """Номера постов плана, которые уже выходили."""
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            "SELECT plan_index FROM news_posts WHERE kind = 'plan' AND plan_index IS NOT NULL"
+        ).fetchall()
+    return {int(r["plan_index"]) for r in rows}
+
+
+def pick_plan_post(plan: List[dict], weekday: Optional[int] = None) -> Optional[tuple]:
+    """
+    Пост плана на сегодня: (индекс, пост).
+
+    Сначала ищем невышедший пост с рубрикой этого дня недели — понедельник
+    открывается главным за неделю, воскресенье закрывается челленджем.
+    Если такого нет (рубрика исчерпана), берём ближайший невышедший по
+    порядку: пустой слот хуже, чем пост не по дню.
+    """
+    done = published_plan_indexes()
+    if weekday is None:
+        weekday = datetime.now(timezone.utc).weekday()
+    wanted = WEEKDAY_RUBRICS.get(weekday, "")
+
+    if wanted:
+        for index, post in enumerate(plan):
+            if index in done:
+                continue
+            if wanted in str(post.get("rubric", "")).lower():
+                return index, post
+
+    for index, post in enumerate(plan):
+        if index not in done:
+            return index, post
+    return None
+
+
 async def publish_one_plan(bot: Bot) -> bool:
     plan = load_plan()
     if not plan:
         return False
-    index = next_plan_index()
-    if index >= len(plan):
+    chosen = pick_plan_post(plan)
+    if chosen is None:
         logger.info("[новости] контент-план закончился (%s постов)", len(plan))
         return False
-    return await publish_plan_post(bot, plan[index], index)
+    index, post = chosen
+    logger.info("[новости] пост плана №%s, рубрика «%s»", index, post.get("rubric", ""))
+    return await publish_plan_post(bot, post, index)
 
 
 # --- Расписание ------------------------------------------------------------

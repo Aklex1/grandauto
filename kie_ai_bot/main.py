@@ -9260,6 +9260,12 @@ async def main():
     import group_antispam
     group_antispam.setup(dp, bot)
 
+    # Предпросмотр черновиков новостей: кнопки «Опубликовать» и «Пропустить».
+    # Регистрируем только когда включён, чтобы не держать лишний обработчик.
+    import news_moderation
+    if news_moderation.enabled():
+        news_moderation.setup(dp, bot)
+
     # Каждая задача изолирована: если упадёт фоновая, бот продолжит отвечать,
     # а ошибка попадёт в лог. Раньше падение любой из них останавливало всё.
     async def guarded(coro, name: str):

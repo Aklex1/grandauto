@@ -49,6 +49,27 @@ SOURCES: List[Source] = [
     Source("Naked Science", "https://naked-science.ru/?feed=rss", False),
 ]
 
+# Зарубежные ленты из плана канала. Включаются флагом и только вместе с
+# редактором (news_writer): без пересказа по-русски в канал уехал бы
+# английский текст. Профильными их не помечаем не из осторожности — в
+# дайджестах попадаются и корпоративные новости, которые нашему читателю
+# не нужны, и отбор по теме лишним не будет.
+FOREIGN_SOURCES: List[Source] = [
+    Source("The Decoder", "https://the-decoder.com/feed/", True),
+    Source("Ben's Bites", "https://bensbites.beehiiv.com/feed", True),
+    Source("TLDR AI", "https://tldr.tech/api/rss/ai", True),
+    Source("Hugging Face", "https://huggingface.co/blog/feed.xml", True),
+    Source("MIT Technology Review", "https://www.technologyreview.com/feed/", False),
+]
+
+FOREIGN_ENABLED = os.getenv("NEWS_FOREIGN_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+def active_sources() -> List[Source]:
+    """Ленты, из которых собираем. Зарубежные — только по флагу."""
+    return SOURCES + (FOREIGN_SOURCES if FOREIGN_ENABLED else [])
+
+
 # Сильные признаки темы: слово должно означать именно ИИ, а не что угодно
 # рядом с ним. Общие «ai», «обучение», «языковой» убраны намеренно — по ним
 # в ленту лезли обзоры процессоров Ryzen AI и статьи про курсы.
@@ -61,6 +82,10 @@ AI_KEYWORDS = [
     "openai", "anthropic", "deepseek", "midjourney", "stable diffusion",
     "gemini", "claude", "нейроарт", "промпт", "дипфейк", "deepfake",
     "ai-агент", "ии-агент", "ии-модел", "ai-модел", "чат-бот", "чатбот",
+    # Английские признаки — для зарубежных лент. Одиночное «ai» намеренно не
+    # берём: по нему в ленту лезут обзоры процессоров с приставкой AI.
+    "artificial intelligence", "ai model", "ai tool", "ai agent",
+    "language model", "image generator", "text-to-", "neural network",
 ]
 
 # Если заголовок про железо или гаджеты — это не новость про ИИ, даже когда
@@ -316,7 +341,7 @@ async def fetch_all(limit_per_source: int = 20) -> List[NewsItem]:
     """Свежие материалы про ИИ со всех лент, новые сверху."""
     collected: List[NewsItem] = []
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        for source in SOURCES:
+        for source in active_sources():
             items = await fetch_source(client, source, limit_per_source)
             if items:
                 logger.info("[новости] %s: подходящих материалов %s", source.name, len(items))
