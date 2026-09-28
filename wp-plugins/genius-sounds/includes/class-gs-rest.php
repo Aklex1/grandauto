@@ -348,6 +348,12 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        register_rest_route(self::NS, '/balance/home', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_balance_home'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/showcase', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_showcase_add'),
@@ -599,6 +605,31 @@ class GS_Rest {
         if ($conn) {
             $conn->close();
         }
+        return rest_ensure_response($out);
+    }
+
+    /**
+     * Перевести деньги телеграм-пользователей на баланс сайта.
+     *
+     * Без параметров только показывает, что будет сделано: кого переведём и
+     * какие оплаты зачислим. С apply=1 делает это по-настоящему. Разделение
+     * нарочное — речь о деньгах, и увидеть список до, а не после, важнее
+     * одного лишнего запроса.
+     */
+    public static function handle_balance_home($request) {
+        if (!class_exists('GS_Balance_Home')) {
+            return new WP_Error('gs_no_class', 'Модуль перевода балансов не подключён', array('status' => 500));
+        }
+        $apply = (bool) $request->get_param('apply');
+        $out = array(
+            'режим'  => GS_Balance_Home::enabled() ? 'деньги на сайте' : 'деньги в базе бота',
+            'начисто' => $apply ? 'да' : 'нет, только показываю',
+        );
+        if ($apply) {
+            $out['перевод'] = GS_Balance_Home::migrate();
+        }
+        $out['потерянные_оплаты'] = GS_Balance_Home::credit_lost(!$apply);
+        $out['осталось_в_базе_бота'] = GS_Balance_Home::still_in_bot();
         return rest_ensure_response($out);
     }
 

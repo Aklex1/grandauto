@@ -209,10 +209,14 @@ class GS_Yoomoney {
         if (!is_array($payment) || empty($payment['user_id'])) {
             return null;
         }
-        $is_telegram = !empty($payment['is_telegram']);
+        // Смотрим не на отметку в платеже, а туда, где деньги лежат сейчас.
+        // Старые платежи помечены «из бота», но балансы переведены на сайт,
+        // и по отметке мы читали бы пустую чужую базу — а значит считали бы
+        // зачисление неудачным и возвращали в незакрытые уже закрытое.
         $who = (int) $payment['user_id'];
+        $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($who);
         if ($is_telegram) {
-            $who = class_exists('KIE_TTS_Auth') ? (int) KIE_TTS_Auth::get_telegram_id($who) : 0;
+            $who = (int) KIE_TTS_Auth::get_telegram_id($who);
             if (!$who) {
                 return null;
             }
