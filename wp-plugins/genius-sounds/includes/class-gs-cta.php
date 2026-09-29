@@ -64,7 +64,14 @@ class GS_CTA {
         ob_start();
         ?>
         <aside class="gs-cbanner gs-cbanner--service">
-            <span class="gs-cbanner__spark" aria-hidden="true"></span>
+            <?php
+            // Персонаж в позе «указывает» — набор ровно для этого места и
+            // задуман: рядом с кнопкой, а не сам по себе. Если бренда нет,
+            // остаётся прежняя звёздочка, и баннер не разваливается.
+            $pixel = class_exists('GS_Brand')
+                ? GS_Brand::mascot_tag('ukazyvaet', 'gs-cbanner__pixel gs-pixel', 56) : '';
+            echo $pixel !== '' ? $pixel : '<span class="gs-cbanner__spark" aria-hidden="true"></span>';
+            ?>
             <div class="gs-cbanner__text">
                 <p class="gs-cbanner__title"><?php echo esc_html($title); ?></p>
                 <p class="gs-cbanner__lead"><?php echo esc_html($lead); ?></p>

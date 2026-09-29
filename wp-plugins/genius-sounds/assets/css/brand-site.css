@@ -108,3 +108,28 @@ body.gs-page .gb-feature h3 {
         width: 110px;
     }
 }
+
+/* Персонаж в баннере перехода из статьи: занимает место прежней плашки. */
+.gs-cbanner__pixel {
+    flex: 0 0 auto;
+    width: 56px;
+}
+
+/* Иконка шага в микросервисе. Номер остаётся: по нему считают порядок,
+   иконка только помогает взгляду зацепиться. */
+.gs-step__icon {
+    width: 36px;
+    height: 36px;
+    flex: none;
+}
+
+@media (max-width: 600px) {
+    .gs-cbanner__pixel {
+        width: 44px;
+    }
+
+    .gs-step__icon {
+        width: 30px;
+        height: 30px;
+    }
+}

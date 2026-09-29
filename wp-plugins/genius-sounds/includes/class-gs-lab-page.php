@@ -286,9 +286,19 @@ class GS_Lab_Page {
 
             <section class="gs-tips">
                 <h2 class="gs-section-title">Как это работает</h2>
+                <?php
+                // Иконки идут по смыслу шага, а не случайным набором:
+                // сначала загрузка, потом настройка, работа и результат.
+                $step_icons = array('send', 'flow', 'ai', 'check', 'rocket');
+                ?>
                 <ol class="gs-steps">
                     <?php foreach ($service['steps'] as $i => $step): ?>
                         <li class="gs-step">
+                            <?php if (class_exists('GS_Brand')): ?>
+                                <?php echo GS_Brand::icon_tag(
+                                    $step_icons[$i % count($step_icons)], 'soft', 'gb-icon gs-step__icon'
+                                ); ?>
+                            <?php endif; ?>
                             <span class="gs-step__num"><?php echo (int) ($i + 1); ?></span>
                             <span class="gs-step__text"><?php echo esc_html($step); ?></span>
                         </li>
