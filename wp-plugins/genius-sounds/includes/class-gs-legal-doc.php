@@ -139,34 +139,16 @@ class GS_Legal_Doc {
         $row['plan'] = $price;
         self::save($id, $row);
 
-        $label = self::LABEL_PREFIX . preg_replace('~[^A-Za-z0-9]~', '', (string) $id);
-        $receiver = class_exists('KIE_TTS_Payment')
-            ? KIE_TTS_Payment::get_yoomoney_receiver()
-            : (string) get_option('kie_tts_yoomoney_receiver', '');
-        if ($receiver === '') {
-            return '';
-        }
-        $success = class_exists('KIE_TTS_Payment')
-            ? KIE_TTS_Payment::get_yoomoney_success_url()
-            : home_url('/success');
-
-        // Ссылку собираем сами — ровно теми же параметрами, что и остальные
-        // платежи сайта, но с человеческим назначением. У готового
-        // построителя назначение прибито как «TTS Balance Topup», и человек,
-        // который платит за претензию, видел бы на странице оплаты его.
-        // Уведомление приходит на адрес из настроек кошелька, а не из ссылки,
-        // поэтому приёмник остаётся тот же.
-        return add_query_arg(array(
-            'receiver'      => $receiver,
-            'quickpay-form' => 'shop',
-            'targets'       => self::payment_target($row, $price, $id),
-            'paymentType'   => 'AC',
-            'sum'           => number_format((float) $price, 2, '.', ''),
-            'label'         => $label,
-            'successURL'    => urlencode(add_query_arg('order', $id, GS_Legal::get_url(
+        // Ссылку собирает общий помощник: назначение платежа человек видит у
+        // ЮMoney, и оно должно называть документ, а не «пополнение баланса».
+        return GS_Pay::link(
+            self::LABEL_PREFIX . preg_replace('~[^A-Za-z0-9]~', '', (string) $id),
+            (float) $price,
+            self::payment_target($row, $price, $id),
+            add_query_arg('order', $id, GS_Legal::get_url(
                 GS_Legal::resolve($row['page']) !== '' ? $row['page'] : 'claim'
-            ))),
-        ), 'https://yoomoney.ru/quickpay/confirm.xml');
+            ))
+        );
     }
 
     /**

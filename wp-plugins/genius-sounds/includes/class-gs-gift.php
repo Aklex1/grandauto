@@ -876,10 +876,25 @@ class GS_Gift {
         $row['price'] = (int) $pack['price'];
         self::save($id, $row);
 
-        if (!class_exists('KIE_TTS_Payment')) {
-            return '';
-        }
-        return KIE_TTS_Payment::build_yoomoney_link(self::LABEL_PREFIX . $id, (float) $pack['price']);
+        // Назначение платежа человек видит у ЮMoney. Готовый построитель
+        // базового плагина пишет туда «TTS Balance Topup» — для пополнения
+        // баланса верно, для покупки песни выглядит как ошибка в чужом
+        // кошельке. Собираем общим помощником и называем покупку по делу.
+        // Имя того, кому песня, в назначение не ставим: оно попало бы в
+        // историю кошелька и в выписку, а это данные другого человека, и для
+        // опознания платежа они не нужны — для этого есть номер заказа.
+        $extras = array('plus' => ' с обложкой', 'video' => ' с клипом');
+        $target = 'Песня в подарок' . ($extras[$pack_key] ?? '')
+            . ' (заказ ' . preg_replace('~[^A-Za-z0-9]~', '', (string) $id) . ')';
+
+        return GS_Pay::link(
+            self::LABEL_PREFIX . preg_replace('~[^A-Za-z0-9]~', '', (string) $id),
+            (float) $pack['price'],
+            $target,
+            add_query_arg('order', $id, self::get_url(
+                !empty($row['page']) ? $row['page'] : self::root()
+            ))
+        );
     }
 
     /**
