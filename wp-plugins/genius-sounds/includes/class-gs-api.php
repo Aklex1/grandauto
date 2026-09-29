@@ -31,6 +31,7 @@ class GS_Api {
 
     public static function boot() {
         add_action('rest_api_init', array(__CLASS__, 'register_routes'));
+        add_filter('rest_pre_dispatch', array(__CLASS__, 'exact_numbers'), 10, 3);
         add_filter('cron_schedules', array(__CLASS__, 'cron_schedule'));
         add_action(self::CRON_HOOK, array(__CLASS__, 'poll_pending'));
         if (!wp_next_scheduled(self::CRON_HOOK)) {
@@ -444,6 +445,23 @@ class GS_Api {
             );
         }
         return rest_ensure_response(array('services' => $out));
+    }
+
+    /**
+     * Дробные числа в ответе.
+     *
+     * На сервере serialize_precision=17, и json_encode печатает 424.53 как
+     * 424.52999999999997. Округление в самих значениях тут не помогает:
+     * длинный хвост появляется уже при сборке json. На время своего запроса
+     * возвращаем режим по умолчанию — PHP печатает кратчайшую запись,
+     * которая читается обратно тем же числом.
+     */
+    public static function exact_numbers($result, $server, $request) {
+        $route = is_object($request) ? (string) $request->get_route() : '';
+        if (strpos($route, '/' . self::NS . '/') === 0) {
+            @ini_set('serialize_precision', '-1');
+        }
+        return $result;
     }
 
     /** Деньги в ответе — с точностью до копейки, без двоичного хвоста. */
