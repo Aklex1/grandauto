@@ -196,6 +196,16 @@ _STEPS = {
     ],
 }
 
+# Адрес статьи на сайте — один на тему, навсегда. По нему издатель узнаёт,
+# что статья уже есть, и не заводит ещё одну копию.
+_SLUG = {
+    "bot": "kak-sobrat-telegram-bota-s-nejrosetyu-i-zapustit-ego-poshagovaya-instrukcziya",
+    "automation": "kak-avtomatizirovat-rutinu-s-pomoshhyu-nejroseti-poshagovaya-instrukcziya-2",
+    "earning": "kak-nachat-zarabatyvat-na-nejrosetyah-poshagovaya-instrukcziya",
+    "content": "kak-postavit-generacziyu-kontenta-nejrosetyu-na-potok-poshagovaya-instrukcziya",
+    "project": "kak-zapustit-svoj-proekt-na-nejrosetyah-v-odinochku-poshagovaya-instrukcziya",
+}
+
 _TITLE = {
     "bot": "Как собрать телеграм-бота с нейросетью и запустить его: пошаговая инструкция",
     "automation": "Как автоматизировать рутину с помощью нейросети: пошаговая инструкция",
@@ -298,22 +308,58 @@ async def _ensure_category(client: httpx.AsyncClient) -> Optional[int]:
     return None
 
 
+async def _find_existing(client: httpx.AsyncClient, slug: str) -> Optional[str]:
+    """Адрес уже опубликованной статьи по этому адресу. None — её нет."""
+    try:
+        resp = await client.get(f"{SITE_URL}/wp-json/wp/v2/posts",
+                                params={"slug": slug, "_fields": "id,link"},
+                                timeout=25)
+        rows = resp.json() if resp.status_code == 200 else []
+        if rows:
+            return rows[0].get("link")
+    except Exception as e:
+        logger.warning("[блог] не проверить, есть ли статья (%s)", e)
+    return None
+
+
 async def publish_article(title: str, summary: str) -> Optional[str]:
-    """Публикует статью в блог и возвращает её адрес. None — если не вышло."""
+    """
+    Адрес подробной статьи по теме кейса.
+
+    Статья на тему одна. Раньше каждый разбор в канале заводил на сайте
+    новую запись с тем же заголовком: в блоге накопилось восемь «Как собрать
+    телеграм-бота» и пять «Как запустить свой проект», и они отбирали
+    позиции друг у друга в поиске.
+
+    Теперь сначала смотрим, есть ли статья по постоянному адресу темы. Есть —
+    возвращаем её и ничего не трогаем: содержимое могли переписать руками, и
+    затирать шаблоном живую статью нельзя. Нет — публикуем один раз.
+    """
     if not enabled():
         logger.info("[блог] пропуск: не задан WP_APP_PASSWORD")
         return None
 
+    category = detect_category(title, summary)
+    slug = _SLUG.get(category, "")
     article_title, content, excerpt = build_article(title, summary)
 
     try:
         async with httpx.AsyncClient(timeout=40, follow_redirects=True) as client:
+            if slug:
+                existing = await _find_existing(client, slug)
+                if existing:
+                    logger.info("[блог] статья по теме «%s» уже есть: %s",
+                                category, existing)
+                    return existing
+
             payload = {
                 "title": article_title,
                 "content": content,
                 "excerpt": excerpt,
                 "status": "publish",
             }
+            if slug:
+                payload["slug"] = slug
             category_id = await _ensure_category(client)
             if category_id:
                 payload["categories"] = [category_id]

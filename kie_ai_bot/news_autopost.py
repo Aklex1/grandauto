@@ -374,13 +374,10 @@ def build_case_text(item: news_sources.NewsItem, with_cta: bool = False,
         parts.append(f'📖 <a href="{escape(article_url)}">'
                      f'{escape(blog_publisher.ARTICLE_CTA)}</a>')
 
-    # Партнёрская ссылка на хостинг: где развернуть бота или проект
-    if blog_publisher.HOSTING_URL:
-        parts.append(
-            "Проект работает круглосуточно — держать его удобно на сервере: "
-            f'<a href="{escape(blog_publisher.HOSTING_URL)}">'
-            f'{escape(blog_publisher.HOSTING_ANCHOR)}</a>.'
-        )
+    # Партнёрской ссылки на хостинг в посте канала нет намеренно. Она стоит
+    # в самой статье, куда ведёт призыв выше, и там она к месту: человек уже
+    # читает инструкцию по запуску. В посте же она была третьей ссылкой
+    # подряд, и лента превращалась в рекламный блок.
 
     if with_cta and BOT_URL and BOT_CTA:
         parts.append(f'<a href="{escape(BOT_URL)}">{escape(BOT_CTA)}</a>')
@@ -425,15 +422,36 @@ async def _page_image(link: str) -> Optional[str]:
         return None
 
 
-def dress_draft(text: str, with_cta: bool = False) -> str:
-    """Готовый черновик от редактора: добавляем только ссылку на бота и подвал.
-    Сам текст не трогаем — он уже собран по шаблону канала."""
+def dress_draft(text: str, with_cta: bool = False, article_url: str = "") -> str:
+    """Готовый черновик от редактора: добавляем ссылку на разбор, ссылку на
+    бота и подвал. Сам текст не трогаем — он уже собран по шаблону канала."""
     parts = [text.strip()]
+    if article_url:
+        import blog_publisher
+
+        parts.append(f'📖 <a href="{escape(article_url)}">'
+                     f'{escape(blog_publisher.ARTICLE_CTA)}</a>')
     if with_cta and BOT_URL and BOT_CTA:
         parts.append(f'<a href="{escape(BOT_URL)}">{escape(BOT_CTA)}</a>')
     if FOOTER:
         parts.append(FOOTER)
     return "\n\n".join(p for p in parts if p)
+
+
+async def case_article_url(item: news_sources.NewsItem) -> str:
+    """Адрес подробной статьи-инструкции на сайте под тему разбора.
+
+    Статья одна на тему, а не одна на кейс: раньше каждый разбор заводил на
+    сайте новую запись с тем же заголовком, и в блоге накопилось восемь
+    «Как собрать телеграм-бота». Теперь издатель возвращает адрес уже
+    существующей статьи, если она есть."""
+    import blog_publisher
+
+    try:
+        return await blog_publisher.publish_article(item.title, item.summary) or ""
+    except Exception as e:
+        logger.warning("[кейсы] статью на сайт опубликовать не вышло: %s", e)
+        return ""
 
 
 async def publish_item(bot: Bot, item: news_sources.NewsItem, kind: str = "news",
@@ -447,18 +465,12 @@ async def publish_item(bot: Bot, item: news_sources.NewsItem, kind: str = "news"
     with_cta = cta_due()
 
     if draft_text:
-        text = strip_external_links(dress_draft(draft_text, with_cta=with_cta))
+        text = strip_external_links(dress_draft(
+            draft_text, with_cta=with_cta,
+            article_url=(await case_article_url(item) if kind == "case" else "")))
     elif kind == "case":
-        # Подробная статья-инструкция на сайте, ссылку на неё даём в посте
-        import blog_publisher
-
-        article_url = None
-        try:
-            article_url = await blog_publisher.publish_article(item.title, item.summary)
-        except Exception as e:
-            logger.warning("[кейсы] статью на сайт опубликовать не вышло: %s", e)
-        text = strip_external_links(
-            build_case_text(item, with_cta=with_cta, article_url=article_url))
+        text = strip_external_links(build_case_text(
+            item, with_cta=with_cta, article_url=await case_article_url(item)))
     else:
         text = strip_external_links(build_news_text(item, with_cta=with_cta))
     sent = None
@@ -621,14 +633,51 @@ async def publish_one_news(bot: Bot) -> bool:
 
 
 async def publish_one_case(bot: Bot) -> bool:
-    """Разбор «как это применить». Если подходящего нет — отдаём слот новости,
-    чтобы час расписания не пропал впустую."""
-    items = await pick_fresh(limit=1, kind="case")
-    if items:
+    """
+    Разбор «как это применить». Если подходящего нет — отдаём слот новости,
+    чтобы час расписания не пропал впустую.
+
+    Разбор проходит тот же путь, что и новость: отбор на пользу, черновик
+    редактора, предпросмотр у модератора. Раньше кейс шёл мимо редактора и
+    выходил пересказом ленты с тремя ссылками подряд — правки по качеству
+    его просто не касались.
+    """
+    limit = WRITER_CANDIDATES if news_writer.ENABLED else 1
+    items = await pick_fresh(limit=limit, kind="case")
+    if not items:
+        logger.info("[кейсы] новых разборов не нашлось — публикуем новость")
+        return await publish_one_news(bot)
+
+    if not news_writer.ENABLED:
         return await publish_case(bot, items[0])
 
-    logger.info("[кейсы] новых разборов не нашлось — публикуем новость")
-    return await publish_one_news(bot)
+    for item in items:
+        try:
+            draft = await news_writer.write(item.title, item.summary, item.source)
+        except Exception as e:
+            logger.warning("[кейсы] редактор не сработал (%s) — публикуем как есть", e)
+            return await publish_case(bot, item)
+
+        if not draft.useful:
+            remember("skip", url=item.link, title=item.title, source=item.source)
+            continue
+        if not draft.text:
+            logger.info("[кейсы] редактор не дал текста (%s) — публикуем как есть",
+                        draft.reason)
+            return await publish_case(bot, item)
+
+        import news_moderation
+
+        if news_moderation.enabled():
+            news_moderation.expire_old()
+            if await news_moderation.send_for_review(bot, item, draft.text):
+                return True
+            logger.warning("[кейсы] черновик не доставлен модераторам — публикуем сами")
+
+        return await publish_item(bot, item, "case", draft_text=draft.text)
+
+    logger.info("[кейсы] отбор не пропустил ни одного из %d разборов", len(items))
+    return False
 
 
 # Какая рубрика у какого дня недели. Ключевое слово ищем в названии рубрики
