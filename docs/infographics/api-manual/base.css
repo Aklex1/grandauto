@@ -1,0 +1,22 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #fff; font-family: "DejaVu Sans", system-ui, sans-serif; }
+.sheet {
+  width: 1160px; padding: 44px 48px 48px;
+  background: linear-gradient(140deg, #f7f8ff 0%, #f3f6fb 100%);
+  border: 1px solid #e4e7f4; border-radius: 26px; color: #10162b;
+}
+.kicker { font-size: 17px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: #6b60f6; }
+h1 { font-size: 40px; line-height: 1.15; margin: 10px 0 6px; font-weight: 700; }
+.sub { font-size: 20px; color: #5b6480; margin-bottom: 34px; }
+.card { background: #fff; border: 1px solid #e4e7f4; border-radius: 18px;
+  padding: 22px 24px; box-shadow: 0 8px 20px rgba(24,32,74,.05); }
+.card h3 { font-size: 22px; margin-bottom: 8px; font-weight: 700; }
+.card p { font-size: 17px; line-height: 1.45; color: #4a5470; }
+code, .mono { font-family: "DejaVu Sans Mono", monospace; font-size: 15px; }
+.pill { display: inline-block; padding: 4px 12px; border-radius: 999px;
+  font-size: 15px; font-weight: 700; }
+.row { display: flex; align-items: stretch; gap: 16px; }
+.arrow { display: flex; align-items: center; color: #b3b9d4; font-size: 34px; }
+.foot { margin-top: 28px; font-size: 17px; color: #5b6480; }
+.foot b { color: #10162b; }

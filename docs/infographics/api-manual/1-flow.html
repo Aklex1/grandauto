@@ -1,0 +1,67 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+.step { flex: 1; }
+.num { width: 34px; height: 34px; border-radius: 10px; background: #6b60f6; color: #fff;
+  font-weight: 700; font-size: 18px; display: flex; align-items: center;
+  justify-content: center; margin-bottom: 12px; }
+.snippet { margin-top: 12px; background: #11162c; color: #dfe3ff; border-radius: 12px;
+  padding: 12px 14px; font-family: "DejaVu Sans Mono", monospace; font-size: 14px;
+  line-height: 1.5; white-space: pre; overflow: hidden; }
+.snippet .k { color: #8ce0c0; }
+.branch { display: flex; gap: 16px; margin-top: 20px; }
+.branch .card { flex: 1; border-left: 5px solid #17b897; }
+.branch .card.alt { border-left-color: #f3a01c; }
+.tag { font-size: 15px; font-weight: 700; color: #17b897; text-transform: uppercase;
+  letter-spacing: .06em; }
+.tag.alt { color: #d98a0b; }
+</style></head><body>
+<div class="sheet">
+  <div class="kicker">Genius-bot API</div>
+  <h1>Путь одного запроса</h1>
+  <div class="sub">Схема одинаковая для всех операций: картинка, озвучка, музыка, видео.</div>
+
+  <div class="row">
+    <div class="step card">
+      <div class="num">1</div>
+      <h3>Ваш код просит</h3>
+      <p>Один POST с названием операции и описанием.</p>
+      <div class="snippet">POST /genius/v1/generate
+<span class="k">"service"</span>: "image"
+<span class="k">"prompt"</span>: "кофе на столе"</div>
+    </div>
+    <div class="arrow">&#10230;</div>
+    <div class="step card">
+      <div class="num">2</div>
+      <h3>Мы отвечаем номером</h3>
+      <p>Сразу, за доли секунды. Деньги списываются здесь же.</p>
+      <div class="snippet"><span class="k">"task_id"</span>: "2fd0f433…"
+<span class="k">"status"</span>: "pending"
+<span class="k">"cost"</span>: 9</div>
+    </div>
+    <div class="arrow">&#10230;</div>
+    <div class="step card">
+      <div class="num">3</div>
+      <h3>Приходит файл</h3>
+      <p>Обычно через 10–40 секунд, ссылка живёт на нашем сервере.</p>
+      <div class="snippet"><span class="k">"status"</span>: "completed"
+<span class="k">"files"</span>: [{ "url": … }]</div>
+    </div>
+  </div>
+
+  <div class="branch">
+    <div class="card">
+      <div class="tag">Способ А — спросить самому</div>
+      <p style="margin-top:6px">Раз в 5 секунд дёргаете <code>GET /tasks/&lt;id&gt;</code>, пока статус
+      не станет <code>completed</code>. Ничего настраивать не нужно — годится для скрипта и бота.</p>
+    </div>
+    <div class="card alt">
+      <div class="tag alt">Способ Б — чтобы сообщили</div>
+      <p style="margin-top:6px">Передаёте <code>callback_url</code> — мы сами постучимся на ваш адрес,
+      когда файл готов, и подпишем запрос. Нужен свой сервер с белым адресом.</p>
+    </div>
+  </div>
+
+  <div class="foot">Деньги списываются в момент создания задачи. Если задача не удалась —
+  <b>возвращаются на баланс автоматически.</b></div>
+</div></body></html>

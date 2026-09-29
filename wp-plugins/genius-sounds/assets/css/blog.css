@@ -781,3 +781,98 @@ body.gs-post-page .gs-promt__shots img {
         text-align: center;
     }
 }
+
+/* --------------------------------------------------------------------------
+ * Код в статьях-инструкциях.
+ *
+ * Команды и примеры копируют целиком, поэтому отступы сохраняем, а длинные
+ * строки уводим в прокрутку: перенос посреди адреса или ключа ломает
+ * скопированную команду.
+ * ----------------------------------------------------------------------- */
+
+body.gs-post-page .w-post-elm.post_content pre.gs-code {
+    margin: 18px 0 22px;
+    padding: 18px 20px;
+    border: 1px solid var(--gs-border);
+    border-left: 3px solid var(--gs-primary-light);
+    border-radius: var(--gs-radius-sm);
+    background: rgba(15, 23, 42, 0.72);
+    overflow-x: auto;
+}
+
+body.gs-post-page .w-post-elm.post_content pre.gs-code code {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #e2e8f0;
+    white-space: pre;
+}
+
+/* Короткая сноска рядом с шагом: предупреждение о деньгах, ключе, лимите. */
+body.gs-post-page .w-post-elm.post_content .gs-note {
+    margin: 18px 0 22px;
+    padding: 14px 18px;
+    border: 1px solid var(--gs-border);
+    border-left: 3px solid var(--gs-accent);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+body.gs-post-page .w-post-elm.post_content figure.gs-shot {
+    margin: 26px 0;
+}
+
+body.gs-post-page .w-post-elm.post_content figure.gs-shot img {
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+}
+
+body.gs-post-page .w-post-elm.post_content figure.gs-shot figcaption {
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--gs-muted);
+    text-align: center;
+}
+
+@media (max-width: 600px) {
+    body.gs-post-page .w-post-elm.post_content pre.gs-code {
+        padding: 14px;
+    }
+
+    body.gs-post-page .w-post-elm.post_content pre.gs-code code {
+        font-size: 13px;
+    }
+}
+
+/* Таблица на телефоне: четыре колонки в 390 точек не помещаются никак.
+   Пусть прокручивается сама, а не растягивает страницу вбок — иначе
+   съезжает весь текст статьи, а не только таблица. */
+@media (max-width: 720px) {
+    body.gs-post-page .w-post-elm.post_content table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+}
+
+/* Название поля или операции посреди фразы. Тема рисует такой код белым
+   прямоугольником — на тёмной странице он бьёт по глазам сильнее самого
+   текста. Делаем спокойную тёмную плашку в цвет блоков кода. */
+body.gs-post-page .w-post-elm.post_content code {
+    padding: 2px 6px;
+    border: 1px solid var(--gs-border);
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #e2e8f0;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.94em;
+    word-break: break-word;
+}

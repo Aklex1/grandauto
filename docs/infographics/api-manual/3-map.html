@@ -1,0 +1,56 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+.cols { display: flex; gap: 16px; align-items: stretch; }
+.col { flex: 1; display: flex; flex-direction: column; }
+.body { flex: 1; }
+.head { border-radius: 14px 14px 0 0; padding: 14px 18px; color: #fff;
+  font-size: 21px; font-weight: 700; }
+.c1 .head { background: #6b60f6; } .c2 .head { background: #e0603c; }
+.c3 .head { background: #2f8fd8; } .c4 .head { background: #17997f; }
+.body { background: #fff; border: 1px solid #e4e7f4; border-top: 0;
+  border-radius: 0 0 14px 14px; padding: 8px 18px 16px; }
+.item { display: flex; justify-content: space-between; align-items: baseline;
+  gap: 10px; padding: 11px 0; border-bottom: 1px dashed #e7eaf5; }
+.item:last-child { border-bottom: 0; }
+.id { font-family: "DejaVu Sans Mono", monospace; font-size: 15px; color: #6b60f6; }
+.nm { font-size: 17px; }
+.pr { font-size: 17px; font-weight: 700; white-space: nowrap; }
+.note { margin-top: 26px; background: #fff; border: 1px solid #e4e7f4;
+  border-left: 5px solid #6b60f6; border-radius: 14px; padding: 18px 22px;
+  font-size: 17px; color: #4a5470; line-height: 1.5; }
+</style></head><body>
+<div class="sheet">
+  <div class="kicker">26 операций, один ключ</div>
+  <h1>Что брать под вашу задачу</h1>
+  <div class="sub">Название операции подставляется в поле <span class="mono">service</span>. Цена — за один запуск.</div>
+  <div class="cols">
+    <div class="col c1"><div class="head">Картинки</div><div class="body">
+      <div class="item"><span><span class="nm">Картинка по описанию</span><br><span class="id">image</span></span><span class="pr">9 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Изменить фото</span><br><span class="id">image-edit</span></span><span class="pr">35 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Увеличить качество</span><br><span class="id">upscale</span></span><span class="pr">50 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Обложка для трека</span><br><span class="id">cover</span></span><span class="pr">9 &#8381;</span></div>
+    </div></div>
+    <div class="col c2"><div class="head">Голос и звук</div><div class="body">
+      <div class="item"><span><span class="nm">Озвучка текста</span><br><span class="id">tts</span></span><span class="pr">18 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Расшифровка записи</span><br><span class="id">stt</span></span><span class="pr">10 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Звук по описанию</span><br><span class="id">sfx</span></span><span class="pr">9 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Убрать шум</span><br><span class="id">denoise</span></span><span class="pr">36 &#8381;</span></div>
+    </div></div>
+    <div class="col c3"><div class="head">Музыка</div><div class="body">
+      <div class="item"><span><span class="nm">Создать музыку</span><br><span class="id">music</span></span><span class="pr">59 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Текст песни</span><br><span class="id">lyrics</span></span><span class="pr">9 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Убрать вокал</span><br><span class="id">vocal</span></span><span class="pr">45 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Видео к треку</span><br><span class="id">music-video</span></span><span class="pr">19 &#8381;</span></div>
+    </div></div>
+    <div class="col c4"><div class="head">Видео</div><div class="body">
+      <div class="item"><span><span class="nm">Оживить фото</span><br><span class="id">photo-video</span></span><span class="pr">25 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Видео по описанию</span><br><span class="id">video</span></span><span class="pr">119 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Говорящий аватар</span><br><span class="id">avatar</span></span><span class="pr">120 &#8381;</span></div>
+      <div class="item"><span><span class="nm">Дубляж видео</span><br><span class="id">dub</span></span><span class="pr">150 &#8381;</span></div>
+    </div></div>
+  </div>
+  <div class="note">Полный список с ценами и полями всегда отдаёт само API:
+  <span class="mono">GET /wp-json/genius/v1/services</span> — ключ для этого не нужен.
+  Цены в статье могут устареть, ответ сервиса — нет.</div>
+</div></body></html>

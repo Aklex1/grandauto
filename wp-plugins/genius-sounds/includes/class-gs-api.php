@@ -446,17 +446,24 @@ class GS_Api {
         return rest_ensure_response(array('services' => $out));
     }
 
+    /** Деньги в ответе — с точностью до копейки, без двоичного хвоста. */
+    private static function money($value) {
+        return round((float) $value, 2);
+    }
+
     public static function handle_balance($request) {
         $user_id = (int) self::$caller['user_id'];
         // Разработчику важно понимать, что часть денег — подарок и потратить
         // её можно только здесь, а не на сайте. Показываем разбивку явно.
         $trial = class_exists('GS_Api_Keys') ? GS_Api_Keys::trial_left($user_id) : 0.0;
+        // Копейки округляем: дробь двоичного числа вылезает в json как
+        // «442.52999999999997» и выглядит поломкой на стороне клиента.
         $out = array(
-            'balance'  => GS_SFX::get_balance($user_id),
+            'balance'  => self::money(GS_SFX::get_balance($user_id)),
             'currency' => 'RUB',
         );
         if ($trial > 0) {
-            $out['trial'] = $trial;
+            $out['trial'] = self::money($trial);
             $out['trial_note'] = 'Пробные деньги за выпуск ключа: тратятся только на запросы к API.';
         }
         return rest_ensure_response($out);
@@ -524,7 +531,7 @@ class GS_Api {
             return new WP_Error(
                 'gs_api_balance',
                 sprintf('Недостаточно средств: на балансе %.2f ₽, нужно %.2f ₽', $balance, $cost),
-                array('status' => 402, 'balance' => $balance, 'cost' => $cost)
+                array('status' => 402, 'balance' => self::money($balance), 'cost' => self::money($cost))
             );
         }
 
@@ -578,8 +585,8 @@ class GS_Api {
             'task_id' => $task_id,
             'service' => $service_id,
             'status'  => $ready ? 'completed' : 'pending',
-            'cost'    => $cost,
-            'balance' => GS_SFX::get_balance($user_id),
+            'cost'    => self::money($cost),
+            'balance' => self::money(GS_SFX::get_balance($user_id)),
         ));
     }
 
@@ -657,7 +664,7 @@ class GS_Api {
             'files'   => $state['files'],
             'text'    => isset($state['text']) ? (string) $state['text'] : '',
             'message' => $state['message'],
-            'cost'    => (float) $task['cost'],
+            'cost'    => self::money($task['cost']),
         ));
     }
 

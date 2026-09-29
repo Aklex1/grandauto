@@ -1,0 +1,56 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+.line { position: relative; margin-top: 18px; }
+.track { position: absolute; left: 106px; right: 106px; top: 34px; height: 6px;
+  background: linear-gradient(90deg, #6b60f6, #17b897); border-radius: 3px; }
+.stops { display: flex; position: relative; }
+.stop { flex: 1; text-align: center; }
+.dot { width: 26px; height: 26px; border-radius: 50%; background: #fff;
+  border: 6px solid #6b60f6; margin: 24px auto 16px; }
+.stop:nth-child(4) .dot { border-color: #2fa88f; }
+.stop:nth-child(5) .dot { border-color: #17b897; }
+.time { font-size: 17px; font-weight: 700; color: #6b60f6; }
+.stop:nth-child(5) .time { color: #17b897; }
+.name { font-size: 21px; font-weight: 700; margin: 6px 0 6px; }
+.what { font-size: 16px; color: #5b6480; line-height: 1.4; padding: 0 10px; }
+.money { display: flex; gap: 16px; margin-top: 34px; }
+.money .card { flex: 1; text-align: center; }
+.big { font-size: 34px; font-weight: 700; color: #10162b; }
+.lbl { font-size: 16px; color: #5b6480; margin-top: 4px; }
+</style></head><body>
+<div class="sheet">
+  <div class="kicker">План на один вечер</div>
+  <h1>От пустого экрана до работающего бота</h1>
+  <div class="sub">Реальные отрезки: столько занимает каждый шаг, если делать по инструкции.</div>
+
+  <div class="line">
+    <div class="track"></div>
+    <div class="stops">
+      <div class="stop"><div class="dot"></div><div class="time">2 минуты</div>
+        <div class="name">Ключ</div>
+        <div class="what">Вход на сайте, кнопка «Получить ключ». На счёт падает 50 ₽</div></div>
+      <div class="stop"><div class="dot"></div><div class="time">5 минут</div>
+        <div class="name">Первый файл</div>
+        <div class="what">Одна команда в терминале — и готовая картинка по ссылке</div></div>
+      <div class="stop"><div class="dot"></div><div class="time">20 минут</div>
+        <div class="name">Свой код</div>
+        <div class="what">Пятнадцать строк на Python: запрос, ожидание, результат</div></div>
+      <div class="stop"><div class="dot"></div><div class="time">1 час</div>
+        <div class="name">Телеграм-бот</div>
+        <div class="what">Принимает заказ у человека и отдаёт готовое</div></div>
+      <div class="stop"><div class="dot"></div><div class="time">30 минут</div>
+        <div class="name">На сервере</div>
+        <div class="what">Работает круглосуточно и переживает перезагрузку</div></div>
+    </div>
+  </div>
+
+  <div class="money">
+    <div class="card"><div class="big">0 &#8381;</div>
+      <div class="lbl">вложений на старте: первые запросы идут с подаренных 50 &#8381;</div></div>
+    <div class="card"><div class="big">9 &#8381;</div>
+      <div class="lbl">стоит картинка по описанию — самая дешёвая проверка</div></div>
+    <div class="card"><div class="big">~2 часа</div>
+      <div class="lbl">от регистрации до бота, который принимает первый заказ</div></div>
+  </div>
+</div></body></html>
