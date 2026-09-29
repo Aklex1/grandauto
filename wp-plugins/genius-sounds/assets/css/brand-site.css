@@ -152,6 +152,10 @@ body.gs-post-page .w-post-elm.post_content h2.gb-h-icon {
     display: flex;
     align-items: center;
     gap: 12px;
+    /* Тема центрует заголовки статьи. Рядом с иконкой слева и текстом,
+       выключенным по левому краю, центрованный заголовок выглядит сбитым —
+       особенно когда он занимает две строки. */
+    text-align: left;
 }
 
 body.gs-post-page .w-post-elm.post_content h2.gb-h-icon .gb-icon {

@@ -61,6 +61,12 @@ class GS_ApiCta {
         if (!$post instanceof WP_Post) {
             return false;
         }
+        // Заголовок «Как подать на развод» подходил под правило «статья,
+        // начинающаяся с „как“», и документные кластеры получали баннер
+        // разработчикам целиком.
+        if (class_exists('GS_Legal') && GS_Legal::is_doc_post($post)) {
+            return false;
+        }
         // Ссылка на API уже есть — значит, статья про API и так ведёт куда надо.
         if (strpos($content, self::url()) !== false) {
             return false;

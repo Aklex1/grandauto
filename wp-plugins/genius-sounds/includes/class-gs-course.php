@@ -160,6 +160,11 @@ class GS_Course {
         if (is_admin() || !is_singular('post') || !in_the_loop() || !is_main_query()) {
             return $content;
         }
+        // Статьям про иск, приказ и характеристику на ученика заработок на
+        // нейросетях не предлагаем: человек пришёл не за этим.
+        if (class_exists('GS_Legal') && GS_Legal::is_doc_post()) {
+            return $content;
+        }
         return self::banner() . $content;
     }
 

@@ -18,6 +18,9 @@ class GS_Blog {
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
         add_filter('the_content', array(__CLASS__, 'append_tools_block'), 20);
+        // Самым последним: вставки дописывает чужой плагин, и приоритет у
+        // него больше нашего — на тридцатке их в тексте ещё нет.
+        add_filter('the_content', array(__CLASS__, 'drop_inline_related'), PHP_INT_MAX);
         add_action('wp_head', array(__CLASS__, 'print_faq_schema'), 20);
     }
 
@@ -148,6 +151,31 @@ class GS_Blog {
             $classes[] = 'gs-chrome';
         }
         return $classes;
+    }
+
+    /**
+     * Убирает чужие вставки «Читать …» из статей документных кластеров.
+     *
+     * Плагин похожих записей ставит три ссылки прямо посреди текста и
+     * подбирает их по всему блогу: в статье о разводе так оказались «Промты
+     * для Sora 2» и два гида по озвучке. Для статьи про нейросети это
+     * уместная перелинковка, для юридической — шум, который сбивает с
+     * задачи и уводит с воронки.
+     */
+    public static function drop_inline_related($content) {
+        if (is_admin() || !is_singular('post') || !in_the_loop() || !is_main_query()) {
+            return $content;
+        }
+        if (!class_exists('GS_Legal') || !GS_Legal::is_doc_post()) {
+            return $content;
+        }
+        // Вставка помечена своим комментарием — по нему и находим, не
+        // полагаясь на классы: они у плагина случайные на каждую запись.
+        $clean = preg_replace(
+            '~<div[^>]*>\s*<a\b[^>]*>\s*<!--\s*INLINE RELATED POSTS.*?</a>\s*</div>~isu',
+            '', $content
+        );
+        return $clean === null ? $content : $clean;
     }
 
     /**

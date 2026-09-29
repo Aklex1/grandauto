@@ -165,9 +165,21 @@ class GS_Article_Style {
                     return $m[0];
                 }
             }
+            // Иконка у списка одна на все пункты. Раньше её подбирали
+            // каждому пункту отдельно, и в перечне однородных строк
+            // получался ряд из робота, галочки и документа — пестрит и
+            // ничего не значит. Берём ту, что подошла первому пункту, у
+            // которого нашлось слово-примета.
+            $icon = 'check';
+            foreach ($items as $item) {
+                $found = self::icon_for(wp_strip_all_tags($item[2]), '');
+                if ($found !== '') {
+                    $icon = $found;
+                    break;
+                }
+            }
             $inner = '';
             foreach ($items as $item) {
-                $icon = self::icon_for(wp_strip_all_tags($item[2]), 'check');
                 $inner .= '<li' . $item[1] . '>'
                     . GS_Brand::icon_tag($icon, 'soft', 'gb-icon--sm')
                     . '<span>' . $item[2] . '</span></li>';
@@ -188,31 +200,14 @@ class GS_Article_Style {
         // В документных кластерах персонажа не показываем: рядом с иском и
         // характеристикой на ученика он выглядит неуместно. В медийных
         // сервисах — озвучка, музыка, видео — он остаётся.
-        $pixel = self::documental() ? '' : GS_Brand::mascot_tag('ukazyvaet', 'gs-pixel', 64);
+        $doc = class_exists('GS_Legal') && GS_Legal::is_doc_post();
+        $pixel = $doc ? '' : GS_Brand::mascot_tag('ukazyvaet', 'gs-pixel', 64);
         return '<div class="gb-callout gb-callout--cta gs-article-cta">' . $pixel
             . '<div class="gs-article-cta__text">'
             . '<span class="gb-callout__title">' . esc_html($target['title']) . '</span>'
             . esc_html($target['text']) . '</div>'
             . '<a class="gb-btn" href="' . esc_url($target['url']) . '">'
             . esc_html($target['cta'] ?? 'Открыть') . '</a></div>';
-    }
-
-    /** Статья документного кластера: претензия, приказ, семья, школа. */
-    private static function documental() {
-        if (!class_exists('GS_Legal')) {
-            return false;
-        }
-        $post = get_queried_object();
-        if (!($post instanceof WP_Post)) {
-            return false;
-        }
-        $lane = (string) get_post_meta($post->ID, '_gs_queue_lane', true);
-        foreach (GS_Legal::sections() as $section) {
-            if ((string) ($section['lane'] ?? '') === $lane) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

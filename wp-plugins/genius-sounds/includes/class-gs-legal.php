@@ -122,6 +122,32 @@ class GS_Legal {
         return $out;
     }
 
+    /**
+     * Статья документного кластера: претензия, приказ, семья, школа.
+     *
+     * Нужно всем, кто дописывает что-то к статье: человеку, читающему про
+     * раздел имущества, баннер «заработок на нейросетях» и ссылка на статью
+     * про Sora 2 не нужны ни в каком виде.
+     */
+    public static function is_doc_post($post = null) {
+        if ($post === null) {
+            $post = get_queried_object();
+        }
+        if (!($post instanceof WP_Post) || $post->post_type !== 'post') {
+            return false;
+        }
+        $lane = (string) get_post_meta($post->ID, '_gs_queue_lane', true);
+        if ($lane === '') {
+            return false;
+        }
+        foreach (self::sections() as $section) {
+            if ((string) ($section['lane'] ?? '') === $lane) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** К какому кластеру относится страница. */
     public static function root_of($id) {
         $id = self::resolve($id);
