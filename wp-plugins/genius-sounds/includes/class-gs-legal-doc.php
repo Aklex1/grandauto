@@ -139,10 +139,54 @@ class GS_Legal_Doc {
         $row['plan'] = $price;
         self::save($id, $row);
 
-        if (!class_exists('KIE_TTS_Payment')) {
+        $label = self::LABEL_PREFIX . preg_replace('~[^A-Za-z0-9]~', '', (string) $id);
+        $receiver = class_exists('KIE_TTS_Payment')
+            ? KIE_TTS_Payment::get_yoomoney_receiver()
+            : (string) get_option('kie_tts_yoomoney_receiver', '');
+        if ($receiver === '') {
             return '';
         }
-        return KIE_TTS_Payment::build_yoomoney_link(self::LABEL_PREFIX . $id, (float) $price);
+        $success = class_exists('KIE_TTS_Payment')
+            ? KIE_TTS_Payment::get_yoomoney_success_url()
+            : home_url('/success');
+
+        // Ссылку собираем сами — ровно теми же параметрами, что и остальные
+        // платежи сайта, но с человеческим назначением. У готового
+        // построителя назначение прибито как «TTS Balance Topup», и человек,
+        // который платит за претензию, видел бы на странице оплаты его.
+        // Уведомление приходит на адрес из настроек кошелька, а не из ссылки,
+        // поэтому приёмник остаётся тот же.
+        return add_query_arg(array(
+            'receiver'      => $receiver,
+            'quickpay-form' => 'shop',
+            'targets'       => self::payment_target($row, $price, $id),
+            'paymentType'   => 'AC',
+            'sum'           => number_format((float) $price, 2, '.', ''),
+            'label'         => $label,
+            'successURL'    => urlencode(add_query_arg('order', $id, GS_Legal::get_url(
+                GS_Legal::resolve($row['page']) !== '' ? $row['page'] : 'claim'
+            ))),
+        ), 'https://yoomoney.ru/quickpay/confirm.xml');
+    }
+
+    /**
+     * Назначение платежа: человек видит его на странице оплаты.
+     *
+     * Номер заказа в назначении нужен поддержке: по нему платёж находится и в
+     * истории кошелька, и в журнале уведомлений.
+     */
+    private static function payment_target($row, $price, $id) {
+        $full = (int) $price >= GS_Legal::PRICE_FULL;
+        if (($row['kind'] ?? '') === 'order') {
+            $what = $full
+                ? 'Возражение на судебный приказ и поворот исполнения'
+                : 'Возражение на судебный приказ';
+        } else {
+            $what = $full
+                ? 'Претензия, жалоба в надзор и черновик иска'
+                : 'Подготовка претензии';
+        }
+        return $what . ' (заказ ' . preg_replace('~[^A-Za-z0-9]~', '', (string) $id) . ')';
     }
 
     /**
