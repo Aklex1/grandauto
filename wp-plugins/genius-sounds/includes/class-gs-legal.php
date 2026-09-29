@@ -484,11 +484,30 @@ class GS_Legal {
             <label for="gs-legal-contact">Куда прислать документ</label>
             <input id="gs-legal-contact" type="text" placeholder="Почта или ник в Telegram">
 
-            <button type="button" class="gs-legal-btn" id="gs-legal-send">Отправить заявку</button>
-            <p class="gs-legal-note" id="gs-legal-status">Ответим и пришлём документ после оплаты.
-                Данные используем только для подготовки документа.</p>
+            <button type="button" class="gs-legal-btn" id="gs-legal-send">Разобрать ситуацию
+                бесплатно</button>
+            <p class="gs-legal-note" id="gs-legal-status">Сначала бесплатный разбор: кому
+                адресовать, что требовать и чего не хватает в описании. Оплата — после него.</p>
             <input type="hidden" id="gs-legal-case" value="<?php echo esc_attr($page['case'] ?? 'other'); ?>">
             <input type="hidden" id="gs-legal-page" value="<?php echo esc_attr($id); ?>">
+
+            <!-- Шаг 2: разбор и оплата -->
+            <div class="gs-legal-step" id="gs-legal-review" hidden>
+                <h3>Разбор вашей ситуации</h3>
+                <div class="gs-legal-review__text" id="gs-legal-review-text"></div>
+                <p class="gs-legal-note">Документ соберём по этому разбору. Поля в квадратных
+                    скобках — то, чего не было в описании: их нужно будет заполнить перед отправкой.</p>
+                <div class="gs-legal-pay" id="gs-legal-pay"></div>
+                <p class="gs-legal-note" id="gs-legal-status2"></p>
+            </div>
+
+            <!-- Шаг 3: готовые документы -->
+            <div class="gs-legal-step" id="gs-legal-done" hidden>
+                <h3>Документы готовы</h3>
+                <div id="gs-legal-parts"></div>
+                <p class="gs-legal-note">Проверьте даты, суммы и реквизиты, заполните поля в
+                    скобках. PDF получается печатью из Word или браузера.</p>
+            </div>
         </div>
         <?php
     }

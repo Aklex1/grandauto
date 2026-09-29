@@ -357,6 +357,36 @@ class GS_Rest {
         ));
 
         // Конвейер заказа: текст сразу и бесплатно, песня после оплаты.
+        // Юридические документы: разбор бесплатно, документ после оплаты.
+        // Открыто для всех: человек из рекламы не регистрируется.
+        register_rest_route(self::NS, '/legal/start', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_legal_start'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route(self::NS, '/legal/pay', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_legal_pay'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route(self::NS, '/legal/state', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_legal_state'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route(self::NS, '/legal/doc', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_legal_doc'),
+            'permission_callback' => '__return_true',
+        ));
+        // Ручная сборка документа: нужна, когда уведомление об оплате
+        // потерялось, и для проверки цепочки без живого платежа.
+        register_rest_route(self::NS, '/legal/make', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_legal_make'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/gift/start', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_gift_start'),
@@ -695,6 +725,43 @@ class GS_Rest {
             'ok'      => !empty($res['ok']),
             'message' => (string) ($res['message'] ?? ''),
         ));
+    }
+
+    public static function handle_legal_start($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        return rest_ensure_response(GS_Legal_Doc::start($params));
+    }
+
+    public static function handle_legal_pay($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $link = GS_Legal_Doc::pay_link((string) ($params['order'] ?? ''), (int) ($params['plan'] ?? 0));
+        if ($link === '') {
+            return rest_ensure_response(array('ok' => false, 'message' => 'Не удалось создать ссылку на оплату'));
+        }
+        return rest_ensure_response(array('ok' => true, 'link' => $link));
+    }
+
+    public static function handle_legal_state($request) {
+        return rest_ensure_response(GS_Legal_Doc::state((string) $request->get_param('order')));
+    }
+
+    public static function handle_legal_doc($request) {
+        GS_Legal_Doc::serve_doc((string) $request->get_param('order'), (int) $request->get_param('part'));
+        exit;
+    }
+
+    public static function handle_legal_make($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        return rest_ensure_response(GS_Legal_Doc::make((string) ($params['order'] ?? '')));
     }
 
     public static function handle_gift_start($request) {
