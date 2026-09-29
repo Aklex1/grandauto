@@ -133,3 +133,93 @@ body.gs-page .gb-feature h3 {
         height: 30px;
     }
 }
+
+/* --------------------------------------------------------------------------
+ * Оформление статей: подпись, заголовки с иконками, списки, врезка.
+ * ----------------------------------------------------------------------- */
+
+body.gs-post-page .w-post-elm.post_content .gs-byline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 22px;
+    color: var(--gs-muted);
+    font-size: 15px;
+}
+
+body.gs-post-page .w-post-elm.post_content .gs-byline__avatar {
+    width: 40px;
+    flex: none;
+}
+
+/* Заголовок с иконкой. Иконка не должна сжиматься на длинном заголовке. */
+body.gs-post-page .w-post-elm.post_content h2.gb-h-icon {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+body.gs-post-page .w-post-elm.post_content h2.gb-h-icon .gb-icon {
+    width: 44px;
+    height: 44px;
+    flex: none;
+}
+
+/* Список-перечень. Маркеры убираем: их роль взяли иконки. */
+body.gs-post-page .w-post-elm.post_content ul.gb-list {
+    list-style: none;
+    padding-left: 0;
+}
+
+body.gs-post-page .w-post-elm.post_content ul.gb-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+body.gs-post-page .w-post-elm.post_content ul.gb-list li .gb-icon--sm {
+    width: 28px;
+    height: 28px;
+    flex: none;
+    margin-top: 1px;
+}
+
+/* Врезка с призывом в конце статьи. */
+body.gs-post-page .w-post-elm.post_content .gs-article-cta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 32px 0 8px;
+    padding: 20px 22px;
+    flex-wrap: wrap;
+}
+
+body.gs-post-page .w-post-elm.post_content .gs-article-cta__text {
+    flex: 1 1 260px;
+    min-width: 0;
+    line-height: 1.5;
+}
+
+body.gs-post-page .w-post-elm.post_content .gs-article-cta .gb-btn,
+body.gs-post-page .w-post-elm.post_content .gs-article-cta .gb-btn:hover {
+    flex: none;
+    /* Тема красит и подчёркивает все ссылки в тексте статьи, причём делает
+       это важным правилом: без !important на кнопке остаётся сиреневый цвет
+       ссылки, нечитаемый на бирюзовой заливке. */
+    color: #0b1220 !important;
+    text-decoration: none;
+    border-bottom: 0;
+}
+
+@media (max-width: 600px) {
+    body.gs-post-page .w-post-elm.post_content h2.gb-h-icon .gb-icon {
+        width: 34px;
+        height: 34px;
+    }
+
+    body.gs-post-page .w-post-elm.post_content .gs-article-cta .gb-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
