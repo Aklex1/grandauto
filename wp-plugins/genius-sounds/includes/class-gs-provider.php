@@ -46,7 +46,11 @@ class GS_Provider {
     public static function routes() {
         $routes = array(
             'chat' => array(
-                array('id' => 'chat:gemini-2.5-flash', 'kind' => 'chat', 'model' => 'gemini-2.5-flash'),
+                // gemini-2.5-flash поставщик снял с этого канала: на запрос он
+                // отвечает «The channel is not supported», и адаптер уходил на
+                // запасной маршрут постоянно. Ему на замену — gemini-3-5-flash
+                // в канале OpenAI, проверен запросом.
+                array('id' => 'chat:gemini-3-5-flash', 'kind' => 'chat', 'model' => 'gemini-3-5-flash-openai'),
                 array('id' => 'chat:gpt-5-2',          'kind' => 'chat', 'model' => 'gpt-5-2'),
             ),
 
@@ -392,7 +396,17 @@ class GS_Provider {
      */
     public static function chat_messages($messages, $opts = array()) {
         $last = 'ни один маршрут не ответил';
-        foreach (self::pick('chat') as $route) {
+
+        // Можно назвать модель прямо: тогда перебора нет. Нужно для проверки
+        // новых моделей — какая из них отвечает и в каком виде. Состояние
+        // маршрутов при этом не трогаем: проверка не должна выключать
+        // рабочий маршрут и засорять историю переключений.
+        $pinned = isset($opts['model']) ? trim((string) $opts['model']) : '';
+        $routes = $pinned !== ''
+            ? array(array('id' => 'chat:' . $pinned, 'kind' => 'chat', 'model' => $pinned))
+            : self::pick('chat');
+
+        foreach ($routes as $route) {
             $payload = array(
                 'model'    => $route['model'],
                 'stream'   => false,
@@ -408,7 +422,9 @@ class GS_Provider {
             if ($res['ok']) {
                 $content = (string) ($res['body']['choices'][0]['message']['content'] ?? '');
                 if (trim($content) !== '') {
-                    self::mark_up($route['id']);
+                    if ($pinned === '') {
+                        self::mark_up($route['id']);
+                    }
                     return array(
                         'ok'      => true,
                         'content' => $content,
@@ -425,7 +441,7 @@ class GS_Provider {
             }
 
             $last = $res['message'];
-            if (!self::worth_switching($res['message'])) {
+            if ($pinned !== '' || !self::worth_switching($res['message'])) {
                 // Отказ по сути запроса: у соседней модели будет то же самое.
                 break;
             }

@@ -308,6 +308,15 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Проверка чат-моделей: какая отвечает и в каком виде приходит
+        // разметка. Без этого выяснять, почему статьи выходят без
+        // заголовков, приходится по готовым записям.
+        register_rest_route(self::NS, '/lab/chat-probe', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_chat_probe'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/lab/credits', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_lab_credits'),
@@ -2733,6 +2742,47 @@ class GS_Rest {
             return new WP_Error('gs_no_url', 'Нужен адрес файла', array('status' => 400));
         }
         return rest_ensure_response(GS_Lab::vocal_probe($url, $variant));
+    }
+
+    /**
+     * Короткий запрос к названной чат-модели.
+     *
+     * Отдаём ответ как есть и рядом — счётчики разметки: по ним сразу видно,
+     * доходят ли от модели заголовки, или их выедает по дороге.
+     */
+    public static function handle_chat_probe($request) {
+        $params = (array) $request->get_json_params();
+        $model  = isset($params['model']) ? sanitize_text_field((string) $params['model']) : '';
+        $system = isset($params['system']) ? (string) $params['system'] : 'Отвечай по делу.';
+        $user   = isset($params['user']) ? (string) $params['user'] : '';
+        if (trim($user) === '') {
+            return new WP_Error('gs_no_prompt', 'Нужен текст запроса', array('status' => 400));
+        }
+
+        $res = GS_Provider::chat_messages(array(
+            array('role' => 'system', 'content' => $system),
+            array('role' => 'user',   'content' => $user),
+        ), array(
+            'model'      => $model,
+            'max_tokens' => isset($params['max_tokens']) ? (int) $params['max_tokens'] : 900,
+            'timeout'    => 240,
+        ));
+
+        $content = (string) ($res['content'] ?? '');
+        return rest_ensure_response(array(
+            'ok'      => !empty($res['ok']),
+            'route'   => (string) ($res['route'] ?? ''),
+            'message' => (string) ($res['message'] ?? ''),
+            'detail'  => (string) ($res['detail'] ?? ''),
+            'chars'   => mb_strlen($content),
+            'marks'   => array(
+                'h2_tag' => preg_match_all('~<h2~i', $content),
+                'p_tag'  => preg_match_all('~<p[\s>]~i', $content),
+                'md_h2'  => preg_match_all('~(?m)^\s{0,3}##\s~u', $content),
+                'md_li'  => preg_match_all('~(?m)^\s{0,3}[-*]\s~u', $content),
+            ),
+            'content' => $content,
+        ));
     }
 
     public static function handle_lab_credits($request) {
