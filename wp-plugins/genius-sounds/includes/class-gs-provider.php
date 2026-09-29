@@ -46,12 +46,15 @@ class GS_Provider {
     public static function routes() {
         $routes = array(
             'chat' => array(
-                // gemini-2.5-flash поставщик снял с этого канала: на запрос он
-                // отвечает «The channel is not supported», и адаптер уходил на
-                // запасной маршрут постоянно. Ему на замену — gemini-3-5-flash
-                // в канале OpenAI, проверен запросом.
-                array('id' => 'chat:gemini-3-5-flash', 'kind' => 'chat', 'model' => 'gemini-3-5-flash-openai'),
+                // Первым — тот, что успевает ответить в отведённое сервером
+                // время: на длинной статье gemini не укладывается, и запрос
+                // обрывается шлюзом.
                 array('id' => 'chat:gpt-5-2',          'kind' => 'chat', 'model' => 'gpt-5-2'),
+                // gemini-2.5-flash поставщик снял с этого канала: на запрос он
+                // отвечает «The channel is not supported», и запасного маршрута
+                // у чата не осталось вовсе. На замену — gemini-3-5-flash в
+                // канале OpenAI, проверен запросом.
+                array('id' => 'chat:gemini-3-5-flash', 'kind' => 'chat', 'model' => 'gemini-3-5-flash-openai'),
             ),
 
             'image' => array(
