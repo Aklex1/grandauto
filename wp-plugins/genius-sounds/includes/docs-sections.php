@@ -133,7 +133,7 @@ return array(
         'full'   => 490,
         'plan'   => array('Один документ', 'Месяц без ограничений'),
         'parts'  => array(
-            'base' => array(array('type' => 'doc', 'title' => 'Документ')),
+            'base' => array(array('type' => 'doc', 'title' => 'Готовый документ')),
             'full' => array(
                 array('type' => 'extra', 'title' => 'Дополнительный материал к документу'),
     ),

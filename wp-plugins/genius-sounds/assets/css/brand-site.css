@@ -89,3 +89,22 @@ body.gs-page .gb-feature h3 {
         width: 72px;
     }
 }
+
+/* Персонаж на странице «не нашлось»: у набора для этого своя поза. */
+.gs-404 .gs-pixel--404 {
+    display: block;
+    width: 140px;
+    margin: 0 auto 8px;
+}
+
+/* Персонаж в подвале статьи, рядом с призывом. */
+.gb-callout .gs-pixel {
+    width: 64px;
+    flex: none;
+}
+
+@media (max-width: 600px) {
+    .gs-404 .gs-pixel--404 {
+        width: 110px;
+    }
+}

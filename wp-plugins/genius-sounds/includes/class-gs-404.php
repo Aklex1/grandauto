@@ -120,6 +120,9 @@ class GS_404 {
         ?>
         <div class="gs-wrap gs-studio gs-404">
             <section class="gs-404__head">
+                <?php if (class_exists('GS_Brand')) {
+                    echo GS_Brand::mascot_tag('oshibka', 'gs-pixel gs-pixel--404', 140);
+                } ?>
                 <span class="gs-404__code" aria-hidden="true">404</span>
                 <h1 class="gs-404__title">Такой страницы нет</h1>
                 <p class="gs-404__lead">

@@ -621,6 +621,10 @@ class GS_Legal_Doc {
 
     private static function clean_html($html) {
         $html = trim((string) $html);
+        // Модель иногда начинает ответ цитатой в стиле markdown. В HTML это
+        // превращается в «&gt;» первой строкой разбора.
+        $html = preg_replace('~^(?:&gt;|>)\s*~u', '', $html);
+        $html = preg_replace('~(<p[^>]*>)\s*(?:&gt;|>)\s*~u', '$1', $html);
         $html = preg_replace('~^```(?:html)?\s*|\s*```$~u', '', $html);
         $html = preg_replace('~<h1[^>]*>.*?</h1>~isu', '', $html);
         return trim(wp_kses_post($html));
