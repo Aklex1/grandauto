@@ -107,6 +107,37 @@ curl -s -X POST http://IP:8099/youtube-audio -H "Content-Type: application/json"
   -H "X-API-Key: КЛЮЧ" -d '{"url":"https://www.youtube.com/watch?v=...","format":"mp3"}'
 ```
 
+## Если бесплатная озвучка отвечает 403
+
+Ошибка выглядит так: «Синтез не удался: 403, Invalid response status» с
+адресом `speech.platform.bing.com`. Это не сервер и не ключ: Microsoft
+меняет рукопожатие у бесплатного синтеза, и версия `edge-tts`, которая
+работала вчера, начинает получать отказ. Проверено: на одной и той же
+машине 7.0.0 отвечает 403, а 7.2.8 синтезирует нормально.
+
+Лечится обновлением библиотеки:
+
+```bash
+sudo /opt/genius-media/venv/bin/pip install -U edge-tts
+sudo systemctl restart media-service
+curl -s http://127.0.0.1:8099/health
+```
+
+В ответе проверки живости есть поле `edge_tts` — с него и начинайте
+разбор: если там старая версия, дело в ней. Под Docker то же самое:
+
+```bash
+docker compose exec media pip install -U edge-tts && docker compose restart media
+```
+
+По той же причине версия не прибита в `requirements.txt`: ставится не
+ниже 7.2.8. Чтобы не ловить сбой снова, раз в месяц обновляйте обе
+подвижные зависимости:
+
+```bash
+sudo /opt/genius-media/venv/bin/pip install -U edge-tts yt-dlp && sudo systemctl restart media-service
+```
+
 ## Если ролики не скачиваются
 
 YouTube иногда требует подтверждения, что запрос не от робота: чаще всего

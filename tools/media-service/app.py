@@ -255,12 +255,26 @@ def ytdlp_ready():
         return False
 
 
+def edge_version() -> str:
+    """Версия библиотеки синтеза.
+
+    Нужна в проверке живости: когда бесплатная озвучка отвечает 403, первым
+    делом смотрят сюда — почти всегда на сервере осталась старая версия.
+    """
+    try:
+        import edge_tts
+        return getattr(edge_tts, "__version__", "?")
+    except Exception:
+        return "нет"
+
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "ffmpeg": shutil.which("ffmpeg") is not None,
         "ytdlp": ytdlp_ready(),
+        "edge_tts": edge_version(),
         "files": len(list(FILES_DIR.glob("*"))),
     }
 
@@ -307,13 +321,36 @@ async def tts(payload: TtsRequest, x_api_key: Optional[str] = Header(default=Non
     name = f"tts-{uuid.uuid4().hex[:16]}.mp3"
     target = FILES_DIR / name
 
-    try:
-        communicate = edge_tts.Communicate(text, voice)
-        await communicate.save(str(target))
-    except Exception as error:
-        # Недописанный файл оставлять нельзя — он потом отдастся как готовый.
-        target.unlink(missing_ok=True)
-        raise HTTPException(status_code=502, detail=f"Синтез не удался: {error}")
+    # Поставщик изредка рвёт соединение на ровном месте — вторая попытка
+    # дешевле, чем ошибка у человека. Больше двух смысла нет: если дело в
+    # рукопожатии, отказ будет одинаковым хоть десять раз.
+    last = None
+    for attempt in (1, 2):
+        try:
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(str(target))
+            last = None
+            break
+        except Exception as error:
+            last = error
+            # Недописанный файл оставлять нельзя — он потом отдастся как готовый.
+            target.unlink(missing_ok=True)
+            print(
+                f"[tts] попытка {attempt} не удалась: {type(error).__name__}: {error}",
+                file=sys.stderr, flush=True,
+            )
+
+    if last is not None:
+        # Человеку служебный адрес с токенами не нужен и ни о чём не говорит —
+        # он уходит в журнал. Отдельно называем 403: это почти всегда
+        # устаревшая edge-tts на сервере, и по этому слову владелец найдёт
+        # в README команду обновления.
+        detail = "Бесплатная озвучка временно недоступна. Попробуйте ещё раз " \
+                 "через несколько минут или выберите премиум-голос."
+        if "403" in str(last):
+            detail = "Бесплатный голос временно недоступен: поставщик отклонил " \
+                     "запрос. Мы уже знаем о сбое — попробуйте премиум-голос."
+        raise HTTPException(status_code=502, detail=detail)
 
     if not target.exists() or target.stat().st_size < 512:
         target.unlink(missing_ok=True)
