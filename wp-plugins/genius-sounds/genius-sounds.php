@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.10.9
+ * Version:     2.10.10
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '2.10.9');
+define('GS_VERSION', '2.10.10');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -32,6 +32,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-return.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-balance-home.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-pay.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-media-proxy.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-redirects.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-gift.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-legal.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-legal-doc.php';
@@ -117,6 +118,7 @@ class Genius_Sounds_Plugin {
         GS_SFX::boot();
         GS_Rest::boot();
         GS_Media_Proxy::boot();
+        GS_Redirects::boot();
         GS_Admin::boot();
         GS_Pages::boot();
         GS_Return::boot();
