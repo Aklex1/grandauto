@@ -97,7 +97,8 @@ class GS_Article_Style {
             return $html;
         }
 
-        return self::byline($html) . self::heading_icons(self::list_icons($html)) . self::cta();
+        return self::byline($html) . self::heading_icons(self::list_icons($html))
+            . self::cta() . self::related();
     }
 
     /* ---------------------------------------------------------------------
@@ -191,6 +192,65 @@ class GS_Article_Style {
             . esc_html($target['text']) . '</div>'
             . '<a class="gb-btn" href="' . esc_url($target['url']) . '">'
             . esc_html($target['cta'] ?? 'Открыть') . '</a></div>';
+    }
+
+    /**
+     * «Читайте дальше»: три статьи того же кластера.
+     *
+     * Стоит на месте кнопок «поделиться», которые тема рисует после статьи.
+     * Кнопки не работали: десять сетей подряд в вертикальной колонке никто
+     * не нажимает, а место они занимали экраном. Ссылки на соседние статьи
+     * в том же разборе и человеку полезнее, и кластеру.
+     */
+    private static function related() {
+        $post = get_queried_object();
+        if (!($post instanceof WP_Post)) {
+            return '';
+        }
+
+        $args = array(
+            'post_type'           => 'post',
+            'post_status'         => 'publish',
+            'posts_per_page'      => 3,
+            'post__not_in'        => array($post->ID),
+            'ignore_sticky_posts' => true,
+            'no_found_rows'       => true,
+            'orderby'             => 'date',
+            'order'               => 'DESC',
+        );
+
+        // Сначала ищем соседей по кластеру: у статей потока публикаций общая
+        // тема, и переход внутри неё осмысленнее, чем в случайную рубрику.
+        $lane = (string) get_post_meta($post->ID, '_gs_queue_lane', true);
+        $found = array();
+        if ($lane !== '') {
+            $found = get_posts($args + array('meta_key' => '_gs_queue_lane', 'meta_value' => $lane));
+        }
+        if (count($found) < 3) {
+            $cats = wp_get_post_categories($post->ID);
+            if ($cats) {
+                $more = get_posts($args + array('category__in' => $cats,
+                                                'posts_per_page' => 3 - count($found)));
+                $seen = wp_list_pluck($found, 'ID');
+                foreach ($more as $item) {
+                    if (!in_array($item->ID, $seen, true)) {
+                        $found[] = $item;
+                    }
+                }
+            }
+        }
+        if (!$found) {
+            return '';
+        }
+
+        $out = '<section class="gs-related"><h2 class="gb-h-icon">'
+            . GS_Brand::icon_tag('doc') . 'Читайте дальше</h2><ul class="gs-related__list">';
+        foreach (array_slice($found, 0, 3) as $item) {
+            $out .= '<li><a href="' . esc_url(get_permalink($item)) . '">'
+                . GS_Brand::icon_tag(self::icon_for($item->post_title), 'soft', 'gb-icon--sm')
+                . '<span>' . esc_html(get_the_title($item)) . '</span></a></li>';
+        }
+        return $out . '</ul></section>';
     }
 
     /* ---------------------------------------------------------------------

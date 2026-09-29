@@ -223,3 +223,66 @@ body.gs-post-page .w-post-elm.post_content .gs-article-cta .gb-btn:hover {
         justify-content: center;
     }
 }
+
+/* --------------------------------------------------------------------------
+ * Кнопки «поделиться» после статьи.
+ *
+ * Их рисует тема отдельной секцией: десять сетей подряд, в узкой колонке
+ * они складываются в вертикальный столбик и занимают экран пустоты. Ни
+ * одного нажатия они не приносят, поэтому секцию убираем целиком, а на её
+ * место в статье встаёт блок «Читайте дальше».
+ *
+ * Прячем и саму секцию, и блок внутри: :has() понимают не все браузеры, и
+ * во втором правиле остаётся запасной вариант.
+ * ----------------------------------------------------------------------- */
+
+body.single-post .l-section:has(.w-sharing),
+body.gs-post-page .l-section:has(.w-sharing) {
+    display: none;
+}
+
+body.single-post .w-sharing,
+body.gs-post-page .w-sharing {
+    display: none;
+}
+
+/* Читайте дальше. */
+body.gs-post-page .w-post-elm.post_content .gs-related {
+    margin: 36px 0 0;
+    padding-top: 26px;
+    border-top: 1px solid var(--gs-border);
+}
+
+body.gs-post-page .w-post-elm.post_content .gs-related__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+body.gs-post-page .w-post-elm.post_content .gs-related__list li {
+    margin: 0;
+    border-bottom: 1px solid var(--gs-border);
+}
+
+body.gs-post-page .w-post-elm.post_content .gs-related__list li:last-child {
+    border-bottom: 0;
+}
+
+body.gs-post-page .w-post-elm.post_content .gs-related__list a,
+body.gs-post-page .w-post-elm.post_content .gs-related__list a:visited {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0;
+    text-decoration: none;
+    line-height: 1.4;
+    /* Цвет ссылки оставляем темин: он читается на тёмном фоне и сразу
+       говорит, что это ссылка. Спорить с ним важным правилом ради оттенка
+       не стоит — в списке ссылок это как раз уместно. */
+}
+
+body.gs-post-page .w-post-elm.post_content .gs-related__list .gb-icon--sm {
+    width: 32px;
+    height: 32px;
+    flex: none;
+}
