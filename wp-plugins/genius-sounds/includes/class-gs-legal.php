@@ -50,6 +50,31 @@ class GS_Legal {
         return isset($tree[$id]) ? $tree[$id] : null;
     }
 
+    /**
+     * Идентификатор страницы по слагу.
+     *
+     * Снаружи приходит и то, и другое: в форме стоит идентификатор, а в
+     * ссылках и чужих запросах встречается слаг. Из-за этой разницы заказ по
+     * судебному приказу однажды собрался как претензия — кластер определялся
+     * по несуществующему идентификатору и молча падал в значение по
+     * умолчанию.
+     */
+    public static function resolve($key) {
+        $key = (string) $key;
+        if ($key === '') {
+            return '';
+        }
+        if (self::page($key)) {
+            return $key;
+        }
+        foreach (self::tree() as $id => $page) {
+            if ($page['slug'] === $key) {
+                return $id;
+            }
+        }
+        return '';
+    }
+
     /** Корневые страницы: посадочные. */
     public static function roots() {
         $out = array();
@@ -74,6 +99,7 @@ class GS_Legal {
 
     /** К какому кластеру относится страница. */
     public static function root_of($id) {
+        $id = self::resolve($id);
         $page = self::page($id);
         if (!$page) {
             return '';

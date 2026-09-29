@@ -82,6 +82,10 @@ class GS_Legal_Doc {
         }
 
         $page = sanitize_title((string) ($fields['page'] ?? 'claim'));
+        // Приводим к идентификатору дерева: снаружи приходит и слаг тоже, а
+        // от страницы зависит, какой набор документов человек получит.
+        $resolved = class_exists('GS_Legal') ? GS_Legal::resolve($page) : '';
+        $page = $resolved !== '' ? $resolved : 'claim';
         $kind = self::kind_of($page);
 
         $res = GS_Provider::chat(self::review_system($kind), self::review_task($fields, $page), array(
@@ -370,7 +374,10 @@ class GS_Legal_Doc {
             . "3. Не давай гарантий результата и не обещай сроков рассмотрения, которых нет в законе.\n"
             . "4. Пиши официально-деловым стилем от первого лица заявителя, без эмоций и без воды.\n"
             . "5. Отвечай готовым HTML: абзацы <p>, заголовок документа <h2>, списки <ol>/<ul>. "
-            . "Без <html>, <head>, <h1> и без markdown.\n";
+            . "Без <html>, <head>, <h1> и без markdown.\n"
+            . "6. Не обсуждай задание и не предлагай вместо него другой документ: составь "
+            . "именно тот, который заказан. Если каких-то сведений нет — оставь поле в "
+            . "квадратных скобках, но документ доведи до конца.\n";
     }
 
     private static function review_system($kind) {
