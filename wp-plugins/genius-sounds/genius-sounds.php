@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.13.0
+ * Version:     2.14.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -289,6 +289,7 @@ class Genius_Sounds_Plugin {
             wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
             wp_enqueue_style('genius-sounds-blog', GS_PLUGIN_URL . 'assets/css/blog.css', array('genius-sounds-catalog'), GS_VERSION);
             wp_enqueue_script('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/js/catalog.js', array(), GS_VERSION, true);
+            wp_enqueue_script('genius-sounds-tools', GS_PLUGIN_URL . 'assets/js/tools-carousel.js', array(), GS_VERSION, true);
         }
 
         if ($api) {

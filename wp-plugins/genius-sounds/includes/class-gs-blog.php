@@ -161,6 +161,49 @@ class GS_Blog {
         return $content . self::tools_block();
     }
 
+    /**
+     * Иконка под инструмент. Карточки без картинки читались одинаково, и
+     * глазу не за что было зацепиться при быстрой прокрутке.
+     */
+    private static function tool_icon($title) {
+        // Порядок важен: «каталог звуков» ловился на слове «звук» и получал
+        // ту же иконку, что генератор.
+        $map = array(
+            'каталог'     => 'db',
+            'вокал'       => 'flow',
+            'спецэффект'  => 'ai',
+            'звук'        => 'ai',
+            'аватар'      => 'users',
+            'расшифровк'  => 'doc',
+            'видео'       => 'speed',
+            'музык'       => 'idea',
+            'песн'        => 'send',
+            'текст'       => 'doc',
+            'обложк'      => 'target',
+            'голос'       => 'support',
+            'дубляж'      => 'chat',
+            'презентац'   => 'chart',
+            'качеств'     => 'growth',
+            'шум'         => 'shield',
+        );
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($title) : strtolower($title);
+        foreach ($map as $needle => $icon) {
+            if (mb_strpos($lower, $needle) !== false) {
+                return $icon;
+            }
+        }
+        return 'rocket';
+    }
+
+    /**
+     * Инструменты в конце статьи — лентой с прокруткой.
+     *
+     * Сеткой из одиннадцати карточек блок занимал целый экран и обрывал
+     * чтение: после статьи человек упирался в стену одинаковых плашек.
+     * Лента показывает три-четыре карточки, остальные — движением вбок.
+     * Прокрутка своя, браузерная: стрелки только подталкивают её, поэтому
+     * без скриптов блок остаётся рабочим, просто без кнопок.
+     */
     public static function tools_block() {
         $tools = array(
             array(
@@ -186,19 +229,37 @@ class GS_Blog {
             );
         }
 
+        $brand = class_exists('GS_Brand');
+
         ob_start();
         ?>
-        <aside class="gs-post-tools">
-            <h2 class="gs-post-tools__title">Попробуйте инструменты Genius-bot</h2>
-            <div class="gs-post-tools__grid">
-                <?php foreach ($tools as $tool): ?>
-                    <article class="gs-post-tools__card">
-                        <h3><a href="<?php echo esc_url($tool['url']); ?>"><?php echo esc_html($tool['title']); ?></a></h3>
-                        <p><?php echo esc_html($tool['text']); ?></p>
-                        <a class="gs-post-tools__cta" href="<?php echo esc_url($tool['url']); ?>"><?php echo esc_html($tool['cta']); ?></a>
-                    </article>
-                <?php endforeach; ?>
+        <aside class="gs-post-tools" data-gs-carousel>
+            <div class="gs-post-tools__head">
+                <h2 class="gs-post-tools__title">Попробуйте инструменты <span class="gs-nobr">Genius-bot</span></h2>
+                <div class="gs-post-tools__nav">
+                    <button type="button" class="gs-post-tools__arrow" data-gs-prev
+                            aria-label="Предыдущие инструменты">&#8249;</button>
+                    <button type="button" class="gs-post-tools__arrow" data-gs-next
+                            aria-label="Следующие инструменты">&#8250;</button>
+                </div>
             </div>
+            <div class="gs-post-tools__viewport" data-gs-track tabindex="0">
+                <div class="gs-post-tools__track">
+                    <?php foreach ($tools as $tool): ?>
+                        <article class="gs-post-tools__card">
+                            <?php if ($brand): ?>
+                                <span class="gs-post-tools__icon">
+                                    <?php echo GS_Brand::icon_tag(self::tool_icon($tool['title']), 'soft', 'gs-post-tools__img'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                                </span>
+                            <?php endif; ?>
+                            <h3><a href="<?php echo esc_url($tool['url']); ?>"><?php echo esc_html($tool['title']); ?></a></h3>
+                            <p><?php echo esc_html($tool['text']); ?></p>
+                            <a class="gs-post-tools__cta" href="<?php echo esc_url($tool['url']); ?>"><?php echo esc_html($tool['cta']); ?></a>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <div class="gs-post-tools__rail"><span data-gs-bar></span></div>
         </aside>
         <?php
         return ob_get_clean();

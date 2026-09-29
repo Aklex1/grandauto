@@ -68,11 +68,13 @@ class GS_Sticky {
             );
         }
 
-        // Юридические кластеры: статья ведёт на свою страницу блока, а не на
-        // нейрохаб. Ссылка на неё в тексте уже стоит — берём её, иначе
-        // посадочную кластера.
+        // Документные кластеры: статья ведёт на свой раздел, а не на
+        // нейрохаб. Разделов четыре и будет больше, поэтому сверяемся с
+        // реестром, а не со списком двух потоков: без этого новые кластеры
+        // — развод с алиментами и школьные документы — попадали в общий
+        // разбор и уводили читателя в нейрохаб.
         $lane = (string) get_post_meta($post->ID, '_gs_queue_lane', true);
-        if (class_exists('GS_Legal') && ($lane === GS_Legal::LANE_CLAIM || $lane === GS_Legal::LANE_ORDER)) {
+        if (class_exists('GS_Legal') && $lane !== '') {
             $legal = self::legal_card($lane, (string) $post->post_content);
             if ($legal !== null) {
                 return $legal;
@@ -130,13 +132,30 @@ class GS_Sticky {
     }
 
     /**
-     * Карточка юридического блока: страница из текста или посадочная кластера.
+     * Карточка документного раздела: страница из текста или посадочная.
+     *
+     * Раздел определяем по потоку публикаций, приписанному статье, а текст,
+     * цену и надпись на кнопке берём из реестра разделов: у школьных
+     * документов и цена своя, и обещание другое, чем у претензии.
+     *
+     * @return array{url:string,title:string,text:string,cta:string}|null
      */
     private static function legal_card($lane, $content) {
-        $root = $lane === GS_Legal::LANE_ORDER ? 'order' : 'claim';
+        $root = '';
+        foreach (GS_Legal::sections() as $id => $section) {
+            if ((string) ($section['lane'] ?? '') === $lane) {
+                $root = $id;
+                break;
+            }
+        }
+        if ($root === '') {
+            return null;
+        }
+
+        // Внутри кластера ведём на ту страницу, ссылка на которую в статье
+        // стоит первой: она и есть её тема.
         $best = null;
         $at = PHP_INT_MAX;
-
         foreach (GS_Legal::children($root) as $id => $child) {
             $pos = strpos($content, '/' . $child['slug'] . '/');
             if ($pos !== false && $pos < $at) {
@@ -149,15 +168,16 @@ class GS_Sticky {
         if (!$page) {
             return null;
         }
+
+        $section = GS_Legal::section_of($id);
+        $ui = (array) ($section['ui'] ?? array());
+        $text = trim((string) ($ui['sticky'] ?? 'Опишите ситуацию — соберём документ.'));
+
         return array(
             'url'   => GS_Legal::get_url($id),
             'title' => (string) $page['menu'],
-            'text'  => $lane === GS_Legal::LANE_ORDER
-                ? 'Опишите ситуацию — соберём возражение и посчитаем срок. От '
-                  . (int) GS_Legal::PRICE_BASE . ' ₽.'
-                : 'Опишите ситуацию — соберём претензию со статьями и расчётом. От '
-                  . (int) GS_Legal::PRICE_BASE . ' ₽.',
-            'cta'   => 'Составить документ',
+            'text'  => $text . ' От ' . GS_Legal::price_base($id) . ' ₽.',
+            'cta'   => (string) ($ui['action'] ?? 'Составить документ'),
         );
     }
 
