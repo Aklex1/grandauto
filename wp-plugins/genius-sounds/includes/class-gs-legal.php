@@ -378,9 +378,10 @@ class GS_Legal {
 
             <section class="gs-legal-hero">
                 <div class="gs-legal-hero__text">
-                    <?php if (class_exists('GS_Brand')) {
-                        echo GS_Brand::mascot_tag($sec['mascot'] ?? 'stoit', 'gs-pixel gs-pixel--hero', 96);
-                    } ?>
+                    <?php // Персонажа здесь нет намеренно: человек приходит
+                          // сюда с иском, приказом или характеристикой на
+                          // ученика, и мультипликационный робот над таким
+                          // заголовком читается как несерьёзность. ?>
                     <h1><?php echo esc_html($page['h1']); ?></h1>
                     <p class="gs-legal-lead"><?php echo esc_html($page['lead']); ?></p>
                     <ul class="gs-legal-bullets">

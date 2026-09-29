@@ -185,13 +185,34 @@ class GS_Article_Style {
         if (!is_array($target) || empty($target['url'])) {
             return '';
         }
-        $pixel = GS_Brand::mascot_tag('ukazyvaet', 'gs-pixel', 64);
+        // В документных кластерах персонажа не показываем: рядом с иском и
+        // характеристикой на ученика он выглядит неуместно. В медийных
+        // сервисах — озвучка, музыка, видео — он остаётся.
+        $pixel = self::documental() ? '' : GS_Brand::mascot_tag('ukazyvaet', 'gs-pixel', 64);
         return '<div class="gb-callout gb-callout--cta gs-article-cta">' . $pixel
             . '<div class="gs-article-cta__text">'
             . '<span class="gb-callout__title">' . esc_html($target['title']) . '</span>'
             . esc_html($target['text']) . '</div>'
             . '<a class="gb-btn" href="' . esc_url($target['url']) . '">'
             . esc_html($target['cta'] ?? 'Открыть') . '</a></div>';
+    }
+
+    /** Статья документного кластера: претензия, приказ, семья, школа. */
+    private static function documental() {
+        if (!class_exists('GS_Legal')) {
+            return false;
+        }
+        $post = get_queried_object();
+        if (!($post instanceof WP_Post)) {
+            return false;
+        }
+        $lane = (string) get_post_meta($post->ID, '_gs_queue_lane', true);
+        foreach (GS_Legal::sections() as $section) {
+            if ((string) ($section['lane'] ?? '') === $lane) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

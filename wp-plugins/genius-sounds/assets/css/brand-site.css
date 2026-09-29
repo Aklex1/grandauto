@@ -70,24 +70,19 @@ body.gs-page .gb-feature h3 {
     height: auto;
 }
 
-/* Персонаж рядом с первым экраном посадочной. */
-.gs-legal-hero__text .gs-pixel--hero {
+/* Карточка шага: иконка, под ней название, под ним пояснение.
+   Картинка оставалась строчной, и название прилипало к ней сбоку, встав на
+   её базовую линию, — отсюда и съехавшая верстка. */
+.gs-legal-card > .gb-icon {
     display: block;
-    width: 96px;
+    width: 40px;
+    height: 40px;
     margin: 0 0 12px;
 }
 
-/* Иконка в карточке шага. */
-.gs-legal-card > .gb-icon {
-    width: 40px;
-    height: 40px;
-    margin-bottom: 8px;
-}
-
-@media (max-width: 600px) {
-    .gs-legal-hero__text .gs-pixel--hero {
-        width: 72px;
-    }
+.gs-legal-card > .gb-icon + b {
+    display: block;
+    line-height: 1.35;
 }
 
 /* Персонаж на странице «не нашлось»: у набора для этого своя поза. */
