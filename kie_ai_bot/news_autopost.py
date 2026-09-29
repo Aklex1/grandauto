@@ -26,7 +26,7 @@ import os
 import re
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 from typing import List, Optional
@@ -622,7 +622,7 @@ async def publish_one_news(bot: Bot) -> bool:
 
         if news_moderation.enabled():
             news_moderation.expire_old()
-            if await news_moderation.send_for_review(bot, item, draft.text):
+            if await news_moderation.send_for_review(bot, item, draft.text, "news"):
                 return True
             logger.warning("[новости] черновик не доставлен модераторам — публикуем сами")
 
@@ -670,7 +670,7 @@ async def publish_one_case(bot: Bot) -> bool:
 
         if news_moderation.enabled():
             news_moderation.expire_old()
-            if await news_moderation.send_for_review(bot, item, draft.text):
+            if await news_moderation.send_for_review(bot, item, draft.text, "case"):
                 return True
             logger.warning("[кейсы] черновик не доставлен модераторам — публикуем сами")
 
@@ -730,6 +730,33 @@ def pick_plan_post(plan: List[dict], weekday: Optional[int] = None) -> Optional[
     return None
 
 
+def recent_rubric_topics(rubric: str, days: int = 21) -> List[str]:
+    """
+    О чём эта рубрика уже выходила за последние недели.
+
+    Без этого списка модель раз за разом выдаёт одну и ту же тему: «промпт
+    дня» пять раз подряд оказывался про конспект. Материала рубрике не
+    нужно, новизне взяться неоткуда — значит, её нужно задать явно.
+    """
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            "SELECT title FROM news_posts WHERE kind IN ('rubric', 'plan') "
+            "AND published_at >= ? ORDER BY published_at DESC LIMIT 40",
+            (since,),
+        ).fetchall()
+    out = []
+    for row in rows:
+        title = (row["title"] or "").strip()
+        if rubric and rubric.lower() not in title.lower():
+            continue
+        # В заголовке лежит «рубрика: тема» — интересна вторая половина.
+        topic = title.split(":", 1)[-1].strip()
+        if topic and topic not in out:
+            out.append(topic)
+    return out[:12]
+
+
 async def publish_generated_rubric(bot: Bot) -> bool:
     """
     Рубричный пост, собранный редактором из свежего материала.
@@ -761,6 +788,7 @@ async def publish_generated_rubric(bot: Bot) -> bool:
     draft = await news_writer.write_rubric(
         rubric,
         [{"title": i.title, "summary": i.summary, "source": i.source} for i in items],
+        avoid=recent_rubric_topics(rubric),
     )
     if not draft.useful or not draft.text:
         logger.info("[рубрики] «%s» не собралась: %s", rubric, draft.reason)
@@ -849,7 +877,19 @@ async def news_worker(bot: Bot) -> None:
                     continue
 
                 kind = slots[position] if position < len(slots) else "news"
-                if posted_today(kind) >= _daily_limit(kind):
+                # Черновик на проверке — это уже занятый слот. Иначе за час
+                # ожидания решения бот собирает дюжину почти одинаковых
+                # постов: расписание проверяется каждые пять минут, а
+                # счётчик публикаций стоит на месте.
+                waiting = 0
+                try:
+                    import news_moderation
+
+                    if news_moderation.enabled():
+                        waiting = news_moderation.pending_today(kind)
+                except Exception as e:
+                    logger.warning("[новости] не посчитать черновики на проверке: %s", e)
+                if posted_today(kind) + waiting >= _daily_limit(kind):
                     continue
 
                 if kind == "plan":

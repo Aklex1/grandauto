@@ -331,7 +331,8 @@ def _assemble_digest(data: dict) -> str:
     return text
 
 
-async def write_rubric(rubric: str, items: Optional[List[dict]] = None) -> Draft:
+async def write_rubric(rubric: str, items: Optional[List[dict]] = None,
+                       avoid: Optional[List[str]] = None) -> Draft:
     """
     Пост рубрики, когда в контент-плане на этот день ничего не осталось.
 
@@ -339,6 +340,9 @@ async def write_rubric(rubric: str, items: Optional[List[dict]] = None) -> Draft
     items — свежий материал из лент: [{"title":…, "summary":…, "source":…}].
     Рубрикам вроде «промпт дня» материал не нужен вовсе, а «главному за
     неделю» нужно до пяти новостей.
+    avoid — темы, которые в этой рубрике уже выходили. Без них модель
+    раз за разом предлагает одно и то же: материала для новизны у неё нет,
+    и она берёт первое, что приходит на ум.
     """
     spec = RUBRIC_SPECS.get(rubric)
     if not spec:
@@ -352,6 +356,10 @@ async def write_rubric(rubric: str, items: Optional[List[dict]] = None) -> Draft
         return Draft(useful=False, reason="для этой рубрики нужен свежий материал")
 
     user = f"Рубрика: {rubric}.\n{spec['task']}\n"
+    avoid = [a for a in (avoid or []) if a]
+    if avoid:
+        user += ("\nЭти темы в рубрике уже были — повторять их нельзя, нужна другая:\n- "
+                 + "\n- ".join(avoid[:12]) + "\n")
     if items:
         user += "\nСвежий материал (ссылки в пост не ставить):\n"
         for one in items[:max(need, 1)]:

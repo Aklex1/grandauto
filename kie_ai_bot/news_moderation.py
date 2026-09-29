@@ -68,20 +68,45 @@ def init_db() -> None:
                 decided_at TEXT
             )
         """)
+        # Вид поста добавлен позже: в старой базе колонки нет, а ронять бота
+        # из-за этого нельзя.
+        have = {row["name"] for row in conn.execute("PRAGMA table_info(news_drafts)")}
+        if "kind" not in have:
+            conn.execute("ALTER TABLE news_drafts ADD COLUMN kind TEXT")
         conn.commit()
 
 
-def save_draft(item, text: str) -> int:
+def save_draft(item, text: str, kind: str = "news") -> int:
     init_db()
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with closing(news_autopost._connect()) as conn:
         cur = conn.execute(
-            "INSERT INTO news_drafts (title, source, link, image, text, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (item.title, item.source, item.link, item.image or "", text, now),
+            "INSERT INTO news_drafts (title, source, link, image, text, created_at, kind)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (item.title, item.source, item.link, item.image or "", text, now, kind),
         )
         conn.commit()
         return int(cur.lastrowid)
+
+
+def pending_today(kind: str) -> int:
+    """
+    Сколько черновиков этого вида уже ждут решения модератора сегодня.
+
+    Без этого счётчика слот считался занятым только после публикации, а
+    черновик публикацией не является. Расписание проверяется каждые пять
+    минут, и за час ожидания модератор получал дюжину почти одинаковых
+    постов подряд.
+    """
+    init_db()
+    today = datetime.now(timezone.utc).date().isoformat()
+    with closing(news_autopost._connect()) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM news_drafts "
+            "WHERE status = 'pending' AND created_at >= ? AND COALESCE(kind, 'news') = ?",
+            (today, kind),
+        ).fetchone()
+    return int(row["n"] if row else 0)
 
 
 def get_draft(draft_id: int) -> Optional[dict]:
@@ -121,9 +146,9 @@ def _keyboard(draft_id: int) -> InlineKeyboardMarkup:
     ]])
 
 
-async def send_for_review(bot: Bot, item, text: str) -> bool:
+async def send_for_review(bot: Bot, item, text: str, kind: str = "news") -> bool:
     """Показывает черновик модераторам. True — хотя бы один получил."""
-    draft_id = save_draft(item, text)
+    draft_id = save_draft(item, text, kind)
     head = (f"📝 <b>Черновик новости №{draft_id}</b>\n"
             f"<i>Источник: {item.source or '—'}</i>\n\n")
     delivered = 0
