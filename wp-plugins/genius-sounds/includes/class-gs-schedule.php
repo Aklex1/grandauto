@@ -51,6 +51,8 @@ class GS_Schedule {
             'podarok' => 'Песня в подарок',
             'pretenzia' => 'Претензии',
             'prikaz'    => 'Судебные приказы',
+            'semya'     => 'Развод и алименты',
+            'ucitel'    => 'Документы учителя',
         );
     }
 
@@ -81,6 +83,10 @@ class GS_Schedule {
             'pretenzia' => array('enabled' => 1, 'per_day' => 2, 'hours' => array(8, 17),
                                  'days' => array(1, 2, 3, 4, 5, 6, 7)),
             'prikaz'    => array('enabled' => 1, 'per_day' => 2, 'hours' => array(14, 21),
+                                 'days' => array(1, 2, 3, 4, 5, 6, 7)),
+            'semya'     => array('enabled' => 1, 'per_day' => 2, 'hours' => array(7, 19),
+                                 'days' => array(1, 2, 3, 4, 5, 6, 7)),
+            'ucitel'    => array('enabled' => 1, 'per_day' => 2, 'hours' => array(6, 15),
                                  'days' => array(1, 2, 3, 4, 5, 6, 7)),
         );
     }

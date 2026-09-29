@@ -1,0 +1,91 @@
+/* --------------------------------------------------------------------------
+ * Фирменный набор на тёмном сайте.
+ *
+ * brand.css собран под светлые страницы: белые карточки, тёмный текст. Сайт
+ * тёмный, поэтому здесь переопределены только поверхности и цвет текста.
+ * Сам набор не правим — так его можно обновлять целиком, не теряя правок.
+ * ----------------------------------------------------------------------- */
+
+body.gs-post-page,
+body.gs-page {
+    --gb-bg: #0b1220;
+    --gb-bg-soft: #131b2b;
+    --gb-ink: #e2e8f0;
+    --gb-muted: #94a3b8;
+}
+
+/* Врезки: цветную заливку оставляем, но приглушаем под тёмный фон, иначе
+   светлый прямоугольник выжигает глаза посреди статьи. */
+body.gs-post-page .gb-callout,
+body.gs-page .gb-callout {
+    background: rgba(34, 211, 238, .10);
+    border: 1px solid rgba(34, 211, 238, .22);
+    color: #e2e8f0;
+}
+
+body.gs-post-page .gb-callout--tip,
+body.gs-page .gb-callout--tip {
+    background: rgba(250, 204, 21, .10);
+    border-color: rgba(250, 204, 21, .24);
+}
+
+body.gs-post-page .gb-callout--warn,
+body.gs-page .gb-callout--warn {
+    background: rgba(248, 113, 113, .10);
+    border-color: rgba(248, 113, 113, .24);
+}
+
+body.gs-post-page .gb-callout--ok,
+body.gs-page .gb-callout--ok {
+    background: rgba(52, 211, 153, .10);
+    border-color: rgba(52, 211, 153, .24);
+}
+
+body.gs-post-page .gb-callout--cta,
+body.gs-page .gb-callout--cta {
+    background: linear-gradient(135deg, rgba(34, 211, 238, .16), rgba(124, 92, 255, .16));
+    border-color: rgba(124, 92, 255, .3);
+}
+
+body.gs-post-page .gb-callout__title,
+body.gs-page .gb-callout__title {
+    color: #f8fafc;
+}
+
+body.gs-post-page .gb-feature,
+body.gs-page .gb-feature {
+    background: #131b2b;
+    border: 1px solid #1f2b45;
+}
+
+body.gs-post-page .gb-feature h3,
+body.gs-page .gb-feature h3 {
+    color: #e2e8f0;
+}
+
+/* Персонаж. Рисован по пикселям — сглаживание превращает его в кашу. */
+.gs-pixel {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    height: auto;
+}
+
+/* Персонаж рядом с первым экраном посадочной. */
+.gs-legal-hero__text .gs-pixel--hero {
+    display: block;
+    width: 96px;
+    margin: 0 0 12px;
+}
+
+/* Иконка в карточке шага. */
+.gs-legal-card > .gb-icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 8px;
+}
+
+@media (max-width: 600px) {
+    .gs-legal-hero__text .gs-pixel--hero {
+        width: 72px;
+    }
+}

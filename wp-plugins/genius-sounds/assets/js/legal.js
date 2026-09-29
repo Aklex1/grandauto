@@ -306,4 +306,41 @@
                 }
             }).catch(function () {});
     }
+
+    /* ---------------------------------------------------------------------
+     * Калькулятор алиментов.
+     *
+     * Считает долю от дохода по ст. 81 СК РФ. Числа человек вводит как
+     * привык — с пробелами и запятой, поэтому перед разбором чистим строку,
+     * иначе «60 000» превращается в 60.
+     * ------------------------------------------------------------------ */
+
+    var income = document.getElementById('gs-legal-income');
+    var kidsSel = document.getElementById('gs-legal-kids');
+    var calcOut = document.getElementById('gs-legal-calc-out');
+
+    if (income && kidsSel && calcOut) {
+        var SHARES = { '1': [0.25, '\u00bc', 'на одного ребёнка'],
+                       '2': [1 / 3, '\u2153', 'на двоих детей'],
+                       '3': [0.5, '\u00bd', 'на троих и больше'] };
+        var calcSent = false;
+
+        var countAlimony = function () {
+            var value = parseFloat(String(income.value).replace(/\s|\u00a0/g, '').replace(',', '.'));
+            if (!value || value <= 0) {
+                calcOut.textContent = 'Введите доход — посчитаем ориентировочную сумму.';
+                return;
+            }
+            var share = SHARES[kidsSel.value] || SHARES['1'];
+            var sum = Math.round(value * share[0]);
+            calcOut.innerHTML = '<b>≈ ' + sum.toLocaleString('ru-RU') + ' ₽ в месяц</b>'
+                + share[1] + ' дохода ' + share[2]
+                + '. Это ориентир по ст. 81 СК РФ: суд может отступить от долей с учётом '
+                + 'положения сторон.';
+            if (!calcSent) { calcSent = true; goal('legal_calc'); }
+        };
+
+        income.addEventListener('input', countAlimony);
+        kidsSel.addEventListener('change', countAlimony);
+    }
 })();

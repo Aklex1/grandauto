@@ -33,6 +33,26 @@ class GS_Legal {
     const LANE_ORDER  = 'prikaz';
 
     private static $tree = null;
+    private static $sections = null;
+
+    /**
+     * Разделы сервиса и всё, чем они отличаются: цены, состав пакета,
+     * тексты. Движок один, а строк в реестре четыре — добавить пятый раздел
+     * значит дописать строку, а не скопировать класс.
+     */
+    public static function sections() {
+        if (self::$sections === null) {
+            self::$sections = (array) require GS_PLUGIN_DIR . 'includes/docs-sections.php';
+        }
+        return self::$sections;
+    }
+
+    /** Настройки раздела, к которому принадлежит страница. */
+    public static function section_of($id) {
+        $sections = self::sections();
+        $root = self::root_of($id);
+        return isset($sections[$root]) ? $sections[$root] : reset($sections);
+    }
 
     /* ---------------------------------------------------------------------
      * Данные
@@ -40,7 +60,12 @@ class GS_Legal {
 
     public static function tree() {
         if (self::$tree === null) {
-            self::$tree = (array) require GS_PLUGIN_DIR . 'includes/legal-pages.php';
+            // Два файла, одно дерево: юридический блок и разделы, добавленные
+            // позже. Порядок важен — по нему строятся хлебные крошки и меню.
+            self::$tree = array_merge(
+                (array) require GS_PLUGIN_DIR . 'includes/legal-pages.php',
+                (array) require GS_PLUGIN_DIR . 'includes/hub-pages.php'
+            );
         }
         return self::$tree;
     }
@@ -109,7 +134,19 @@ class GS_Legal {
 
     /** Поток очереди публикаций для кластера. */
     public static function lane_of($id) {
-        return self::root_of($id) === 'order' ? self::LANE_ORDER : self::LANE_CLAIM;
+        $section = self::section_of($id);
+        return (string) ($section['lane'] ?? self::LANE_CLAIM);
+    }
+
+    /** Цены раздела: они разные, от 199 ₽ за школьный документ до 990 ₽. */
+    public static function price_base($id) {
+        $section = self::section_of($id);
+        return (int) ($section['base'] ?? self::PRICE_BASE);
+    }
+
+    public static function price_full($id) {
+        $section = self::section_of($id);
+        return (int) ($section['full'] ?? self::PRICE_FULL);
     }
 
     /* ---------------------------------------------------------------------
@@ -323,7 +360,9 @@ class GS_Legal {
         $root = self::root_of($id);
         $is_root = $root === $id;
         $children = self::children($is_root ? $id : $root);
-        $order_cluster = $root === 'order';
+        $sec = self::section_of($id);
+        $ui = (array) ($sec['ui'] ?? array());
+        $extras = (array) ($sec['extras'] ?? array());
         ?>
         <div class="gs-legal" data-gs-legal="<?php echo esc_attr($id); ?>">
 
@@ -339,6 +378,9 @@ class GS_Legal {
 
             <section class="gs-legal-hero">
                 <div class="gs-legal-hero__text">
+                    <?php if (class_exists('GS_Brand')) {
+                        echo GS_Brand::mascot_tag($sec['mascot'] ?? 'stoit', 'gs-pixel gs-pixel--hero', 96);
+                    } ?>
                     <h1><?php echo esc_html($page['h1']); ?></h1>
                     <p class="gs-legal-lead"><?php echo esc_html($page['lead']); ?></p>
                     <ul class="gs-legal-bullets">
@@ -349,30 +391,31 @@ class GS_Legal {
                     <p class="gs-legal-trust">
                         <span>📄 Word и PDF</span>
                         <span>⏱ 5–10 минут</span>
-                        <span>💳 от <?php echo (int) self::PRICE_BASE; ?> ₽</span>
+                        <span>💳 от <?php echo (int) $sec['base']; ?> ₽</span>
                     </p>
                 </div>
-                <?php self::render_form($id, $order_cluster); ?>
+                <?php self::render_form($id, $sec); ?>
             </section>
 
-            <?php if ($order_cluster) {
+            <?php if (in_array('deadline', $extras, true)) {
                 self::render_deadline();
+            } ?>
+            <?php if (in_array('calc', $extras, true)) {
+                self::render_calc();
             } ?>
 
             <section class="gs-legal-steps">
                 <h2>Как это работает</h2>
                 <div class="gs-legal-grid3">
-                    <div class="gs-legal-card"><b>1. Опишите ситуацию</b>
-                        <p>Своими словами: что произошло, когда, какие суммы и чего вы хотите.
-                        Юридические термины подбирать не нужно.</p></div>
-                    <div class="gs-legal-card"><b>2. Получите документ</b>
-                        <p><?php echo $order_cluster
-                            ? 'Возражение со ссылками на ГПК РФ, с расчётом срока и, если он пропущен, с заявлением о его восстановлении.'
-                            : 'Претензию со ссылками на закон, расчётом неустойки и сроком для ответа.'; ?></p></div>
-                    <div class="gs-legal-card"><b>3. Отправьте адресату</b>
-                        <p><?php echo $order_cluster
-                            ? 'Мировому судье — лично, почтой или через Госуслуги. В комплекте порядок подачи и что сохранить.'
-                            : 'Вручите под подпись или отправьте заказным письмом с описью. Инструкция прилагается.'; ?></p></div>
+                    <div class="gs-legal-card"><?php
+                        echo class_exists('GS_Brand') ? GS_Brand::icon_tag('chat') : ''; ?><b>1. Опишите ситуацию</b>
+                        <p><?php echo esc_html($ui['intro'] ?? 'Своими словами: что произошло, когда, какие суммы и чего вы хотите. Специальные термины подбирать не нужно.'); ?></p></div>
+                    <div class="gs-legal-card"><?php
+                        echo class_exists('GS_Brand') ? GS_Brand::icon_tag('doc') : ''; ?><b>2. Получите документ</b>
+                        <p><?php echo esc_html($ui['step2']); ?></p></div>
+                    <div class="gs-legal-card"><?php
+                        echo class_exists('GS_Brand') ? GS_Brand::icon_tag('send') : ''; ?><b>3. Отправьте адресату</b>
+                        <p><?php echo esc_html($ui['step3']); ?></p></div>
                 </div>
             </section>
 
@@ -397,7 +440,7 @@ class GS_Legal {
                 </section>
             <?php endif; ?>
 
-            <?php self::render_prices($order_cluster); ?>
+            <?php self::render_prices($sec); ?>
 
             <?php if (!empty($page['faq'])): ?>
                 <section class="gs-legal-faq">
@@ -412,9 +455,8 @@ class GS_Legal {
             <?php endif; ?>
 
             <p class="gs-legal-disclaimer">
-                Сервис готовит проект документа по сведениям, которые вы указали, и не оказывает
-                услуги адвоката. Перед отправкой проверьте в документе даты, суммы и реквизиты.
-                По сложному спору стоит показать документ юристу.
+                <?php echo esc_html($sec['note']); ?>
+                Перед отправкой проверьте в документе даты, суммы и реквизиты.
             </p>
         </div>
         <?php
@@ -436,42 +478,29 @@ class GS_Legal {
         <?php
     }
 
-    private static function render_prices($order_cluster) {
+    private static function render_prices($sec) {
+        $ui = (array) ($sec['ui'] ?? array());
         ?>
         <section class="gs-legal-prices">
             <h2>Сколько стоит</h2>
             <div class="gs-legal-grid2">
                 <div class="gs-legal-card gs-legal-price">
-                    <b><?php echo $order_cluster ? 'Возражение' : 'Претензия'; ?></b>
-                    <div class="gs-legal-price__sum"><?php echo (int) self::PRICE_BASE; ?> ₽</div>
+                    <b><?php echo esc_html($sec['plan'][0]); ?></b>
+                    <div class="gs-legal-price__sum"><?php echo (int) $sec['base']; ?> ₽</div>
                     <ul>
-                        <?php if ($order_cluster): ?>
-                            <li>Возражение на судебный приказ</li>
-                            <li>Заявление о восстановлении срока, если он пропущен</li>
-                            <li>Порядок подачи: судье, почтой или через Госуслуги</li>
-                        <?php else: ?>
-                            <li>Претензия под вашу ситуацию</li>
-                            <li>Ссылки на статьи закона и расчёт неустойки</li>
-                            <li>Инструкция по отправке</li>
-                        <?php endif; ?>
-                        <li>Одна бесплатная доработка</li>
+                        <?php foreach ((array) $ui['base_list'] as $line): ?>
+                            <li><?php echo esc_html($line); ?></li>
+                        <?php endforeach; ?>
                     </ul>
                 </div>
                 <div class="gs-legal-card gs-legal-price gs-legal-price--full">
-                    <b>Полный комплект</b>
-                    <div class="gs-legal-price__sum"><?php echo (int) self::PRICE_FULL; ?> ₽</div>
+                    <b><?php echo esc_html($sec['plan'][1]); ?></b>
+                    <div class="gs-legal-price__sum"><?php echo (int) $sec['full']; ?> ₽</div>
                     <ul>
                         <li>Всё из первого тарифа</li>
-                        <?php if ($order_cluster): ?>
-                            <li>Заявление о повороте исполнения — вернуть списанное</li>
-                            <li>Заявление приставам о прекращении производства</li>
-                            <li>План действий, если взыскатель подаст иск</li>
-                        <?php else: ?>
-                            <li>Жалоба в надзорный орган: Роспотребнадзор, ЦБ или ГЖИ</li>
-                            <li>Черновик искового заявления с расчётом цены иска</li>
-                            <li>План действий на 30 дней</li>
-                        <?php endif; ?>
-                        <li>Три бесплатные доработки</li>
+                        <?php foreach ((array) $ui['full_list'] as $line): ?>
+                            <li><?php echo esc_html($line); ?></li>
+                        <?php endforeach; ?>
                     </ul>
                 </div>
             </div>
@@ -479,41 +508,69 @@ class GS_Legal {
         <?php
     }
 
-    private static function render_form($id, $order_cluster) {
+    /**
+     * Калькулятор алиментов.
+     *
+     * Единственный блок раздела о разводе, ради которого человек приходит
+     * сам: «сколько мне положено» спрашивают чаще, чем «составьте иск».
+     * Поэтому он стоит на странице, а не прячется за формой заказа.
+     */
+    private static function render_calc() {
+        ?>
+        <section class="gs-legal-calc" id="gs-legal-calc">
+            <h2>Сколько алиментов положено</h2>
+            <p>По закону на детей взыскивают долю от заработка и иного дохода:
+            ¼ — на одного ребёнка, ⅓ — на двоих, ½ — на троих и больше (ст. 81 СК РФ).
+            Если доход нерегулярный или скрытый, просят твёрдую сумму (ст. 83 СК РФ).</p>
+            <div class="gs-legal-calc__row">
+                <label for="gs-legal-income">Доход плательщика после налога, ₽ в месяц
+                    <input type="text" id="gs-legal-income" inputmode="numeric" placeholder="60 000"></label>
+                <label for="gs-legal-kids">Детей
+                    <select id="gs-legal-kids">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3 и больше</option>
+                    </select></label>
+            </div>
+            <p class="gs-legal-calc__out" id="gs-legal-calc-out">Введите доход — посчитаем
+                ориентировочную сумму.</p>
+            <p class="gs-legal-note">Суд вправе отступить от долей с учётом положения сторон.
+            За просрочку начисляется неустойка 0,1% от суммы долга за каждый день (ст. 115 СК РФ).</p>
+        </section>
+        <?php
+    }
+
+    private static function render_form($id, $sec) {
         $page = self::page($id);
-        $placeholder = $order_cluster
-            ? 'Например: 12 сентября получил судебный приказ от мирового судьи участка № 5, взыскатель — МФО, сумма 48 000 ₽ вместе с процентами. Заём брал в 2021 году, платил до 2022-го. Хочу отменить приказ и вернуть списанное с карты.'
-            : 'Например: 12 сентября купил стиральную машину за 34 990 ₽. Через две недели перестала сливать воду, сервис отказал в гарантийном ремонте. Хочу вернуть деньги.';
+        $ui = (array) ($sec['ui'] ?? array());
         ?>
         <div class="gs-legal-card gs-legal-form" id="gs-legal-form">
-            <b><?php echo $order_cluster ? 'Составить возражение' : 'Составить претензию'; ?></b>
-            <label for="gs-legal-story">Что случилось</label>
+            <b><?php echo esc_html($ui['action']); ?></b>
+            <label for="gs-legal-story"><?php echo esc_html($ui['story']); ?></label>
             <textarea id="gs-legal-story" rows="6"
-                      placeholder="<?php echo esc_attr($placeholder); ?>"></textarea>
+                      placeholder="<?php echo esc_attr($ui['placeholder']); ?>"></textarea>
 
             <label>Что нужно</label>
             <div class="gs-legal-plans">
                 <label class="gs-legal-plan">
-                    <input type="radio" name="gs-legal-plan" value="<?php echo (int) self::PRICE_BASE; ?>" checked>
-                    <b><?php echo (int) self::PRICE_BASE; ?> ₽</b>
-                    <span><?php echo $order_cluster ? 'Возражение и восстановление срока'
-                                                    : 'Претензия и инструкция'; ?></span>
+                    <input type="radio" name="gs-legal-plan" value="<?php echo (int) $sec['base']; ?>" checked>
+                    <b><?php echo (int) $sec['base']; ?> ₽</b>
+                    <span><?php echo esc_html($ui['plan_hint'][0]); ?></span>
                 </label>
                 <label class="gs-legal-plan">
-                    <input type="radio" name="gs-legal-plan" value="<?php echo (int) self::PRICE_FULL; ?>">
-                    <b><?php echo (int) self::PRICE_FULL; ?> ₽</b>
-                    <span><?php echo $order_cluster ? 'Плюс поворот исполнения и приставы'
-                                                    : 'Плюс жалоба и черновик иска'; ?></span>
+                    <input type="radio" name="gs-legal-plan" value="<?php echo (int) $sec['full']; ?>">
+                    <b><?php echo (int) $sec['full']; ?> ₽</b>
+                    <span><?php echo esc_html($ui['plan_hint'][1]); ?></span>
                 </label>
             </div>
 
-            <label for="gs-legal-contact">Куда прислать документ</label>
+            <label for="gs-legal-contact"><?php echo esc_html($ui['contact']); ?></label>
             <input id="gs-legal-contact" type="text" placeholder="Почта или ник в Telegram">
 
-            <button type="button" class="gs-legal-btn" id="gs-legal-send">Разобрать ситуацию
-                бесплатно</button>
-            <p class="gs-legal-note" id="gs-legal-status">Сначала бесплатный разбор: кому
-                адресовать, что требовать и чего не хватает в описании. Оплата — после него.</p>
+            <button type="button" class="gs-legal-btn" id="gs-legal-send"><?php
+                echo esc_html($ui['button']); ?></button>
+            <p class="gs-legal-note" id="gs-legal-status">Сначала бесплатный разбор: что именно
+                получится, чего не хватает в описании и сколько это стоит. Оплата — после него.</p>
             <input type="hidden" id="gs-legal-case" value="<?php echo esc_attr($page['case'] ?? 'other'); ?>">
             <input type="hidden" id="gs-legal-page" value="<?php echo esc_attr($id); ?>">
 

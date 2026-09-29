@@ -1,0 +1,63 @@
+/* Genus Bot — фирменные стили. Подключение: <link rel="stylesheet" href="/assets/brand/css/brand.css"> */
+:root {
+  --gb-cyan: #22D3EE;          /* основной цвет логотипа */
+  --gb-mint: #34D399;          /* второй цвет логотипа */
+  --gb-gradient: linear-gradient(135deg, #22D3EE, #34D399);
+  --gb-teal: #0B7F7B;          /* текст-акцент и ссылки на белом (контраст AA) */
+  --gb-violet: #7C5CFF;        /* цвет персонажа Пикселя */
+  --gb-ink: #141225;           /* основной текст */
+  --gb-muted: #5E6378;         /* второстепенный текст */
+  --gb-bg: #FFFFFF;
+  --gb-bg-soft: #F4F7F8;
+  --gb-dark: #0E0C1D;          /* тёмные секции */
+  --gb-tip: #FFF6E0;  --gb-warn: #FFECEF;  --gb-note: #E6F9FB;  --gb-ok: #E3F8EF;
+  --gb-radius: 18px;
+  --gb-font: "Manrope", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+/* Кнопки */
+.gb-btn { display: inline-flex; align-items: center; gap: 8px; padding: 14px 26px; border-radius: 14px;
+  background: var(--gb-gradient); color: var(--gb-ink); font: 800 16px/1 var(--gb-font); text-decoration: none; border: 0; cursor: pointer;
+  box-shadow: 0 6px 20px rgba(34, 211, 238, .25); transition: transform .15s, box-shadow .15s; }
+.gb-btn:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(34, 211, 238, .35); }
+.gb-btn--dark { background: var(--gb-ink); color: #fff; box-shadow: none; }
+
+/* Текст с градиентом */
+.gb-gradient-text { background: var(--gb-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Пиксель: всегда чёткие пиксели при масштабировании PNG */
+.gb-pixel { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+/* Иконки */
+.gb-icon { width: 48px; height: 48px; flex: none; }
+.gb-icon--sm { width: 32px; height: 32px; }
+.gb-icon--lg { width: 64px; height: 64px; }
+
+/* Заголовок статьи с иконкой: <h2 class="gb-h-icon"><img class="gb-icon" src=".../soft/speed.svg" alt="">Текст</h2> */
+.gb-h-icon { display: flex; align-items: center; gap: 12px; }
+
+/* Список с иконками */
+.gb-list { list-style: none; padding: 0; margin: 16px 0; }
+.gb-list li { display: flex; align-items: center; gap: 12px; margin: 10px 0; }
+
+/* Врезки в статьях: совет / важно / заметка / результат */
+.gb-callout { display: flex; gap: 16px; align-items: flex-start; padding: 18px 20px; margin: 24px 0; border-radius: var(--gb-radius);
+  background: var(--gb-note); font-family: var(--gb-font); line-height: 1.55; }
+.gb-callout > img { width: 64px; height: auto; flex: none; image-rendering: pixelated; }
+.gb-callout__title { display: block; font-weight: 800; color: var(--gb-ink); margin-bottom: 2px; }
+.gb-callout--tip { background: var(--gb-tip); }
+.gb-callout--warn { background: var(--gb-warn); }
+.gb-callout--ok { background: var(--gb-ok); }
+.gb-callout--cta { background: var(--gb-dark); color: #fff; align-items: center; }
+.gb-callout--cta .gb-callout__title { color: #fff; font-size: 20px; }
+
+/* Карточка преимущества */
+.gb-feature { background: var(--gb-bg-soft); border-radius: var(--gb-radius); padding: 24px; font-family: var(--gb-font); }
+.gb-feature h3 { margin: 14px 0 6px; font-size: 18px; color: var(--gb-ink); }
+.gb-feature p { margin: 0; color: var(--gb-muted); line-height: 1.5; }
+.gb-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+
+@media (max-width: 600px) {
+  .gb-callout { flex-direction: column; }
+  .gb-callout > img { width: 48px; }
+}
