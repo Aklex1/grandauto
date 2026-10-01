@@ -324,6 +324,12 @@ body.gs-chrome :where(div, section, article, aside, header, footer, nav, form,
         flex-wrap: wrap;
     }
 
+    /* Счётчик демо-режима в одну строку с остальной шапкой не влезает —
+       отдаём ему строку целиком. */
+    body.gs-chrome .kie-tts-balance-section {
+        flex: 1 1 100%;
+    }
+
     /* Подпись с галочкой: рамка у неё по содержимому, а содержимое —
        длинная строка вроде «Отмечать неречевые звуки». */
     body.gs-chrome .gs-check,
@@ -375,4 +381,12 @@ body.gs-chrome button {
    признака, что там есть ещё текст. */
 body.gs-chrome select {
     text-overflow: ellipsis;
+}
+
+/* Плитки ИИ-помощников лежат в сетке с жёсткой колонкой в 330 точек: на
+   экране 320 такая колонка не помещается по определению. Страницы эти —
+   чужого раздела, своего класса на body у них нет, поэтому правило общее
+   и без оглядки на gs-chrome. */
+body .gp__tiles {
+    grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr));
 }
