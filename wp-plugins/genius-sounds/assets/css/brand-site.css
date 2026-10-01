@@ -325,9 +325,18 @@ body.gs-chrome :where(div, section, article, aside, header, footer, nav, form,
     }
 
     /* Счётчик демо-режима в одну строку с остальной шапкой не влезает —
-       отдаём ему строку целиком. */
+       отдаём ему строку целиком. Его начинка — тоже ряды, и переносить
+       нужно и их: на узком экране с крупным шрифтом надпись на кнопке
+       «Авторизоваться для платных генераций» в строку не укладывается. */
     body.gs-chrome .kie-tts-balance-section {
         flex: 1 1 100%;
+    }
+
+    body.gs-chrome .kie-tts-balance,
+    body.gs-chrome .topup-toggle-btn {
+        flex-wrap: wrap;
+        justify-content: center;
+        text-align: center;
     }
 
     /* Подпись с галочкой: рамка у неё по содержимому, а содержимое —
