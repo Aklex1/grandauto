@@ -1449,3 +1449,74 @@ body.gs-topup-open {
         grid-column: 2;
     }
 }
+
+/* --------------------------------------------- Другие сервисы под каталогом
+   Каталог — единственный раздел, который уже виден в поиске. Этот блок
+   передаёт его вес остальным: сначала то, что продолжает тему страницы,
+   отдельной строкой — направления, к звуку отношения не имеющие. */
+
+.gs-services {
+    margin-top: clamp(28px, 4vw, 40px);
+}
+
+.gs-services__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 16px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.gs-wrap .gs-services__card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    height: 100%;
+    padding: 14px 16px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 12px;
+    background: rgba(19, 27, 43, 0.85);
+    text-decoration: none !important;
+    transition: border-color .15s, transform .15s;
+}
+
+.gs-wrap .gs-services__card:hover {
+    border-color: rgba(129, 140, 248, 0.5);
+    transform: translateY(-2px);
+}
+
+.gs-services__name {
+    color: #f1f5f9;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.gs-services__lead {
+    color: #94a3b8;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.gs-services__more {
+    margin: 14px 0 0;
+    color: #94a3b8;
+    font-size: 13.5px;
+    line-height: 1.9;
+}
+
+.gs-services__more span[aria-hidden] {
+    margin: 0 8px;
+    opacity: .5;
+}
+
+.gs-wrap .gs-services__more a {
+    color: #a5b4fc !important;
+    text-decoration: none !important;
+}
+
+.gs-wrap .gs-services__more a:hover {
+    color: #c7d2fe !important;
+    text-decoration: underline !important;
+}

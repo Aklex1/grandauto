@@ -694,6 +694,8 @@ class GS_Catalog {
 
             <?php echo self::render_cta('', 'index'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
+            <?php echo self::render_services(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <?php if ($query === '' && $page === 1) {
                 echo self::render_sections_nav(); // phpcs:ignore WordPress.Security.EscapeOutput
             } ?>
@@ -806,6 +808,8 @@ class GS_Catalog {
             <?php endif; ?>
 
             <?php echo self::render_cta($section['menu'], 'section'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_services(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
             <?php echo self::render_sections_nav($section['slug']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         </div>
         <?php
@@ -950,7 +954,81 @@ class GS_Catalog {
             <?php endif; ?>
 
             <?php echo self::render_related($slug); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_services(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Перелинковка с каталога на остальные разделы сайта.
+     *
+     * Каталог держит 83% показов в поиске — это единственная часть сайта, у
+     * которой уже есть вес, чтобы его передавать. Остальные разделы
+     * опубликованы недавно и в выдаче почти не видны.
+     *
+     * Порядок не случайный: сначала то, что продолжает тему страницы
+     * (голос, музыка, звук из видео), потом остальное. Документы и
+     * презентации к звуку медведя отношения не имеют, поэтому стоят
+     * отдельной строкой и подписаны как другое направление — иначе это
+     * выглядит как ошибка вёрстки, а читается как спам.
+     */
+    private static function render_services() {
+        $lab = class_exists('GS_Lab') ? GS_Lab::available_services() : array();
+        $url = function ($id) use ($lab) {
+            return isset($lab[$id]) ? GS_Lab::get_url($id) : '';
+        };
+
+        $audio = array(
+            array(GS_Pages::get_tts_url(), 'Озвучить текст', 'Голосом нейросети, 40+ голосов'),
+            array($url('music'), 'Создать музыку', 'Трек по описанию, с вокалом или без'),
+            array($url('ytaudio'), 'Звук из видео', 'Дорожка из ролика по ссылке'),
+            array($url('vocal'), 'Убрать вокал', 'Минус и голос отдельными файлами'),
+            array($url('stt'), 'Расшифровка записи', 'Текст с отметками времени'),
+            array($url('denoise'), 'Убрать шум', 'Чистая запись из шумной'),
+        );
+        $other = array(
+            array(class_exists('GS_Legal') ? GS_Legal::get_url('claim') : '', 'Претензия и жалоба'),
+            array(class_exists('GS_Legal') ? GS_Legal::get_url('family') : '', 'Развод и алименты'),
+            array(class_exists('GS_Legal') ? GS_Legal::get_url('teacher') : '', 'Документы учителю'),
+            array($url('avatar'), 'Говорящий аватар'),
+            array(class_exists('GS_Slides_Page') ? GS_Slides_Page::get_url() : '', 'Презентации'),
+            array(class_exists('GS_Api_Page') ? GS_Api_Page::get_url() : '', 'API для разработчиков'),
+        );
+
+        $audio = array_values(array_filter($audio, function ($row) { return $row[0] !== ''; }));
+        $other = array_values(array_filter($other, function ($row) { return $row[0] !== ''; }));
+        if (!$audio && !$other) {
+            return '';
+        }
+
+        ob_start();
+        ?>
+        <section class="gs-services">
+            <h2 class="gs-section-title">Сделать свой звук и не только</h2>
+            <?php if ($audio): ?>
+                <ul class="gs-services__grid">
+                    <?php foreach ($audio as $row): ?>
+                        <li>
+                            <a class="gs-services__card" href="<?php echo esc_url($row[0]); ?>">
+                                <span class="gs-services__name"><?php echo esc_html($row[1]); ?></span>
+                                <span class="gs-services__lead"><?php echo esc_html($row[2]); ?></span>
+                            </a>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
+            <?php if ($other): ?>
+                <p class="gs-services__more">
+                    <span>Другие сервисы:</span>
+                    <?php foreach ($other as $i => $row): ?>
+                        <a href="<?php echo esc_url($row[0]); ?>"><?php echo esc_html($row[1]); ?></a><?php
+                        echo $i < count($other) - 1 ? '<span aria-hidden="true">·</span>' : ''; ?>
+                    <?php endforeach; ?>
+                </p>
+            <?php endif; ?>
+        </section>
         <?php
         return ob_get_clean();
     }
