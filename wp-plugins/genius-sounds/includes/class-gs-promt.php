@@ -29,9 +29,19 @@ class GS_Promt {
     const META_ERROR  = '_gs_promt_error';
     /** Сколько раз пробовали: бесконечно повторять нельзя. */
     const META_TRIES  = '_gs_promt_tries';
+    /**
+     * Когда пробовать снова.
+     *
+     * Раньше попыток было ровно три, и статья, которой не повезло три раза
+     * подряд, оставалась без картинки навсегда. Теперь попытки не кончаются,
+     * но между ними растёт пауза — от десяти минут до суток, чтобы
+     * неудачная статья не ходила к поставщику каждые пять минут.
+     */
+    const META_NEXT   = '_gs_promt_next';
     /** Когда запущены текущие задачи — от этого считается терпение. */
     const META_STARTED = '_gs_promt_started';
-    const MAX_TRIES   = 3;
+    /** После стольких неудач статья попадает в админке в «давно ждёт». */
+    const LONG_WAIT   = 3;
     /** Пауза после отказа по деньгам: долбиться в пустой счёт незачем. */
     const OPT_PAUSE   = 'gs_promt_paused_until';
     const PAUSE_TTL   = 1800;
@@ -79,11 +89,11 @@ class GS_Promt {
     }
 
     /**
-     * Снять счётчик попыток у сдавшихся статей.
+     * Попробовать прямо сейчас, не дожидаясь своей очереди.
      *
-     * Три неудачи подряд бывают и не по вине промта: поставщик мог лежать
-     * весь вечер. Кнопка возвращает такие статьи в работу, не заставляя
-     * лезть в базу.
+     * Сами попытки не кончаются, но после нескольких неудач пауза между
+     * ними доходит до суток. Кнопка нужна, когда причина уже устранена —
+     * счёт пополнили — и ждать сутки незачем.
      */
     public static function handle_retry() {
         if (!current_user_can('manage_options')) {
@@ -101,6 +111,7 @@ class GS_Promt {
             }
             delete_post_meta($post->ID, self::META_TRIES);
             delete_post_meta($post->ID, self::META_DONE);
+            delete_post_meta($post->ID, self::META_NEXT);
         }
         delete_option(self::OPT_PAUSE);
         self::collect();
@@ -124,10 +135,14 @@ class GS_Promt {
                 $done++;
             } elseif (get_post_meta($post->ID, self::META_TASKS, true)) {
                 $waiting++;
-            } elseif ((int) get_post_meta($post->ID, self::META_TRIES, true) >= self::MAX_TRIES) {
-                $stuck++;
             } else {
                 $waiting++;
+                // Сдаваться мы больше не сдаёмся, но показать, что статья
+                // ждёт картинку уже третью попытку, стоит: обычно за этим
+                // стоит пустой счёт у поставщика, и он решается деньгами.
+                if ((int) get_post_meta($post->ID, self::META_TRIES, true) >= self::LONG_WAIT) {
+                    $stuck++;
+                }
             }
         }
 
@@ -170,6 +185,7 @@ class GS_Promt {
             self::META_SHOTS  => 'integer',
             self::META_ERROR  => 'string',
             self::META_TRIES  => 'integer',
+            self::META_NEXT   => 'integer',
         );
         foreach ($fields as $key => $type) {
             register_post_meta('post', $key, array(
@@ -239,16 +255,19 @@ class GS_Promt {
             // без примеров навсегда. Вместо этого встаём на паузу.
             if (self::is_money($why)) {
                 update_option(self::OPT_PAUSE, time() + self::PAUSE_TTL, false);
+                update_post_meta($post->ID, self::META_NEXT, time() + self::PAUSE_TTL);
                 return false;
             }
 
-            update_post_meta($post->ID, self::META_TRIES,
-                (int) get_post_meta($post->ID, self::META_TRIES, true) + 1);
+            $tries = (int) get_post_meta($post->ID, self::META_TRIES, true) + 1;
+            update_post_meta($post->ID, self::META_TRIES, $tries);
+            update_post_meta($post->ID, self::META_NEXT, time() + self::wait_for($tries));
             return false;
         }
         update_post_meta($post->ID, self::META_TRIES,
             (int) get_post_meta($post->ID, self::META_TRIES, true) + 1);
         delete_post_meta($post->ID, self::META_ERROR);
+        delete_post_meta($post->ID, self::META_NEXT);
         delete_option(self::OPT_PAUSE);
         update_post_meta($post->ID, self::META_TASKS, $tasks);
         update_post_meta($post->ID, self::META_STARTED, time());
@@ -262,6 +281,27 @@ class GS_Promt {
      * бесплатно, и разом запускать полсотни генераций из-за одного
      * сбоя не нужно.
      */
+    /**
+     * Сколько ждать до следующей попытки.
+     *
+     * Первые неудачи чаще случайны — повторяем скоро. Если не выходит и
+     * дальше, дело обычно в деньгах у поставщика: ходить к нему каждые
+     * пять минут бессмысленно, но и бросать статью нельзя — рано или
+     * поздно счёт пополнят, и картинка доедет сама.
+     */
+    private static function wait_for($tries) {
+        $steps = array(
+            10 * MINUTE_IN_SECONDS,
+            30 * MINUTE_IN_SECONDS,
+            HOUR_IN_SECONDS,
+            3 * HOUR_IN_SECONDS,
+            6 * HOUR_IN_SECONDS,
+            12 * HOUR_IN_SECONDS,
+        );
+        $i = max(0, (int) $tries - 1);
+        return isset($steps[$i]) ? $steps[$i] : DAY_IN_SECONDS;
+    }
+
     /** Отказ из-за денег, а не из-за промта или сбоя. */
     private static function is_money($why) {
         $why = mb_strtolower((string) $why);
@@ -281,12 +321,23 @@ class GS_Promt {
         $posts = get_posts(array(
             'post_type'        => 'post',
             'post_status'      => 'publish',
-            'numberposts'      => (int) $limit * 4,
+            'numberposts'      => (int) $limit * 6,
             'suppress_filters' => true,
             'meta_query'       => array(
                 array('key' => self::META_PROMPT, 'compare' => 'EXISTS'),
                 array('key' => self::META_TASKS, 'compare' => 'NOT EXISTS'),
+                // Срок следующей попытки: у новой статьи его нет вовсе.
+                array(
+                    'relation' => 'OR',
+                    array('key' => self::META_NEXT, 'compare' => 'NOT EXISTS'),
+                    array('key' => self::META_NEXT, 'value' => time(),
+                          'compare' => '<=', 'type' => 'NUMERIC'),
+                ),
             ),
+            // Первой идёт та, что ждёт дольше всех, иначе одна невезучая
+            // статья занимала бы собой каждый прогон.
+            'meta_key' => self::META_NEXT,
+            'orderby'  => array('meta_value_num' => 'ASC', 'date' => 'ASC'),
         ));
 
         $started = 0;
@@ -299,9 +350,6 @@ class GS_Promt {
             // маркер, а картинки нет. Считаем работу сделанной только
             // тогда, когда маркер из текста ушёл.
             if (strpos((string) $post->post_content, self::MARKER) === false) {
-                continue;
-            }
-            if ((int) get_post_meta($post->ID, self::META_TRIES, true) >= self::MAX_TRIES) {
                 continue;
             }
             if (self::start($post)) {
@@ -359,12 +407,24 @@ class GS_Promt {
                 continue;
             }
 
-            if ($urls) {
-                self::attach($post, $urls);
-            }
             delete_post_meta($post->ID, self::META_TASKS);
             delete_post_meta($post->ID, self::META_STARTED);
-            update_post_meta($post->ID, self::META_DONE, 1);
+
+            if ($urls) {
+                self::attach($post, $urls);
+                update_post_meta($post->ID, self::META_DONE, 1);
+                delete_post_meta($post->ID, self::META_NEXT);
+                delete_post_meta($post->ID, self::META_ERROR);
+                continue;
+            }
+
+            // Задача не дала картинки — отметкой «готово» это закрывать
+            // нельзя: тогда статья навсегда остаётся с маркером вместо
+            // примера. Ставим её в очередь на следующую попытку.
+            $tries = (int) get_post_meta($post->ID, self::META_TRIES, true);
+            update_post_meta($post->ID, self::META_NEXT, time() + self::wait_for($tries));
+            update_post_meta($post->ID, self::META_ERROR,
+                $stuck ? 'поставщик не ответил вовремя' : 'генерация не удалась');
         }
 
         // Добор идёт последним: запущенная только что задача не должна
@@ -419,6 +479,34 @@ class GS_Promt {
 
         if ($first_id && !has_post_thumbnail($post->ID)) {
             set_post_thumbnail($post->ID, $first_id);
+        }
+
+        self::refresh($post);
+    }
+
+    /**
+     * Показать обновлённую статью.
+     *
+     * Картинка приезжает через часы после публикации, и к этому моменту
+     * страница давно лежит в кэше — без сброса читатель видел бы прежний
+     * текст без примера. Заодно сообщаем поиску, что страница изменилась.
+     */
+    private static function refresh($post) {
+        clean_post_cache($post->ID);
+
+        // Кэш страниц ведёт сторонний плагин, и зовётся он по-разному в
+        // разных версиях. Берём то, что есть.
+        foreach (array('wpsc_delete_post_cache', 'wp_cache_post_change',
+                       'rocket_clean_post', 'w3tc_flush_post') as $fn) {
+            if (function_exists($fn)) {
+                $fn($post->ID);
+                break;
+            }
+        }
+
+        $url = get_permalink($post);
+        if ($url && class_exists('GS_Index')) {
+            GS_Index::enqueue(array($url));
         }
     }
 

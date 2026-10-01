@@ -9,7 +9,7 @@
 
 .gs-slides__row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
     gap: 16px;
 }
 
@@ -63,7 +63,7 @@
 
 .gs-slides__deck {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
     gap: 16px;
 }
 
@@ -381,7 +381,7 @@
 
 .gs-photo__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
     gap: 12px;
 }
 

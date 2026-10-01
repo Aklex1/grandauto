@@ -367,15 +367,17 @@ class GS_Admin {
             Ждут картинку: <strong><?php echo (int) $stats['waiting']; ?></strong>,
             уже с примером: <strong><?php echo (int) $stats['done']; ?></strong>.
             <?php if (!empty($stats['stuck'])): ?>
-                <span style="color:#b32d2e">Сдались после трёх попыток: <?php echo (int) $stats['stuck']; ?>.</span>
+                <span style="color:#b32d2e">Ждут дольше трёх попыток: <?php echo (int) $stats['stuck']; ?>
+                — почти всегда это пустой счёт у поставщика.</span>
             <?php endif; ?>
             <?php if (!empty($stats['error'])): ?>
                 <br><span class="description">Последний отказ поставщика: <?php echo esc_html($stats['error']); ?></span>
             <?php endif; ?>
             <?php if (!empty($stats['paused']) && $stats['paused'] > time()): ?>
-                <br><span class="description">Запуск новых примеров на паузе до
+                <br><span class="description">Следующая попытка не раньше
                 <?php echo esc_html(date_i18n('H:i', $stats['paused'] + (int) (get_option('gmt_offset') * HOUR_IN_SECONDS))); ?>
-                — счёт у поставщика пуст. Кнопка ниже снимает паузу.</span>
+                — счёт у поставщика пуст. Попытки не прекращаются: как только счёт пополнят,
+                примеры дорисуются сами. Кнопка ниже не ждёт очереди.</span>
             <?php endif; ?>
             <?php if ($stats['next']): ?>
                 Следующий сбор: <?php echo esc_html(date_i18n('d.m, H:i', $stats['next'] + (int) (get_option('gmt_offset') * HOUR_IN_SECONDS))); ?>.

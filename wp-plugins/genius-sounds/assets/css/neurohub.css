@@ -60,7 +60,7 @@ body.kie-neurohub-body .kn-header {
 
 .gs-nh-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
     gap: 12px;
 }
 
@@ -159,7 +159,7 @@ body.kie-neurohub-body .kn-tab.active {
 
 body.kie-neurohub-body .kn-model-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
     gap: 12px;
 }
 

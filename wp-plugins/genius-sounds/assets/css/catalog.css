@@ -163,7 +163,7 @@ body.gs-studio-page .w-grid {
 
 .gs-stats {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
     gap: 12px;
     margin-top: 24px;
 }
@@ -340,7 +340,7 @@ body.gs-studio-page .w-grid {
 
 .gs-cat-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
     gap: 12px;
     margin: 0;
     padding: 0;
@@ -405,7 +405,7 @@ body.gs-studio-page .w-grid {
 
 .gs-sounds {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
     gap: 12px;
     margin-top: clamp(20px, 3vw, 28px);
 }
@@ -828,7 +828,7 @@ body.gs-studio-page .w-grid {
 
 .gs-adjacent {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
     gap: 12px;
     margin: 16px 0;
 }
@@ -1137,7 +1137,7 @@ body.gs-topup-open {
 
 .gs-sections__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
     gap: 10px;
     margin: 0;
     padding: 0;
@@ -1185,7 +1185,7 @@ body.gs-topup-open {
 
 @media (max-width: 600px) {
     .gs-sections__grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
     }
 
     .gs-wrap .gs-sections__link {
@@ -1461,7 +1461,7 @@ body.gs-topup-open {
 
 .gs-services__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
     gap: 12px;
     margin: 16px 0 0;
     padding: 0;

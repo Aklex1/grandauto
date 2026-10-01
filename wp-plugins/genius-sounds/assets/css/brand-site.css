@@ -285,3 +285,94 @@ body.gs-post-page .w-post-elm.post_content .gs-related__list .gb-icon--sm {
     height: 32px;
     flex: none;
 }
+
+
+/* ------------------------------------------- Защита от вылета по горизонтали
+   На узком экране содержимое уезжало за край экрана. Причина у всех случаев
+   одна: у элемента сетки и флекса минимальная ширина по умолчанию равна
+   ширине его содержимого, поэтому длинная строка, широкая таблица или
+   картинка расталкивали колонку. Секция темы обрезала её по краю — снаружи
+   это выглядело как оборванная верстка, а не как переполнение.
+
+   Правила общие для всех наших страниц: класс gs-chrome стоит и на
+   микросервисах, и на посадочных, и на статьях. */
+
+/* Сбрасываем минимум у всего, что может оказаться элементом флекса или
+   сетки. Через :where() — у правила нулевая специфичность, поэтому оно не
+   спорит ни с нашими стилями, ни с темой, а для обычных блоков вообще
+   ничего не меняет. */
+body.gs-chrome :where(div, section, article, aside, header, footer, nav, form,
+                      ul, ol, li, p, span, a, label, strong, em, small,
+                      figure, picture, table, td, th, h1, h2, h3, h4,
+                      time, button, blockquote, pre, dl, dt, dd) {
+    min-width: 0;
+}
+
+/* Ряды, которые на телефоне обязаны переноситься: в одну строку их
+   содержимое не помещается, а без переноса оно уезжает за экран.
+   Здесь :where() не годится — у правила с нулевой специфичностью не хватит
+   веса против flex-wrap, уже заданного в стилях раздела. */
+@media (max-width: 760px) {
+    body.gs-chrome .w-hwrapper,
+    body.gs-chrome .gs-hero__meta,
+    body.gs-chrome .gs-form__foot,
+    body.gs-chrome .gs-chips,
+    body.gs-chrome .zv-topbar-inner,
+    body.gs-chrome .zv-topbar-links,
+    body.gs-chrome .kie-tts-header,
+    body.gs-chrome .kie-tts-balance-section {
+        flex-wrap: wrap;
+    }
+
+    /* Подпись с галочкой: рамка у неё по содержимому, а содержимое —
+       длинная строка вроде «Отмечать неречевые звуки». */
+    body.gs-chrome .gs-check,
+    body.gs-chrome .gs-checkbox {
+        flex-wrap: wrap;
+        max-width: 100%;
+    }
+}
+
+/* Длинное слово или ссылка переносится по буквам, а не вылезает за край.
+   Только там, где это текст, а не интерфейс: в кнопках и чипах перенос по
+   буквам выглядел бы ошибкой. */
+body.gs-chrome .gs-prose,
+body.gs-chrome .gs-api__list,
+body.gs-chrome .gs-api__section p,
+body.gs-chrome .w-post-elm.post_content {
+    overflow-wrap: anywhere;
+}
+
+body.gs-chrome img,
+body.gs-chrome video,
+body.gs-chrome canvas,
+body.gs-chrome svg:not(.gb-icon),
+body.gs-chrome iframe {
+    max-width: 100%;
+}
+
+/* Таблицу на телефоне листаем вбок внутри её рамки, а не всей страницей. */
+@media (max-width: 760px) {
+    body.gs-chrome .gs-wrap table,
+    body.gs-chrome .w-post-elm.post_content table {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+/* Поля ввода ширину от родителя сами не наследуют. */
+body.gs-chrome input,
+body.gs-chrome select,
+body.gs-chrome textarea,
+body.gs-chrome button {
+    max-width: 100%;
+}
+
+/* В выпадающем списке длинная подпись обрывалась на полуслове без всякого
+   признака, что там есть ещё текст. */
+body.gs-chrome select {
+    text-overflow: ellipsis;
+}
