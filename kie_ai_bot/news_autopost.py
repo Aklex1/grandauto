@@ -622,7 +622,7 @@ async def publish_one_news(bot: Bot) -> bool:
 
         if news_moderation.enabled():
             news_moderation.expire_old()
-            if await news_moderation.send_for_review(bot, item, draft.text, "news"):
+            if await _send_for_review(bot, item, draft.text, "news"):
                 return True
             logger.warning("[новости] черновик не доставлен модераторам — публикуем сами")
 
@@ -670,7 +670,7 @@ async def publish_one_case(bot: Bot) -> bool:
 
         if news_moderation.enabled():
             news_moderation.expire_old()
-            if await news_moderation.send_for_review(bot, item, draft.text, "case"):
+            if await _send_for_review(bot, item, draft.text, "case"):
                 return True
             logger.warning("[кейсы] черновик не доставлен модераторам — публикуем сами")
 
@@ -806,7 +806,7 @@ async def publish_generated_rubric(bot: Bot) -> bool:
 
     if news_moderation.enabled():
         news_moderation.expire_old()
-        if await news_moderation.send_for_review(bot, item, draft.text):
+        if await _send_for_review(bot, item, draft.text, "rubric"):
             for used in items:
                 remember("news", url=used.link, title=used.title, source=used.source)
             logger.info("[рубрики] «%s» ушла на проверку", rubric)
@@ -845,6 +845,27 @@ def _slot_plan() -> List[str]:
     return slots[: len(SCHEDULE_HOURS)]
 
 
+async def _send_for_review(bot, item, text: str, kind: str) -> bool:
+    """Показать черновик модераторам.
+
+    Выкатка на сервер делается копированием файлов по одному, и один раз
+    случилось так, что новый news_autopost.py поехал без нового
+    news_moderation.py. Старый модуль не знал про вид поста, вызов падал на
+    лишнем аргументе — и на проверку не приходило вообще ничего, потому что
+    ошибка гасилась общим обработчиком расписания. Теперь разные версии
+    файлов публикацию не ломают: зовём так, как умеет тот модуль,
+    который стоит на сервере.
+    """
+    import news_moderation
+
+    try:
+        return await news_moderation.send_for_review(bot, item, text, kind)
+    except TypeError:
+        logger.warning("[новости] модуль проверки старой версии — обновите "
+                       "news_moderation.py; пока отправляем без вида поста")
+        return await news_moderation.send_for_review(bot, item, text)
+
+
 def _daily_limit(kind: str) -> int:
     """Сколько постов этого вида должно выйти за сутки."""
     from_slots = _slot_plan().count(kind)
@@ -868,6 +889,24 @@ async def news_worker(bot: Bot) -> None:
         "[новости] запущено: канал %s, расписание %s UTC, слоты %s",
         CHAT_ID, SCHEDULE_HOURS, slots,
     )
+
+    # Состояние проверки — отдельной строкой при запуске. Без неё вопрос
+    # «почему на модерацию ничего не приходит» решается перебором догадок:
+    # выключен предпросмотр, не указаны получатели или не дошла выкатка.
+    try:
+        import news_moderation
+
+        if news_moderation.enabled():
+            logger.info("[новости] предпросмотр включён, получателей: %d, "
+                        "черновик живёт %d ч",
+                        len(news_moderation.MODERATOR_IDS), news_moderation.TTL_HOURS)
+        else:
+            logger.warning(
+                "[новости] предпросмотр ВЫКЛЮЧЕН (NEWS_WRITER_PREVIEW=%s, "
+                "получателей %d) — посты уходят в канал без проверки",
+                os.getenv("NEWS_WRITER_PREVIEW", ""), len(news_moderation.MODERATOR_IDS))
+    except Exception as e:
+        logger.error("[новости] модуль проверки не загрузился: %s", e, exc_info=True)
 
     while True:
         try:
