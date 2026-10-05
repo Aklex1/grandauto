@@ -643,6 +643,46 @@ class GS_Rest {
                ORDER BY created_at DESC LIMIT 50", $like), ARRAY_A);
         }
 
+        // База бота: у платежей из Телеграма своя таблица, и баланс человек
+        // видит именно там. Без этих строк разбор жалобы упирается в догадки:
+        // на сайте платежа нет, а в боте он есть и висит в pending.
+        $tg = 0;
+        if (preg_match('~^telegram_(\d+)$~', $who, $m)) {
+            $tg = (int) $m[1];
+        } elseif (is_numeric($who) && strlen($who) >= 6) {
+            // Короткие числа — это id на сайте, номера в телеграме длиннее.
+            $tg = (int) $who;
+        }
+        if ($tg > 0 && class_exists('KIE_TTS_DB')) {
+            $conn = KIE_TTS_DB::get_bot_connection();
+            if (!$conn) {
+                $out['база_бота'] = 'не подключилось';
+            } else {
+                $bot = array('telegram_id' => $tg);
+
+                if ($stmt = $conn->prepare('SELECT balance FROM users WHERE telegram_id = ?')) {
+                    $stmt->bind_param('i', $tg);
+                    $stmt->execute();
+                    $row = $stmt->get_result()->fetch_assoc();
+                    $bot['баланс'] = $row ? (float) $row['balance'] : 'человека нет в базе бота';
+                    $stmt->close();
+                }
+
+                if ($stmt = $conn->prepare(
+                    'SELECT label, amount, tokens, status, created_at
+                       FROM payments WHERE telegram_id = ?
+                   ORDER BY created_at DESC LIMIT 20')) {
+                    $stmt->bind_param('i', $tg);
+                    $stmt->execute();
+                    $bot['платежи'] = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                    $stmt->close();
+                }
+
+                $out['база_бота'] = $bot;
+                $conn->close();
+            }
+        }
+
         // Приходили ли вообще уведомления от ЮMoney. Без этого непонятно,
         // где потерялись деньги: платёж не дошёл до кошелька или дошёл, а
         // уведомление о нём до сайта — нет. Секрет наружу не отдаём, только
