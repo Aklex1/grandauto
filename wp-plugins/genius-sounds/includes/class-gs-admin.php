@@ -545,6 +545,18 @@ class GS_Admin {
     public static function render_bot_payment() {
         ob_start();
         ?>
+        <h3>Кэш страниц</h3>
+        <p class="description" style="max-width:900px">
+            Страницы каталога отдаются из кэша по адресу, и правки заголовков и описаний
+            до выдачи не доезжают, пока кэш не сброшен. После любой правки SEO жмите сюда.
+        </p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
+              style="margin-bottom:18px">
+            <?php wp_nonce_field('gs_purge_cache'); ?>
+            <input type="hidden" name="action" value="gs_purge_cache">
+            <?php submit_button('Сбросить кэш страниц', 'secondary', 'submit', false); ?>
+        </form>
+
         <h3 id="gs-botpay">Закрыть платёж бота</h3>
         <p class="description" style="max-width:900px">
             Для случая «деньги в кошельке есть, а баланса в боте нет»: уведомление

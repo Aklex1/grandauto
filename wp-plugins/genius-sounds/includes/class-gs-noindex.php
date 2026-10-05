@@ -34,6 +34,7 @@ class GS_Noindex {
 
     public static function boot() {
         add_action('template_redirect', array(__CLASS__, 'retire_author'), 1);
+        add_action('template_redirect', array(__CLASS__, 'retire_gone'), 1);
         // Через wp_robots, а не своим тегом в wp_head: иначе на странице
         // окажется два <meta name="robots"> подряд, и какой из них считать —
         // решает робот.
@@ -48,6 +49,39 @@ class GS_Noindex {
      * адресе стоял логин пользователя, а сама страница отвечала ошибкой
      * сервера — и в таком виде попала в поиск.
      */
+    /**
+     * Адреса, которые остались в поиске, а страниц под ними больше нет.
+     *
+     * Проверка всех 1600 адресов из индекса нашла восемь таких: по ним
+     * Яндекс показывает сайт в выдаче, человек приходит и видит «страница
+     * не найдена». Это и потерянный переход, и сигнал поисковику, что сайт
+     * разваливается.
+     *
+     * Ведём каждый адрес на ближайшую по смыслу живую страницу. Остатки
+     * магазина сюда не включены намеренно: страниц под них нет и не будет,
+     * и честный 404 правильнее перевода на главную.
+     */
+    const GONE = array(
+        '/bot-pay/'                 => '/paybot/',
+        '/izmenit-foto-neyrosetyu/' => '/neurohub/',
+        '/kartinka-neyrosetyu/'     => '/neurohub/',
+        '/video-neyrosetyu/'        => '/video-iz-teksta-neiroset/',
+        '/web-app/'                 => '/neurohub/',
+        '/product/konsultacziya-po-razrabotke-chat-bota/' => '/solutions/',
+    );
+
+    public static function retire_gone() {
+        if (is_admin() || !is_404()) {
+            return;
+        }
+        $path = (string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+        $path = '/' . trim($path, '/') . '/';
+        if (isset(self::GONE[$path])) {
+            wp_safe_redirect(home_url(self::GONE[$path]), 301);
+            exit;
+        }
+    }
+
     public static function retire_author() {
         if (!is_author()) {
             return;

@@ -256,6 +256,45 @@ class GS_Seo {
         return $brand !== '' ? $brand : $site;
     }
 
+    /**
+     * Уложить заголовок в длину, не ломая фразу.
+     *
+     * Раньше лишнее просто отрезалось по символу и приклеивалось
+     * многоточие — в выдаче получалось «готовые сэмплы для Soundpad и
+     * дискор… — Genius-bot». Обрывок слова выглядит как сломанная
+     * страница, и по таким заголовкам не кликают: на шестой позиции CTR
+     * падал до полупроцента при пяти сотнях показов.
+     *
+     * Режем по границе слова и без многоточия: укороченная фраза читается
+     * как законченная. Если в заголовке есть тире, предпочитаем оборвать
+     * по нему — головная часть обычно и есть сам запрос.
+     */
+    private static function fit_title($title, $limit = 60) {
+        $title = trim(preg_replace('~\s+~u', ' ', (string) $title));
+        if (mb_strlen($title) <= $limit) {
+            return $title;
+        }
+
+        // Хвост после тире — пояснение; без него заголовок остаётся целым.
+        // Но только если головная часть сама по себе содержательна: у
+        // «Смешные мемные звуки — готовые сэмплы…» голова занимает треть
+        // отведённой длины, и отрезать по тире значит выбросить половину
+        // полезных слов там, где они помещались.
+        $head = preg_split('~\s+[—–-]\s+~u', $title, 2);
+        if (is_array($head) && mb_strlen($head[0]) <= $limit && mb_strlen($head[0]) >= $limit * 0.6) {
+            return trim($head[0]);
+        }
+
+        $cut = mb_substr($title, 0, $limit);
+        $space = mb_strrpos($cut, ' ');
+        if ($space !== false && $space >= 20) {
+            $cut = mb_substr($cut, 0, $space);
+        }
+        // Предлог или союз на конце выглядит обрывом не меньше многоточия.
+        $cut = preg_replace('~\s+(и|или|для|с|со|на|в|во|по|из|от|до|за|под|при|про|к|о|об)$~ui', '', $cut);
+        return trim($cut, " \t\n\r—–-,:;");
+    }
+
     private static function build_title($ctx) {
         if ($ctx['type'] === 'home') {
             // Заголовок обязан отвечать содержимому: первый экран и почти вся
@@ -269,10 +308,7 @@ class GS_Seo {
             return (string) $ctx['service']['seo_title'];
         }
         if ($ctx['type'] === 'section') {
-            $title = (string) $ctx['section']['title'];
-            if (mb_strlen($title) > 60) {
-                $title = mb_substr($title, 0, 59) . '…';
-            }
+            $title = self::fit_title((string) $ctx['section']['title']);
             if ($ctx['page'] > 1) {
                 $title .= ' — страница ' . $ctx['page'];
             }
@@ -294,7 +330,7 @@ class GS_Seo {
             $title = GS_Catalog::short_title((string) $category['slug']);
         }
         if (mb_strlen($title) > 60) {
-            $title = mb_substr($title, 0, 59) . '…';
+            $title = self::fit_title($title);
         } else {
             // Дописываем «продающий» хвост только если он целиком помещается.
             $count = GS_Catalog::count_sounds($category);

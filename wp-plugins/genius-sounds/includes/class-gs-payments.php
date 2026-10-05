@@ -35,6 +35,7 @@ class GS_Payments {
         add_action('admin_post_gs_balance_adjust', array(__CLASS__, 'handle_adjust'));
         add_action('admin_post_gs_botdb_save', array(__CLASS__, 'handle_botdb_save'));
         add_action('admin_post_gs_bot_payment_close', array(__CLASS__, 'handle_bot_payment_close'));
+        add_action('admin_post_gs_purge_cache', array(__CLASS__, 'handle_purge_cache'));
     }
 
     /* ---------------------------------------------------------------------
@@ -220,6 +221,63 @@ class GS_Payments {
 
         set_transient('gs_adjust_notice', $message, 60);
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-balance-adjust');
+        exit;
+    }
+
+    /**
+     * Сбросить кэш страниц.
+     *
+     * Страницы каталога не записи, и обычный сброс кэша записи их не
+     * касается: отдаются они из кэша по адресу. Из-за этого правка
+     * заголовков и описаний может неделями не доезжать до выдачи — я сам
+     * на это попался, проверяя исправленный заголовок и видя старый.
+     *
+     * Плагин кэша на сайте сторонний и в разных версиях зовётся по-разному,
+     * поэтому пробуем все известные имена и говорим, что сработало.
+     */
+    public static function handle_purge_cache() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_purge_cache');
+
+        $done = array();
+        $failed = array();
+        foreach (array('wp_cache_clear_cache', 'wpsc_delete_files', 'rocket_clean_domain',
+                       'w3tc_flush_all', 'ce_clear_cache', 'litespeed_purge_all') as $fn) {
+            if (!function_exists($fn)) {
+                continue;
+            }
+            // У части этих функций есть обязательные аргументы: вызов без
+            // них в PHP 8 роняет страницу целиком. Зовём только те, что
+            // работают без параметров.
+            try {
+                $ref = new ReflectionFunction($fn);
+                if ($ref->getNumberOfRequiredParameters() > 0) {
+                    $failed[] = $fn . ' (нужны аргументы)';
+                    continue;
+                }
+                $fn();
+                $done[] = $fn;
+            } catch (Throwable $e) {
+                $failed[] = $fn . ' (' . $e->getMessage() . ')';
+            }
+        }
+        try {
+            wp_cache_flush();
+            $done[] = 'wp_cache_flush';
+        } catch (Throwable $e) {
+            $failed[] = 'wp_cache_flush';
+        }
+
+        $message = $done
+            ? 'ok: кэш сброшен (' . implode(', ', $done) . ')'
+            : 'Плагин кэша не найден — сбрасывать нечего';
+        if ($failed) {
+            $message .= '. Пропущено: ' . implode(', ', $failed);
+        }
+        set_transient('gs_payment_notice', $message, 60);
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-payments-stuck');
         exit;
     }
 
