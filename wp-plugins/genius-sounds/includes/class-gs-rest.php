@@ -735,6 +735,10 @@ class GS_Rest {
             'логин'  => (string) get_option('kie_tts_db_user', 'akklexb6_neuro'),
             'порт'   => (int) get_option('kie_tts_db_port', 3306),
             'пароль' => trim((string) get_option('kie_tts_db_password', '')) !== '' ? 'задан' : 'по умолчанию в коде',
+            // Отпечаток, а не значение: нужно понять, дошла ли правка до
+            // базы, и не вытащить при этом пароль наружу.
+            'пароль_длина' => strlen((string) get_option('kie_tts_db_password', '')),
+            'пароль_отпечаток' => substr(sha1((string) get_option('kie_tts_db_password', '')), 0, 8),
             'mysqli' => extension_loaded('mysqli') ? 'есть' : 'НЕТ',
         );
 
