@@ -31,6 +31,8 @@ class GS_Yoomoney {
     private static $forwarding = false;
     const OPT_STATS   = 'gs_yoomoney_stats';
     const LOG_LIMIT   = 200;
+    /** У скольких свежих записей журнала держим сам пакет для повтора. */
+    const KEEP_PARAMS = 30;
 
     /**
      * Уведомления, которые не удалось передать боту.
@@ -50,6 +52,7 @@ class GS_Yoomoney {
         add_action('rest_api_init', array(__CLASS__, 'register_routes'));
         add_action('admin_post_gs_yoomoney_reset', array(__CLASS__, 'handle_reset'));
         add_action('admin_post_gs_yoomoney_retry', array(__CLASS__, 'handle_retry'));
+        add_action('admin_post_gs_yoomoney_replay', array(__CLASS__, 'handle_replay'));
         add_filter('cron_schedules', array(__CLASS__, 'add_schedule'), 5);
         add_action('init', array(__CLASS__, 'ensure_cron'));
         add_action(self::HOOK_RETRY, array(__CLASS__, 'drain'));
@@ -75,6 +78,47 @@ class GS_Yoomoney {
         }
         check_admin_referer('gs_yoomoney_retry');
         self::drain(true);
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-payments');
+        exit;
+    }
+
+    /**
+     * Переслать боту сохранённое уведомление ещё раз.
+     *
+     * Повтор безопасен: приёмник бота сверяет подпись и пропускает платёж,
+     * который уже закрыт, — в журнале это видно как «Payment not found or
+     * already processed». То есть дважды одни и те же деньги не зачислятся.
+     */
+    public static function handle_replay() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_yoomoney_replay');
+
+        $label = sanitize_text_field(wp_unslash((string) ($_POST['label'] ?? '')));
+        $log = get_option(self::OPT_LOG, array());
+        $log = is_array($log) ? $log : array();
+
+        $found = null;
+        foreach ($log as $row) {
+            if ((string) ($row['label'] ?? '') === $label && !empty($row['params'])) {
+                $found = $row;
+                break;
+            }
+        }
+
+        if (!$found) {
+            set_transient('gs_payment_notice', 'Пакет уведомления не сохранён — повторить нечего', 60);
+        } else {
+            $sent = self::forward_external((array) $found['params']);
+            self::remember($label, (float) $found['amount'],
+                !empty($sent['ok']) ? 'переслано' : 'не наш платёж',
+                'повтор из журнала: ' . $sent['message'],
+                (array) $found['params'], 'bot');
+            set_transient('gs_payment_notice',
+                (!empty($sent['ok']) ? 'ok: передано боту — ' : 'не передалось — ') . $sent['message'], 60);
+        }
+
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-payments');
         exit;
     }
@@ -579,15 +623,34 @@ class GS_Yoomoney {
         if (!is_array($log)) {
             $log = array();
         }
-        array_unshift($log, array(
+        $row = array(
             'at'      => current_time('mysql'),
             'label'   => (string) $label,
             'amount'  => (float) $amount,
             'status'  => (string) $status,
             'message' => (string) $message,
             'source'  => (string) $source,
-        ));
-        update_option(self::OPT_LOG, array_slice($log, 0, self::LOG_LIMIT), false);
+        );
+
+        // У неудачных уведомлений храним сам пакет. Подпись ЮMoney считается
+        // по полям уведомления, поэтому сохранённый пакет можно переслать
+        // позже — он так и останется подписанным. Без этого единственным
+        // следом платежа оставалась строка ошибки, и дозачислять приходилось
+        // руками, на доверии к скриншоту из кошелька.
+        if (!in_array($status, array('зачислено', 'переслано'), true) && is_array($params)) {
+            $row['params'] = $params;
+        }
+        array_unshift($log, $row);
+
+        // Пакеты занимают место, поэтому держим их только у свежих записей:
+        // платёж, не дошедший месяц назад, пересылать уже некуда.
+        $log = array_slice($log, 0, self::LOG_LIMIT);
+        foreach ($log as $i => $kept) {
+            if ($i >= self::KEEP_PARAMS && isset($kept['params'])) {
+                unset($log[$i]['params']);
+            }
+        }
+        update_option(self::OPT_LOG, $log, false);
 
         if (in_array($status, array('зачислено', 'переслано'), true) && $amount > 0) {
             $stats = get_option(self::OPT_STATS, array());

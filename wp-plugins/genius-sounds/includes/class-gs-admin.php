@@ -977,7 +977,7 @@ class GS_Admin {
         <?php if (!empty($log)): ?>
             <h3>Последние уведомления</h3>
             <table class="widefat striped" style="max-width:900px">
-                <thead><tr><th>Когда</th><th>Метка</th><th>Сумма</th><th>Итог</th></tr></thead>
+                <thead><tr><th>Когда</th><th>Метка</th><th>Сумма</th><th>Итог</th><th></th></tr></thead>
                 <tbody>
                     <?php foreach ($log as $row): ?>
                         <tr>
@@ -985,6 +985,16 @@ class GS_Admin {
                             <td><code><?php echo esc_html(mb_substr((string) $row['label'], 0, 46)); ?></code></td>
                             <td><?php echo esc_html(number_format_i18n((float) $row['amount'], 2)); ?> ₽</td>
                             <td><?php echo esc_html($row['status'] . ($row['message'] ? ' — ' . $row['message'] : '')); ?></td>
+                            <td>
+                                <?php if (!empty($row['params'])): ?>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                        <?php wp_nonce_field('gs_yoomoney_replay'); ?>
+                                        <input type="hidden" name="action" value="gs_yoomoney_replay">
+                                        <input type="hidden" name="label" value="<?php echo esc_attr((string) $row['label']); ?>">
+                                        <?php submit_button('Передать боту', 'small', 'submit', false); ?>
+                                    </form>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
