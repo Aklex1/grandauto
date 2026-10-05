@@ -48,6 +48,17 @@ for check in "${CHECKS[@]}"; do
         continue
     fi
 
+    # Отдельный случай: порт слушается, но только на 127.0.0.1. Тогда
+    # проверка с самого сервера проходит, а снаружи служба недоступна —
+    # ни ЮMoney, ни сайт до неё не достанут. Перезапуск тут не поможет
+    # (адрес задан в юните), поэтому только пишем в журнал, чтобы не
+    # устроить петлю перезапусков.
+    if ss -ltn 2>/dev/null | grep -qE "127\.0\.0\.1:${port}[[:space:]]" \
+       && ! ss -ltn 2>/dev/null | grep -qE "(0\.0\.0\.0|\*|\[::\]):${port}[[:space:]]"; then
+        say "${unit}: слушает только localhost на ${port} — снаружи недоступен. Проверьте systemctl cat ${unit} и drop-in в /etc/systemd/system/${unit}.service.d/"
+        continue
+    fi
+
     if alive "$port" "$path"; then
         continue
     fi
