@@ -17,6 +17,14 @@
 
     venv/bin/python pay_fix.py 244019461 --close-pending --yes
 
+Только два последних из висящих (остальные не трогать):
+
+    venv/bin/python pay_fix.py 244019461 --close-pending --last 2 --yes
+
+Или поимённо, по метке из таблицы выше:
+
+    venv/bin/python pay_fix.py 244019461 --label topup_244019461_1791084834 --yes
+
 Начислить сумму руками (когда платежа в базе нет вовсе):
 
     venv/bin/python pay_fix.py 244019461 --add 500 --reason "два платежа 04.10 по 250" --yes
@@ -65,14 +73,24 @@ def main():
     p.add_argument("telegram_id", type=int)
     p.add_argument("--close-pending", action="store_true",
                    help="закрыть висящие платежи и начислить их токены")
+    p.add_argument("--last", type=int, default=0, metavar="N",
+                   help="из висящих взять только N последних по времени")
+    p.add_argument("--label", action="append", default=[], metavar="МЕТКА",
+                   help="закрыть именно этот платёж; можно указать несколько раз")
     p.add_argument("--add", type=float, default=0.0,
                    help="начислить столько токенов, не привязываясь к платежу")
     p.add_argument("--reason", default="", help="зачем начислено — пишется в журнал")
     p.add_argument("--yes", action="store_true", help="подтвердить запись")
     args = p.parse_args()
 
-    if args.add and args.close_pending:
-        print("Выберите одно: либо --close-pending, либо --add")
+    if args.add and (args.close_pending or args.label):
+        print("Выберите одно: либо закрытие платежей, либо --add")
+        sys.exit(1)
+    if args.last and not args.close_pending:
+        print("--last работает вместе с --close-pending")
+        sys.exit(1)
+    if args.last < 0:
+        print("--last не может быть отрицательным")
         sys.exit(1)
     if args.add and not args.reason:
         print("К --add нужна --reason: через месяц по одной сумме уже не вспомнить, за что она")
@@ -104,20 +122,49 @@ def main():
 
     pending = [r for r in rows if r["status"] == "pending"]
 
-    if not args.close_pending and not args.add:
+    if not args.close_pending and not args.add and not args.label:
         print("\nВисит незакрытых: %d на %.2f токенов." %
               (len(pending), sum(float(r["tokens"]) for r in pending)))
-        print("Ничего не менял. Чтобы закрыть: --close-pending --yes")
+        print("Ничего не менял. Как закрыть:")
+        print("  все висящие:        --close-pending --yes")
+        print("  два последних:      --close-pending --last 2 --yes")
+        print("  конкретный платёж:  --label <метка> --yes")
         conn.close()
         return
 
-    if args.close_pending and not pending:
-        print("\nНезакрытых платежей нет — закрывать нечего.")
-        conn.close()
-        return
+    if args.label:
+        # Поимённо: берём только названные метки, и только те, что висят.
+        by_label = {r["label"]: r for r in rows}
+        chosen = []
+        for label in args.label:
+            row = by_label.get(label)
+            if not row:
+                print("\nПлатежа %s у этого человека нет — проверьте метку." % label)
+                conn.close()
+                sys.exit(1)
+            if row["status"] != "pending":
+                print("\nПлатёж %s уже закрыт (%s) — пропускаю." % (label, row["status"]))
+                continue
+            chosen.append(row)
+        if not chosen:
+            print("\nЗакрывать нечего.")
+            conn.close()
+            return
+    elif args.close_pending:
+        if not pending:
+            print("\nНезакрытых платежей нет — закрывать нечего.")
+            conn.close()
+            return
+        # Платежи уже отсортированы по времени, свежие сверху.
+        chosen = pending[:args.last] if args.last else pending
+        if args.last and len(pending) > args.last:
+            print("\nВисит %d, беру %d последних — остальные не трогаю."
+                  % (len(pending), len(chosen)))
+    else:
+        chosen = []
 
-    plan = ([("платёж %s" % r["label"], float(r["tokens"]), r["label"]) for r in pending]
-            if args.close_pending else [(args.reason, args.add, None)])
+    plan = ([("платёж %s" % r["label"], float(r["tokens"]), r["label"]) for r in chosen]
+            if chosen else [(args.reason, args.add, None)])
     total = sum(x[1] for x in plan)
 
     print("\nНачислю %.2f токенов, баланс станет %.2f:" % (total, before + total))
