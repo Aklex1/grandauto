@@ -529,7 +529,42 @@ class GS_Admin {
         <?php endif; ?>
 
         <?php echo self::render_bot_db(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+        <?php echo self::render_bot_payment(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         <?php echo self::render_balance_adjust(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Закрыть платёж бота, до которого не дошло уведомление.
+     *
+     * Поимённо, по меткам: человек часто жмёт «пополнить» несколько раз
+     * подряд, и на две реальные оплаты в базе висит четыре записи. Кнопка
+     * «закрыть все незакрытые» здесь была бы подарком за чужой счёт.
+     */
+    public static function render_bot_payment() {
+        ob_start();
+        ?>
+        <h3 id="gs-botpay">Закрыть платёж бота</h3>
+        <p class="description" style="max-width:900px">
+            Для случая «деньги в кошельке есть, а баланса в боте нет»: уведомление
+            не дошло, платёж остался незакрытым. Суммы не вводятся — берутся из самого
+            платежа, поэтому ошибиться в размере нельзя. Метки видно в диагностике
+            платежей. Повторное закрытие ничего не добавит: уже закрытый платёж пропускается.
+        </p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
+              style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <?php wp_nonce_field('gs_bot_payment_close'); ?>
+            <input type="hidden" name="action" value="gs_bot_payment_close">
+            <label>Номер в телеграме<br>
+                <input type="text" name="telegram_id" required placeholder="244019461" style="width:170px">
+            </label>
+            <label style="flex:1 1 420px">Метки платежей, через пробел или с новой строки<br>
+                <textarea name="labels" required rows="2" style="width:100%"
+                          placeholder="topup_244019461_1791084074"></textarea>
+            </label>
+            <?php submit_button('Закрыть и зачислить', 'secondary', 'submit', false); ?>
+        </form>
         <?php
         return ob_get_clean();
     }

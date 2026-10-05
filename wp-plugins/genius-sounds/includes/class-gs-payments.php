@@ -34,6 +34,7 @@ class GS_Payments {
         add_action('admin_post_gs_payment_credit', array(__CLASS__, 'handle_credit'));
         add_action('admin_post_gs_balance_adjust', array(__CLASS__, 'handle_adjust'));
         add_action('admin_post_gs_botdb_save', array(__CLASS__, 'handle_botdb_save'));
+        add_action('admin_post_gs_bot_payment_close', array(__CLASS__, 'handle_bot_payment_close'));
     }
 
     /* ---------------------------------------------------------------------
@@ -219,6 +220,108 @@ class GS_Payments {
 
         set_transient('gs_adjust_notice', $message, 60);
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-balance-adjust');
+        exit;
+    }
+
+    /**
+     * Закрыть платёж бота, до которого не дошло уведомление.
+     *
+     * Делает ровно то же, что сделал бы приёмник пополнений: берёт токены
+     * из самой записи платежа, ставит completed и прибавляет баланс в базе
+     * бота. Суммы не выдумываются — они из платежа.
+     *
+     * Закрываем поимённо, по меткам, а не «все незакрытые»: человек часто
+     * жмёт «пополнить» несколько раз подряд, и в базе висит четыре записи
+     * на две реальные оплаты. Закрыть всё — значит подарить разницу.
+     *
+     * Баланс прибавляется только если платёж удалось перевести из pending
+     * в completed. Строк не затронуто — значит его уже закрыли, и второго
+     * начисления не будет: повторный запуск безопасен.
+     */
+    public static function handle_bot_payment_close() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_bot_payment_close');
+
+        $tg = (int) ($_POST['telegram_id'] ?? 0);
+        $raw = (string) wp_unslash((string) ($_POST['labels'] ?? ''));
+        $labels = array_filter(array_map('trim', preg_split('~[\s,]+~', $raw)));
+
+        if ($tg <= 0 || !$labels) {
+            set_transient('gs_payment_notice', 'Нужны номер в телеграме и хотя бы одна метка', 60);
+            wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-botpay');
+            exit;
+        }
+
+        $conn = class_exists('KIE_TTS_DB') ? KIE_TTS_DB::get_bot_connection() : null;
+        if (!$conn) {
+            set_transient('gs_payment_notice', 'Нет связи с базой бота — проверьте доступы', 60);
+            wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-botpay');
+            exit;
+        }
+
+        $before = class_exists('KIE_TTS_DB') ? (float) KIE_TTS_DB::get_user_balance($tg, true) : 0.0;
+        $done = array();
+        $skipped = array();
+
+        foreach ($labels as $label) {
+            $stmt = $conn->prepare('SELECT tokens, status FROM payments WHERE label = ? AND telegram_id = ?');
+            $stmt->bind_param('si', $label, $tg);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            if (!$row) {
+                $skipped[] = $label . ' — такого платежа у этого человека нет';
+                continue;
+            }
+
+            $stmt = $conn->prepare("UPDATE payments SET status='completed' WHERE label = ? AND status='pending'");
+            $stmt->bind_param('s', $label);
+            $stmt->execute();
+            $changed = $stmt->affected_rows;
+            $stmt->close();
+
+            if ($changed !== 1) {
+                $skipped[] = $label . ' — уже закрыт (' . (string) $row['status'] . ')';
+                continue;
+            }
+
+            $tokens = (float) $row['tokens'];
+            KIE_TTS_DB::update_user_balance($tg, $tokens, true);
+            $done[] = $label . ' (+' . number_format($tokens, 2, ',', ' ') . ')';
+        }
+        $conn->close();
+
+        $after = class_exists('KIE_TTS_DB') ? (float) KIE_TTS_DB::get_user_balance($tg, true) : 0.0;
+
+        if ($done) {
+            $log = get_option(self::OPT_ADJUST_LOG, array());
+            if (!is_array($log)) {
+                $log = array();
+            }
+            array_unshift($log, array(
+                'time'    => current_time('mysql'),
+                'by'      => wp_get_current_user()->user_login,
+                'user'    => 'telegram_' . $tg . ' (баланс бота)',
+                'amount'  => $after - $before,
+                'reason'  => 'закрыты платежи бота: ' . implode(', ', $done),
+                'balance' => $after,
+            ));
+            update_option(self::OPT_ADJUST_LOG, array_slice($log, 0, self::ADJUST_KEEP), false);
+        }
+
+        $message = $done
+            ? 'ok: зачислено ' . number_format($after - $before, 2, ',', ' ') . ' — баланс бота '
+              . number_format($before, 2, ',', ' ') . ' → ' . number_format($after, 2, ',', ' ')
+            : 'Ничего не зачислено';
+        if ($skipped) {
+            $message .= '. Пропущено: ' . implode('; ', $skipped);
+        }
+
+        set_transient('gs_payment_notice', $message, 120);
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-botpay');
         exit;
     }
 
