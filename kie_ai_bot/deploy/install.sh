@@ -102,9 +102,12 @@ if ! "${PY}" -c "import config, database; database.get_connection().close(); pri
     die "Нет доступа к MySQL. Проверьте DB_* в .env и добавьте IP этого сервера в whitelist в панели хостинга."
 fi
 
-systemctl enable --now kie-bot.service kie-webhook.service kie-app-webhook.service app-api.service
+# reset-failed перед запуском: юнит, упёршийся в лимит перезапусков,
+# на enable --now молча не стартует, а с set -e обрывает установку.
+systemctl reset-failed kie-bot kie-webhook kie-app-webhook app-api >/dev/null 2>&1 || true
+systemctl enable --now kie-bot.service kie-webhook.service kie-app-webhook.service app-api.service || true
 # Сторож: раз в две минуты поднимает то, что не отвечает по порту.
-systemctl enable --now kie-healthcheck.timer
+systemctl enable --now kie-healthcheck.timer || true
 sleep 3
 bash "${SRC_DIR}/deploy/status.sh" || true
 

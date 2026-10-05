@@ -366,6 +366,14 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Жив ли приёмник пополнений бота и что лежит в очереди на
+        // пересылку. Адрес берётся из настроек сайта, снаружи не подставить.
+        register_rest_route(self::NS, '/diag/bot-listener', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_diag_listener'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         // Анкета «песня в подарок» — открытый маршрут: заявку оставляют без
         // регистрации, иначе половина людей уходит на шаге входа.
         register_rest_route(self::NS, '/gift/lead', array(
@@ -652,6 +660,29 @@ class GS_Rest {
         }
 
         return rest_ensure_response($out);
+    }
+
+    public static function handle_diag_listener() {
+        $probe = class_exists('GS_Yoomoney') ? GS_Yoomoney::probe_forward() : array();
+        $outbox = class_exists('GS_Yoomoney') ? GS_Yoomoney::outbox() : array();
+
+        $queue = array();
+        foreach ($outbox as $row) {
+            $queue[] = array(
+                'label'    => (string) ($row['label'] ?? ''),
+                'сумма'    => (float) ($row['amount'] ?? 0),
+                'попыток'  => (int) ($row['tries'] ?? 0),
+                'в_очереди_с' => date_i18n('Y-m-d H:i', (int) ($row['first'] ?? 0)),
+                'следующая'   => date_i18n('Y-m-d H:i', (int) ($row['next'] ?? 0)),
+                'ошибка'   => (string) ($row['error'] ?? ''),
+            );
+        }
+
+        return rest_ensure_response(array(
+            'приёмник' => $probe,
+            'соседние_порты' => class_exists('GS_Yoomoney') ? GS_Yoomoney::probe_neighbours() : array(),
+            'очередь'  => $queue,
+        ));
     }
 
     public static function handle_diag_bot($request) {

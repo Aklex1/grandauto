@@ -447,6 +447,86 @@ class GS_Yoomoney {
         return array('ok' => true, 'message' => $message);
     }
 
+    /**
+     * Жив ли приёмник бота.
+     *
+     * Адрес берём из настроек сайта, снаружи его не подставить. Нужно это
+     * затем, что единственным признаком «бот не принимает» была строка
+     * cURL-ошибки в журнале, а она появляется только когда кто-то уже
+     * заплатил. Проверять хочется до того.
+     */
+    public static function probe_forward() {
+        $url = trim((string) get_option(self::OPT_FORWARD, ''));
+        if ($url === '') {
+            return array('ok' => false, 'адрес' => '', 'ответ' => 'адрес пересылки не задан');
+        }
+
+        // Бьём в /health рядом с ручкой уведомлений: она отвечает на GET и
+        // ничего не меняет, в отличие от самой /yoomoney-webhook.
+        $health = preg_replace('~/[^/]*$~', '/health', $url);
+        $started = microtime(true);
+        $response = wp_remote_get($health, array('timeout' => 15));
+        $ms = (int) round((microtime(true) - $started) * 1000);
+
+        if (is_wp_error($response)) {
+            return array(
+                'ok'     => false,
+                'адрес'  => $health,
+                'ответ'  => $response->get_error_message(),
+                'мс'     => $ms,
+            );
+        }
+        $code = (int) wp_remote_retrieve_response_code($response);
+        $body = trim(wp_strip_all_tags((string) wp_remote_retrieve_body($response)));
+        return array(
+            'ok'     => $code > 0 && $code < 400,
+            'адрес'  => $health,
+            'код'    => $code,
+            'ответ'  => mb_substr($body, 0, 160),
+            'мс'     => $ms,
+        );
+    }
+
+    /**
+     * Соседние порты того же сервера.
+     *
+     * Нужно, чтобы отличить «сервис лёг» от «до сервера вообще нет пути».
+     * Если соседние порты отвечают, а наш нет — поднимать приёмник. Если
+     * молчат все — дело в сервере или в сети, и приёмник тут ни при чём.
+     * Хост берём из того же адреса пересылки, порты — список наших служб.
+     */
+    public static function probe_neighbours() {
+        $url = trim((string) get_option(self::OPT_FORWARD, ''));
+        $host = $url === '' ? '' : (string) wp_parse_url($url, PHP_URL_HOST);
+        if ($host === '') {
+            return array();
+        }
+
+        $ports = array(
+            8000 => 'приёмник пополнений бота',
+            8002 => 'приёмник пополнений приложения',
+            8010 => 'бот и колбэки',
+            8011 => 'API приложения',
+        );
+        $out = array();
+        foreach ($ports as $port => $what) {
+            $started = microtime(true);
+            $response = wp_remote_get('http://' . $host . ':' . $port . '/', array('timeout' => 8));
+            $ms = (int) round((microtime(true) - $started) * 1000);
+            if (is_wp_error($response)) {
+                $out[$port] = array('что' => $what, 'ответ' => $response->get_error_message(), 'мс' => $ms);
+                continue;
+            }
+            // Любой HTTP-код — уже ответ: порт слушается, служба жива.
+            $out[$port] = array(
+                'что'  => $what,
+                'код'  => (int) wp_remote_retrieve_response_code($response),
+                'мс'   => $ms,
+            );
+        }
+        return $out;
+    }
+
     /** Платежи бота идут дальше по прежнему адресу — его логику не трогаем. */
     private static function forward_external($params) {
         $url = trim((string) get_option(self::OPT_FORWARD, ''));

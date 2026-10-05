@@ -419,6 +419,32 @@ class GS_Admin {
         ?>
         <h2 id="gs-payments-stuck">Незакрытые пополнения</h2>
 
+        <?php
+        // Жив ли приёмник бота. Проверку кешируем на две минуты: иначе
+        // каждое открытие страницы ждало бы ответа чужого сервера.
+        $listener = get_transient('gs_listener_probe');
+        if ($listener === false && class_exists('GS_Yoomoney')) {
+            $listener = GS_Yoomoney::probe_forward();
+            set_transient('gs_listener_probe', $listener, 120);
+        }
+        ?>
+        <?php if (is_array($listener) && !empty($listener['адрес'])): ?>
+            <p class="notice notice-<?php echo !empty($listener['ok']) ? 'success' : 'error'; ?> inline"
+               style="padding:10px;max-width:900px;margin:0 0 12px">
+                <?php if (!empty($listener['ok'])): ?>
+                    Приёмник пополнений бота отвечает
+                    (<?php echo esc_html((string) ($listener['ответ'] ?? '')); ?>).
+                    Уведомления о платежах из бота доходят.
+                <?php else: ?>
+                    <strong>Приёмник пополнений бота не отвечает:</strong>
+                    <?php echo esc_html((string) ($listener['ответ'] ?? '')); ?>.
+                    Пока так, платежи из бота не зачисляются — они встают в очередь ниже.
+                    На сервере бота: <code>systemctl reset-failed kie-webhook &amp;&amp;
+                    systemctl enable --now kie-webhook</code>.
+                <?php endif; ?>
+            </p>
+        <?php endif; ?>
+
         <?php $outbox = class_exists('GS_Yoomoney') ? GS_Yoomoney::outbox() : array(); ?>
         <?php if ($outbox): ?>
             <div class="notice notice-warning inline" style="padding:10px;max-width:900px">
