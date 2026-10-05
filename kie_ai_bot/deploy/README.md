@@ -28,6 +28,7 @@ bash /opt/src/kie_ai_bot/deploy/start.sh
 | `kie-app-webhook`    | 8002  | YooMoney-вебхук пополнений **в мобильном приложении**              |
 | `app-api`            | 8011  | API мобильного приложения (NeuroHub App API)                       |
 | (метрики kie-webhook)| 8003  | Prometheus, опционально (`WEBHOOK_METRICS_PORT=0` — выключить)     |
+| `kie-healthcheck`    | —     | Таймер-сторож: раз в две минуты поднимает то, что не отвечает      |
 
 Дополнительно ставится и включается локальный **Redis** (FSM-состояния и rate limiting).
 
@@ -39,6 +40,44 @@ bash deploy/logs.sh        # логи всех четырёх сервисов �
 bash deploy/start.sh       # перезапуск после правки .env
 systemctl restart kie-bot  # перезапуск одного сервиса
 journalctl -u kie-bot -f   # логи одного сервиса
+```
+
+### Если сервис упал
+
+Сначала одна команда — она ставит юниты, включает сторож и поднимает всё:
+
+```bash
+bash /opt/src/kie_ai_bot/deploy/start.sh
+```
+
+Поднять только приёмник пополнений (порт 8000):
+
+```bash
+systemctl reset-failed kie-webhook     # снять лимит перезапусков
+systemctl enable --now kie-webhook
+curl -s http://127.0.0.1:8000/health   # "yoomoney webhook alive"
+```
+
+`reset-failed` здесь не формальность: systemd по умолчанию сдаётся после
+пяти перезапусков за десять секунд и больше не пробует. Пока лимит не
+снят, `restart` молча ничего не делает.
+
+### Чтобы поднималось само
+
+За этим следят две вещи:
+
+* `Restart=always` в каждом юните плюс `StartLimitIntervalSec=0` — systemd
+  перезапускает процесс после падения и больше не сдаётся после серии
+  падений (раньше сдавался, и приёмник пополнений так простоял с 26
+  сентября);
+* `kie-healthcheck.timer` — раз в две минуты дёргает порты 8000, 8002,
+  8010, 8011 и перезапускает то, что не ответило. Это ловит случай, когда
+  процесс жив, но висит, — systemd такое считает нормой.
+
+```bash
+systemctl status kie-healthcheck.timer      # следит ли
+journalctl -u kie-healthcheck -n 50         # что поднимал
+systemctl start kie-healthcheck.service     # проверить прямо сейчас
 ```
 
 Обновить код на сервере: `git -C /opt/src pull && bash /opt/src/kie_ai_bot/deploy/install.sh`

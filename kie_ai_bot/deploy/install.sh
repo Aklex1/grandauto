@@ -79,6 +79,7 @@ fi
 
 log "6/8 systemd-юниты"
 install -m 644 "${SRC_DIR}/deploy/systemd/"*.service /etc/systemd/system/
+install -m 644 "${SRC_DIR}/deploy/systemd/"*.timer /etc/systemd/system/
 systemctl daemon-reload
 
 log "7/8 Firewall (порты 22, 8000, 8002, 8010, 8011)"
@@ -102,6 +103,8 @@ if ! "${PY}" -c "import config, database; database.get_connection().close(); pri
 fi
 
 systemctl enable --now kie-bot.service kie-webhook.service kie-app-webhook.service app-api.service
+# Сторож: раз в две минуты поднимает то, что не отвечает по порту.
+systemctl enable --now kie-healthcheck.timer
 sleep 3
 bash "${SRC_DIR}/deploy/status.sh" || true
 

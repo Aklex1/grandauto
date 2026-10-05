@@ -1,0 +1,10 @@
+[Unit]
+Description=KIE AI healthcheck: поднимает упавшие сервисы
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/kie_ai_bot/deploy/healthcheck.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kie-healthcheck

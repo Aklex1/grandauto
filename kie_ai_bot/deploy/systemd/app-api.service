@@ -3,12 +3,17 @@ Description=NeuroHub App API Service (:8011)
 After=network-online.target
 Wants=network-online.target
 
+# Без этого systemd сдаётся после пяти перезапусков за десять секунд
+# и оставляет сервис мёртвым навсегда — так и простоял приёмник
+# пополнений. Ноль значит «пробовать всегда».
+StartLimitIntervalSec=0
+
 [Service]
 Type=simple
 WorkingDirectory=/opt/kie_ai_bot
 ExecStart=/opt/kie_ai_bot/venv/bin/uvicorn app_api:app --host 0.0.0.0 --port 8011
 Restart=always
-RestartSec=5
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=app-api

@@ -13,6 +13,13 @@ for s in "${SERVICES[@]}"; do
     fi
 done
 
+state=$(systemctl is-active kie-healthcheck.timer 2>/dev/null || true)
+if [[ "$state" == "active" ]]; then
+    printf '  \033[1;32m●\033[0m %-16s %s\n' "сторож" "следит, раз в 2 мин"
+else
+    printf '  \033[1;31m●\033[0m %-16s %s\n' "сторож" "${state:-not-installed} — упавшее не поднимется само"
+fi
+
 echo
 echo "==================== ПОРТЫ ======================"
 for p in 8000 8002 8010 8011; do

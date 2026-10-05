@@ -17,5 +17,6 @@ echo "==> Проверка доступа к MySQL"
 echo "==> Перезапуск сервисов"
 systemctl enable kie-bot.service kie-webhook.service kie-app-webhook.service app-api.service >/dev/null
 systemctl restart kie-bot.service kie-webhook.service kie-app-webhook.service app-api.service
+systemctl enable --now kie-healthcheck.timer >/dev/null 2>&1 || true
 sleep 3
 bash "${SRC_DIR}/deploy/status.sh"

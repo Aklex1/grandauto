@@ -3,12 +3,17 @@ Description=KIE AI Telegram Bot (aiogram polling + KIE callbacks on :8010)
 After=network-online.target redis-server.service
 Wants=network-online.target
 
+# Без этого systemd сдаётся после пяти перезапусков за десять секунд
+# и оставляет сервис мёртвым навсегда — так и простоял приёмник
+# пополнений. Ноль значит «пробовать всегда».
+StartLimitIntervalSec=0
+
 [Service]
 Type=simple
 WorkingDirectory=/opt/kie_ai_bot
 ExecStart=/opt/kie_ai_bot/venv/bin/python main.py
 Restart=always
-RestartSec=5
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=kie-bot

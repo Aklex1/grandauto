@@ -1,0 +1,11 @@
+[Unit]
+Description=KIE AI healthcheck каждые две минуты
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=kie-healthcheck.service
+
+[Install]
+WantedBy=timers.target
