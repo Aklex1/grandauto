@@ -501,6 +501,75 @@ class GS_Admin {
                 </tbody>
             </table>
         <?php endif; ?>
+
+        <?php echo self::render_balance_adjust(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Правка баланса руками.
+     *
+     * Обработчик и журнал правок были написаны давно, а формы к ним так и
+     * не появилось: зачислить человеку деньги за платёж, который не дошёл,
+     * можно было только через базу. Случай не редкий — уведомление от
+     * ЮMoney теряется по дороге к боту, и баланс приходится доводить
+     * вручную.
+     */
+    public static function render_balance_adjust() {
+        $notice = get_transient('gs_adjust_notice');
+        $log = class_exists('GS_Payments') ? GS_Payments::adjust_log() : array();
+
+        ob_start();
+        ?>
+        <h3 id="gs-balance-adjust">Правка баланса вручную</h3>
+
+        <?php if ($notice !== false): ?>
+            <?php delete_transient('gs_adjust_notice'); ?>
+            <p class="notice notice-<?php echo $notice === 'Баланс изменён' ? 'success' : 'error'; ?>"
+               style="padding:10px;max-width:900px"><?php echo esc_html((string) $notice); ?></p>
+        <?php endif; ?>
+
+        <p class="description" style="max-width:900px">
+            Плюс кладёт деньги на баланс, минус списывает. Причина обязательна и остаётся в
+            журнале: через месяц по одной сумме уже не вспомнить, за что она.
+        </p>
+
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
+              style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <?php wp_nonce_field('gs_balance_adjust'); ?>
+            <input type="hidden" name="action" value="gs_balance_adjust">
+            <label>Кто<br>
+                <input type="text" name="who" required placeholder="логин, id или почта" style="width:220px">
+            </label>
+            <label>Сколько<br>
+                <input type="number" name="amount" step="0.01" required placeholder="200" style="width:110px">
+            </label>
+            <label style="flex:1 1 320px">Причина<br>
+                <input type="text" name="reason" required
+                       placeholder="платёж 30.09 по метке topup_…, уведомление есть, баланс не вырос"
+                       style="width:100%">
+            </label>
+            <?php submit_button('Изменить баланс', 'secondary', 'submit', false); ?>
+        </form>
+
+        <?php if ($log): ?>
+            <table class="widefat striped" style="max-width:1000px">
+                <thead><tr><th>Когда</th><th>Кому</th><th>Сколько</th><th>Стало</th><th>Кто</th><th>Причина</th></tr></thead>
+                <tbody>
+                    <?php foreach (array_slice($log, 0, 20) as $row): ?>
+                        <tr>
+                            <td><?php echo esc_html((string) $row['time']); ?></td>
+                            <td><?php echo esc_html((string) $row['user']); ?></td>
+                            <td><?php echo esc_html(number_format_i18n((float) $row['amount'], 2)); ?> ₽</td>
+                            <td><?php echo esc_html(number_format_i18n((float) $row['balance'], 2)); ?> ₽</td>
+                            <td><?php echo esc_html((string) $row['by']); ?></td>
+                            <td><?php echo esc_html((string) $row['reason']); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
         <?php
         return ob_get_clean();
     }
