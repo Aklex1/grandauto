@@ -224,6 +224,88 @@ class GS_Payments {
     }
 
     /**
+     * Закрыть один платёж в базе бота и начислить его токены.
+     *
+     * Делает то же, что приёмник пополнений: берёт токены из самой записи
+     * платежа, переводит её из pending в completed и прибавляет баланс.
+     * Сумма не приходит снаружи — она в платеже, поэтому начислить больше
+     * оплаченного нельзя.
+     *
+     * Порядок важен: сначала перевод статуса, потом деньги. Если строк не
+     * затронуто, значит платёж уже закрыт — кем-то другим или прошлым
+     * запуском, — и баланс не трогаем. Отсюда безопасность повторов: хоть
+     * из админки, хоть из обработчика уведомлений, хоть обоими сразу.
+     *
+     * @param string     $label     Метка платежа.
+     * @param float|null $paid      Сколько пришло по уведомлению; при
+     *                              расхождении с платежом начисления не будет.
+     * @param int        $expect_tg Чей платёж ожидаем. Ноль — не проверять.
+     */
+    public static function close_bot_payment($label, $paid = null, $expect_tg = 0) {
+        if (!class_exists('KIE_TTS_DB')) {
+            return array('ok' => false, 'message' => 'плагин озвучки не загружен');
+        }
+        $conn = KIE_TTS_DB::get_bot_connection();
+        if (!$conn) {
+            return array('ok' => false, 'message' => 'нет связи с базой бота');
+        }
+
+        $stmt = $conn->prepare('SELECT telegram_id, tokens, amount, status FROM payments WHERE label = ?');
+        $stmt->bind_param('s', $label);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        if (!$row) {
+            $conn->close();
+            return array('ok' => false, 'message' => 'платежа с такой меткой в базе бота нет');
+        }
+
+        // Метка могла прийти от другого человека — например, при опечатке
+        // в админке. Закрывать её можно, но тогда деньги уйдут владельцу
+        // платежа, а в журнале окажется номер, который набрали. Лучше
+        // отказать и сказать, в чём дело.
+        if ($expect_tg > 0 && (int) $row['telegram_id'] !== $expect_tg) {
+            $conn->close();
+            return array('ok' => false, 'message' => 'это платёж другого человека (telegram_id '
+                . (int) $row['telegram_id'] . ')');
+        }
+
+        // Защита от накрутки: уплачено должно сойтись с тем, что ждали.
+        // Копейки комиссии допускаем, разницу в сумме — нет.
+        $expected = (float) $row['amount'];
+        if ($paid !== null && $expected > 0 && abs((float) $paid - $expected) > 0.01) {
+            $conn->close();
+            return array('ok' => false, 'message' => sprintf(
+                'сумма не сошлась: пришло %s, платёж на %s',
+                number_format((float) $paid, 2, ',', ' '), number_format($expected, 2, ',', ' ')));
+        }
+
+        $stmt = $conn->prepare("UPDATE payments SET status='completed' WHERE label = ? AND status='pending'");
+        $stmt->bind_param('s', $label);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+        $conn->close();
+
+        if ($changed !== 1) {
+            return array('ok' => false, 'already' => true,
+                'message' => 'платёж уже закрыт (' . (string) $row['status'] . ')');
+        }
+
+        $tg = (int) $row['telegram_id'];
+        $tokens = (float) $row['tokens'];
+        KIE_TTS_DB::update_user_balance($tg, $tokens, true);
+
+        return array(
+            'ok'          => true,
+            'telegram_id' => $tg,
+            'tokens'      => $tokens,
+            'message'     => 'зачислено ' . number_format($tokens, 2, ',', ' ') . ' в базе бота',
+        );
+    }
+
+    /**
      * Закрыть платёж бота, до которого не дошло уведомление.
      *
      * Делает ровно то же, что сделал бы приёмник пополнений: берёт токены
@@ -254,45 +336,26 @@ class GS_Payments {
             exit;
         }
 
-        $conn = class_exists('KIE_TTS_DB') ? KIE_TTS_DB::get_bot_connection() : null;
-        if (!$conn) {
+        $probe = class_exists('KIE_TTS_DB') ? KIE_TTS_DB::get_bot_connection() : null;
+        if (!$probe) {
             set_transient('gs_payment_notice', 'Нет связи с базой бота — проверьте доступы', 60);
             wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-botpay');
             exit;
         }
+        $probe->close();
 
         $before = class_exists('KIE_TTS_DB') ? (float) KIE_TTS_DB::get_user_balance($tg, true) : 0.0;
         $done = array();
         $skipped = array();
 
         foreach ($labels as $label) {
-            $stmt = $conn->prepare('SELECT tokens, status FROM payments WHERE label = ? AND telegram_id = ?');
-            $stmt->bind_param('si', $label, $tg);
-            $stmt->execute();
-            $row = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            if (!$row) {
-                $skipped[] = $label . ' — такого платежа у этого человека нет';
-                continue;
+            $result = self::close_bot_payment($label, null, $tg);
+            if (!empty($result['ok'])) {
+                $done[] = $label . ' (+' . number_format((float) $result['tokens'], 2, ',', ' ') . ')';
+            } else {
+                $skipped[] = $label . ' — ' . (string) $result['message'];
             }
-
-            $stmt = $conn->prepare("UPDATE payments SET status='completed' WHERE label = ? AND status='pending'");
-            $stmt->bind_param('s', $label);
-            $stmt->execute();
-            $changed = $stmt->affected_rows;
-            $stmt->close();
-
-            if ($changed !== 1) {
-                $skipped[] = $label . ' — уже закрыт (' . (string) $row['status'] . ')';
-                continue;
-            }
-
-            $tokens = (float) $row['tokens'];
-            KIE_TTS_DB::update_user_balance($tg, $tokens, true);
-            $done[] = $label . ' (+' . number_format($tokens, 2, ',', ' ') . ')';
         }
-        $conn->close();
 
         $after = class_exists('KIE_TTS_DB') ? (float) KIE_TTS_DB::get_user_balance($tg, true) : 0.0;
 
