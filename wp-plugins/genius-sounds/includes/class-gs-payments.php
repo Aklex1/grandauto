@@ -33,6 +33,7 @@ class GS_Payments {
         add_filter('rest_pre_dispatch', array(__CLASS__, 'guard_notification'), 10, 3);
         add_action('admin_post_gs_payment_credit', array(__CLASS__, 'handle_credit'));
         add_action('admin_post_gs_balance_adjust', array(__CLASS__, 'handle_adjust'));
+        add_action('admin_post_gs_botdb_save', array(__CLASS__, 'handle_botdb_save'));
     }
 
     /* ---------------------------------------------------------------------
@@ -218,6 +219,64 @@ class GS_Payments {
 
         set_transient('gs_adjust_notice', $message, 60);
         wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-balance-adjust');
+        exit;
+    }
+
+    /**
+     * Доступ к базе бота.
+     *
+     * Баланс телеграмных пользователей лежит в базе бота, и сайт умеет в неё
+     * ходить — методами плагина озвучки. Но формы для этих доступов нет ни
+     * у кого: значения однажды попали в базу и с тех пор неизменяемы, а
+     * сейчас пароль не тот — соединение отбивается «Access denied». Из-за
+     * этого жалобу «деньги ушли, в боте баланса нет» нельзя закрыть из
+     * админки вообще, только командой на сервере бота.
+     *
+     * Поля чужие, поэтому пишем именно их, по одному, а не отправляем чужую
+     * форму целиком: так соседние настройки заведомо не пострадают.
+     */
+    public static function handle_botdb_save() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_botdb_save');
+
+        // Снимок до записи: доступы чужие, и если я ошибусь полем, вернуть
+        // прежние значения иначе будет нечем — формы-то у них нет.
+        if (class_exists('GS_Backup')) {
+            GS_Backup::snapshot('перед правкой доступов к базе бота', true);
+        }
+
+        $fields = array(
+            'kie_tts_db_host' => sanitize_text_field(wp_unslash((string) ($_POST['host'] ?? ''))),
+            'kie_tts_db_name' => sanitize_text_field(wp_unslash((string) ($_POST['base'] ?? ''))),
+            'kie_tts_db_user' => sanitize_text_field(wp_unslash((string) ($_POST['login'] ?? ''))),
+            'kie_tts_db_port' => (int) ($_POST['port'] ?? 3306),
+        );
+        foreach ($fields as $option => $value) {
+            if ($value !== '' && $value !== 0) {
+                update_option($option, $value, false);
+            }
+        }
+
+        // Пароль перезаписываем только если его ввели: иначе пустое поле
+        // при правке соседней строки затёрло бы рабочий доступ.
+        $secret = (string) ($_POST['secret'] ?? '');
+        if (trim($secret) !== '') {
+            update_option('kie_tts_db_password', $secret, false);
+        }
+
+        $message = 'Доступы сохранены';
+        if (class_exists('KIE_TTS_DB')) {
+            $conn = KIE_TTS_DB::get_bot_connection();
+            $message .= $conn ? '. Соединение с базой бота установлено' : '. Соединение не установилось — проверьте значения';
+            if ($conn) {
+                $conn->close();
+            }
+        }
+
+        set_transient('gs_botdb_notice', $message, 60);
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-botdb');
         exit;
     }
 

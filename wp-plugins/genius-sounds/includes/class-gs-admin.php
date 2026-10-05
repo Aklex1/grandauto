@@ -528,7 +528,82 @@ class GS_Admin {
             </table>
         <?php endif; ?>
 
+        <?php echo self::render_bot_db(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         <?php echo self::render_balance_adjust(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Доступ к базе бота.
+     *
+     * Формы для этих доступов не было ни у одного плагина: значения однажды
+     * оказались в базе и менять их стало нечем. А без рабочего соединения
+     * сайт не видит ни баланса телеграмных пользователей, ни их платежей —
+     * и жалобу «деньги ушли, баланса нет» из админки не закрыть.
+     */
+    public static function render_bot_db() {
+        $notice = get_transient('gs_botdb_notice');
+        $conn = class_exists('KIE_TTS_DB') ? KIE_TTS_DB::get_bot_connection() : null;
+        $ok = (bool) $conn;
+        if ($conn) {
+            $conn->close();
+        }
+
+        ob_start();
+        ?>
+        <h3 id="gs-botdb">Доступ к базе бота</h3>
+
+        <?php if ($notice !== false): ?>
+            <?php delete_transient('gs_botdb_notice'); ?>
+            <p class="notice notice-info" style="padding:10px;max-width:900px">
+                <?php echo esc_html((string) $notice); ?></p>
+        <?php endif; ?>
+
+        <p class="notice notice-<?php echo $ok ? 'success' : 'error'; ?> inline"
+           style="padding:10px;max-width:900px;margin:0 0 12px">
+            <?php if ($ok): ?>
+                Соединение с базой бота есть — баланс и платежи людей из Телеграма видны,
+                зачислять можно отсюда.
+            <?php else: ?>
+                <strong>Соединения с базой бота нет.</strong> Пока так, баланс телеграмных
+                пользователей сайту недоступен: он лежит в базе бота, и зачислить его можно
+                только командой на сервере бота. Пароль — в <code>/opt/kie_ai_bot/.env</code>,
+                переменная <code>DB_PASSWORD</code>.
+            <?php endif; ?>
+        </p>
+
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
+              style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <?php wp_nonce_field('gs_botdb_save'); ?>
+            <input type="hidden" name="action" value="gs_botdb_save">
+            <label>Хост<br>
+                <input type="text" name="host" style="width:220px"
+                       value="<?php echo esc_attr((string) get_option('kie_tts_db_host', '')); ?>">
+            </label>
+            <label>База<br>
+                <input type="text" name="base" style="width:170px"
+                       value="<?php echo esc_attr((string) get_option('kie_tts_db_name', '')); ?>">
+            </label>
+            <label>Логин<br>
+                <input type="text" name="login" style="width:170px"
+                       value="<?php echo esc_attr((string) get_option('kie_tts_db_user', '')); ?>">
+            </label>
+            <label>Порт<br>
+                <input type="number" name="port" style="width:90px"
+                       value="<?php echo (int) get_option('kie_tts_db_port', 3306); ?>">
+            </label>
+            <label>Пароль<br>
+                <input type="password" name="secret" style="width:200px" autocomplete="new-password"
+                       placeholder="<?php echo trim((string) get_option('kie_tts_db_password', '')) !== ''
+                           ? 'задан — оставьте пустым' : 'не задан'; ?>">
+            </label>
+            <?php submit_button('Сохранить и проверить', 'secondary', 'submit', false); ?>
+        </form>
+        <p class="description" style="max-width:900px">
+            Пустое поле пароля ничего не меняет — так правка соседней строки не затирает
+            рабочий доступ. После сохранения сайт сразу пробует подключиться и пишет, вышло ли.
+        </p>
         <?php
         return ob_get_clean();
     }
