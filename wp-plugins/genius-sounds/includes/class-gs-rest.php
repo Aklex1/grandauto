@@ -351,6 +351,15 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Платежи одного человека: и зачисленные, и зависшие. Нужен для
+        // разбора жалоб «деньги ушли, баланс не вырос» — иначе ответ
+        // приходится собирать по админке, где видны только незакрытые.
+        register_rest_route(self::NS, '/diag/payments', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_diag_payments'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/diag/bot', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_diag_bot'),
@@ -566,6 +575,85 @@ class GS_Rest {
      * делом: соединение, строка в базе бота, строка на сайте и метки
      * пользователя. Пароль не показываем — только сам факт, что он задан.
      */
+    /**
+     * Платежи одного человека.
+     *
+     * Ищем по всему, чем человек мог представиться: номеру в телеграме,
+     * идентификатору на сайте, логину. Метка платежа содержит и то, и
+     * другое, поэтому поиск идёт по ней подстрокой.
+     */
+    public static function handle_diag_payments($request) {
+        global $wpdb;
+
+        $who = trim((string) $request->get_param('who'));
+        if ($who === '') {
+            return new WP_Error('gs_no_who', 'Укажите who: номер в телеграме, id или логин',
+                array('status' => 400));
+        }
+
+        $out = array('кого_искали' => $who);
+
+        // Человек на сайте: телеграмный аккаунт заводится с логином
+        // telegram_<номер>, но искать стоит и по id, и по логину.
+        $user = is_numeric($who) ? get_user_by('id', (int) $who) : null;
+        if (!$user) {
+            $user = get_user_by('login', $who);
+        }
+        if (!$user && is_numeric($who)) {
+            $user = get_user_by('login', 'telegram_' . (int) $who);
+        }
+        if ($user) {
+            $out['человек'] = array(
+                'id'      => (int) $user->ID,
+                'логин'   => $user->user_login,
+                'почта'   => $user->user_email,
+                'баланс'  => class_exists('GS_SFX') ? GS_SFX::get_balance($user->ID) : null,
+            );
+        } else {
+            $out['человек'] = 'на сайте не нашёлся';
+        }
+
+        $like = '%' . $wpdb->esc_like($who) . '%';
+        $uid = $user ? (int) $user->ID : 0;
+
+        $table = $wpdb->prefix . 'kie_tts_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table) {
+            $out['платежи'] = $wpdb->get_results($wpdb->prepare(
+                "SELECT user_id, label, amount, status, is_telegram, created_at, completed_at
+                   FROM {$table}
+                  WHERE label LIKE %s OR user_id = %d
+               ORDER BY created_at DESC LIMIT 50", $like, $uid), ARRAY_A);
+        } else {
+            $out['платежи'] = 'таблицы платежей нет';
+        }
+
+        $nh = $wpdb->prefix . 'kie_neurohub_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $nh)) === $nh) {
+            $out['платежи_нейрохаба'] = $wpdb->get_results($wpdb->prepare(
+                "SELECT id, user_key, amount, status, created_at
+                   FROM {$nh} WHERE user_key LIKE %s
+               ORDER BY created_at DESC LIMIT 50", $like), ARRAY_A);
+        }
+
+        // Приходили ли вообще уведомления от ЮMoney. Без этого непонятно,
+        // где потерялись деньги: платёж не дошёл до кошелька или дошёл, а
+        // уведомление о нём до сайта — нет. Секрет наружу не отдаём, только
+        // признак, что он задан.
+        if (class_exists('GS_Yoomoney')) {
+            $log = (array) GS_Yoomoney::get_log();
+            $out['уведомления_юmoney'] = array(
+                'секрет_задан' => trim((string) get_option('gs_yoomoney_secret', '')) !== '',
+                'всего_в_журнале' => count($log),
+                // Весь журнал, а не хвост: при разборе жалобы нужно найти
+                // запись месячной давности, а не последние десять.
+                'последние' => $log,
+                'сводка' => GS_Yoomoney::get_stats(),
+            );
+        }
+
+        return rest_ensure_response($out);
+    }
+
     public static function handle_diag_bot($request) {
         global $wpdb;
         $out = array();

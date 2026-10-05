@@ -419,6 +419,35 @@ class GS_Admin {
         ?>
         <h2 id="gs-payments-stuck">Незакрытые пополнения</h2>
 
+        <?php $outbox = class_exists('GS_Yoomoney') ? GS_Yoomoney::outbox() : array(); ?>
+        <?php if ($outbox): ?>
+            <div class="notice notice-warning inline" style="padding:10px;max-width:900px">
+                <p style="margin:0 0 6px">
+                    <strong>Не передано боту: <?php echo count($outbox); ?></strong> —
+                    деньги в кошельке, а бот в момент уведомления не ответил. Сайт повторяет
+                    передачу сам: первые попытки через 10–30 минут, дальше реже, всего две недели.
+                </p>
+                <ul style="margin:0 0 8px 18px">
+                    <?php foreach (array_slice($outbox, 0, 10) as $row): ?>
+                        <li>
+                            <code><?php echo esc_html((string) $row['label']); ?></code>
+                            — <?php echo esc_html(number_format((float) $row['amount'], 2, ',', ' ')); ?> ₽,
+                            попыток <?php echo (int) $row['tries']; ?>,
+                            следующая <?php echo esc_html(wp_date('d.m H:i', (int) $row['next'])); ?>
+                            <?php if (!empty($row['error'])): ?>
+                                <br><span class="description"><?php echo esc_html((string) $row['error']); ?></span>
+                            <?php endif; ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <?php wp_nonce_field('gs_yoomoney_retry'); ?>
+                    <input type="hidden" name="action" value="gs_yoomoney_retry">
+                    <?php submit_button('Бот поднят — передать сейчас', 'secondary', 'submit', false); ?>
+                </form>
+            </div>
+        <?php endif; ?>
+
         <?php if ($notice !== false): ?>
             <?php delete_transient('gs_payment_notice'); ?>
             <?php $ok = strpos((string) $notice, 'ok:') === 0; ?>

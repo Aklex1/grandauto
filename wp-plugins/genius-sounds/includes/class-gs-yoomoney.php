@@ -32,9 +32,120 @@ class GS_Yoomoney {
     const OPT_STATS   = 'gs_yoomoney_stats';
     const LOG_LIMIT   = 200;
 
+    /**
+     * Уведомления, которые не удалось передать боту.
+     *
+     * Платежи бота заводятся в его базе, и зачисляет их он сам: сайт только
+     * передаёт ему уведомление. Если бот в этот момент недоступен, деньги
+     * уже лежат в кошельке, а баланс не растёт — и уведомление пропадало
+     * насовсем, потому что в журнал попадала только строчка об ошибке.
+     * Теперь такие уведомления ждут здесь и уходят, как только бот ответит.
+     */
+    const OPT_OUTBOX  = 'gs_yoomoney_outbox';
+    const HOOK_RETRY  = 'gs_yoomoney_retry';
+    /** Две недели попыток: дольше ждать нечего, нужно разбираться руками. */
+    const OUTBOX_TTL  = 1209600;
+
     public static function boot() {
         add_action('rest_api_init', array(__CLASS__, 'register_routes'));
         add_action('admin_post_gs_yoomoney_reset', array(__CLASS__, 'handle_reset'));
+        add_action('admin_post_gs_yoomoney_retry', array(__CLASS__, 'handle_retry'));
+        add_filter('cron_schedules', array(__CLASS__, 'add_schedule'), 5);
+        add_action('init', array(__CLASS__, 'ensure_cron'));
+        add_action(self::HOOK_RETRY, array(__CLASS__, 'drain'));
+    }
+
+    public static function add_schedule($schedules) {
+        if (!isset($schedules['gs_five_minutes'])) {
+            $schedules['gs_five_minutes'] = array('interval' => 300, 'display' => 'Каждые 5 минут');
+        }
+        return $schedules;
+    }
+
+    public static function ensure_cron() {
+        if (!wp_next_scheduled(self::HOOK_RETRY)) {
+            wp_schedule_event(time() + 120, 'gs_five_minutes', self::HOOK_RETRY);
+        }
+    }
+
+    /** Повторить пересылку сейчас — когда бот подняли и ждать незачем. */
+    public static function handle_retry() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gs_yoomoney_retry');
+        self::drain(true);
+        wp_safe_redirect(admin_url('admin.php?page=genius-sounds') . '#gs-payments');
+        exit;
+    }
+
+    public static function outbox() {
+        $rows = get_option(self::OPT_OUTBOX, array());
+        return is_array($rows) ? $rows : array();
+    }
+
+    /** Отложить уведомление до лучших времён. */
+    private static function queue($params, $label, $amount) {
+        $rows = self::outbox();
+        foreach ($rows as $row) {
+            if ((string) ($row['label'] ?? '') === (string) $label) {
+                return;  // это же уведомление уже ждёт
+            }
+        }
+        $rows[] = array(
+            'label'  => (string) $label,
+            'amount' => (float) $amount,
+            'params' => (array) $params,
+            'tries'  => 1,
+            'first'  => time(),
+            'next'   => time() + 600,
+        );
+        update_option(self::OPT_OUTBOX, array_slice($rows, -100), false);
+    }
+
+    private static function wait_for($tries) {
+        $steps = array(600, 1800, 3600, 10800, 21600, 43200);
+        $i = max(0, (int) $tries - 1);
+        return isset($steps[$i]) ? $steps[$i] : 86400;
+    }
+
+    /**
+     * Отдать боту всё, что накопилось.
+     *
+     * @param bool $now Не смотреть на срок следующей попытки.
+     */
+    public static function drain($now = false) {
+        $rows = self::outbox();
+        if (!$rows) {
+            return;
+        }
+        $keep = array();
+        foreach ($rows as $row) {
+            $tries = (int) ($row['tries'] ?? 1);
+            if (!$now && (int) ($row['next'] ?? 0) > time()) {
+                $keep[] = $row;
+                continue;
+            }
+            if (time() - (int) ($row['first'] ?? time()) > self::OUTBOX_TTL) {
+                self::remember((string) $row['label'], (float) $row['amount'], 'не наш платёж',
+                    'две недели не удавалось передать боту — зачислите вручную',
+                    (array) $row['params'], 'bot');
+                continue;
+            }
+
+            $sent = self::forward_external((array) $row['params']);
+            if (!empty($sent['ok'])) {
+                self::remember((string) $row['label'], (float) $row['amount'], 'переслано',
+                    'с повтора, попытка ' . $tries . ': ' . $sent['message'],
+                    (array) $row['params'], 'bot');
+                continue;
+            }
+            $row['tries'] = $tries + 1;
+            $row['next']  = time() + self::wait_for($row['tries']);
+            $row['error'] = (string) $sent['message'];
+            $keep[] = $row;
+        }
+        update_option(self::OPT_OUTBOX, array_values($keep), false);
     }
 
     /** Сброс журнала и подсчётов — например, после проверочных уведомлений. */
@@ -124,8 +235,12 @@ class GS_Yoomoney {
                 // Метка похожа на нашу, а платежа с ней нет. Чем терять
                 // деньги, отдаём уведомление дальше — вдруг это бот.
                 $sent = self::forward_external($params);
+                if (empty($sent['ok'])) {
+                    self::queue($params, $label, $amount);
+                }
                 self::remember($label, $amount, $sent['ok'] ? 'переслано' : 'ошибка',
-                    $result['message'] . '; ' . $sent['message'], $params, 'bot');
+                    $result['message'] . '; ' . $sent['message']
+                    . (empty($sent['ok']) ? ' — отложено до ответа бота' : ''), $params, 'bot');
                 return self::reply(false, 'tts', $result['message']);
             }
             self::remember($label, $amount, $result['ok'] ? 'зачислено' : 'ошибка', $result['message'], $params);
@@ -136,7 +251,15 @@ class GS_Yoomoney {
         // форматом метки. Пересылаем, если задан адрес, и в любом случае
         // честно говорим, что на сайте зачисления не было.
         $result = self::forward_external($params);
-        self::remember($label, $amount, $result['ok'] ? 'переслано' : 'не наш платёж', $result['message'], $params, 'bot');
+        if (empty($result['ok'])) {
+            // Деньги уже в кошельке, а передать их боту не вышло. Выбросить
+            // уведомление — значит потерять платёж: баланс человеку никто
+            // не начислит, и узнаем мы об этом только из его жалобы.
+            self::queue($params, $label, $amount);
+        }
+        self::remember($label, $amount, $result['ok'] ? 'переслано' : 'не наш платёж',
+            $result['message'] . (empty($result['ok']) ? ' — отложено до ответа бота' : ''),
+            $params, 'bot');
         return self::reply(false, 'unknown', $result['message']);
     }
 
