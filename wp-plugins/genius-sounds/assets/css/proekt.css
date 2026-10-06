@@ -1,0 +1,49 @@
+/* Наставник по индивидуальному проекту. Опирается на общие переменные сайта. */
+.gs-proekt { max-width: 1040px; margin: 0 auto; }
+.gs-proekt h1, .gs-proekt h2, .gs-proekt h3 { margin: 0 0 12px; }
+.gs-proekt__title { font-size: clamp(26px, 4vw, 40px); line-height: 1.15; }
+.gs-proekt__lead { font-size: 17px; line-height: 1.6; max-width: 70ch; }
+.gs-proekt__bullets { margin: 18px 0; padding-left: 20px; line-height: 1.7; }
+.gs-proekt__badges { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
+.gs-proekt__badges span {
+    background: rgba(125, 125, 255, .12); border-radius: 999px; padding: 6px 14px; font-size: 14px;
+}
+.gs-proekt__start, .gs-proekt__app, .gs-proekt__steps,
+.gs-proekt__examples, .gs-proekt__tariffs { margin: 34px 0; }
+.gs-proekt__form {
+    display: grid; gap: 12px; margin-bottom: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+}
+.gs-proekt__form label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.gs-proekt__wide { grid-column: 1 / -1; }
+.gs-proekt__form input, .gs-proekt__form select, .gs-proekt__input {
+    padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(125, 125, 155, .35);
+    background: transparent; color: inherit; font: inherit; width: 100%;
+}
+.gs-proekt__note { font-size: 14px; opacity: .75; margin: 8px 0; }
+.gs-proekt__list { columns: 2; column-gap: 28px; line-height: 1.9; padding-left: 20px; }
+.gs-proekt__cards {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+}
+.gs-proekt__card {
+    border: 1px solid rgba(125, 125, 155, .25); border-radius: 14px; padding: 16px 18px;
+}
+.gs-proekt__card ul { margin: 0; padding-left: 18px; line-height: 1.6; }
+.gs-proekt__price { font-size: 26px; font-weight: 700; margin: 6px 0 10px; }
+.gs-proekt__bar {
+    display: flex; gap: 14px; flex-wrap: wrap; justify-content: space-between;
+    align-items: center; padding: 12px 16px; border-radius: 12px;
+    background: rgba(125, 125, 255, .1); margin-bottom: 16px;
+}
+.gs-proekt__step { border: 1px solid rgba(125, 125, 155, .25); border-radius: 12px; margin-bottom: 10px; }
+.gs-proekt__step summary { padding: 12px 16px; cursor: pointer; font-weight: 600; }
+.gs-proekt__step.is-locked summary { opacity: .65; }
+.gs-proekt__body { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+.gs-proekt__answer {
+    background: rgba(125, 125, 155, .08); border-radius: 10px; padding: 14px 16px;
+    line-height: 1.65; max-height: 460px; overflow: auto;
+}
+.gs-proekt__tick { color: #2e9e5b; font-size: 13px; font-weight: 500; }
+.gs-proekt__lock { font-size: 13px; font-weight: 500; opacity: .7; }
+@media (max-width: 640px) { .gs-proekt__list { columns: 1; } }

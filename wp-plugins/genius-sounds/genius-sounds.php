@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.27.0
+ * Version:     2.28.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -46,6 +46,9 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-noindex.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-index.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-webmaster.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-metrika.php';
+require_once GS_PLUGIN_DIR . 'includes/proekt-prompts.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-proekt.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-proekt-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-landing.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
@@ -127,6 +130,7 @@ class Genius_Sounds_Plugin {
         GS_Media_Proxy::boot();
         GS_Redirects::boot();
         GS_Metrika::boot();
+        GS_Proekt_Page::boot();
         GS_Admin::boot();
         GS_Pages::boot();
         GS_Return::boot();
@@ -243,6 +247,14 @@ class Genius_Sounds_Plugin {
      * Ассеты грузим только на своих страницах, чтобы не утяжелять остальной сайт.
      */
     public function enqueue_front_assets() {
+        if (class_exists('GS_Proekt_Page') && GS_Proekt_Page::is_page()) {
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-proekt', GS_PLUGIN_URL . 'assets/css/proekt.css',
+                array('genius-sounds-catalog'), GS_VERSION);
+            wp_enqueue_script('genius-sounds-proekt', GS_PLUGIN_URL . 'assets/js/proekt.js',
+                array(), GS_VERSION, true);
+        }
+
         // Цели Метрики грузим на каждой странице: путь из каталога в
         // оплату идёт через статьи, посадочные и микросервисы, и считать
         // его кусками бессмысленно. Файл крошечный и без зависимостей.

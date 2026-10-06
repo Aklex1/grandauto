@@ -253,6 +253,15 @@ class GS_Yoomoney {
             return self::reply(!empty($result['ok']), 'legal', (string) ($result['message'] ?? ''));
         }
 
+        // Индивидуальный проект: метка заказа, баланс не трогаем — оплата
+        // разовая, за тариф, и открывает шаги в конкретном проекте.
+        if (class_exists('GS_Proekt') && strpos($label, GS_Proekt::LABEL_PREFIX) === 0) {
+            $result = GS_Proekt::paid($label);
+            self::remember($label, $amount, !empty($result['ok']) ? 'зачислено' : 'ошибка',
+                (string) ($result['message'] ?? ''), $params, 'проект');
+            return self::reply(!empty($result['ok']), 'proekt', (string) ($result['message'] ?? ''));
+        }
+
         // Песня в подарок: метка своя, зачисления на баланс нет — деньги
         // сразу за конкретный заказ, и по уведомлению запускается запись.
         if (class_exists('GS_Gift') && strpos($label, GS_Gift::LABEL_PREFIX) === 0) {

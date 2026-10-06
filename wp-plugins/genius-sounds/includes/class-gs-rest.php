@@ -381,6 +381,30 @@ class GS_Rest {
         // Все незакрытые платежи с метками — чтобы сверить их с выпиской
         // кошелька: со стороны сайта оплаченный и брошенный выглядят
         // одинаково, различить их может только выписка.
+        // Наставник по индивидуальному проекту. Маршруты открытые: ученик
+        // работает без регистрации, проект держится на токене в куке —
+        // требовать аккаунт у школьника значит потерять половину на входе.
+        register_rest_route(self::NS, '/proekt/start', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_proekt_start'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route(self::NS, '/proekt/run', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_proekt_run'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route(self::NS, '/proekt/state', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_proekt_state'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route(self::NS, '/proekt/pay', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_proekt_pay'),
+            'permission_callback' => '__return_true',
+        ));
+
         register_rest_route(self::NS, '/diag/pending', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_pending_list'),
@@ -740,6 +764,111 @@ class GS_Rest {
             (string) ($params['method'] ?? 'GET'),
             isset($params['payload']) ? $params['payload'] : null
         ));
+    }
+
+    /* ---------------------------------------------------------------------
+     * Наставник по индивидуальному проекту
+     * ------------------------------------------------------------------ */
+
+    private static function proekt_payload($request) {
+        $p = $request->get_json_params();
+        return is_array($p) ? $p : (array) $request->get_params();
+    }
+
+    /** Состояние проекта в том виде, в каком его показывает страница. */
+    private static function proekt_state($token) {
+        $row = GS_Proekt::project($token);
+        if (!$row) {
+            return null;
+        }
+        $tariffs = GS_Proekt::tariffs();
+        $tariff = (string) $row['tariff'];
+        $hints = gs_proekt_input_hints();
+
+        $steps = array();
+        foreach (GS_Proekt::stages() as $s) {
+            list($id, $title, $min) = $s;
+            $done = !empty($row['steps'][$id]['output']);
+            $steps[] = array(
+                'id'      => $id,
+                'title'   => $title,
+                'минимальный_тариф' => $min,
+                'закрыт'  => !GS_Proekt::allows($tariff, $id),
+                'готов'   => $done,
+                'подсказка' => (string) ($hints[$id] ?? ''),
+                'текст'   => $done ? (string) $row['steps'][$id]['output'] : '',
+            );
+        }
+
+        $prices = array();
+        foreach (GS_Proekt::tariff_order() as $id) {
+            if ($id === 'free') {
+                continue;
+            }
+            $prices[$id] = array(
+                'название' => $tariffs[$id][0],
+                'цена'     => (int) $tariffs[$id][1],
+                'доплата'  => GS_Proekt::upgrade_price($tariff, $id),
+                'запросов' => (int) $tariffs[$id][2],
+                'дней'     => (int) $tariffs[$id][3],
+            );
+        }
+
+        return array(
+            'токен'    => (string) $row['token'],
+            'тариф'    => $tariff,
+            'тариф_название' => $tariffs[$tariff][0],
+            'запросов_использовано' => (int) $row['used'],
+            'запросов_лимит' => (int) $tariffs[$tariff][2],
+            'доступ_до' => (int) $row['paid_until'],
+            'шаги'     => $steps,
+            'тарифы'   => $prices,
+        );
+    }
+
+    public static function handle_proekt_start($request) {
+        $p = self::proekt_payload($request);
+        $profile = array();
+        foreach (array('класс', 'предметы', 'тип', 'тема', 'требования') as $key) {
+            $value = sanitize_text_field((string) ($p[$key] ?? ''));
+            if ($value !== '') {
+                $profile[$key] = mb_substr($value, 0, 500);
+            }
+        }
+        $token = GS_Proekt::create($profile);
+        return rest_ensure_response(self::proekt_state($token));
+    }
+
+    public static function handle_proekt_state($request) {
+        $state = self::proekt_state((string) $request->get_param('token'));
+        if (!$state) {
+            return new WP_Error('gs_proekt_none', 'Проект не найден', array('status' => 404));
+        }
+        return rest_ensure_response($state);
+    }
+
+    public static function handle_proekt_run($request) {
+        $p = self::proekt_payload($request);
+        $token = (string) ($p['token'] ?? '');
+        $stage = sanitize_key((string) ($p['stage'] ?? ''));
+        $input = (string) ($p['input'] ?? '');
+
+        $result = GS_Proekt::run($token, $stage, $input);
+        $result['состояние'] = self::proekt_state($token);
+        return rest_ensure_response($result);
+    }
+
+    public static function handle_proekt_pay($request) {
+        $p = self::proekt_payload($request);
+        $token = (string) ($p['token'] ?? '');
+        $tariff = sanitize_key((string) ($p['tariff'] ?? ''));
+        $back = GS_Proekt_Page::url() . '?token=' . GS_Proekt::token_clean($token);
+        $link = GS_Proekt::pay_link($token, $tariff, $back);
+        if ($link === '') {
+            return new WP_Error('gs_proekt_pay', 'Не удалось собрать ссылку на оплату',
+                array('status' => 400));
+        }
+        return rest_ensure_response(array('ссылка' => $link));
     }
 
     public static function handle_pending_list($request) {
