@@ -41,10 +41,16 @@ def _parse_ids(raw: str) -> List[int]:
 
 
 ENABLED = os.getenv("NEWS_WRITER_PREVIEW", "0").strip().lower() in ("1", "true", "yes", "on")
-# Кому показывать. По умолчанию — те же люди, что утверждают фото-автопосты
-MODERATOR_IDS = _parse_ids(os.getenv("NEWS_MODERATOR_IDS",
-                                     os.getenv("AUTOPOST_MODERATOR_IDS", "")))
+# Кому показывать черновики новостей. Это личная лента владельца канала:
+# утверждение чужих промпт-постов осталось у всех админов, а новости
+# смотрит один человек — чтобы одно и то же решение не принимали двое.
+MODERATOR_IDS = _parse_ids(os.getenv("NEWS_MODERATOR_IDS", "367692958"))
 TTL_HOURS = int(os.getenv("NEWS_DRAFT_TTL", "12") or 12)
+
+# Сколько черновиков вообще может висеть нерешёнными. Пока модератор молчит,
+# новые собирать бессмысленно: он получит ленту почти одинаковых постов и
+# перестанет их читать совсем.
+PENDING_CAP = int(os.getenv("NEWS_DRAFT_PENDING_CAP", "4") or 4)
 
 
 def enabled() -> bool:
@@ -109,6 +115,61 @@ def pending_today(kind: str) -> int:
     return int(row["n"] if row else 0)
 
 
+def pending_total() -> int:
+    """Сколько черновиков ждут решения — всех видов, за все дни."""
+    init_db()
+    with closing(news_autopost._connect()) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM news_drafts WHERE status = 'pending'").fetchone()
+    return int(row["n"] if row else 0)
+
+
+def too_many_pending() -> bool:
+    return PENDING_CAP > 0 and pending_total() >= PENDING_CAP
+
+
+def recent_titles(kind: str = "", days: int = 21) -> List[str]:
+    """
+    О чём уже были черновики — включая пропущенные и просроченные.
+
+    Темы для рубрик модель придумывает сама, и «о чём уже писали» она берёт
+    из списка вышедшего. Черновик публикацией не является, поэтому
+    «промпт дня» про конспект уходил на проверку снова и снова: в списке
+    опубликованного его не было.
+    """
+    init_db()
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    sql = "SELECT title FROM news_drafts WHERE created_at >= ?"
+    args = [since]
+    if kind:
+        sql += " AND COALESCE(kind, 'news') = ?"
+        args.append(kind)
+    sql += " ORDER BY created_at DESC LIMIT 40"
+    with closing(news_autopost._connect()) as conn:
+        rows = conn.execute(sql, args).fetchall()
+    out = []
+    for row in rows:
+        title = (row["title"] or "").strip()
+        topic = title.split(":", 1)[-1].strip()
+        if topic and topic not in out:
+            out.append(topic)
+    return out
+
+
+def already_pending(text: str) -> bool:
+    """Такой же текст уже ждёт решения — второй раз не показываем."""
+    init_db()
+    head = (text or "").strip()[:200]
+    if not head:
+        return False
+    with closing(news_autopost._connect()) as conn:
+        row = conn.execute(
+            "SELECT id FROM news_drafts WHERE status = 'pending' AND substr(text, 1, 200) = ?",
+            (head,),
+        ).fetchone()
+    return bool(row)
+
+
 def get_draft(draft_id: int) -> Optional[dict]:
     with closing(news_autopost._connect()) as conn:
         row = conn.execute("SELECT * FROM news_drafts WHERE id = ?", (draft_id,)).fetchone()
@@ -148,6 +209,9 @@ def _keyboard(draft_id: int) -> InlineKeyboardMarkup:
 
 async def send_for_review(bot: Bot, item, text: str, kind: str = "news") -> bool:
     """Показывает черновик модераторам. True — хотя бы один получил."""
+    if already_pending(text):
+        logger.info("[черновики] такой текст уже ждёт решения — второй раз не шлём")
+        return True
     draft_id = save_draft(item, text, kind)
     head = (f"📝 <b>Черновик новости №{draft_id}</b>\n"
             f"<i>Источник: {item.source or '—'}</i>\n\n")

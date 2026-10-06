@@ -194,6 +194,30 @@ def init_db() -> None:
                 published_at TEXT NOT NULL
             )
         """)
+        # Занятые слоты расписания: по строке на час, в который уже
+        # отработали. Считать занятость по виду поста нельзя — слот плана
+        # умеет отдать рубрику, слот кейса — новость, и счётчик вида тогда
+        # стоит на месте, пока расписание тикает каждые пять минут.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS news_slots (
+                day      TEXT NOT NULL,
+                hour     INTEGER NOT NULL,
+                kind     TEXT,
+                tries    INTEGER NOT NULL DEFAULT 0,
+                done     INTEGER NOT NULL DEFAULT 0,
+                taken_at TEXT NOT NULL,
+                PRIMARY KEY (day, hour)
+            )
+        """)
+        # База на сервере переживает выкатки по одному файлу: если таблица
+        # слотов осталась от промежуточной версии, недостающие колонки
+        # добавляем на месте, а не роняем бота при первом же тике.
+        have = {row["name"] for row in conn.execute("PRAGMA table_info(news_slots)")}
+        if have:
+            if "tries" not in have:
+                conn.execute("ALTER TABLE news_slots ADD COLUMN tries INTEGER NOT NULL DEFAULT 0")
+            if "done" not in have:
+                conn.execute("ALTER TABLE news_slots ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_news_kind ON news_posts(kind)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_news_url ON news_posts(url)")
         conn.commit()
@@ -259,6 +283,59 @@ def posted_today(kind: str) -> int:
             (kind, today),
         ).fetchone()
     return int(row["n"] if row else 0)
+
+
+# Сколько раз пробуем собрать пост в один час, если материал не нашёлся.
+# Без потолка расписание дёргает редактора каждые пять минут весь час —
+# это деньги у поставщика за попытки, которые уже не получились.
+SLOT_TRIES = _env_int("NEWS_SLOT_TRIES", 3)
+
+
+def _slot_row(hour: int) -> Optional[sqlite3.Row]:
+    today = datetime.now(timezone.utc).date().isoformat()
+    with closing(_connect()) as conn:
+        return conn.execute(
+            "SELECT tries, done FROM news_slots WHERE day = ? AND hour = ?", (today, hour)
+        ).fetchone()
+
+
+def slot_done(hour: int) -> bool:
+    """Час закрыт: пост вышел или черновик ушёл на проверку."""
+    row = _slot_row(hour)
+    return bool(row and row["done"])
+
+
+def slot_spent(hour: int) -> bool:
+    """Попытки на этот час исчерпаны — ждём следующего слота."""
+    row = _slot_row(hour)
+    return bool(row and not row["done"] and SLOT_TRIES > 0 and row["tries"] >= SLOT_TRIES)
+
+
+def note_attempt(hour: int, kind: str) -> None:
+    now = datetime.now(timezone.utc)
+    with closing(_connect()) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO news_slots (day, hour, kind, tries, done, taken_at) "
+            "VALUES (?, ?, ?, 0, 0, ?)",
+            (now.date().isoformat(), hour, kind, now.isoformat(timespec="seconds")),
+        )
+        conn.execute("UPDATE news_slots SET tries = tries + 1 WHERE day = ? AND hour = ?",
+                     (now.date().isoformat(), hour))
+        conn.commit()
+
+
+def take_slot(hour: int, kind: str) -> None:
+    """Отмечает час отработанным — что бы в нём ни вышло."""
+    now = datetime.now(timezone.utc)
+    with closing(_connect()) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO news_slots (day, hour, kind, tries, done, taken_at) "
+            "VALUES (?, ?, ?, 0, 0, ?)",
+            (now.date().isoformat(), hour, kind, now.isoformat(timespec="seconds")),
+        )
+        conn.execute("UPDATE news_slots SET done = 1, kind = ? WHERE day = ? AND hour = ?",
+                     (kind, now.date().isoformat(), hour))
+        conn.commit()
 
 
 def log_publication(kind: str, title: str = "", *, with_cta: bool = False,
@@ -785,10 +862,23 @@ async def publish_generated_rubric(bot: Bot) -> bool:
         logger.info("[рубрики] для «%s» нет свежего материала", rubric)
         return False
 
+    # Чего избегать: вышедшее плюс то, что уже показывали модератору.
+    # Черновик публикацией не является, и без него «промпт дня» пятый раз
+    # подряд приходил про конспект.
+    avoid = list(recent_rubric_topics(rubric))
+    try:
+        import news_moderation
+
+        for topic in news_moderation.recent_titles("rubric"):
+            if topic not in avoid:
+                avoid.append(topic)
+    except Exception as e:
+        logger.debug("[рубрики] список черновиков недоступен: %s", e)
+
     draft = await news_writer.write_rubric(
         rubric,
         [{"title": i.title, "summary": i.summary, "source": i.source} for i in items],
-        avoid=recent_rubric_topics(rubric),
+        avoid=avoid[:16],
     )
     if not draft.useful or not draft.text:
         logger.info("[рубрики] «%s» не собралась: %s", rubric, draft.reason)
@@ -916,27 +1006,43 @@ async def news_worker(bot: Bot) -> None:
                     continue
 
                 kind = slots[position] if position < len(slots) else "news"
-                # Черновик на проверке — это уже занятый слот. Иначе за час
-                # ожидания решения бот собирает дюжину почти одинаковых
-                # постов: расписание проверяется каждые пять минут, а
-                # счётчик публикаций стоит на месте.
+                # Час отработан — больше в него не возвращаемся. Считать по
+                # виду поста нельзя: слот плана отдаёт рубрику, слот кейса —
+                # новость, и счётчик вида остаётся нулём, пока расписание
+                # тикает каждые пять минут. Так модератор и получал дюжину
+                # почти одинаковых черновиков подряд.
+                if slot_done(hour) or slot_spent(hour):
+                    continue
+
+                # Черновик на проверке — это уже занятый слот.
                 waiting = 0
                 try:
                     import news_moderation
 
                     if news_moderation.enabled():
+                        # Сначала закрываем просроченные: иначе забытый вчера
+                        # черновик держал бы стоп-кран нажатым вечно.
+                        news_moderation.expire_old()
+                        if news_moderation.too_many_pending():
+                            logger.info(
+                                "[новости] %d черновиков ждут решения — новые не собираем",
+                                news_moderation.pending_total())
+                            continue
                         waiting = news_moderation.pending_today(kind)
                 except Exception as e:
                     logger.warning("[новости] не посчитать черновики на проверке: %s", e)
                 if posted_today(kind) + waiting >= _daily_limit(kind):
                     continue
 
+                note_attempt(hour, kind)
                 if kind == "plan":
-                    await publish_one_plan(bot)
+                    done = await publish_one_plan(bot)
                 elif kind == "case":
-                    await publish_one_case(bot)
+                    done = await publish_one_case(bot)
                 else:
-                    await publish_one_news(bot)
+                    done = await publish_one_news(bot)
+                if done:
+                    take_slot(hour, kind)
                 break
         except Exception as e:
             logger.error("[новости] ошибка расписания: %s", e, exc_info=True)
