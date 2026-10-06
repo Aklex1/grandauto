@@ -388,7 +388,7 @@ class GS_Pages {
                             <?php elseif ($trial > 0): ?>
                                 <span class="gs-balance__label">Первый звук — бесплатно, без регистрации</span>
                             <?php else: ?>
-                                <span class="gs-balance__label">Бесплатный звук на сегодня создан</span>
+                                <span class="gs-balance__label">Бесплатный звук уже создавали</span>
                             <?php endif; ?>
                         </div>
 
@@ -408,7 +408,7 @@ class GS_Pages {
 
                     <?php if (!$logged && $trial > 0): ?>
                         <p class="gs-form__note gs-form__note--trial">
-                            Один звук на пять секунд — бесплатно и без аккаунта.
+                            Один звук на пять секунд — бесплатно и без аккаунта, по одному на человека.
                             Аккаунт понадобится дальше: чтобы сохранять звуки, выбирать длину и режимы.
                         </p>
                     <?php endif; ?>

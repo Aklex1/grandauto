@@ -121,6 +121,7 @@ class Genius_Sounds_Plugin {
         add_filter('query_vars', array('GS_Catalog', 'add_query_vars'));
         add_action('template_redirect', array('GS_Catalog', 'redirect_legacy_page'), 5);
         add_action('wp_enqueue_scripts', array($this, 'enqueue_front_assets'));
+        add_action('template_redirect', array($this, 'link_trial_to_user'), 5);
 
         GS_Importer::boot();
         GS_SFX::boot();
@@ -247,6 +248,20 @@ class Genius_Sounds_Plugin {
     /**
      * Ассеты грузим только на своих страницах, чтобы не утяжелять остальной сайт.
      */
+    /**
+     * Связать пробный звук с аккаунтом.
+     *
+     * Пробуют гостем, платят вошедшим. Один раз на пользователя смотрим,
+     * совпадают ли его признаки с отметкой о бесплатной генерации, — и
+     * ответ запоминаем в мете, чтобы не ходить в таблицу каждый раз.
+     */
+    public function link_trial_to_user() {
+        if (is_admin() || !is_user_logged_in() || !class_exists('GS_Rest')) {
+            return;
+        }
+        GS_Rest::trial_bind_user();
+    }
+
     public function enqueue_front_assets() {
         if (class_exists('GS_Proekt_Page') && GS_Proekt_Page::is_page()) {
             wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);

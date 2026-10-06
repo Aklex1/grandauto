@@ -737,10 +737,14 @@ class GS_Payments {
         if (!is_array($log)) {
             $log = array();
         }
+        $user = get_current_user_id();
         $log[$label] = array(
             'src'  => (string) $source,
-            'user' => get_current_user_id(),
+            'user' => $user,
             'at'   => current_time('mysql'),
+            // Был ли у плательщика бесплатный звук: путь «попробовал —
+            // вернулся — заплатил» иначе не виден ни в одном отчёте.
+            'trial' => class_exists('GS_Rest') ? GS_Rest::trial_of_user($user) : '',
         );
         if (count($log) > self::SRC_LOG_KEEP) {
             $log = array_slice($log, -self::SRC_LOG_KEEP, null, true);
@@ -753,6 +757,13 @@ class GS_Payments {
         $log = get_option(self::OPT_SRC_LOG, array());
         return is_array($log) && isset($log[(string) $label]['src'])
             ? (string) $log[(string) $label]['src'] : '';
+    }
+
+    /** Когда у плательщика была бесплатная проба. Пусто — не было. */
+    public static function payment_trial_of($label) {
+        $log = get_option(self::OPT_SRC_LOG, array());
+        return is_array($log) && isset($log[(string) $label]['trial'])
+            ? (string) $log[(string) $label]['trial'] : '';
     }
 
     public static function mark_payment($response, $handler, $request) {

@@ -443,6 +443,14 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Сводка по бесплатным пробам: сколько их, сколько людей потом
+        // завели аккаунт и сколько из них платили.
+        register_rest_route(self::NS, '/diag/trial', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_trial_stats'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/diag/pending', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_pending_list'),
@@ -980,6 +988,13 @@ class GS_Rest {
                 $src = class_exists('GS_Payments')
                     ? GS_Payments::payment_source_of((string) $row['label']) : '';
                 $row['откуда'] = $src === '' ? '—' : ($names[$src] ?? $src);
+                // Путь «попробовал бесплатно — вернулся — заплатил».
+                $trial = class_exists('GS_Payments')
+                    ? GS_Payments::payment_trial_of((string) $row['label']) : '';
+                if ($trial === '' && class_exists('GS_Rest')) {
+                    $trial = self::trial_of_user((int) $row['user_id']);
+                }
+                $row['пробный_звук'] = $trial === '' ? 'не было' : $trial;
             }
             unset($row);
             $out['сайт'] = $rows;
@@ -1699,57 +1714,274 @@ class GS_Rest {
      * Пробный звук без регистрации
      * ------------------------------------------------------------------ */
 
-    /** Сколько пробных звуков отдаём с одного адреса в сутки. */
-    const TRIAL_PER_DAY = 1;
+    /**
+     * Пробный звук даётся один раз — навсегда, а не раз в сутки.
+     *
+     * Узнаём посетителя тремя независимыми способами: адрес, кука и
+     * отпечаток браузера (экран, язык, часовой пояс, платформа). Совпало
+     * хоть одно — пробный уже был. По одному признаку обойти слишком
+     * просто: кука чистится в один клик, адрес меняется переключением на
+     * мобильный интернет, отпечаток — сменой браузера.
+     *
+     * Ноль в TRIAL_MARK_DAYS означает «помним всегда». Если окажется, что
+     * общие адреса школ и операторов отсекают живых людей, здесь же
+     * ставится срок забывания для адреса, не трогая остальные признаки.
+     */
+    const TRIAL_MARK_DAYS = array('ip' => 0, 'cookie' => 0, 'fp' => 0);
     /** Потолок на весь сайт в сутки: пробник стоит денег у поставщика. */
-    const TRIAL_DAY_CAP = 40;
+    const TRIAL_DAY_CAP = 10;
     const TRIAL_SECONDS = 5;
+    const TRIAL_COOKIE = 'gs_sfx_trial';
+
+    private static function trial_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'gs_sfx_trial';
+    }
+
+    /** Таблица отметок. Создаётся один раз и живёт между обновлениями. */
+    private static function trial_install() {
+        static $done = false;
+        if ($done) {
+            return;
+        }
+        $done = true;
+        global $wpdb;
+        $table = self::trial_table();
+        if (get_option('gs_sfx_trial_table') === '1'
+            && $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table) {
+            return;
+        }
+        $charset = $wpdb->get_charset_collate();
+        $wpdb->query("CREATE TABLE IF NOT EXISTS {$table} (
+            mark CHAR(32) NOT NULL,
+            kind VARCHAR(8) NOT NULL,
+            user_id BIGINT NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (mark),
+            KEY user_id (user_id)
+        ) {$charset}");
+        // Таблица могла остаться от первой версии — там колонки пользователя нет.
+        $cols = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+        if (is_array($cols) && !in_array('user_id', $cols, true)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN user_id BIGINT NOT NULL DEFAULT 0");
+            $wpdb->query("ALTER TABLE {$table} ADD KEY user_id (user_id)");
+        }
+        update_option('gs_sfx_trial_table', '1', false);
+    }
 
     /**
-     * Адрес посетителя для счёта попыток.
+     * Адрес посетителя.
      *
      * Берём не голый REMOTE_ADDR: если сайт окажется за своим прокси, там у
      * всех один внутренний адрес — и бесплатный звук достанется одному
      * человеку на свете. Для внутренних адресов смотрим X-Forwarded-For.
      */
-    private static function trial_ip_key() {
+    private static function trial_ip() {
         $remote = isset($_SERVER['REMOTE_ADDR'])
             ? trim((string) sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']))) : '';
-        $ip = $remote;
         $public = filter_var($remote, FILTER_VALIDATE_IP,
             FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
-        if (!$public) {
-            $forwarded = isset($_SERVER['HTTP_X_FORWARDED_FOR'])
-                ? (string) wp_unslash($_SERVER['HTTP_X_FORWARDED_FOR']) : '';
-            foreach (explode(',', $forwarded) as $candidate) {
-                $candidate = trim($candidate);
-                if (filter_var($candidate, FILTER_VALIDATE_IP,
-                        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                    $ip = $candidate;
-                    break;
-                }
+        if ($public) {
+            return $remote;
+        }
+        $forwarded = isset($_SERVER['HTTP_X_FORWARDED_FOR'])
+            ? (string) wp_unslash($_SERVER['HTTP_X_FORWARDED_FOR']) : '';
+        foreach (explode(',', $forwarded) as $candidate) {
+            $candidate = trim($candidate);
+            if (filter_var($candidate, FILTER_VALIDATE_IP,
+                    FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                return $candidate;
             }
         }
-        return 'gs_sfx_trial_' . md5($ip !== '' ? $ip : '0');
+        return $remote !== '' ? $remote : '0';
+    }
+
+    /** Кука посетителя: заводим при первом обращении, живёт десять лет. */
+    private static function trial_cookie($create = false) {
+        $have = isset($_COOKIE[self::TRIAL_COOKIE])
+            ? preg_replace('~[^a-f0-9]~', '', (string) wp_unslash($_COOKIE[self::TRIAL_COOKIE])) : '';
+        if ($have !== '') {
+            return $have;
+        }
+        if (!$create) {
+            return '';
+        }
+        $new = wp_generate_password(32, false, false);
+        $new = strtolower(preg_replace('~[^a-f0-9]~', '', md5($new)));
+        if (!headers_sent()) {
+            setcookie(self::TRIAL_COOKIE, $new, time() + 10 * YEAR_IN_SECONDS,
+                      COOKIEPATH ? COOKIEPATH : '/', COOKIE_DOMAIN, is_ssl(), false);
+        }
+        $_COOKIE[self::TRIAL_COOKIE] = $new;
+        return $new;
+    }
+
+    /**
+     * Признаки посетителя: что сравниваем с журналом.
+     *
+     * @param string $fp отпечаток браузера, присланный страницей
+     * @return array<string,string> вид признака => отметка
+     */
+    private static function trial_marks($fp = '', $create_cookie = false) {
+        $salt = wp_salt('auth');
+        $marks = array('ip' => md5('ip|' . $salt . '|' . self::trial_ip()));
+        $cookie = self::trial_cookie($create_cookie);
+        if ($cookie !== '') {
+            $marks['cookie'] = md5('ck|' . $salt . '|' . $cookie);
+        }
+        $fp = preg_replace('~[^A-Za-z0-9_.:\-]~', '', (string) $fp);
+        if (strlen($fp) >= 8) {
+            $marks['fp'] = md5('fp|' . $salt . '|' . $fp);
+        }
+        return $marks;
+    }
+
+    /** Был ли уже пробный звук у этого посетителя. */
+    private static function trial_used($marks) {
+        global $wpdb;
+        if (!$marks) {
+            return false;
+        }
+        self::trial_install();
+        $table = self::trial_table();
+        $place = implode(',', array_fill(0, count($marks), '%s'));
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT mark, kind, created_at FROM {$table} WHERE mark IN ({$place})",
+            array_values($marks)
+        ), ARRAY_A);
+        foreach ((array) $rows as $row) {
+            $days = (int) (self::TRIAL_MARK_DAYS[$row['kind']] ?? 0);
+            if ($days <= 0) {
+                return true;    // помним всегда
+            }
+            if (strtotime((string) $row['created_at']) > time() - $days * DAY_IN_SECONDS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function trial_remember($marks) {
+        global $wpdb;
+        self::trial_install();
+        $now = current_time('mysql');
+        foreach ($marks as $kind => $mark) {
+            $wpdb->query($wpdb->prepare(
+                "INSERT INTO " . self::trial_table() . " (mark, kind, created_at) VALUES (%s, %s, %s)
+                 ON DUPLICATE KEY UPDATE created_at = VALUES(created_at)",
+                $mark, $kind, $now
+            ));
+        }
+        $day = self::trial_day_key();
+        set_transient($day, (int) get_transient($day) + 1, DAY_IN_SECONDS);
     }
 
     private static function trial_day_key() {
         return 'gs_sfx_trial_day_' . wp_date('Ymd');
     }
 
-    /** Сколько пробных генераций осталось этому посетителю сегодня. */
-    public static function trial_left() {
+    /**
+     * Связать пробную генерацию с аккаунтом.
+     *
+     * Человек пробует звук гостем, а платит уже вошедшим. Чтобы в
+     * статистике было видно, пришёл ли плательщик с бесплатной пробы,
+     * ставим на его отметки номер аккаунта при первом же заходе после
+     * входа. Результат кладём в мету пользователя — чтобы не ходить в
+     * таблицу на каждом запросе.
+     */
+    public static function trial_bind_user($user_id = 0) {
+        global $wpdb;
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($user_id <= 0) {
+            return '';
+        }
+        $known = get_user_meta($user_id, 'gs_sfx_trial', true);
+        if ($known !== '') {
+            return $known === '0' ? '' : (string) $known;
+        }
+
+        $marks = self::trial_marks('', false);
+        $found = '';
+        if ($marks) {
+            self::trial_install();
+            $table = self::trial_table();
+            $place = implode(',', array_fill(0, count($marks), '%s'));
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT mark, created_at FROM {$table} WHERE mark IN ({$place}) ORDER BY created_at LIMIT 1",
+                array_values($marks)
+            ), ARRAY_A);
+            if ($row) {
+                $found = (string) $row['created_at'];
+                $wpdb->query($wpdb->prepare(
+                    "UPDATE {$table} SET user_id = %d WHERE mark IN ({$place})",
+                    array_merge(array($user_id), array_values($marks))
+                ));
+            }
+        }
+        update_user_meta($user_id, 'gs_sfx_trial', $found !== '' ? $found : '0');
+        return $found;
+    }
+
+    /** Когда у этого человека был бесплатный звук. Пусто — не было. */
+    public static function trial_of_user($user_id) {
+        $user_id = (int) $user_id;
+        if ($user_id <= 0) {
+            return '';
+        }
+        $known = (string) get_user_meta($user_id, 'gs_sfx_trial', true);
+        if ($known === '') {
+            return '';     // ещё не считали: посчитает trial_bind_user на его заходе
+        }
+        return $known === '0' ? '' : $known;
+    }
+
+    /**
+     * Остался ли пробный звук у этого посетителя.
+     *
+     * Страница знает только адрес и куку — отпечаток приходит вместе с
+     * запросом на генерацию. Поэтому надпись на кнопке оптимистична, а
+     * решение всё равно принимает маршрут.
+     */
+    public static function trial_left($fp = '') {
         if ((int) get_transient(self::trial_day_key()) >= self::TRIAL_DAY_CAP) {
             return 0;
         }
-        return max(0, self::TRIAL_PER_DAY - (int) get_transient(self::trial_ip_key()));
+        return self::trial_used(self::trial_marks($fp)) ? 0 : 1;
     }
 
-    private static function trial_note_use() {
-        $ip = self::trial_ip_key();
-        set_transient($ip, (int) get_transient($ip) + 1, DAY_IN_SECONDS);
-        $day = self::trial_day_key();
-        set_transient($day, (int) get_transient($day) + 1, DAY_IN_SECONDS);
+    public static function handle_trial_stats($request) {
+        global $wpdb;
+        self::trial_install();
+        $table = self::trial_table();
+
+        $all = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE kind = 'ip'");
+        $bound = (int) $wpdb->get_var("SELECT COUNT(DISTINCT user_id) FROM {$table} WHERE user_id > 0");
+        $week = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE kind = 'ip' AND created_at > %s",
+            gmdate('Y-m-d H:i:s', time() - 7 * DAY_IN_SECONDS)
+        ));
+
+        $users = $wpdb->get_col("SELECT DISTINCT user_id FROM {$table} WHERE user_id > 0 LIMIT 500");
+        $paid = 0;
+        $table_pay = $wpdb->prefix . 'kie_tts_payments';
+        $has_pay = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_pay)) === $table_pay;
+        if ($has_pay && $users) {
+            $place = implode(',', array_fill(0, count($users), '%d'));
+            $paid = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(DISTINCT user_id) FROM {$table_pay}
+                  WHERE status = 'completed' AND user_id IN ({$place})",
+                $users
+            ));
+        }
+
+        return rest_ensure_response(array(
+            'бесплатных_звуков'   => $all,
+            'из_них_за_неделю'    => $week,
+            'сегодня_выдано'      => (int) get_transient(self::trial_day_key()),
+            'суточный_потолок'    => self::TRIAL_DAY_CAP,
+            'завели_аккаунт'      => $bound,
+            'из_них_оплатили'     => $paid,
+        ));
     }
 
     public static function handle_trial($request) {
@@ -1765,9 +1997,19 @@ class GS_Rest {
         if (mb_strlen($raw_prompt) > 200) {
             $raw_prompt = mb_substr($raw_prompt, 0, 200);
         }
-        if (self::trial_left() <= 0) {
+        $fp = isset($params['fp']) ? (string) $params['fp'] : '';
+        if ((int) get_transient(self::trial_day_key()) >= self::TRIAL_DAY_CAP) {
+            return new WP_Error('gs_trial_cap',
+                'Бесплатные звуки на сегодня разобрали. Завтра будут снова, '
+                . 'а с аккаунтом ждать не нужно.',
+                array('status' => 429));
+        }
+        // Кука заводится здесь же: до первой генерации помечать посетителя
+        // незачем, а после неё она — один из трёх признаков «пробный был».
+        $marks = self::trial_marks($fp, true);
+        if (self::trial_used($marks)) {
             return new WP_Error('gs_trial_spent',
-                'Бесплатный звук на сегодня уже создан. Войдите — и создавайте без ограничений.',
+                'Бесплатный звук здесь уже создавали. Войдите — и создавайте без ограничений.',
                 array('status' => 429));
         }
 
@@ -1787,14 +2029,15 @@ class GS_Rest {
         // Помечаем задачу пробной: по этой записи открытый маршрут состояния
         // отдаёт результат, не спрашивая аккаунт, и только для таких задач.
         set_transient('gs_sfx_trialtask_' . $task_id,
-                      array('prompt' => $raw_prompt, 'at' => time()), 2 * HOUR_IN_SECONDS);
-        self::trial_note_use();
+                      array('prompt' => $raw_prompt, 'at' => time(), 'marks' => $marks),
+                      2 * HOUR_IN_SECONDS);
+        self::trial_remember($marks);
 
         return rest_ensure_response(array(
             'success' => true,
             'task_id' => $task_id,
             'prompt'  => $raw_prompt,
-            'осталось' => self::trial_left(),
+            'осталось' => 0,
         ));
     }
 
@@ -1815,11 +2058,15 @@ class GS_Rest {
                 'message' => $task['message']));
         }
         if (GS_SFX::is_failed_status($task['status'])) {
-            // Неудача пробника не должна съедать попытку: человек ничего не получил.
-            $key = self::trial_ip_key();
-            $left = (int) get_transient($key);
-            if ($left > 0) {
-                set_transient($key, $left - 1, DAY_IN_SECONDS);
+            // Неудача пробника не должна съедать единственную попытку:
+            // человек ничего не получил, значит и отметки снимаем.
+            if (!empty($meta['marks']) && is_array($meta['marks'])) {
+                global $wpdb;
+                $place = implode(',', array_fill(0, count($meta['marks']), '%s'));
+                $wpdb->query($wpdb->prepare(
+                    "DELETE FROM " . self::trial_table() . " WHERE mark IN ({$place})",
+                    array_values($meta['marks'])
+                ));
             }
             return rest_ensure_response(array('success' => false, 'status' => 'failed',
                 'message' => $task['message'] ?: 'Генерация не удалась, попробуйте другое описание'));

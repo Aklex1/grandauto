@@ -352,6 +352,31 @@
      * аккаунта и списывают деньги, а здесь ни того, ни другого. Длина и
      * режим фиксированы — это демонстрация, а не полноценная генерация.
      */
+    /**
+     * Отпечаток браузера: экран, язык, пояс, платформа.
+     *
+     * Не для слежки — чтобы бесплатный звук достался одному человеку один
+     * раз. Кука чистится в один клик, адрес меняется переключением на
+     * мобильный интернет; третий признак делает обход заметно дороже.
+     */
+    function fingerprint() {
+        var n = navigator, sc = window.screen || {};
+        var parts = [
+            n.userAgent || '', n.language || '', (n.languages || []).join('.'),
+            n.platform || '', String(n.hardwareConcurrency || ''),
+            String(sc.width || '') + 'x' + String(sc.height || '') + 'x' + String(sc.colorDepth || ''),
+            String(window.devicePixelRatio || ''),
+            String(new Date().getTimezoneOffset())
+        ].join('|');
+        var h1 = 0x811c9dc5, h2 = 0x01000193;
+        for (var i = 0; i < parts.length; i++) {
+            h1 = (h1 ^ parts.charCodeAt(i)) >>> 0;
+            h1 = (h1 * 16777619) >>> 0;
+            h2 = (h2 + parts.charCodeAt(i) * (i + 7)) >>> 0;
+        }
+        return ('0000000' + h1.toString(16)).slice(-8) + ('0000000' + h2.toString(16)).slice(-8);
+    }
+
     function runTrial(prompt) {
         setBusy(true);
         note('');
@@ -359,7 +384,7 @@
         els.stage.textContent = 'Отправляем задачу в Suno…';
         els.progress.style.width = '8%';
 
-        api('sfx/trial', { prompt: prompt }).then(function (res) {
+        api('sfx/trial', { prompt: prompt, fp: fingerprint() }).then(function (res) {
             if (!res.ok || !res.data || res.data.success !== true) {
                 var message = (res.data && (res.data.message || res.data.code))
                     || 'Не удалось запустить генерацию';
@@ -400,7 +425,7 @@
                     stopPolling();
                     setBusy(false);
                     renderResult(data, prompt);
-                    note('Готово. Это пробный звук на пять секунд.', 'ok');
+                    note('Готово. Это пробный звук на пять секунд — он даётся один раз.', 'ok');
                     offerAccount(false);
                     if (window.ym && window.gsGoals && window.gsGoals.counter) {
                         window.ym(window.gsGoals.counter, 'reachGoal', 'trial_sound');
@@ -433,7 +458,7 @@
         box.id = 'gs-trial-offer';
         box.className = 'gs-trial-offer';
         box.innerHTML = (spent
-                ? '<strong>Бесплатный звук на сегодня уже создан.</strong> '
+                ? '<strong>Бесплатный звук здесь уже создавали.</strong> '
                 : '<strong>Понравилось?</strong> ')
             + 'С аккаунтом открываются длина до 60 секунд, бесшовные лупы, история звуков и '
             + 'скачивание в один клик. Звук стоит ' + formatMoney(cfg.cost) + ', оплата с баланса.'
