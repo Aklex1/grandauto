@@ -107,9 +107,45 @@
             return;
         }
 
-        // Пополнение баланса — последний шаг перед деньгами.
+        // Дальше — путь к деньгам, по шагам. Одной цели «открыл пополнение»
+        // мало: между открытием формы и оплатой люди отваливаются, и без
+        // разделения непонятно, где именно.
+
+        // Шаг 1: открыли форму пополнения.
         if (closest(el, '[data-gs-topup]')) {
-            hit('topup_open');
+            hit('topup_open', { url: location.pathname });
+            return;
+        }
+
+        // Шаг 2: выбрали сумму.
+        var sum = closest(el, '[data-gs-topup-sum]');
+        if (sum) {
+            hit('topup_sum', { sum: sum.getAttribute('data-gs-topup-sum') || '' });
+            return;
+        }
+
+        // Шаг 3: ушли платить. Это и есть деньги.
+        var go = closest(el, '#gs-topup-go, .gs-topup__go');
+        if (go) {
+            hit('topup_pay', { url: location.pathname });
+            return;
+        }
+
+        // Кнопки оплаты вне этого плагина — у ИИ-ассистентов и на чужих
+        // страницах своя разметка, но ссылка всегда ведёт в ЮMoney.
+        // Ловим по адресу, а не по вёрстке: вёрстка у всех разная и меняется.
+        var pay = closest(el, 'a[href*="yoomoney.ru"], a[href*="money.yandex"]');
+        if (pay) {
+            hitAndFollow('pay_yoomoney', { from: location.pathname }, e, pay);
+            return;
+        }
+
+        // Запасной случай: кнопка «Пополнить» чужого плагина без наших
+        // меток. Текст — последнее, за что стоит цепляться, но лучше, чем
+        // не считать такие нажатия вовсе.
+        var byText = closest(el, 'a, button');
+        if (byText && /^\s*пополнить/i.test(byText.innerText || '')) {
+            hit('topup_open', { url: location.pathname, source: 'чужая кнопка' });
             return;
         }
 
