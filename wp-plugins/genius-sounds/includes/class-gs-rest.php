@@ -376,6 +376,14 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Сводка по платежам: сайт и бот рядом, по неделям. Нужна, чтобы
+        // видеть не отдельную жалобу, а масштаб — сколько зависает и где.
+        register_rest_route(self::NS, '/diag/payments-summary', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_payments_summary'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/diag/bot-listener', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_diag_listener'),
@@ -723,6 +731,45 @@ class GS_Rest {
             (string) ($params['method'] ?? 'GET'),
             isset($params['payload']) ? $params['payload'] : null
         ));
+    }
+
+    public static function handle_payments_summary() {
+        global $wpdb;
+        $out = array();
+
+        $table = $wpdb->prefix . 'kie_tts_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table) {
+            $out['сайт'] = $wpdb->get_results(
+                "SELECT DATE_FORMAT(created_at, '%Y-%u') AS неделя, status AS статус,
+                        COUNT(*) AS штук, SUM(amount) AS сумма
+                   FROM {$table}
+                  WHERE created_at > DATE_SUB(NOW(), INTERVAL 70 DAY)
+               GROUP BY неделя, статус ORDER BY неделя DESC, статус", ARRAY_A);
+        }
+
+        $conn = class_exists('KIE_TTS_DB') ? KIE_TTS_DB::get_bot_connection() : null;
+        if (!$conn) {
+            $out['бот'] = 'нет связи с базой бота';
+        } else {
+            $sql = "SELECT DATE_FORMAT(created_at, '%Y-%u') AS nedelya, status,
+                           COUNT(*) AS cnt, SUM(amount) AS summa
+                      FROM payments
+                     WHERE created_at > DATE_SUB(NOW(), INTERVAL 70 DAY)
+                  GROUP BY nedelya, status ORDER BY nedelya DESC, status";
+            $rows = array();
+            if ($res = $conn->query($sql)) {
+                while ($row = $res->fetch_assoc()) {
+                    $rows[] = array(
+                        'неделя' => $row['nedelya'], 'статус' => $row['status'],
+                        'штук' => (int) $row['cnt'], 'сумма' => (float) $row['summa'],
+                    );
+                }
+            }
+            $out['бот'] = $rows;
+            $conn->close();
+        }
+
+        return rest_ensure_response($out);
     }
 
     public static function handle_diag_listener() {
