@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.24.2
+ * Version:     2.25.2
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -45,6 +45,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-noindex.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-index.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-webmaster.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-metrika.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-landing.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
@@ -125,6 +126,7 @@ class Genius_Sounds_Plugin {
         GS_Article_Style::boot();
         GS_Media_Proxy::boot();
         GS_Redirects::boot();
+        GS_Metrika::boot();
         GS_Admin::boot();
         GS_Pages::boot();
         GS_Return::boot();
@@ -241,6 +243,16 @@ class Genius_Sounds_Plugin {
      * Ассеты грузим только на своих страницах, чтобы не утяжелять остальной сайт.
      */
     public function enqueue_front_assets() {
+        // Цели Метрики грузим на каждой странице: путь из каталога в
+        // оплату идёт через статьи, посадочные и микросервисы, и считать
+        // его кусками бессмысленно. Файл крошечный и без зависимостей.
+        $counter = class_exists('GS_Metrika') ? GS_Metrika::counter() : 0;
+        if ($counter > 0) {
+            wp_enqueue_script('genius-sounds-goals', GS_PLUGIN_URL . 'assets/js/goals.js',
+                array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-goals', 'gsGoals', array('counter' => $counter));
+        }
+
         // Подвал у темы один на весь сайт, и порядок в нём нужен везде —
         // в том числе на страницах, которые рисуем не мы.
         wp_enqueue_style('genius-sounds-footer', GS_PLUGIN_URL . 'assets/css/footer.css', array(), GS_VERSION);

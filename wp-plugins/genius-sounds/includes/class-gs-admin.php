@@ -545,6 +545,37 @@ class GS_Admin {
     public static function render_bot_payment() {
         ob_start();
         ?>
+        <h3 id="gs-metrika">Метрика: счётчик и цели</h3>
+        <?php $mcounter = class_exists('GS_Metrika') ? GS_Metrika::counter() : 0; ?>
+        <p class="description" style="max-width:900px">
+            Номер счётчика нужен, чтобы сайт сообщал Метрике о нажатиях: переход из
+            статьи в сервис, открытие инструмента, уход в бота, пополнение. Цели по
+            адресам Метрика считает сама, а нажатия — некому.
+            Токен нужен отдельный: вебмастерский Метрика не принимает, он выдан без
+            прав <code>metrika:write</code>. Без токена события всё равно шлются —
+            он нужен только чтобы заводить и читать цели отсюда.
+            <?php if ($mcounter > 0): ?>
+                <br><strong>Сейчас счётчик <?php echo (int) $mcounter; ?>, события отправляются.</strong>
+            <?php else: ?>
+                <br><strong>Счётчик не задан — события не отправляются.</strong>
+            <?php endif; ?>
+        </p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
+              style="margin-bottom:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <?php wp_nonce_field('gs_metrika_save'); ?>
+            <input type="hidden" name="action" value="gs_metrika_save">
+            <label>Номер счётчика<br>
+                <input type="number" name="counter" style="width:160px"
+                       value="<?php echo (int) $mcounter; ?>">
+            </label>
+            <label style="flex:1 1 320px">Токен с правами на Метрику<br>
+                <input type="password" name="token" style="width:100%" autocomplete="new-password"
+                       placeholder="<?php echo trim((string) get_option('gs_metrika_token', '')) !== ''
+                           ? 'задан — оставьте пустым' : 'не задан'; ?>">
+            </label>
+            <?php submit_button('Сохранить и проверить', 'secondary', 'submit', false); ?>
+        </form>
+
         <h3>Кэш страниц</h3>
         <p class="description" style="max-width:900px">
             Страницы каталога отдаются из кэша по адресу, и правки заголовков и описаний

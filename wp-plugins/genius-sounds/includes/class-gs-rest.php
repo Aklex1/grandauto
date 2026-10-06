@@ -368,6 +368,14 @@ class GS_Rest {
 
         // Жив ли приёмник пополнений бота и что лежит в очереди на
         // пересылку. Адрес берётся из настроек сайта, снаружи не подставить.
+        // Метрика: цели и проверка, что считается. Отдельный маршрут, потому
+        // что Вебмастер и Метрика — разные API, одним клиентом не обойтись.
+        register_rest_route(self::NS, '/metrika/probe', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_metrika_probe'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/diag/bot-listener', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_diag_listener'),
@@ -700,6 +708,21 @@ class GS_Rest {
         }
 
         return rest_ensure_response($out);
+    }
+
+    public static function handle_metrika_probe($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        if (!class_exists('GS_Metrika')) {
+            return new WP_Error('gs_no_metrika', 'Модуль Метрики не загружен', array('status' => 500));
+        }
+        return rest_ensure_response(GS_Metrika::call(
+            (string) ($params['path'] ?? '/management/v1/counters'),
+            (string) ($params['method'] ?? 'GET'),
+            isset($params['payload']) ? $params['payload'] : null
+        ));
     }
 
     public static function handle_diag_listener() {
