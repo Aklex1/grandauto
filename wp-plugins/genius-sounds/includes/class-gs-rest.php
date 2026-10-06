@@ -823,29 +823,38 @@ class GS_Rest {
             );
         }
 
+        $expired = !empty($row['paid_until']) && (int) $row['paid_until'] < time();
         $prices = array();
         foreach (GS_Proekt::tariff_order() as $id) {
             if ($id === 'free') {
                 continue;
             }
+            $steps_in = array();
+            foreach (GS_Proekt::stages() as $st) {
+                if ($st[2] === $id) {
+                    $steps_in[] = preg_replace('~^\d+\.\s*~u', '', $st[1]);
+                }
+            }
             $prices[$id] = array(
                 'название' => $tariffs[$id][0],
                 'цена'     => (int) $tariffs[$id][1],
-                'доплата'  => GS_Proekt::upgrade_price($tariff, $id),
-                'запросов' => (int) $tariffs[$id][2],
-                'дней'     => (int) $tariffs[$id][3],
+                // Срок вышел — платим полную цену за тот же тариф, а не разницу.
+                'доплата'  => $expired ? (int) $tariffs[$id][1] : GS_Proekt::upgrade_price($tariff, $id),
+                'переделок' => GS_Proekt::TRIES_PER_STEP,
+                'шаги'     => $steps_in,
+                'доступ_до' => GS_Proekt::season_end(),
             );
         }
 
         $user = get_current_user_id();
         return array(
             'вошёл'    => $user > 0,
-            'баланс'   => $user > 0 && class_exists('GS_SFX') ? (float) GS_SFX::get_balance($user) : null,
             'токен'    => (string) $row['token'],
             'тариф'    => $tariff,
             'тариф_название' => $tariffs[$tariff][0],
-            'запросов_использовано' => (int) $row['used'],
-            'запросов_лимит' => (int) $tariffs[$tariff][2],
+            'запусков_использовано' => (int) $row['used'],
+            'запусков_лимит' => GS_Proekt::limit_for($tariff),
+            'переделок' => GS_Proekt::TRIES_PER_STEP,
             'доступ_до' => (int) $row['paid_until'],
             'шаги'     => $steps,
             'тарифы'   => $prices,
@@ -901,7 +910,9 @@ class GS_Rest {
         $token = (string) ($p['token'] ?? '');
         $tariff = sanitize_key((string) ($p['tariff'] ?? ''));
 
-        $res = GS_Proekt::buy($token, $tariff);
+        // Отдаём ссылку на оплату тарифа, а не списываем баланс: за школьный
+        // проект платят один раз и обычно с родительской карты.
+        $res = GS_Proekt::pay_link($token, $tariff);
         $res['состояние'] = self::proekt_state($token);
         return rest_ensure_response($res);
     }

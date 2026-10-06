@@ -101,9 +101,9 @@ class GS_Proekt {
     public static function stages() {
         return array(
             array('tema',          '1. Тема',                    'free'),
-            array('pasport',       '2. Паспорт проекта',         'start'),
-            array('plan',          '3. План и график',           'start'),
-            array('istochniki',    '4. Источники',               'start'),
+            array('pasport',       '2. Паспорт проекта',         'project'),
+            array('plan',          '3. План и график',           'project'),
+            array('istochniki',    '4. Источники',               'project'),
             array('teoriya',       '5. Теоретическая глава',     'project'),
             array('praktika',      '6. Практическая часть',      'project'),
             array('vvedenie_zakl', '7. Введение и заключение',   'project'),
@@ -111,22 +111,67 @@ class GS_Proekt {
             array('prezentacia',   '9. Презентация',             'defense'),
             array('rech',          '10. Защитная речь',          'defense'),
             array('voprosy',       '11. Вопросы комиссии',       'defense'),
-            array('proverka',      'Проверка моего текста',      'start'),
+            array('proverka',      'Проверка моего текста',      'project'),
         );
     }
 
-    /** Тариф: название, цена, лимит запросов, доступ в днях. */
+    /**
+     * Тариф: название и цена.
+     *
+     * Ступени две, а не три. «Старт» без глав продавался плохо по самой
+     * своей сути: кому нужен текст работы — на нём не остановится, кому
+     * хватит паспорта и плана — обойдётся бесплатным шагом. Осталось
+     * понятное деление: сделать проект или сделать проект и защиту.
+     */
     public static function tariffs() {
         return array(
-            'free'    => array('Бесплатно',        0,    3,   7),
-            'start'   => array('Старт',            490,  15,  30),
-            'project' => array('Проект',           990,  50,  60),
-            'defense' => array('Проект + защита',  1490, 100, 90),
+            'free'    => array('Бесплатно',        0),
+            'project' => array('Проект',           690),
+            'defense' => array('Проект + защита',  1290),
         );
     }
 
     public static function tariff_order() {
-        return array('free', 'start', 'project', 'defense');
+        return array('free', 'project', 'defense');
+    }
+
+    /** Сколько раз можно переделать каждый шаг. */
+    const TRIES_PER_STEP = 3;
+
+    /**
+     * Лимит запусков тарифа.
+     *
+     * Считаем от числа открытых шагов, а не задаём числом: «15 запросов»
+     * школьнику ничего не говорит — он не знает, много это или мало, и на
+     * всякий случай не покупает. «Каждый шаг можно переделать трижды»
+     * понятно сразу, а в основе — та же защита от перебора.
+     */
+    public static function limit_for($tariff) {
+        $open = 0;
+        foreach (self::stages() as $s) {
+            if (self::allows($tariff, $s[0])) {
+                $open++;
+            }
+        }
+        return max(3, $open * self::TRIES_PER_STEP);
+    }
+
+    /**
+     * До какого числа открыт доступ.
+     *
+     * Срок в днях спорит с учебным годом: темы утверждают осенью,
+     * защищаются весной, и купленный в октябре «месяц доступа» кончается
+     * задолго до защиты. Поэтому оплаченный тариф живёт до конца сезона —
+     * до 31 мая, а после 31 мая покупка открывает уже следующий учебный год.
+     */
+    public static function season_end($from = null) {
+        $from = $from ? (int) $from : time();
+        $year = (int) wp_date('Y', $from);
+        $end = strtotime(sprintf('%d-05-31 23:59:59', $year));
+        if ($from > $end) {
+            $end = strtotime(sprintf('%d-05-31 23:59:59', $year + 1));
+        }
+        return (int) $end;
     }
 
     public static function stage_titles() {
@@ -196,7 +241,17 @@ class GS_Proekt {
             return null;
         }
         $row = get_option(self::OPT_PREFIX . $token, null);
-        return is_array($row) ? $row : null;
+        if (!is_array($row)) {
+            return null;
+        }
+        // Ступень «Старт» убрана из сетки, но проекты с ней уже куплены.
+        // Переводим их на «Проект» при чтении: человек заплатил за шаги,
+        // которые теперь входят в него, и терять доступ он не должен.
+        $tariffs = self::tariffs();
+        if (!isset($tariffs[(string) ($row['tariff'] ?? '')])) {
+            $row['tariff'] = ((string) ($row['tariff'] ?? '')) === 'start' ? 'project' : 'free';
+        }
+        return $row;
     }
 
     private static function save($token, $row) {
@@ -268,7 +323,7 @@ class GS_Proekt {
             'token'    => $token,
             'profile'  => (array) $profile,
             'tariff'   => 'free',
-            'paid_until' => time() + self::FREE_TTL,
+            'paid_until' => time() + self::FREE_TTL,   // пробный доступ, не сезон
             'used'     => 0,
             'steps'    => array(),
             'created'  => time(),
@@ -358,8 +413,8 @@ class GS_Proekt {
         $mins = self::stage_min_tariff();
 
         if (!empty($row['paid_until']) && (int) $row['paid_until'] < time()) {
-            return array('ok' => false, 'message' => 'Срок доступа закончился. Продлите тариф.',
-                'need' => $tariff === 'free' ? 'start' : $tariff);
+            return array('ok' => false, 'message' => 'Срок доступа закончился. Откройте тариф заново.',
+                'need' => $tariff === 'free' ? 'project' : $tariff);
         }
         if (!self::allows($tariff, $stage)) {
             $need = $mins[$stage];
@@ -369,17 +424,18 @@ class GS_Proekt {
         // Бесплатный тариф — за счёт сайта, поэтому считаем ещё и по адресу:
         // иначе новый проект каждые три запроса обходит лимит целиком.
         if ($tariff === 'free' && self::free_left() <= 0) {
-            return array('ok' => false, 'need' => 'start',
+            return array('ok' => false, 'need' => 'project',
                 'message' => 'Бесплатных запусков на сегодня больше нет. '
                     . 'Завтра снова будут, а тариф открывает все шаги сразу.');
         }
-        $limit = (int) $tariffs[$tariff][2];
+        $limit = self::limit_for($tariff);
         if ((int) $row['used'] >= $limit) {
             $order = self::tariff_order();
             $i = (int) array_search($tariff, $order, true);
             $next = $order[min($i + 1, count($order) - 1)];
             return array('ok' => false, 'need' => $next === $tariff ? null : $next,
-                'message' => 'Лимит запросов тарифа исчерпан (' . $limit . ').');
+                'message' => 'Переделки закончились: каждый шаг можно запускать до '
+                    . self::TRIES_PER_STEP . ' раз. В старшем тарифе их больше.');
         }
         if (mb_strlen((string) $input) > self::MAX_INPUT) {
             return array('ok' => false,
@@ -424,32 +480,33 @@ class GS_Proekt {
     }
 
     /**
-     * Открыть тариф списанием с общего баланса.
+     * Ссылка на оплату тарифа.
      *
-     * Так же, как во всех остальных микросервисах: деньги лежат на одном
-     * балансе сайта, пополняются привычной формой, а сервис просто
-     * списывает свою цену. Отдельная платёжная ссылка под каждый тариф
-     * означала бы третий способ платить на одном сайте — мы сегодня видели,
-     * чего стоит даже второй.
+     * Платим не с баланса сайта, а прямо за тариф: родитель приходит один
+     * раз, и просить его сначала положить деньги на счёт, а потом списать
+     * их — лишний шаг, на котором теряется половина. Тем более что кнопки
+     * пополнения кратны пятистам: за «Проект» пришлось бы платить дважды.
      *
-     * Списываем разницу, а не полную цену: со «Старта» на «Проект» человек
-     * доплачивает 500 ₽, а не платит 990 заново.
+     * Ссылку собирает общий помощник — назначение платежа человек видит у
+     * ЮMoney, и оно должно называть тариф, а не «пополнение баланса».
+     * Метка несёт проект и тариф: по ней уведомление открывает шаги.
+     *
+     * Вход не требуется: школьник может работать по токену, а платить за
+     * него будут с родительской карты, часто с другого устройства.
      */
-    public static function buy($token, $tariff) {
+    public static function pay_link($token, $tariff) {
         $row = self::project($token);
         $tariffs = self::tariffs();
-        if (!$row || !isset($tariffs[$tariff])) {
+        if (!$row || !isset($tariffs[$tariff]) || $tariff === 'free') {
             return array('ok' => false, 'message' => 'Проект или тариф не найден');
         }
-        $user = get_current_user_id();
-        if ($user <= 0) {
-            return array('ok' => false, 'need_login' => true,
-                'message' => 'Войдите, чтобы оплатить тариф — так работа не потеряется.');
+        if (!class_exists('GS_Pay')) {
+            return array('ok' => false, 'message' => 'Оплата временно недоступна');
         }
-        // Срок доступа вышел — это уже не переход на старший тариф, а
-        // продление: берём полную цену и за тот же тариф. Без этой ветки
-        // доплата считалась нулевой, и продлить было нечем: сервис отвечал
-        // «тариф уже открыт», хотя шаги не работали.
+
+        // Срок вышел — это не переход на старший тариф, а покупка заново:
+        // берём полную цену. Иначе доплата считалась бы нулевой и продлить
+        // было бы нечем.
         $expired = !empty($row['paid_until']) && (int) $row['paid_until'] < time();
         $price = $expired
             ? (int) $tariffs[$tariff][1]
@@ -458,33 +515,26 @@ class GS_Proekt {
             return array('ok' => false, 'message' => 'Этот тариф уже открыт');
         }
 
-        // Считаем доступное, а не весь баланс: подаренные за ключ API
-        // деньги на сервисы сайта не тратятся, и предупредить об этом надо
-        // до списания, а не после отказа базы.
-        $balance = class_exists('GS_SFX') ? (float) GS_SFX::spendable($user) : 0.0;
-        if ($balance < $price) {
-            return array('ok' => false, 'need_topup' => true, 'price' => $price,
-                'balance' => $balance,
-                'message' => 'На балансе ' . number_format($balance, 2, ',', ' ')
-                    . ' ₽, нужно ' . $price . ' ₽. Пополните — и тариф откроется сразу.');
-        }
-        if (!GS_SFX::charge($user, $price)) {
-            return array('ok' => false, 'message' => 'Не удалось списать с баланса, попробуйте ещё раз');
+        $back = add_query_arg(
+            array('token' => self::token_clean($token), 'paid' => 1),
+            class_exists('GS_Proekt_Page') ? GS_Proekt_Page::url() : home_url('/proekt/')
+        );
+        $link = GS_Pay::link(
+            self::label($token, $tariff),
+            (float) $price,
+            'Наставник по индивидуальному проекту: тариф «' . $tariffs[$tariff][0] . '»',
+            $back
+        );
+        if ($link === '') {
+            return array('ok' => false, 'message' => 'Оплата временно недоступна');
         }
 
-        $row['tariff'] = $tariff;
-        $row['paid_until'] = time() + ((int) $tariffs[$tariff][3] * 86400);
-        $row['paid_at'] = time();
-        $row['user'] = $user;
-        self::remember_for_user($user, $token);
-        if ($expired) {
-            // Оплачен новый пакет запросов, а не продолжение старого.
-            $row['used'] = 0;
-        }
-        self::save($token, $row);
+        // Кто платит — тому и привязываем проект: вошедший найдёт работу с
+        // любого устройства, гость останется на токене.
+        self::remember_for_user(get_current_user_id(), $token);
 
-        return array('ok' => true, 'message' => 'Открыт тариф «' . $tariffs[$tariff][0] . '»',
-            'balance' => class_exists('GS_SFX') ? (float) GS_SFX::get_balance($user) : 0.0);
+        return array('ok' => true, 'link' => $link, 'price' => $price,
+            'tariff' => $tariff, 'название' => $tariffs[$tariff][0]);
     }
 
     /* ---------------------------------------------------------------------
@@ -565,14 +615,22 @@ class GS_Proekt {
             return array('ok' => false, 'message' => 'проект или тариф не найден');
         }
         $order = self::tariff_order();
-        if (array_search($tariff, $order, true) <= array_search((string) $row['tariff'], $order, true)) {
+        $expired = !empty($row['paid_until']) && (int) $row['paid_until'] < time();
+        // Повторное уведомление о том же тарифе ничего не меняет. Но если
+        // срок вышел, та же ступень означает покупку заново — её открываем.
+        if (!$expired
+            && array_search($tariff, $order, true) <= array_search((string) $row['tariff'], $order, true)) {
             return array('ok' => true, 'message' => 'тариф уже открыт — повторное уведомление');
         }
 
         $row['tariff'] = $tariff;
-        $row['paid_until'] = time() + ((int) $tariffs[$tariff][3] * 86400);
+        $row['paid_until'] = self::season_end();
         $row['paid_at'] = time();
+        if ($expired) {
+            $row['used'] = 0;
+        }
         self::save($token, $row);
-        return array('ok' => true, 'message' => 'открыт тариф «' . $tariffs[$tariff][0] . '»');
+        return array('ok' => true, 'message' => 'открыт тариф «' . $tariffs[$tariff][0]
+            . '» до ' . wp_date('d.m.Y', $row['paid_until']));
     }
 }

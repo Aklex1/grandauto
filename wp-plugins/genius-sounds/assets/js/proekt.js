@@ -5,12 +5,15 @@
  * через неделю с того же устройства и видит её на месте. Регистрации на
  * первом шаге нет намеренно — она стоит дороже, чем даёт.
  *
- * Ко всем запросам прикладываем ключ запроса. Без него маршрут считает
- * вошедшего гостем: баланс не показывался, а оплата отвечала «войдите»
- * тому, кто уже вошёл, и уводила его в кабинет озвучки.
+ * Ко всем запросам прикладываем ключ запроса: без него маршрут считает
+ * вошедшего гостем.
  *
- * Вход и пополнение — окнами на этой же странице, как в остальных
- * сервисах. Уход на отдельную страницу терял и форму, и человека.
+ * Тариф оплачивается прямо — ссылкой на ЮMoney с посчитанной суммой, без
+ * баланса сайта и без входа. За школьный проект платят один раз, обычно с
+ * родительской карты и часто с другого устройства: просить сначала завести
+ * аккаунт, потом пополнить счёт, потом списать с него — три шага там, где
+ * достаточно одного. Вход остаётся, но только ради того, чтобы работа
+ * нашлась с любого устройства.
  */
 (function () {
     'use strict';
@@ -94,17 +97,6 @@
         location.href = cfg.loginUrl || '/tts-login/';
     }
 
-    /** Окно пополнения — то же, что во всех сервисах. */
-    function openTopup(message) {
-        var opener = root.querySelector('[data-gs-topup]');
-        if (message) { alert(message); }
-        if (opener && document.getElementById('gs-topup')) {
-            opener.click();
-            return;
-        }
-        if (opener) { location.href = opener.getAttribute('href'); }
-    }
-
     function profile() {
         var body = {};
         root.querySelectorAll('[data-gs-proekt-field]').forEach(function (el) {
@@ -121,15 +113,7 @@
         appBox.hidden = false;
         appBox.innerHTML = render();
         bind();
-        syncBalance();
         syncPicks();
-    }
-
-    function syncBalance() {
-        var box = root.querySelector('[data-gs-proekt-balance]');
-        if (box && state && state['баланс'] !== null && state['баланс'] !== undefined) {
-            box.textContent = Number(state['баланс']).toFixed(2) + ' ₽';
-        }
     }
 
     /**
@@ -158,13 +142,11 @@
     }
 
     function render() {
-        var left = state['запросов_лимит'] - state['запросов_использовано'];
+        var left = state['запусков_лимит'] - state['запусков_использовано'];
         var done = (state['шаги'] || []).some(function (s) { return s['готов']; });
         var html = '<div class="gs-proekt__bar">'
             + '<strong>Тариф: ' + esc(state['тариф_название']) + '</strong>'
-            + '<span>осталось запросов: ' + left + ' из ' + state['запросов_лимит'] + '</span>'
-            + (state['баланс'] === null ? ''
-                : '<span>баланс: ' + Number(state['баланс']).toFixed(2) + ' ₽</span>')
+            + '<span>осталось запусков: ' + left + '</span>'
             // Срок доступа виден сразу: иначе о нём узнают в день, когда
             // шаги перестали открываться.
             + (state['доступ_до'] ? '<span>доступ до ' + dmy(state['доступ_до']) + '</span>' : '')
@@ -204,10 +186,14 @@
             html += '<div class="gs-proekt__card gs-proekt__card--tariff">'
                 + '<h3>' + esc(t['название']) + '</h3>'
                 + '<p class="gs-proekt__price">' + t['доплата'] + ' ₽</p>'
-                + '<p class="gs-proekt__note">' + t['запросов'] + ' запросов, доступ ' + t['дней'] + ' дней</p>'
+                + '<ul>' + (t['шаги'] || []).map(function (step) {
+                    return '<li>' + esc(step) + '</li>';
+                }).join('') + '</ul>'
+                + '<p class="gs-proekt__note">Каждый шаг можно переделать ' + t['переделок']
+                + ' раза, доступ до ' + dmy(t['доступ_до']) + '</p>'
                 + '<button type="button" class="gs-btn gs-btn--primary" data-pay="' + esc(id)
                 + '" data-name="' + esc(t['название']) + '" data-price="' + t['доплата'] + '">'
-                + (state['вошёл'] ? 'Открыть за ' + t['доплата'] + ' ₽' : 'Войти и открыть') + '</button>'
+                + 'Оплатить ' + t['доплата'] + ' ₽</button>'
                 + '</div>';
         });
         html += '</div></div>';
@@ -230,44 +216,58 @@
     }
 
     function payTariff(tariff, btn, andRunFirst) {
-        if (!logged()) {
-            stash(tariff);
-            openLogin();
-            return;
-        }
         var label = btn ? (btn.getAttribute('data-name') || '') : '';
         ensureProject().then(function (ready) {
             if (!ready) { return; }
-            var t = (state['тарифы'] || {})[tariff] || {};
-            var sum = Number(t['доплата'] || (btn && btn.getAttribute('data-price')) || 0);
-            if (sum > 0 && !confirm('Списать ' + sum + ' ₽ с баланса сайта и открыть тариф «'
-                    + (t['название'] || label || tariff) + '»?')) {
-                return;
-            }
             if (btn) { btn.disabled = true; }
             post('pay', { token: state['токен'], tariff: tariff })
                 .then(function (res) {
-                    if (res && res.ok) {
-                        if (res['состояние']) { show(res['состояние']); }
-                        if (andRunFirst) { runFirstStep(); }
+                    if (res && res.ok && res.link) {
+                        // Платим прямо за тариф: сумма в ссылке уже
+                        // посчитана, возврат — на эту же страницу с проектом.
+                        remember(state['токен']);
+                        location.href = res.link;
                         return;
                     }
-                    if (res && res.need_login) {
-                        stash(tariff);
-                        openLogin();
-                        return;
-                    }
-                    // Денег не хватило — открываем ту же форму пополнения,
-                    // что и в остальных сервисах, а не уводим со страницы.
-                    if (res && res.need_topup) {
-                        openTopup(res.message);
-                        return;
-                    }
-                    alert((res && res.message) || 'Не удалось открыть тариф.');
+                    if (res && res['состояние']) { show(res['состояние']); }
+                    alert((res && res.message) || 'Не удалось открыть оплату. Повторите.');
                 })
-                .catch(function () { alert('Не удалось открыть тариф. Повторите.'); })
+                .catch(function () { alert('Не удалось открыть оплату. Повторите.'); })
                 .then(function () { if (btn) { btn.disabled = false; } });
         });
+    }
+
+    /**
+     * Вернулись с оплаты: уведомление от ЮMoney идёт отдельным запросом и
+     * доходит за секунды, но не мгновенно. Поэтому не показываем человеку
+     * закрытые шаги, а несколько раз спрашиваем состояние.
+     */
+    function waitForPayment() {
+        var tries = 0;
+        var note = document.createElement('p');
+        note.className = 'gs-proekt__note';
+        note.textContent = 'Проверяем оплату…';
+        appBox.parentNode.insertBefore(note, appBox);
+        (function again() {
+            tries++;
+            fetch(API + 'state?token=' + encodeURIComponent(stored()),
+                  { credentials: 'same-origin', headers: headers() })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (res) {
+                    if (res && res['шаги'] && res['тариф'] !== 'free') {
+                        note.textContent = 'Оплата прошла: тариф «' + res['тариф_название'] + '» открыт.';
+                        show(res);
+                        return;
+                    }
+                    if (tries >= 15) {
+                        note.textContent = 'Оплата пока не подтвердилась. Это занимает до минуты — '
+                            + 'обновите страницу чуть позже, деньги не потеряются.';
+                        return;
+                    }
+                    setTimeout(again, 4000);
+                })
+                .catch(function () { if (tries < 15) { setTimeout(again, 4000); } });
+        })();
     }
 
     /** Первый шаг запускаем сами: человек уже нажал кнопку, второй раз незачем. */
@@ -352,6 +352,9 @@
 
     /** Человек уходил входить ради тарифа — доводим его до той же кнопки. */
     function afterLogin() {
+        if (new URLSearchParams(location.search).get('paid') && stored()) {
+            waitForPayment();
+        }
         var pick = unstash();
         if (!pick || !logged()) { return; }
         var btn = root.querySelector('.gs-proekt__buy[data-gs-proekt-pick="' + pick + '"]');

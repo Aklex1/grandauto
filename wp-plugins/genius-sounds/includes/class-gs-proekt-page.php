@@ -108,7 +108,7 @@ class GS_Proekt_Page {
                 </ul>
                 <p class="gs-proekt__badges">
                     <span>9, 10 и 11 класс</span>
-                    <span>Оплата с баланса сайта</span>
+                    <span>Оплата один раз, без подписки</span>
                     <span>Проект остаётся твоим</span>
                 </p>
                 </div>
@@ -159,25 +159,18 @@ class GS_Proekt_Page {
 
             <section class="gs-proekt__account">
                 <?php if ($uid > 0): ?>
-                    <div class="gs-balance">
-                        <span class="gs-balance__label">Баланс</span>
-                        <span class="gs-balance__value" data-gs-proekt-balance><?php
-                            echo esc_html(number_format_i18n(class_exists('GS_SFX')
-                                ? (float) GS_SFX::get_balance($uid) : 0, 2)); ?> ₽</span>
-                        <a class="gs-balance__topup" data-gs-topup
-                           href="<?php echo esc_url(GS_Payments::topup_url('proekt')); ?>">Пополнить</a>
-                    </div>
                     <p class="gs-proekt__note">
-                        Баланс общий для всех инструментов сайта. Тариф списывается с него один раз.
+                        Вы вошли — работа сохранится и откроется с любого устройства.
+                        Тариф оплачивается один раз за проект, картой через ЮMoney.
                     </p>
                 <?php else: ?>
                     <p class="gs-proekt__note">
-                        Первый шаг — без входа. Чтобы работа сохранилась и можно было открыть
-                        остальные шаги, <a href="<?php echo esc_url(home_url('/tts-login/?redirect='
+                        Первый шаг — без входа и без оплаты. Чтобы работа нашлась с другого
+                        устройства, <a href="<?php echo esc_url(home_url('/tts-login/?redirect='
                             . rawurlencode('/' . self::SLUG . '/'))); ?>">войдите</a>
                         или <a href="<?php echo esc_url(home_url('/tts-register/?redirect='
-                            . rawurlencode('/' . self::SLUG . '/'))); ?>">создайте аккаунт</a> —
-                        это минута.
+                            . rawurlencode('/' . self::SLUG . '/'))); ?>">создайте аккаунт</a>.
+                        Для оплаты тарифа аккаунт не нужен.
                     </p>
                 <?php endif; ?>
             </section>
@@ -231,13 +224,15 @@ class GS_Proekt_Page {
             <section class="gs-proekt__tariffs" id="tarify">
                 <h2>Тарифы</h2>
                 <p class="gs-proekt__note">
-                    Оплата разовая, за проект, без подписки. Переход на старший тариф —
-                    доплата разницы, а не полная цена заново.
+                    Оплата разовая, за проект, без подписки. Картой через ЮMoney —
+                    баланс сайта заводить не нужно. Переход на старший тариф — доплата
+                    разницы, а не полная цена заново.
                 </p>
                 <div class="gs-proekt__cards">
                     <?php $tariffs = GS_Proekt::tariffs(); ?>
+                    <?php $until = date_i18n('d.m.Y', GS_Proekt::season_end()); ?>
                     <?php foreach (GS_Proekt::tariff_order() as $id): ?>
-                        <?php list($name, $price, $limit, $days) = $tariffs[$id]; ?>
+                        <?php list($name, $price) = $tariffs[$id]; ?>
                         <div class="gs-proekt__card gs-proekt__card--tariff">
                             <h3><?php echo esc_html($name); ?></h3>
                             <p class="gs-proekt__price">
@@ -251,14 +246,18 @@ class GS_Proekt_Page {
                                 <?php endforeach; ?>
                             </ul>
                             <p class="gs-proekt__note">
-                                <?php echo (int) $limit; ?> запросов, доступ <?php echo (int) $days; ?> дней
+                                <?php if ($price > 0): ?>
+                                    Каждый шаг можно переделать <?php echo (int) GS_Proekt::TRIES_PER_STEP; ?> раза.
+                                    Доступ до <?php echo esc_html($until); ?> — до конца учебного года.
+                                <?php else: ?>
+                                    Без регистрации и оплаты, чтобы попробовать.
+                                <?php endif; ?>
                             </p>
                             <?php if ($price > 0): ?>
                                 <button type="button" class="gs-btn gs-btn--primary gs-proekt__buy"
                                         data-gs-proekt-pick="<?php echo esc_attr($id); ?>"
                                         data-price="<?php echo (int) $price; ?>"
-                                        data-name="<?php echo esc_attr($name); ?>"
-                                        <?php echo $uid > 0 ? '' : 'data-gs-auth'; ?>>
+                                        data-name="<?php echo esc_attr($name); ?>">
                                     Оплатить <?php echo esc_html(number_format_i18n($price)); ?> ₽
                                 </button>
                             <?php else: ?>
@@ -310,9 +309,17 @@ class GS_Proekt_Page {
                   'Нет. Первый шаг — пять тем под ваши интересы — работает без входа. Аккаунт нужен дальше: '
                   . 'чтобы работа сохранилась и к ней можно было вернуться с другого устройства.'),
             array('Сколько стоит и есть ли подписка?',
-                  'Подписки нет. Тариф оплачивается один раз за проект и списывается с общего баланса сайта: '
-                  . '«Старт» — 490 ₽, «Проект» — 990 ₽, «Проект + защита» — 1490 ₽. Переход на старший тариф — '
-                  . 'доплата разницы, а не полная цена заново.'),
+                  'Подписки нет. Тариф оплачивается один раз за проект, картой через ЮMoney: «Проект» — 690 ₽, '
+                  . '«Проект + защита» — 1290 ₽. Баланс сайта для этого заводить не нужно, аккаунт для оплаты '
+                  . 'тоже. Переход на старший тариф — доплата разницы, а не полная цена заново.'),
+            array('До какого числа работает оплаченный тариф?',
+                  'До 31 мая — до конца учебного года, в котором вы его открыли. Срок в днях здесь не подходит: '
+                  . 'темы утверждают осенью, а защищаются весной, и «месяц доступа» кончился бы задолго до '
+                  . 'защиты. Покупка после 31 мая открывает уже следующий учебный год.'),
+            array('Сколько раз можно переделать шаг?',
+                  'Три раза каждый. Этого хватает, чтобы уточнить тему, добавить свои данные и получить чистовой '
+                  . 'вариант; счётчик общий на проект, поэтому неизрасходованные попытки одного шага остаются '
+                  . 'доступны другому.'),
             array('Что входит в тариф «Проект + защита»?',
                   'Все одиннадцать шагов: тема, паспорт по ФГОС, план, источники, теоретическая и практическая '
                   . 'главы, введение и заключение, оформление, презентация, защитная речь по минутам и '
