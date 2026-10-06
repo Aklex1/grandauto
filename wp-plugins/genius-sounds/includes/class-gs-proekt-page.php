@@ -86,9 +86,10 @@ class GS_Proekt_Page {
     }
 
     public static function render() {
+        $uid = get_current_user_id();
         ob_start();
         ?>
-        <div class="gs-proekt" data-gs-proekt>
+        <div class="gs-proekt" data-gs-proekt data-gs-logged="<?php echo $uid > 0 ? 1 : 0; ?>">
 
             <section class="gs-proekt__hero">
                 <div class="gs-proekt__hero-text">
@@ -155,7 +156,6 @@ class GS_Proekt_Page {
                 <p class="gs-proekt__note">Без регистрации и оплаты. Дальше — по желанию.</p>
             </section>
 
-            <?php $uid = get_current_user_id(); ?>
             <section class="gs-proekt__account">
                 <?php if ($uid > 0): ?>
                     <div class="gs-balance">
@@ -252,6 +252,18 @@ class GS_Proekt_Page {
                             <p class="gs-proekt__note">
                                 <?php echo (int) $limit; ?> запросов, доступ <?php echo (int) $days; ?> дней
                             </p>
+                            <?php if ($price > 0): ?>
+                                <button type="button" class="gs-btn gs-btn--primary gs-proekt__buy"
+                                        data-gs-proekt-pick="<?php echo esc_attr($id); ?>"
+                                        data-price="<?php echo (int) $price; ?>"
+                                        data-name="<?php echo esc_attr($name); ?>"
+                                        <?php echo $uid > 0 ? '' : 'data-gs-auth'; ?>>
+                                    Оплатить <?php echo esc_html(number_format_i18n($price)); ?> ₽
+                                </button>
+                            <?php else: ?>
+                                <button type="button" class="gs-btn gs-btn--ghost gs-proekt__buy"
+                                        data-gs-proekt-pick="free">Начать бесплатно</button>
+                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 </div>

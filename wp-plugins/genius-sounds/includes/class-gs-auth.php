@@ -41,6 +41,9 @@ class GS_Auth {
         if (class_exists('GS_Slides_Page') && GS_Slides_Page::is_page()) {
             return true;
         }
+        if (class_exists('GS_Proekt_Page') && GS_Proekt_Page::is_page()) {
+            return true;
+        }
         if (class_exists('GS_Pages') && GS_Pages::is_studio_request()) {
             return true;
         }

@@ -134,3 +134,16 @@
     .gs-proekt__list { columns: 1; }
     .gs-proekt__start { padding: 20px 18px; }
 }
+
+/* Кнопка оплаты на карточке тарифа: карточки разной высоты, кнопки должны
+   стоять в один ряд по низу — иначе блок тарифов выглядит рваным. */
+.gs-proekt__card--tariff { display: flex; flex-direction: column; }
+.gs-proekt__card--tariff ul { flex: 1 1 auto; }
+.gs-proekt__buy { align-self: stretch; text-align: center; margin-top: 14px; }
+.gs-proekt__buy[disabled] { opacity: .55; cursor: default; }
+
+/* Тариф, за которым человек уходил входить: после возврата он виден сразу. */
+.gs-proekt__card.is-pick {
+    border-color: var(--pr-accent);
+    box-shadow: 0 0 0 3px rgba(90, 92, 224, .18);
+}

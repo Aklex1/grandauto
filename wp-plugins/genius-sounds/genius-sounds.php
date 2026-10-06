@@ -253,6 +253,14 @@ class Genius_Sounds_Plugin {
                 array('genius-sounds-catalog'), GS_VERSION);
             wp_enqueue_script('genius-sounds-proekt', GS_PLUGIN_URL . 'assets/js/proekt.js',
                 array(), GS_VERSION, true);
+            // Ключ запроса обязателен: без него маршрут не узнаёт вошедшего
+            // и любая оплата отвечает «войдите», даже когда человек вошёл.
+            wp_localize_script('genius-sounds-proekt', 'GS_PROEKT', array(
+                'restUrl'  => esc_url_raw(rest_url('genius-sounds/v1/proekt/')),
+                'nonce'    => wp_create_nonce('wp_rest'),
+                'loggedIn' => is_user_logged_in() ? 1 : 0,
+                'loginUrl' => esc_url_raw(GS_Auth::login_url()),
+            ));
         }
 
         // Цели Метрики грузим на каждой странице: путь из каталога в

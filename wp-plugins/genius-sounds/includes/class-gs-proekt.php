@@ -302,14 +302,17 @@ class GS_Proekt {
             return array('ok' => false, 'message' => 'Этот тариф уже открыт');
         }
 
-        $balance = class_exists('GS_SFX') ? (float) GS_SFX::get_balance($user) : 0.0;
+        // Считаем доступное, а не весь баланс: подаренные за ключ API
+        // деньги на сервисы сайта не тратятся, и предупредить об этом надо
+        // до списания, а не после отказа базы.
+        $balance = class_exists('GS_SFX') ? (float) GS_SFX::spendable($user) : 0.0;
         if ($balance < $price) {
             return array('ok' => false, 'need_topup' => true, 'price' => $price,
                 'balance' => $balance,
                 'message' => 'На балансе ' . number_format($balance, 2, ',', ' ')
                     . ' ₽, нужно ' . $price . ' ₽. Пополните — и тариф откроется сразу.');
         }
-        if (!GS_SFX::charge($user, $price, 'proekt')) {
+        if (!GS_SFX::charge($user, $price)) {
             return array('ok' => false, 'message' => 'Не удалось списать с баланса, попробуйте ещё раз');
         }
 
