@@ -275,25 +275,52 @@ class GS_Proekt {
     }
 
     /**
-     * Ссылка на оплату тарифа.
+     * Открыть тариф списанием с общего баланса.
      *
-     * Платит обычно родитель, а не ученик, поэтому назначение платежа
-     * должно быть понятно человеку, который открыл кошелёк и видит только
-     * строку списания: называем тариф и номер проекта.
+     * Так же, как во всех остальных микросервисах: деньги лежат на одном
+     * балансе сайта, пополняются привычной формой, а сервис просто
+     * списывает свою цену. Отдельная платёжная ссылка под каждый тариф
+     * означала бы третий способ платить на одном сайте — мы сегодня видели,
+     * чего стоит даже второй.
+     *
+     * Списываем разницу, а не полную цену: со «Старта» на «Проект» человек
+     * доплачивает 500 ₽, а не платит 990 заново.
      */
-    public static function pay_link($token, $tariff, $return_url) {
+    public static function buy($token, $tariff) {
         $row = self::project($token);
         $tariffs = self::tariffs();
-        if (!$row || !isset($tariffs[$tariff]) || !class_exists('GS_Pay')) {
-            return '';
+        if (!$row || !isset($tariffs[$tariff])) {
+            return array('ok' => false, 'message' => 'Проект или тариф не найден');
+        }
+        $user = get_current_user_id();
+        if ($user <= 0) {
+            return array('ok' => false, 'need_login' => true,
+                'message' => 'Войдите, чтобы оплатить тариф — так работа не потеряется.');
         }
         $price = self::upgrade_price((string) $row['tariff'], $tariff);
         if ($price <= 0) {
-            return '';
+            return array('ok' => false, 'message' => 'Этот тариф уже открыт');
         }
-        $target = 'Наставник по индивидуальному проекту, тариф «' . $tariffs[$tariff][0]
-            . '» (проект ' . self::token_clean($token) . ')';
-        return GS_Pay::link(self::label($token, $tariff), (float) $price, $target, $return_url);
+
+        $balance = class_exists('GS_SFX') ? (float) GS_SFX::get_balance($user) : 0.0;
+        if ($balance < $price) {
+            return array('ok' => false, 'need_topup' => true, 'price' => $price,
+                'balance' => $balance,
+                'message' => 'На балансе ' . number_format($balance, 2, ',', ' ')
+                    . ' ₽, нужно ' . $price . ' ₽. Пополните — и тариф откроется сразу.');
+        }
+        if (!GS_SFX::charge($user, $price, 'proekt')) {
+            return array('ok' => false, 'message' => 'Не удалось списать с баланса, попробуйте ещё раз');
+        }
+
+        $row['tariff'] = $tariff;
+        $row['paid_until'] = time() + ((int) $tariffs[$tariff][3] * 86400);
+        $row['paid_at'] = time();
+        $row['user'] = $user;
+        self::save($token, $row);
+
+        return array('ok' => true, 'message' => 'Открыт тариф «' . $tariffs[$tariff][0] . '»',
+            'balance' => class_exists('GS_SFX') ? (float) GS_SFX::get_balance($user) : 0.0);
     }
 
     /** Уведомление ЮMoney: открываем тариф и продлеваем срок. */

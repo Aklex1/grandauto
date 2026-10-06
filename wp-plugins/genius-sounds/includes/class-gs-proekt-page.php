@@ -68,12 +68,30 @@ class GS_Proekt_Page {
         );
     }
 
+    /**
+     * Картинка оформления. Имена постоянные — после перезаливки адрес не
+     * меняется, и вёрстку править не нужно.
+     */
+    private static function img($key) {
+        $map = array(
+            'hero'    => 'proekt-hero.jpg',
+            'steps'   => 'proekt-shagi.png',
+            'defense' => 'proekt-zashchita.jpg',
+        );
+        if (!isset($map[$key])) {
+            return '';
+        }
+        $up = wp_get_upload_dir();
+        return trailingslashit($up['baseurl']) . '2026/10/' . $map[$key];
+    }
+
     public static function render() {
         ob_start();
         ?>
         <div class="gs-proekt" data-gs-proekt>
 
             <section class="gs-proekt__hero">
+                <div class="gs-proekt__hero-text">
                 <h1 class="gs-proekt__title">Индивидуальный проект без паники: от темы до защиты</h1>
                 <p class="gs-proekt__lead">
                     Наставник проведёт по шагам: подберёт тему, составит паспорт проекта и план,
@@ -88,9 +106,13 @@ class GS_Proekt_Page {
                 </ul>
                 <p class="gs-proekt__badges">
                     <span>9, 10 и 11 класс</span>
-                    <span>Разовая оплата, без подписки</span>
-                    <span>Выгрузка в Word</span>
+                    <span>Оплата с баланса сайта</span>
+                    <span>Проект остаётся твоим</span>
                 </p>
+                </div>
+                <img class="gs-proekt__hero-img" loading="lazy" width="960" height="540"
+                     src="<?php echo esc_url(self::img('hero')); ?>"
+                     alt="Школьник работает над индивидуальным проектом">
             </section>
 
             <section class="gs-proekt__start" data-gs-proekt-start>
@@ -133,9 +155,38 @@ class GS_Proekt_Page {
                 <p class="gs-proekt__note">Без регистрации и оплаты. Дальше — по желанию.</p>
             </section>
 
+            <?php $uid = get_current_user_id(); ?>
+            <section class="gs-proekt__account">
+                <?php if ($uid > 0): ?>
+                    <div class="gs-balance">
+                        <span class="gs-balance__label">Баланс</span>
+                        <span class="gs-balance__value" data-gs-proekt-balance><?php
+                            echo esc_html(number_format_i18n(class_exists('GS_SFX')
+                                ? (float) GS_SFX::get_balance($uid) : 0, 2)); ?> ₽</span>
+                        <a class="gs-balance__topup" data-gs-topup
+                           href="<?php echo esc_url(GS_Payments::topup_url('proekt')); ?>">Пополнить</a>
+                    </div>
+                    <p class="gs-proekt__note">
+                        Баланс общий для всех инструментов сайта. Тариф списывается с него один раз.
+                    </p>
+                <?php else: ?>
+                    <p class="gs-proekt__note">
+                        Первый шаг — без входа. Чтобы работа сохранилась и можно было открыть
+                        остальные шаги, <a href="<?php echo esc_url(home_url('/tts-login/?redirect='
+                            . rawurlencode('/' . self::SLUG . '/'))); ?>">войдите</a>
+                        или <a href="<?php echo esc_url(home_url('/tts-register/?redirect='
+                            . rawurlencode('/' . self::SLUG . '/'))); ?>">создайте аккаунт</a> —
+                        это минута.
+                    </p>
+                <?php endif; ?>
+            </section>
+
             <section class="gs-proekt__app" data-gs-proekt-app hidden></section>
 
             <section class="gs-proekt__steps">
+                <img class="gs-proekt__wide-img" loading="lazy" width="960" height="540"
+                     src="<?php echo esc_url(self::img('steps')); ?>"
+                     alt="Одиннадцать шагов индивидуального проекта">
                 <h2>11 шагов — как в требованиях школы</h2>
                 <ol class="gs-proekt__list">
                     <?php foreach (GS_Proekt::stages() as $s): ?>
@@ -161,6 +212,19 @@ class GS_Proekt_Page {
                         </div>
                     <?php endforeach; ?>
                 </div>
+            </section>
+
+            <section class="gs-proekt__defense">
+                <img class="gs-proekt__wide-img" loading="lazy" width="960" height="540"
+                     src="<?php echo esc_url(self::img('defense')); ?>"
+                     alt="Защита индивидуального проекта перед комиссией">
+                <h2>Защита — там, где обычно сыплются</h2>
+                <p class="gs-proekt__lead">
+                    Генераторы выдают текст и на этом заканчиваются. А спрашивают на защите:
+                    зачем эта тема, откуда цифры, что сделано своими руками. Наставник готовит
+                    презентацию, речь по минутам и пятнадцать вопросов комиссии с ответами —
+                    чтобы на защите не было неожиданностей.
+                </p>
             </section>
 
             <section class="gs-proekt__tariffs" id="tarify">

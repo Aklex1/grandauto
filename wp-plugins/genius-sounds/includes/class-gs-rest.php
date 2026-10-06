@@ -405,6 +405,22 @@ class GS_Rest {
             'permission_callback' => '__return_true',
         ));
 
+        // Состояние задачи у поставщика напрямую, без привязки к сервису:
+        // оформительские картинки не принадлежат ни одному микросервису.
+        register_rest_route(self::NS, '/lab/job/(?P<task>[a-zA-Z0-9_-]+)', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_lab_job'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
+        // Картинка по описанию — для оформления страниц сервисов. Только
+        // для админа: это прямой расход у поставщика.
+        register_rest_route(self::NS, '/lab/image', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_lab_image'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/diag/pending', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_pending_list'),
@@ -814,7 +830,10 @@ class GS_Rest {
             );
         }
 
+        $user = get_current_user_id();
         return array(
+            'вошёл'    => $user > 0,
+            'баланс'   => $user > 0 && class_exists('GS_SFX') ? (float) GS_SFX::get_balance($user) : null,
             'токен'    => (string) $row['token'],
             'тариф'    => $tariff,
             'тариф_название' => $tariffs[$tariff][0],
@@ -862,13 +881,33 @@ class GS_Rest {
         $p = self::proekt_payload($request);
         $token = (string) ($p['token'] ?? '');
         $tariff = sanitize_key((string) ($p['tariff'] ?? ''));
-        $back = GS_Proekt_Page::url() . '?token=' . GS_Proekt::token_clean($token);
-        $link = GS_Proekt::pay_link($token, $tariff, $back);
-        if ($link === '') {
-            return new WP_Error('gs_proekt_pay', 'Не удалось собрать ссылку на оплату',
-                array('status' => 400));
+
+        $res = GS_Proekt::buy($token, $tariff);
+        $res['состояние'] = self::proekt_state($token);
+        return rest_ensure_response($res);
+    }
+
+    /** Состояние задачи у поставщика напрямую: оформительские картинки
+     *  не принадлежат ни одному микросервису. */
+    public static function handle_lab_job($request) {
+        return rest_ensure_response(GS_Provider::job_state((string) $request->get_param('task')));
+    }
+
+    /** Картинка по описанию — для оформления страниц. Только для админа:
+     *  это прямой расход у поставщика. */
+    public static function handle_lab_image($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = (array) $request->get_params();
         }
-        return rest_ensure_response(array('ссылка' => $link));
+        $prompt = trim((string) ($p['prompt'] ?? ''));
+        if ($prompt === '') {
+            return new WP_Error('gs_no_prompt', 'Нужно описание картинки', array('status' => 400));
+        }
+        return rest_ensure_response(GS_Provider::job('image', array(
+            'prompt' => $prompt,
+            'ratio'  => (string) ($p['ratio'] ?? '16:9'),
+        )));
     }
 
     public static function handle_pending_list($request) {

@@ -1,49 +1,136 @@
-/* Наставник по индивидуальному проекту. Опирается на общие переменные сайта. */
-.gs-proekt { max-width: 1040px; margin: 0 auto; }
-.gs-proekt h1, .gs-proekt h2, .gs-proekt h3 { margin: 0 0 12px; }
-.gs-proekt__title { font-size: clamp(26px, 4vw, 40px); line-height: 1.15; }
-.gs-proekt__lead { font-size: 17px; line-height: 1.6; max-width: 70ch; }
-.gs-proekt__bullets { margin: 18px 0; padding-left: 20px; line-height: 1.7; }
-.gs-proekt__badges { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
+/*
+ * Наставник по индивидуальному проекту.
+ *
+ * Страницу смотрят школьники и их родители, чаще с телефона и чаще в
+ * тревоге «задали проект, ничего не понятно». Поэтому крупный воздух,
+ * спокойный градиент вместо белого листа и ни одной кричащей плашки:
+ * тут нужно успокоить, а не продать с наскока.
+ */
+
+.gs-proekt {
+    --pr-ink: #1d2140;
+    --pr-soft: #5b6080;
+    --pr-accent: #5a5ce0;
+    --pr-card: rgba(255, 255, 255, .82);
+    --pr-line: rgba(90, 92, 224, .18);
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 8px 0 40px;
+    color: var(--pr-ink);
+    position: relative;
+}
+
+/* Фон вместо белого листа: мягкие пятна, которые не мешают читать. */
+.gs-proekt::before {
+    content: "";
+    position: absolute;
+    inset: -60px -20vw 40%;
+    z-index: -1;
+    background:
+        radial-gradient(60% 60% at 15% 0%, rgba(90, 92, 224, .16), transparent 70%),
+        radial-gradient(55% 55% at 85% 10%, rgba(255, 176, 92, .18), transparent 70%),
+        linear-gradient(180deg, rgba(243, 244, 255, .95), rgba(255, 255, 255, 0));
+    pointer-events: none;
+}
+
+.gs-proekt h1, .gs-proekt h2, .gs-proekt h3 { margin: 0 0 14px; color: var(--pr-ink); }
+.gs-proekt__title { font-size: clamp(27px, 4.2vw, 44px); line-height: 1.12; letter-spacing: -.5px; }
+.gs-proekt__lead { font-size: 17px; line-height: 1.65; max-width: 62ch; color: var(--pr-soft); }
+
+.gs-proekt__hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+    gap: 28px;
+    align-items: center;
+    padding: 18px 0 8px;
+}
+.gs-proekt__hero-img, .gs-proekt__wide-img {
+    width: 100%; height: auto; display: block;
+    border-radius: 20px;
+    box-shadow: 0 18px 44px rgba(29, 33, 64, .16);
+}
+.gs-proekt__wide-img { margin-bottom: 18px; max-height: 320px; object-fit: cover; }
+
+.gs-proekt__bullets { margin: 18px 0; padding-left: 20px; line-height: 1.75; color: var(--pr-soft); }
+.gs-proekt__bullets li::marker { color: var(--pr-accent); }
+.gs-proekt__badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 0; }
 .gs-proekt__badges span {
-    background: rgba(125, 125, 255, .12); border-radius: 999px; padding: 6px 14px; font-size: 14px;
+    background: rgba(90, 92, 224, .1); color: var(--pr-accent);
+    border-radius: 999px; padding: 7px 15px; font-size: 14px; font-weight: 600;
 }
-.gs-proekt__start, .gs-proekt__app, .gs-proekt__steps,
-.gs-proekt__examples, .gs-proekt__tariffs { margin: 34px 0; }
+
+.gs-proekt__account, .gs-proekt__start, .gs-proekt__app,
+.gs-proekt__steps, .gs-proekt__defense,
+.gs-proekt__examples, .gs-proekt__tariffs { margin: 38px 0; }
+
+.gs-proekt__account .gs-balance { justify-content: flex-start; }
+
+.gs-proekt__start {
+    background: var(--pr-card);
+    border: 1px solid var(--pr-line);
+    border-radius: 22px;
+    padding: 26px 28px;
+    box-shadow: 0 10px 34px rgba(29, 33, 64, .08);
+    backdrop-filter: blur(6px);
+}
 .gs-proekt__form {
-    display: grid; gap: 12px; margin-bottom: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+    display: grid; gap: 14px; margin-bottom: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
 }
-.gs-proekt__form label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.gs-proekt__form label { display: flex; flex-direction: column; gap: 7px; font-size: 14px; font-weight: 600; }
 .gs-proekt__wide { grid-column: 1 / -1; }
 .gs-proekt__form input, .gs-proekt__form select, .gs-proekt__input {
-    padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(125, 125, 155, .35);
-    background: transparent; color: inherit; font: inherit; width: 100%;
+    padding: 12px 14px; border-radius: 12px; border: 1px solid var(--pr-line);
+    background: #fff; color: var(--pr-ink); font: inherit; font-weight: 400; width: 100%;
 }
-.gs-proekt__note { font-size: 14px; opacity: .75; margin: 8px 0; }
-.gs-proekt__list { columns: 2; column-gap: 28px; line-height: 1.9; padding-left: 20px; }
+.gs-proekt__form input:focus, .gs-proekt__form select:focus, .gs-proekt__input:focus {
+    outline: 2px solid rgba(90, 92, 224, .35); outline-offset: 1px;
+}
+.gs-proekt__note { font-size: 14px; color: var(--pr-soft); margin: 10px 0; }
+
+.gs-proekt__list { columns: 2; column-gap: 32px; line-height: 2; padding-left: 20px; color: var(--pr-soft); }
+.gs-proekt__list li::marker { color: var(--pr-accent); font-weight: 700; }
+
 .gs-proekt__cards {
-    display: grid; gap: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+    display: grid; gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(min(265px, 100%), 1fr));
 }
 .gs-proekt__card {
-    border: 1px solid rgba(125, 125, 155, .25); border-radius: 14px; padding: 16px 18px;
+    background: var(--pr-card); border: 1px solid var(--pr-line);
+    border-radius: 18px; padding: 20px 22px;
+    box-shadow: 0 6px 22px rgba(29, 33, 64, .06);
 }
-.gs-proekt__card ul { margin: 0; padding-left: 18px; line-height: 1.6; }
-.gs-proekt__price { font-size: 26px; font-weight: 700; margin: 6px 0 10px; }
+.gs-proekt__card h3 { font-size: 17px; }
+.gs-proekt__card ul { margin: 0; padding-left: 18px; line-height: 1.7; color: var(--pr-soft); }
+.gs-proekt__card--tariff { display: flex; flex-direction: column; }
+.gs-proekt__price { font-size: 30px; font-weight: 800; margin: 2px 0 12px; color: var(--pr-accent); }
+
 .gs-proekt__bar {
-    display: flex; gap: 14px; flex-wrap: wrap; justify-content: space-between;
-    align-items: center; padding: 12px 16px; border-radius: 12px;
-    background: rgba(125, 125, 255, .1); margin-bottom: 16px;
+    display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    padding: 14px 18px; border-radius: 14px; margin-bottom: 18px;
+    background: linear-gradient(135deg, rgba(90, 92, 224, .14), rgba(255, 176, 92, .14));
+    border: 1px solid var(--pr-line);
 }
-.gs-proekt__step { border: 1px solid rgba(125, 125, 155, .25); border-radius: 12px; margin-bottom: 10px; }
-.gs-proekt__step summary { padding: 12px 16px; cursor: pointer; font-weight: 600; }
-.gs-proekt__step.is-locked summary { opacity: .65; }
-.gs-proekt__body { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+.gs-proekt__step {
+    background: var(--pr-card); border: 1px solid var(--pr-line);
+    border-radius: 14px; margin-bottom: 12px; overflow: hidden;
+}
+.gs-proekt__step summary { padding: 14px 18px; cursor: pointer; font-weight: 700; }
+.gs-proekt__step.is-locked summary { opacity: .6; }
+.gs-proekt__step.is-done summary { background: rgba(46, 158, 91, .07); }
+.gs-proekt__body { padding: 0 18px 18px; display: flex; flex-direction: column; gap: 12px; }
 .gs-proekt__answer {
-    background: rgba(125, 125, 155, .08); border-radius: 10px; padding: 14px 16px;
-    line-height: 1.65; max-height: 460px; overflow: auto;
+    background: #fff; border: 1px solid var(--pr-line); border-radius: 12px;
+    padding: 16px 18px; line-height: 1.7; max-height: 470px; overflow: auto;
 }
-.gs-proekt__tick { color: #2e9e5b; font-size: 13px; font-weight: 500; }
-.gs-proekt__lock { font-size: 13px; font-weight: 500; opacity: .7; }
-@media (max-width: 640px) { .gs-proekt__list { columns: 1; } }
+.gs-proekt__tick { color: #2e9e5b; font-size: 13px; font-weight: 600; }
+.gs-proekt__lock { font-size: 13px; font-weight: 600; color: var(--pr-soft); }
+
+@media (max-width: 860px) {
+    .gs-proekt__hero { grid-template-columns: 1fr; }
+    .gs-proekt__hero-img { order: -1; }
+}
+@media (max-width: 640px) {
+    .gs-proekt__list { columns: 1; }
+    .gs-proekt__start { padding: 20px 18px; }
+}

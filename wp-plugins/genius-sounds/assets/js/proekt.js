@@ -57,6 +57,8 @@
         var html = '<div class="gs-proekt__bar">'
             + '<strong>Тариф: ' + esc(state['тариф_название']) + '</strong>'
             + '<span>осталось запросов: ' + left + ' из ' + state['запросов_лимит'] + '</span>'
+            + (state['баланс'] === null ? ''
+                : '<span>баланс: ' + Number(state['баланс']).toFixed(2) + ' ₽</span>')
             + '</div><div class="gs-proekt__steps-live">';
 
         state['шаги'].forEach(function (s) {
@@ -91,7 +93,8 @@
                 + '<h3>' + esc(t['название']) + '</h3>'
                 + '<p class="gs-proekt__price">' + t['доплата'] + ' ₽</p>'
                 + '<p class="gs-proekt__note">' + t['запросов'] + ' запросов, доступ ' + t['дней'] + ' дней</p>'
-                + '<button type="button" class="gs-btn gs-btn--primary" data-pay="' + esc(id) + '">Оплатить</button>'
+                + '<button type="button" class="gs-btn gs-btn--primary" data-pay="' + esc(id)
+                + '">' + (state['вошёл'] ? 'Открыть за ' + t['доплата'] + ' ₽' : 'Войти и открыть') + '</button>'
                 + '</div>';
         });
         html += '</div></div>';
@@ -118,11 +121,28 @@
 
         appBox.querySelectorAll('[data-pay]').forEach(function (btn) {
             btn.addEventListener('click', function () {
+                btn.disabled = true;
                 post('pay', { token: state['токен'], tariff: btn.getAttribute('data-pay') })
                     .then(function (res) {
-                        if (res && res['ссылка']) { location.href = res['ссылка']; }
-                        else { alert('Не удалось открыть оплату. Напишите нам.'); }
-                    });
+                        if (res && res.ok) {
+                            if (res['состояние']) { show(res['состояние']); }
+                            return;
+                        }
+                        if (res && res.need_login) {
+                            location.href = '/tts-login/?redirect=' + encodeURIComponent(location.pathname);
+                            return;
+                        }
+                        // Денег не хватило — открываем ту же форму пополнения,
+                        // что и в остальных сервисах, а не уводим со страницы.
+                        if (res && res.need_topup) {
+                            var opener = document.querySelector('[data-gs-topup]');
+                            if (opener) { opener.click(); }
+                            alert(res.message);
+                            return;
+                        }
+                        alert((res && res.message) || 'Не удалось открыть тариф.');
+                    })
+                    .then(function () { btn.disabled = false; });
             });
         });
     }
