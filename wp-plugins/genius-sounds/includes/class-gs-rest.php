@@ -378,6 +378,15 @@ class GS_Rest {
 
         // Сводка по платежам: сайт и бот рядом, по неделям. Нужна, чтобы
         // видеть не отдельную жалобу, а масштаб — сколько зависает и где.
+        // Все незакрытые платежи с метками — чтобы сверить их с выпиской
+        // кошелька: со стороны сайта оплаченный и брошенный выглядят
+        // одинаково, различить их может только выписка.
+        register_rest_route(self::NS, '/diag/pending', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_pending_list'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/diag/payments-summary', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_payments_summary'),
@@ -731,6 +740,55 @@ class GS_Rest {
             (string) ($params['method'] ?? 'GET'),
             isset($params['payload']) ? $params['payload'] : null
         ));
+    }
+
+    public static function handle_pending_list($request) {
+        global $wpdb;
+        $days = max(1, min(400, (int) ($request->get_param('days') ?: 120)));
+        $out = array('за_дней' => $days);
+
+        $table = $wpdb->prefix . 'kie_tts_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table) {
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT label, amount, user_id, created_at
+                   FROM {$table}
+                  WHERE status = 'pending' AND created_at > DATE_SUB(NOW(), INTERVAL %d DAY)
+               ORDER BY created_at DESC LIMIT 500", $days), ARRAY_A);
+            foreach ($rows as &$row) {
+                $user = get_user_by('id', (int) $row['user_id']);
+                $row['кто'] = $user ? $user->user_login : ('id ' . (int) $row['user_id']);
+            }
+            unset($row);
+            $out['сайт'] = $rows;
+        }
+
+        $conn = class_exists('KIE_TTS_DB') ? KIE_TTS_DB::get_bot_connection() : null;
+        if (!$conn) {
+            $out['бот'] = 'нет связи с базой бота';
+        } else {
+            $rows = array();
+            $sql = "SELECT p.label, p.amount, p.tokens, p.telegram_id, p.created_at, u.username
+                      FROM payments p LEFT JOIN users u ON u.telegram_id = p.telegram_id
+                     WHERE p.status = 'pending'
+                       AND p.created_at > DATE_SUB(NOW(), INTERVAL " . (int) $days . " DAY)
+                  ORDER BY p.created_at DESC LIMIT 500";
+            if ($res = $conn->query($sql)) {
+                while ($row = $res->fetch_assoc()) {
+                    $rows[] = array(
+                        'label'       => (string) $row['label'],
+                        'amount'      => (float) $row['amount'],
+                        'tokens'      => (float) $row['tokens'],
+                        'telegram_id' => (string) $row['telegram_id'],
+                        'кто'         => (string) ($row['username'] ?: ''),
+                        'created_at'  => (string) $row['created_at'],
+                    );
+                }
+            }
+            $out['бот'] = $rows;
+            $conn->close();
+        }
+
+        return rest_ensure_response($out);
     }
 
     public static function handle_payments_summary() {
