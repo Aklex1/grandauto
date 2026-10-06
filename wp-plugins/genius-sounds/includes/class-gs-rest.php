@@ -40,6 +40,21 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
 
+        // Первая генерация без регистрации. Человек из каталога звуков
+        // проводит на странице по шесть минут и уходит, упёршись в «Войти и
+        // создать звук»: до входа доходит один из двадцати. Пусть сначала
+        // услышит результат, а аккаунт попросим после.
+        register_rest_route(self::NS, '/sfx/trial', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_trial'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route(self::NS, '/sfx/trial/(?P<task_id>[a-zA-Z0-9_-]+)', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_trial_status'),
+            'permission_callback' => '__return_true',
+        ));
+
         register_rest_route(self::NS, '/sfx/callback', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_callback'),
@@ -955,9 +970,16 @@ class GS_Rest {
                    FROM {$table}
                   WHERE status = 'pending' AND created_at > DATE_SUB(NOW(), INTERVAL %d DAY)
                ORDER BY created_at DESC LIMIT 500", $days), ARRAY_A);
+            $names = class_exists('GS_Payments') ? GS_Payments::sources() : array();
             foreach ($rows as &$row) {
                 $user = get_user_by('id', (int) $row['user_id']);
                 $row['кто'] = $user ? $user->user_login : ('id ' . (int) $row['user_id']);
+                // Из какого сервиса человек пошёл платить: метку платёжный
+                // плагин собирает сам, поэтому сервис пишем рядом при выдаче
+                // ссылки и подставляем сюда.
+                $src = class_exists('GS_Payments')
+                    ? GS_Payments::payment_source_of((string) $row['label']) : '';
+                $row['откуда'] = $src === '' ? '—' : ($names[$src] ?? $src);
             }
             unset($row);
             $out['сайт'] = $rows;
@@ -1671,6 +1693,148 @@ class GS_Rest {
             'cost'      => $cost,
             'balance'   => GS_SFX::get_balance($user_id),
         ));
+    }
+
+    /* ---------------------------------------------------------------------
+     * Пробный звук без регистрации
+     * ------------------------------------------------------------------ */
+
+    /** Сколько пробных звуков отдаём с одного адреса в сутки. */
+    const TRIAL_PER_DAY = 1;
+    /** Потолок на весь сайт в сутки: пробник стоит денег у поставщика. */
+    const TRIAL_DAY_CAP = 40;
+    const TRIAL_SECONDS = 5;
+
+    /**
+     * Адрес посетителя для счёта попыток.
+     *
+     * Берём не голый REMOTE_ADDR: если сайт окажется за своим прокси, там у
+     * всех один внутренний адрес — и бесплатный звук достанется одному
+     * человеку на свете. Для внутренних адресов смотрим X-Forwarded-For.
+     */
+    private static function trial_ip_key() {
+        $remote = isset($_SERVER['REMOTE_ADDR'])
+            ? trim((string) sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']))) : '';
+        $ip = $remote;
+        $public = filter_var($remote, FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
+        if (!$public) {
+            $forwarded = isset($_SERVER['HTTP_X_FORWARDED_FOR'])
+                ? (string) wp_unslash($_SERVER['HTTP_X_FORWARDED_FOR']) : '';
+            foreach (explode(',', $forwarded) as $candidate) {
+                $candidate = trim($candidate);
+                if (filter_var($candidate, FILTER_VALIDATE_IP,
+                        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                    $ip = $candidate;
+                    break;
+                }
+            }
+        }
+        return 'gs_sfx_trial_' . md5($ip !== '' ? $ip : '0');
+    }
+
+    private static function trial_day_key() {
+        return 'gs_sfx_trial_day_' . wp_date('Ymd');
+    }
+
+    /** Сколько пробных генераций осталось этому посетителю сегодня. */
+    public static function trial_left() {
+        if ((int) get_transient(self::trial_day_key()) >= self::TRIAL_DAY_CAP) {
+            return 0;
+        }
+        return max(0, self::TRIAL_PER_DAY - (int) get_transient(self::trial_ip_key()));
+    }
+
+    private static function trial_note_use() {
+        $ip = self::trial_ip_key();
+        set_transient($ip, (int) get_transient($ip) + 1, DAY_IN_SECONDS);
+        $day = self::trial_day_key();
+        set_transient($day, (int) get_transient($day) + 1, DAY_IN_SECONDS);
+    }
+
+    public static function handle_trial($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+        $raw_prompt = isset($params['prompt']) ? sanitize_textarea_field((string) $params['prompt']) : '';
+        $raw_prompt = trim($raw_prompt);
+        if ($raw_prompt === '') {
+            return new WP_Error('gs_missing_prompt', 'Опишите звук, который нужно создать', array('status' => 400));
+        }
+        if (mb_strlen($raw_prompt) > 200) {
+            $raw_prompt = mb_substr($raw_prompt, 0, 200);
+        }
+        if (self::trial_left() <= 0) {
+            return new WP_Error('gs_trial_spent',
+                'Бесплатный звук на сегодня уже создан. Войдите — и создавайте без ограничений.',
+                array('status' => 429));
+        }
+
+        $prompt = GS_SFX::build_prompt($raw_prompt, GS_SFX::MODE_SFX, self::TRIAL_SECONDS);
+        $created = GS_SFX::create_task($prompt, array(
+            'model'        => 'V5',
+            'loop'         => false,
+            'callback_url' => add_query_arg('token', GS_SFX::callback_token(),
+                                            rest_url(self::NS . '/sfx/callback')),
+        ));
+        if (empty($created['ok'])) {
+            return new WP_Error('gs_kie_error',
+                $created['message'] ?: 'Сервис генерации не принял задачу', array('status' => 502));
+        }
+
+        $task_id = $created['task_id'];
+        // Помечаем задачу пробной: по этой записи открытый маршрут состояния
+        // отдаёт результат, не спрашивая аккаунт, и только для таких задач.
+        set_transient('gs_sfx_trialtask_' . $task_id,
+                      array('prompt' => $raw_prompt, 'at' => time()), 2 * HOUR_IN_SECONDS);
+        self::trial_note_use();
+
+        return rest_ensure_response(array(
+            'success' => true,
+            'task_id' => $task_id,
+            'prompt'  => $raw_prompt,
+            'осталось' => self::trial_left(),
+        ));
+    }
+
+    public static function handle_trial_status($request) {
+        $task_id = (string) $request['task_id'];
+        $meta = get_transient('gs_sfx_trialtask_' . $task_id);
+        if (!is_array($meta)) {
+            return new WP_Error('gs_trial_unknown', 'Задача не найдена', array('status' => 404));
+        }
+        if (!empty($meta['audio_url'])) {
+            return rest_ensure_response(array('success' => true, 'status' => 'completed',
+                'audio_url' => $meta['audio_url'], 'prompt' => (string) $meta['prompt']));
+        }
+
+        $task = GS_SFX::fetch_task($task_id);
+        if (empty($task['ok'])) {
+            return rest_ensure_response(array('success' => true, 'status' => 'pending',
+                'message' => $task['message']));
+        }
+        if (GS_SFX::is_failed_status($task['status'])) {
+            // Неудача пробника не должна съедать попытку: человек ничего не получил.
+            $key = self::trial_ip_key();
+            $left = (int) get_transient($key);
+            if ($left > 0) {
+                set_transient($key, $left - 1, DAY_IN_SECONDS);
+            }
+            return rest_ensure_response(array('success' => false, 'status' => 'failed',
+                'message' => $task['message'] ?: 'Генерация не удалась, попробуйте другое описание'));
+        }
+        if ($task['audio_url'] !== '') {
+            $local = GS_SFX::store_result($task_id, $task['audio_url']);
+            $url = $local !== '' ? $local : $task['audio_url'];
+            $meta['audio_url'] = $url;
+            set_transient('gs_sfx_trialtask_' . $task_id, $meta, 2 * HOUR_IN_SECONDS);
+            return rest_ensure_response(array('success' => true, 'status' => 'completed',
+                'audio_url' => $url, 'title' => $task['title'], 'duration' => $task['duration'],
+                'prompt' => (string) $meta['prompt']));
+        }
+        return rest_ensure_response(array('success' => true, 'status' => 'pending',
+            'stage' => $task['status']));
     }
 
     public static function handle_status($request) {

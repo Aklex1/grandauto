@@ -272,6 +272,8 @@ class GS_Pages {
     public static function render_studio($atts = array()) {
         $prefill = isset($_GET['prompt']) ? sanitize_text_field(wp_unslash((string) $_GET['prompt'])) : '';
         $logged  = is_user_logged_in();
+        // Пробный звук гостю: столько попыток осталось сегодня с его адреса.
+        $trial   = $logged ? 0 : (class_exists('GS_Rest') ? GS_Rest::trial_left() : 0);
         $cost    = GS_SFX::get_cost();
         $balance = $logged ? GS_SFX::get_balance(get_current_user_id()) : 0.0;
 
@@ -383,8 +385,10 @@ class GS_Pages {
                                 <span class="gs-balance__label">Баланс</span>
                                 <span class="gs-balance__value" id="gs-balance"><?php echo esc_html(number_format_i18n($balance, 2)); ?> ₽</span>
                                 <a class="gs-balance__topup" data-gs-topup href="<?php echo esc_url(GS_Payments::topup_url('sfx')); ?>">Пополнить</a>
+                            <?php elseif ($trial > 0): ?>
+                                <span class="gs-balance__label">Первый звук — бесплатно, без регистрации</span>
                             <?php else: ?>
-                                <span class="gs-balance__label">Нужен вход</span>
+                                <span class="gs-balance__label">Бесплатный звук на сегодня создан</span>
                             <?php endif; ?>
                         </div>
 
@@ -392,12 +396,22 @@ class GS_Pages {
                             <button class="gs-btn gs-btn--primary gs-btn--lg" type="submit" id="gs-submit">
                                 Создать звук за <?php echo esc_html(number_format_i18n($cost, 0)); ?> ₽
                             </button>
+                        <?php elseif ($trial > 0): ?>
+                            <button class="gs-btn gs-btn--primary gs-btn--lg" type="submit" id="gs-submit">
+                                Создать звук бесплатно
+                            </button>
                         <?php else: ?>
                             <a class="gs-btn gs-btn--primary gs-btn--lg" data-gs-auth
                                href="<?php echo esc_url($login_url); ?>">Войти и создать звук</a>
                         <?php endif; ?>
                     </div>
 
+                    <?php if (!$logged && $trial > 0): ?>
+                        <p class="gs-form__note gs-form__note--trial">
+                            Один звук на пять секунд — бесплатно и без аккаунта.
+                            Аккаунт понадобится дальше: чтобы сохранять звуки, выбирать длину и режимы.
+                        </p>
+                    <?php endif; ?>
                     <p class="gs-form__note" id="gs-form-note" role="status" aria-live="polite"></p>
                 </form>
 

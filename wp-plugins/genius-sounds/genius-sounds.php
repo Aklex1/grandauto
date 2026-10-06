@@ -535,6 +535,11 @@ class Genius_Sounds_Plugin {
                 'loginUrl'  => GS_Pages::get_login_url(GS_Pages::current_studio_url()),
                 'topupUrl'  => GS_Pages::get_dashboard_url(),
                 'cost'      => GS_SFX::get_cost(),
+                // Пробный звук без регистрации: сколько осталось сегодня.
+                'trialLeft' => is_user_logged_in() ? 0 : (class_exists('GS_Rest') ? GS_Rest::trial_left() : 0),
+                'registerUrl' => esc_url_raw(home_url('/tts-register/?redirect='
+                    . rawurlencode('/' . GS_Pages::STUDIO_SLUG . '/'))),
+                'catalogUrl'  => esc_url_raw(GS_Catalog::base_url()),
                 'presets'   => GS_SFX::get_presets(),
                 // Разводка «звук или голос»: скрипт подставляет текст в адрес озвучки.
                 'ttsUrl'    => GS_Pages::get_tts_url(),

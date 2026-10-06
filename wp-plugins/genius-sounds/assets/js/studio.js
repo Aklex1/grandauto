@@ -268,7 +268,7 @@
     form.addEventListener('submit', function (e) {
         e.preventDefault();
 
-        if (!cfg.loggedIn) {
+        if (!cfg.loggedIn && !cfg.trialLeft) {
             window.location.href = cfg.loginUrl;
             return;
         }
@@ -290,6 +290,11 @@
             }
             note('Похоже, вы хотите, чтобы текст произнесли голосом — это озвучка, а не генератор звуков. '
                 + 'Перейдите по кнопке выше или нажмите «Создать звук» ещё раз, если вам действительно нужен шум.', 'error');
+            return;
+        }
+
+        if (!cfg.loggedIn) {
+            runTrial(prompt);
             return;
         }
 
@@ -339,6 +344,106 @@
             note('Сеть недоступна, попробуйте ещё раз', 'error');
         });
     });
+
+    /**
+     * Пробный звук гостю.
+     *
+     * Отдельный маршрут и отдельный опрос состояния: обычные требуют
+     * аккаунта и списывают деньги, а здесь ни того, ни другого. Длина и
+     * режим фиксированы — это демонстрация, а не полноценная генерация.
+     */
+    function runTrial(prompt) {
+        setBusy(true);
+        note('');
+        show('loading');
+        els.stage.textContent = 'Отправляем задачу в Suno…';
+        els.progress.style.width = '8%';
+
+        api('sfx/trial', { prompt: prompt }).then(function (res) {
+            if (!res.ok || !res.data || res.data.success !== true) {
+                var message = (res.data && (res.data.message || res.data.code))
+                    || 'Не удалось запустить генерацию';
+                setBusy(false);
+                show('empty');
+                note(message, 'error');
+                if (res.status === 429) { offerAccount(true); }
+                return;
+            }
+            cfg.trialLeft = res.data['осталось'] || 0;
+            els.stage.textContent = 'Suno собирает звук…';
+            els.progress.style.width = '28%';
+            pollTrial(res.data.task_id, prompt);
+        }).catch(function () {
+            setBusy(false);
+            show('empty');
+            note('Сеть недоступна, попробуйте ещё раз', 'error');
+        });
+    }
+
+    function pollTrial(taskId, prompt) {
+        pollStarted = Date.now();
+        stopPolling();
+        polling = setInterval(function () {
+            var elapsed = Date.now() - pollStarted;
+            if (elapsed > POLL_TIMEOUT) {
+                stopPolling();
+                setBusy(false);
+                show('empty');
+                note('Генерация занимает слишком долго. Попробуйте ещё раз.', 'error');
+                return;
+            }
+            els.progress.style.width = Math.min(92, 28 + (elapsed / POLL_TIMEOUT) * 140) + '%';
+
+            api('sfx/trial/' + encodeURIComponent(taskId)).then(function (res) {
+                var data = res.data || {};
+                if (data.status === 'completed' && data.audio_url) {
+                    stopPolling();
+                    setBusy(false);
+                    renderResult(data, prompt);
+                    note('Готово. Это пробный звук на пять секунд.', 'ok');
+                    offerAccount(false);
+                    if (window.ym && window.gsGoals && window.gsGoals.counter) {
+                        window.ym(window.gsGoals.counter, 'reachGoal', 'trial_sound');
+                    }
+                    return;
+                }
+                if (data.status === 'failed') {
+                    stopPolling();
+                    setBusy(false);
+                    show('empty');
+                    note(data.message || 'Генерация не удалась, попробуйте другое описание', 'error');
+                    return;
+                }
+                if (data.stage === 'TEXT_SUCCESS' || data.stage === 'FIRST_SUCCESS') {
+                    els.stage.textContent = 'Почти готово, сводим звук…';
+                }
+            }).catch(function () { /* разрыв сети — ждём следующего тика */ });
+        }, POLL_INTERVAL);
+    }
+
+    /**
+     * Предложение аккаунта — после результата, а не до него.
+     *
+     * Человек уже услышал, что получается; теперь понятно, за что
+     * предлагают регистрацию.
+     */
+    function offerAccount(spent) {
+        if (document.getElementById('gs-trial-offer')) { return; }
+        var box = document.createElement('div');
+        box.id = 'gs-trial-offer';
+        box.className = 'gs-trial-offer';
+        box.innerHTML = (spent
+                ? '<strong>Бесплатный звук на сегодня уже создан.</strong> '
+                : '<strong>Понравилось?</strong> ')
+            + 'С аккаунтом открываются длина до 60 секунд, бесшовные лупы, история звуков и '
+            + 'скачивание в один клик. Звук стоит ' + formatMoney(cfg.cost) + ', оплата с баланса.'
+            + '<div class="gs-trial-offer__row">'
+            + '<a class="gs-btn gs-btn--primary" data-gs-auth href="' + (cfg.loginUrl || '/tts-login/') + '">Создать аккаунт</a>'
+            + '<a class="gs-btn gs-btn--ghost" href="' + (cfg.catalogUrl || '/sounds-catalog/') + '">Готовые звуки в каталоге</a>'
+            + '</div>';
+        var holder = document.getElementById('gs-result') || form;
+        holder.appendChild(box);
+    }
 
     function startPolling(taskId, prompt) {
         pollStarted = Date.now();

@@ -1520,3 +1520,13 @@ body.gs-topup-open {
     color: #c7d2fe !important;
     text-decoration: underline !important;
 }
+
+/* Предложение аккаунта после пробного звука: появляется под результатом,
+   когда человек уже услышал, что получается. */
+.gs-trial-offer {
+    margin-top: 18px; padding: 16px 18px; border-radius: 14px; line-height: 1.6;
+    background: linear-gradient(135deg, rgba(90, 92, 224, .10), rgba(255, 176, 92, .12));
+    border: 1px solid rgba(90, 92, 224, .22);
+}
+.gs-trial-offer__row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.gs-form__note--trial { color: #475069; }

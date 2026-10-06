@@ -717,6 +717,44 @@ class GS_Payments {
      * Правка назначения платежа
      * ------------------------------------------------------------------ */
 
+    /**
+     * Журнал «метка платежа → сервис».
+     *
+     * Назначение платежа человек видит у ЮMoney, но в самой метке сервиса
+     * нет, и ответить на вопрос «кто платил из каталога звуков» по данным
+     * сайта было нечем. Пишем соответствие при выдаче ссылки: это
+     * единственный момент, когда известны и метка, и сервис.
+     */
+    const OPT_SRC_LOG = 'gs_payment_sources';
+    const SRC_LOG_KEEP = 300;
+
+    public static function note_payment_source($label, $source) {
+        $label = trim((string) $label);
+        if ($label === '') {
+            return;
+        }
+        $log = get_option(self::OPT_SRC_LOG, array());
+        if (!is_array($log)) {
+            $log = array();
+        }
+        $log[$label] = array(
+            'src'  => (string) $source,
+            'user' => get_current_user_id(),
+            'at'   => current_time('mysql'),
+        );
+        if (count($log) > self::SRC_LOG_KEEP) {
+            $log = array_slice($log, -self::SRC_LOG_KEEP, null, true);
+        }
+        update_option(self::OPT_SRC_LOG, $log, false);
+    }
+
+    /** Откуда пришёл платёж с этой меткой: ключ сервиса или пустая строка. */
+    public static function payment_source_of($label) {
+        $log = get_option(self::OPT_SRC_LOG, array());
+        return is_array($log) && isset($log[(string) $label]['src'])
+            ? (string) $log[(string) $label]['src'] : '';
+    }
+
     public static function mark_payment($response, $handler, $request) {
         if (!($request instanceof WP_REST_Request)) {
             return $response;
@@ -744,6 +782,15 @@ class GS_Payments {
         // сайт сверяет оплату, трогать нельзя.
         $body['payment_link'] = add_query_arg('targets', rawurlencode($target), remove_query_arg('targets', (string) $body['payment_link']));
         $body['source'] = $source;
+
+        // Метку платёжный плагин уже собрал — запоминаем, из какого сервиса
+        // человек пошёл платить. Саму метку не трогаем: по ней сверяется оплата.
+        $query = (string) wp_parse_url((string) $body['payment_link'], PHP_URL_QUERY);
+        $args = array();
+        wp_parse_str($query, $args);
+        if (!empty($args['label'])) {
+            self::note_payment_source((string) $args['label'], $source);
+        }
         $response->set_data($body);
         return $response;
     }
