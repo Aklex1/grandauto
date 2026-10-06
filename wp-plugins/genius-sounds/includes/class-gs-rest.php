@@ -404,6 +404,13 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_proekt_pay'),
             'permission_callback' => '__return_true',
         ));
+        // Выгрузка готовых шагов в Word: ссылка открывается прямо из
+        // браузера, поэтому маршрут отдаёт файл, а не JSON.
+        register_rest_route(self::NS, '/proekt/doc', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_proekt_doc'),
+            'permission_callback' => '__return_true',
+        ));
 
         // Состояние задачи у поставщика напрямую, без привязки к сервису:
         // оформительские картинки не принадлежат ни одному микросервису.
@@ -859,7 +866,14 @@ class GS_Rest {
     }
 
     public static function handle_proekt_state($request) {
-        $state = self::proekt_state((string) $request->get_param('token'));
+        $token = (string) $request->get_param('token');
+        $state = self::proekt_state($token);
+        // Токен лежит в браузере: на новом устройстве его нет. Вошедшему
+        // отдаём его последний проект — иначе оплативший с телефона
+        // открывает ноутбук и видит чистый лендинг.
+        if (!$state && get_current_user_id() > 0) {
+            $state = self::proekt_state(GS_Proekt::latest_for_user(get_current_user_id()));
+        }
         if (!$state) {
             return new WP_Error('gs_proekt_none', 'Проект не найден', array('status' => 404));
         }
@@ -875,6 +889,11 @@ class GS_Rest {
         $result = GS_Proekt::run($token, $stage, $input);
         $result['состояние'] = self::proekt_state($token);
         return rest_ensure_response($result);
+    }
+
+    public static function handle_proekt_doc($request) {
+        GS_Proekt::serve_doc((string) $request->get_param('token'));
+        exit;
     }
 
     public static function handle_proekt_pay($request) {

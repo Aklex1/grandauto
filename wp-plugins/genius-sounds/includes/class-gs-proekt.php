@@ -21,6 +21,8 @@ if (!defined('ABSPATH')) {
 class GS_Proekt {
 
     const OPT_PREFIX  = 'gs_proekt_';
+    /** Список проектов человека: без него работа живёт только в одном браузере. */
+    const META_LIST = 'gs_proekt_tokens';
     const LABEL_PREFIX = 'proekt_';
     const COOKIE = 'gs_proekt';
 
@@ -34,9 +36,68 @@ class GS_Proekt {
     const FREE_TTL = 604800;   // 7 дней
 
     /**
+     * Сколько бесплатных прогонов отдаём с одного адреса в сутки.
+     *
+     * Бесплатный шаг работает без регистрации — значит ничто не мешает
+     * открывать новый проект после каждых трёх запросов и расходовать
+     * чужие деньги у поставщика бесконечно.
+     *
+     * Считаем по вошедшему, а у гостя — по адресу. Порог высокий нарочно:
+     * школа и мобильный оператор прячут за одним адресом целый класс, и
+     * экономные пять запусков отрезали бы живых людей вместе с перебором.
+     */
+    const FREE_PER_DAY = 20;
+    const FREE_KEY = 'gs_proekt_free_';
+
+    /**
      * Шаги: идентификатор, название, минимальный тариф.
      * Порядок важен — на нём держится сборка контекста.
      */
+    /**
+     * Уборка брошенных проектов.
+     *
+     * Каждый проект — строка в настройках сайта. Бесплатный шаг открыт без
+     * регистрации, значит строк будет много, и почти все — одноразовые.
+     * Раз в сутки сносим то, за что не платили и к чему месяц не
+     * возвращались; оплаченные не трогаем вообще.
+     */
+    public static function boot() {
+        add_action('gs_proekt_cleanup', array(__CLASS__, 'cleanup'));
+        if (!wp_next_scheduled('gs_proekt_cleanup')) {
+            wp_schedule_event(time() + 3600, 'daily', 'gs_proekt_cleanup');
+        }
+    }
+
+    public static function cleanup() {
+        global $wpdb;
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT option_name, option_value FROM {$wpdb->options}
+             WHERE option_name LIKE %s AND option_name NOT LIKE %s LIMIT 500",
+            $wpdb->esc_like(self::OPT_PREFIX) . '%',
+            '%' . $wpdb->esc_like('transient') . '%'
+        ));
+        $edge = time() - 30 * DAY_IN_SECONDS;
+        $gone = 0;
+        foreach ((array) $rows as $row) {
+            $data = maybe_unserialize($row->option_value);
+            if (!is_array($data) || !isset($data['created'])) {
+                continue;
+            }
+            if (!empty($data['paid_at'])) {
+                continue;
+            }
+            $last = (int) $data['created'];
+            foreach ((array) ($data['steps'] ?? array()) as $step) {
+                $last = max($last, (int) ($step['at'] ?? 0));
+            }
+            if ($last < $edge) {
+                delete_option($row->option_name);
+                $gone++;
+            }
+        }
+        return $gone;
+    }
+
     public static function stages() {
         return array(
             array('tema',          '1. Тема',                    'free'),
@@ -106,6 +167,25 @@ class GS_Proekt {
      * Проекты
      * ------------------------------------------------------------------ */
 
+    private static function free_key() {
+        $user = get_current_user_id();
+        if ($user > 0) {
+            return self::FREE_KEY . 'u' . $user;
+        }
+        $ip = isset($_SERVER['REMOTE_ADDR'])
+            ? (string) sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0';
+        return self::FREE_KEY . md5($ip);
+    }
+
+    public static function free_left() {
+        return max(0, self::FREE_PER_DAY - (int) get_transient(self::free_key()));
+    }
+
+    private static function note_free() {
+        $key = self::free_key();
+        set_transient($key, (int) get_transient($key) + 1, DAY_IN_SECONDS);
+    }
+
     public static function token_clean($token) {
         return preg_replace('~[^A-Za-z0-9]~', '', (string) $token);
     }
@@ -123,8 +203,67 @@ class GS_Proekt {
         update_option(self::OPT_PREFIX . self::token_clean($token), $row, false);
     }
 
+    /**
+     * Привязать проект к человеку.
+     *
+     * Токен лежит в браузере, и этого достаточно, пока школьник работает с
+     * одного устройства. Но оплативший с телефона открывает ноутбук и видит
+     * пустую страницу — поэтому у вошедшего держим ещё и список его
+     * проектов.
+     */
+    private static function remember_for_user($user, $token) {
+        $user = (int) $user;
+        if ($user <= 0) {
+            return;
+        }
+        $list = get_user_meta($user, self::META_LIST, true);
+        if (!is_array($list)) {
+            $list = array();
+        }
+        array_unshift($list, self::token_clean($token));
+        update_user_meta($user, self::META_LIST, array_slice(array_values(array_unique($list)), 0, 20));
+    }
+
+    /** Последний проект человека: к нему и возвращаем на новом устройстве. */
+    public static function latest_for_user($user) {
+        $user = (int) $user;
+        if ($user <= 0) {
+            return '';
+        }
+        $list = get_user_meta($user, self::META_LIST, true);
+        if (!is_array($list)) {
+            return '';
+        }
+        $best = '';
+        $best_rank = array(-1, 0);
+        foreach ($list as $token) {
+            $row = self::project($token);
+            if (!$row) {
+                continue;
+            }
+            $at = max((int) ($row['created'] ?? 0), (int) ($row['paid_at'] ?? 0));
+            $steps = 0;
+            foreach ((array) ($row['steps'] ?? array()) as $step) {
+                $at = max($at, (int) ($step['at'] ?? 0));
+                if (!empty($step['output'])) {
+                    $steps++;
+                }
+            }
+            // Оплаченный проект важнее свежего пустого: человек вернулся
+            // за тем, за что заплатил, а не за вчерашней пробой.
+            $paid = !empty($row['paid_at']) && (int) $row['paid_until'] > time();
+            $rank = array($paid ? 2 : ($steps > 0 ? 1 : 0), $at);
+            if ($rank > $best_rank) {
+                $best_rank = $rank;
+                $best = (string) $row['token'];
+            }
+        }
+        return $best;
+    }
+
     public static function create($profile) {
         $token = wp_generate_password(24, false, false);
+        self::remember_for_user(get_current_user_id(), $token);
         self::save($token, array(
             'token'    => $token,
             'profile'  => (array) $profile,
@@ -227,6 +366,13 @@ class GS_Proekt {
             return array('ok' => false, 'need' => $need,
                 'message' => 'Шаг «' . $titles[$stage] . '» доступен в тарифе «' . $tariffs[$need][0] . '».');
         }
+        // Бесплатный тариф — за счёт сайта, поэтому считаем ещё и по адресу:
+        // иначе новый проект каждые три запроса обходит лимит целиком.
+        if ($tariff === 'free' && self::free_left() <= 0) {
+            return array('ok' => false, 'need' => 'start',
+                'message' => 'Бесплатных запусков на сегодня больше нет. '
+                    . 'Завтра снова будут, а тариф открывает все шаги сразу.');
+        }
         $limit = (int) $tariffs[$tariff][2];
         if ((int) $row['used'] >= $limit) {
             $order = self::tariff_order();
@@ -253,6 +399,9 @@ class GS_Proekt {
         $text = trim((string) ($answer['content'] ?? ''));
         if ($text === '') {
             return array('ok' => false, 'message' => 'Наставник вернул пустой ответ. Попробуйте ещё раз.');
+        }
+        if ($tariff === 'free') {
+            self::note_free();
         }
         $row['steps'][$stage] = array(
             'input'  => (string) $input,
@@ -297,7 +446,14 @@ class GS_Proekt {
             return array('ok' => false, 'need_login' => true,
                 'message' => 'Войдите, чтобы оплатить тариф — так работа не потеряется.');
         }
-        $price = self::upgrade_price((string) $row['tariff'], $tariff);
+        // Срок доступа вышел — это уже не переход на старший тариф, а
+        // продление: берём полную цену и за тот же тариф. Без этой ветки
+        // доплата считалась нулевой, и продлить было нечем: сервис отвечал
+        // «тариф уже открыт», хотя шаги не работали.
+        $expired = !empty($row['paid_until']) && (int) $row['paid_until'] < time();
+        $price = $expired
+            ? (int) $tariffs[$tariff][1]
+            : self::upgrade_price((string) $row['tariff'], $tariff);
         if ($price <= 0) {
             return array('ok' => false, 'message' => 'Этот тариф уже открыт');
         }
@@ -320,10 +476,77 @@ class GS_Proekt {
         $row['paid_until'] = time() + ((int) $tariffs[$tariff][3] * 86400);
         $row['paid_at'] = time();
         $row['user'] = $user;
+        self::remember_for_user($user, $token);
+        if ($expired) {
+            // Оплачен новый пакет запросов, а не продолжение старого.
+            $row['used'] = 0;
+        }
         self::save($token, $row);
 
         return array('ok' => true, 'message' => 'Открыт тариф «' . $tariffs[$tariff][0] . '»',
             'balance' => class_exists('GS_SFX') ? (float) GS_SFX::get_balance($user) : 0.0);
+    }
+
+    /* ---------------------------------------------------------------------
+     * Выгрузка в Word
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Готовые шаги одним файлом.
+     *
+     * Отдаём .doc в виде HTML: Word и Google Документы открывают такой файл
+     * и дают править, а собирать настоящий DOCX ради одного файла — значит
+     * тащить библиотеку. Оформление сразу в типовых требованиях: Times New
+     * Roman 14, полуторный интервал, выравнивание по ширине — чтобы ученик
+     * не переделывал вручную то, что можно задать один раз.
+     */
+    public static function serve_doc($token) {
+        $row = self::project($token);
+        if (!$row) {
+            status_header(404);
+            exit('Проект не найден');
+        }
+        $titles = self::stage_titles();
+        $body = '';
+        foreach (self::stages() as $s) {
+            $id = $s[0];
+            $text = (string) ($row['steps'][$id]['output'] ?? '');
+            if ($text === '') {
+                continue;
+            }
+            $html = class_exists('GS_Md') ? GS_Md::to_html($text) : wpautop(esc_html($text));
+            $body .= '<h2>' . esc_html($titles[$id]) . '</h2>' . $html
+                . '<p style="page-break-after:always"></p>';
+        }
+        if ($body === '') {
+            status_header(404);
+            exit('В проекте пока нет готовых шагов');
+        }
+
+        $tema = trim((string) ($row['profile']['тема'] ?? ''));
+        $name = 'individualnyy-proekt';
+
+        nocache_headers();
+        header('Content-Type: application/msword; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $name . '.doc"');
+        echo "<html xmlns:o='urn:schemas-microsoft-com:office:office' "
+            . "xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>";
+        echo '<head><meta charset="utf-8"><title>Индивидуальный проект</title>';
+        echo '<style>body{font-family:"Times New Roman",serif;font-size:14pt;line-height:1.5}'
+            . 'h1,h2{font-size:14pt;font-weight:bold}p{margin:0 0 10pt;text-align:justify;text-indent:1.25cm}'
+            . 'li{margin:0 0 6pt}table{border-collapse:collapse}td,th{border:1px solid #000;padding:4pt}'
+            . '</style></head><body>';
+        echo '<h1 style="text-align:center">Индивидуальный проект</h1>';
+        if ($tema !== '') {
+            echo '<p style="text-align:center;text-indent:0">' . esc_html($tema) . '</p>';
+        }
+        echo '<p style="text-indent:0;font-size:11pt">Черновик собран наставником genius-bot.ru. '
+            . 'Перед сдачей подставьте свои данные там, где стоит пометка «вставь свои данные», '
+            . 'и оформите титульный лист по образцу школы.</p>';
+        echo '<p style="page-break-after:always"></p>';
+        echo $body;
+        echo '</body></html>';
+        exit;
     }
 
     /** Уведомление ЮMoney: открываем тариф и продлеваем срок. */

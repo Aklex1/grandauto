@@ -66,6 +66,12 @@
         });
     }
 
+    function dmy(stamp) {
+        var d = new Date(Number(stamp) * 1000);
+        function two(n) { return (n < 10 ? '0' : '') + n; }
+        return two(d.getDate()) + '.' + two(d.getMonth() + 1) + '.' + d.getFullYear();
+    }
+
     function logged() {
         return state ? !!state['вошёл'] : root.getAttribute('data-gs-logged') === '1';
     }
@@ -153,11 +159,18 @@
 
     function render() {
         var left = state['запросов_лимит'] - state['запросов_использовано'];
+        var done = (state['шаги'] || []).some(function (s) { return s['готов']; });
         var html = '<div class="gs-proekt__bar">'
             + '<strong>Тариф: ' + esc(state['тариф_название']) + '</strong>'
             + '<span>осталось запросов: ' + left + ' из ' + state['запросов_лимит'] + '</span>'
             + (state['баланс'] === null ? ''
                 : '<span>баланс: ' + Number(state['баланс']).toFixed(2) + ' ₽</span>')
+            // Срок доступа виден сразу: иначе о нём узнают в день, когда
+            // шаги перестали открываться.
+            + (state['доступ_до'] ? '<span>доступ до ' + dmy(state['доступ_до']) + '</span>' : '')
+            // Готовые шаги одним файлом: в школу сдают документ, а не экран.
+            + (done ? '<a class="gs-proekt__doc" href="' + API + 'doc?token='
+                + encodeURIComponent(state['токен']) + '">Скачать в Word</a>' : '')
             + '</div><div class="gs-proekt__steps-live">';
 
         state['шаги'].forEach(function (s) {
@@ -323,10 +336,11 @@
             });
     });
 
-    // Вернулись к работе — показываем её сразу.
+    // Вернулись к работе — показываем её сразу. У вошедшего спрашиваем и
+    // без токена: с нового устройства в браузере его нет, а проект есть.
     var token = stored();
-    if (token) {
-        fetch(API + 'state?token=' + encodeURIComponent(token),
+    if (token || logged()) {
+        fetch(API + 'state' + (token ? '?token=' + encodeURIComponent(token) : ''),
               { credentials: 'same-origin', headers: headers() })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (res) { if (res && res['шаги']) { show(res); } })

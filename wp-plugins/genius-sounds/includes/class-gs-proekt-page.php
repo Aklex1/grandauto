@@ -21,6 +21,7 @@ class GS_Proekt_Page {
 
     public static function boot() {
         add_shortcode('gs_proekt', array(__CLASS__, 'render'));
+        add_action('wp_footer', array(__CLASS__, 'print_schema'), 20);
     }
 
     public static function url() {
@@ -268,8 +269,122 @@ class GS_Proekt_Page {
                     <?php endforeach; ?>
                 </div>
             </section>
+
+            <section class="gs-proekt__faq">
+                <h2>Частые вопросы</h2>
+                <?php foreach (self::faq() as $pair): ?>
+                    <p><strong><?php echo esc_html($pair[0]); ?></strong> <?php echo wp_kses_post($pair[1]); ?></p>
+                <?php endforeach; ?>
+            </section>
+
+            <section class="gs-proekt__links">
+                <h2>Разобраться самому</h2>
+                <p class="gs-proekt__note">
+                    Если хочется сначала понять, как устроена работа целиком:
+                </p>
+                <ul>
+                    <li><a href="<?php echo esc_url(home_url('/individualnyy-proekt/')); ?>">Индивидуальный проект: как сделать и защитить</a>
+                        — структура, объёмы разделов, календарь до защиты и вопросы комиссии.</li>
+                    <li><a href="<?php echo esc_url(home_url('/temy-individualnogo-proekta-10-klass/')); ?>">120 тем для 10 класса</a>
+                        — с подсказкой, что делать и где брать данные по каждой.</li>
+                </ul>
+            </section>
         </div>
         <?php
         return ob_get_clean();
+    }
+
+    /**
+     * Вопросы на странице и они же в разметке.
+     *
+     * Держим одним списком: выдумывать для поисковика вопросы, которых нет
+     * на странице, нельзя, а дублировать их руками — значит однажды развести.
+     */
+    private static function faq() {
+        return array(
+            array('Это сделает проект за меня?',
+                  'Нет, и намеренно. Наставник ведёт по шагам и пишет черновики разделов, но там, где нужны '
+                  . 'ваши цифры, оставляет пометку «вставь свои данные» и объясняет, как их получить. '
+                  . 'На защите спрашивают именно про них.'),
+            array('Нужно ли регистрироваться, чтобы попробовать?',
+                  'Нет. Первый шаг — пять тем под ваши интересы — работает без входа. Аккаунт нужен дальше: '
+                  . 'чтобы работа сохранилась и к ней можно было вернуться с другого устройства.'),
+            array('Сколько стоит и есть ли подписка?',
+                  'Подписки нет. Тариф оплачивается один раз за проект и списывается с общего баланса сайта: '
+                  . '«Старт» — 490 ₽, «Проект» — 990 ₽, «Проект + защита» — 1490 ₽. Переход на старший тариф — '
+                  . 'доплата разницы, а не полная цена заново.'),
+            array('Что входит в тариф «Проект + защита»?',
+                  'Все одиннадцать шагов: тема, паспорт по ФГОС, план, источники, теоретическая и практическая '
+                  . 'главы, введение и заключение, оформление, презентация, защитная речь по минутам и '
+                  . 'пятнадцать вопросов комиссии с ответами.'),
+            array('Можно ли скачать результат в Word?',
+                  'Да. Готовые шаги выгружаются одним файлом .doc с типовым оформлением — Times New Roman 14, '
+                  . 'полуторный интервал, выравнивание по ширине. Файл открывается в Word и Google Документах '
+                  . 'и правится дальше.'),
+            array('Подойдёт ли девятому классу?',
+                  'Да. Шаги те же, отличается объём: в 9 классе итоговый проект обычно короче, и наставник '
+                  . 'подстраивается под указанные вами требования школы.'),
+            array('Что будет, если тема уже занята одноклассником?',
+                  'Наставник предложит другой угол на том же материале: другой объект наблюдения, другую '
+                  . 'группу или период. Две работы на одном материале с разными данными — это две разные работы.'),
+        );
+    }
+
+    /**
+     * Разметка страницы: вопросы и тарифы.
+     *
+     * Тарифы отдаём как предложения услуги — по ним поисковик показывает цену
+     * прямо в выдаче, а цена здесь и есть главный вопрос родителя.
+     */
+    public static function print_schema() {
+        if (is_admin() || !self::is_page()) {
+            return;
+        }
+        $items = array();
+        foreach (self::faq() as $pair) {
+            $items[] = array(
+                '@type' => 'Question',
+                'name'  => $pair[0],
+                'acceptedAnswer' => array('@type' => 'Answer', 'text' => wp_strip_all_tags($pair[1])),
+            );
+        }
+        $offers = array();
+        $tariffs = GS_Proekt::tariffs();
+        foreach (GS_Proekt::tariff_order() as $id) {
+            if ((int) $tariffs[$id][1] <= 0) {
+                continue;
+            }
+            $offers[] = array(
+                '@type'         => 'Offer',
+                'name'          => $tariffs[$id][0],
+                'price'         => (string) (int) $tariffs[$id][1],
+                'priceCurrency' => 'RUB',
+                'url'           => self::url(),
+                'availability'  => 'https://schema.org/InStock',
+            );
+        }
+        $data = array(
+            array(
+                '@context'   => 'https://schema.org',
+                '@type'      => 'FAQPage',
+                'mainEntity' => $items,
+            ),
+            array(
+                '@context'    => 'https://schema.org',
+                '@type'       => 'Service',
+                'name'        => 'Наставник по индивидуальному проекту',
+                'serviceType' => 'Помощь с индивидуальным проектом для 9–11 класса',
+                'url'         => self::url(),
+                'areaServed'  => 'RU',
+                'provider'    => array('@type' => 'Organization', 'name' => 'Genius-bot',
+                                       'url' => home_url('/')),
+                'offers'      => $offers,
+            ),
+        );
+        foreach ($data as $one) {
+            echo "\n<script type=\"application/ld+json\">"
+                . wp_json_encode($one, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                . "</script>\n";
+        }
     }
 }

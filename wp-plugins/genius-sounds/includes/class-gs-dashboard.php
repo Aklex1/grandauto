@@ -23,7 +23,58 @@ class GS_Dashboard {
         add_filter('the_content', array(__CLASS__, 'append_keywords'), 20);
         // Позже вывода шорткодов: панель рисуется именно ими.
         add_filter('the_content', array(__CLASS__, 'strip_old_docs_links'), 30);
+        add_filter('the_content', array(__CLASS__, 'append_proekt'), 35);
         add_filter('the_content', array(__CLASS__, 'append_support'), 40);
+    }
+
+    /**
+     * Проект школьника в кабинете.
+     *
+     * Работа живёт по токену в браузере, и человек, который оплатил тариф с
+     * телефона, на компьютере не знает, куда идти. Кабинет — единственное
+     * место, которое он точно найдёт, поэтому показываем ссылку именно
+     * тем, у кого проект есть.
+     */
+    public static function append_proekt($content) {
+        if (is_admin() || !is_main_query() || !in_the_loop() || !self::is_page()) {
+            return $content;
+        }
+        if (!class_exists('GS_Proekt') || !class_exists('GS_Proekt_Page')) {
+            return $content;
+        }
+        $token = GS_Proekt::latest_for_user(get_current_user_id());
+        if ($token === '') {
+            return $content;
+        }
+        $row = GS_Proekt::project($token);
+        $tariffs = GS_Proekt::tariffs();
+        $tariff = isset($tariffs[$row['tariff']]) ? $tariffs[$row['tariff']][0] : '';
+        $done = 0;
+        foreach ((array) ($row['steps'] ?? array()) as $step) {
+            if (!empty($step['output'])) {
+                $done++;
+            }
+        }
+        $url = add_query_arg('token', $token, GS_Proekt_Page::url());
+
+        ob_start();
+        ?>
+        <section class="gs-dash-proekt">
+            <h3>Индивидуальный проект</h3>
+            <p>Тариф «<?php echo esc_html($tariff); ?>», готовых шагов: <?php echo (int) $done; ?>.
+                Доступ до <?php echo esc_html(date_i18n('d.m.Y', (int) $row['paid_until'])); ?>.</p>
+            <p><a class="gs-dash-proekt__go" href="<?php echo esc_url($url); ?>">Открыть мой проект</a></p>
+        </section>
+        <style>
+            .gs-dash-proekt{max-width:1200px;margin:24px auto;padding:18px 20px;border-radius:14px;
+                background:linear-gradient(135deg,rgba(90,92,224,.1),rgba(255,176,92,.1));
+                border:1px solid rgba(90,92,224,.18)}
+            .gs-dash-proekt h3{margin:0 0 6px;font-size:18px}
+            .gs-dash-proekt p{margin:0 0 6px}
+            .gs-dash-proekt__go{font-weight:600;color:#5a5ce0}
+        </style>
+        <?php
+        return $content . ob_get_clean();
     }
 
     /**

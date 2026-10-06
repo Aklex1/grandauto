@@ -147,3 +147,16 @@
     border-color: var(--pr-accent);
     box-shadow: 0 0 0 3px rgba(90, 92, 224, .18);
 }
+
+/* Выгрузка готовых шагов в Word — в той же строке, что тариф и баланс. */
+.gs-proekt__doc {
+    margin-left: auto; font-weight: 600; color: var(--pr-accent);
+    border-bottom: 1px dashed currentColor; text-decoration: none;
+}
+.gs-proekt__doc:hover { color: #3f41c4; }
+
+/* Вопросы и перелинковка внизу страницы: тот же ритм, что у остальных блоков. */
+.gs-proekt__faq p { margin: 0 0 14px; line-height: 1.65; }
+.gs-proekt__faq strong { color: var(--pr-ink); }
+.gs-proekt__links ul { margin: 0; padding-left: 20px; line-height: 1.7; }
+.gs-proekt__links a { color: var(--pr-accent); }

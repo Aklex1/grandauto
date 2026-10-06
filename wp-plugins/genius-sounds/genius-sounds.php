@@ -130,6 +130,7 @@ class Genius_Sounds_Plugin {
         GS_Media_Proxy::boot();
         GS_Redirects::boot();
         GS_Metrika::boot();
+        GS_Proekt::boot();
         GS_Proekt_Page::boot();
         GS_Admin::boot();
         GS_Pages::boot();

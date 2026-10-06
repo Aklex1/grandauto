@@ -195,8 +195,21 @@ class GS_Seo {
             return $parts;
         }
         $full = trim(wp_strip_all_tags(get_the_title($post)));
+        if ($full === '') {
+            return $parts;
+        }
+        // У записи блога заголовок самодостаточен: имя сайта — целое
+        // предложение про чат-ботов, и в выдаче оно съедает место, а то и
+        // вытесняет вторую половину запроса. Сторонний оптимизатор убирал
+        // его только у длинных заголовков, поэтому вид страниц блога
+        // зависел от длины названия. Убираем хвост у всех записей.
+        if ($post->post_type === 'post') {
+            unset($parts['tagline'], $parts['site']);
+            $parts['title'] = $full;
+            return $parts;
+        }
         $shown = trim((string) $parts['title']);
-        if ($full === '' || $shown === $full) {
+        if ($shown === $full) {
             return $parts;
         }
         // Отрезаем хвостовое многоточие и сверяем начало строк.
