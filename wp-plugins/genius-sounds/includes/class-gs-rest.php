@@ -804,6 +804,9 @@ class GS_Rest {
         if (!$row) {
             return null;
         }
+        // Вошёл — значит проект отныне его: токен в браузере живёт недолго,
+        // а аккаунт переживает и смену устройства, и чистку данных.
+        GS_Proekt::bind_current_user($token);
         $tariffs = GS_Proekt::tariffs();
         $tariff = (string) $row['tariff'];
         $hints = gs_proekt_input_hints();

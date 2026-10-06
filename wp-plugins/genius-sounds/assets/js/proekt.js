@@ -111,8 +111,9 @@
         remember(state['токен']);
         startBox.hidden = true;
         appBox.hidden = false;
-        appBox.innerHTML = render();
+        appBox.innerHTML = keepNote() + render();
         bind();
+        bindShare();
         syncPicks();
     }
 
@@ -150,6 +151,9 @@
             // Срок доступа виден сразу: иначе о нём узнают в день, когда
             // шаги перестали открываться.
             + (state['доступ_до'] ? '<span>доступ до ' + dmy(state['доступ_до']) + '</span>' : '')
+            // Личная ссылка: проект живёт по токену, и без неё работа
+            // теряется вместе с историей браузера.
+            + '<button type="button" class="gs-proekt__share" data-gs-proekt-share>Ссылка на проект</button>'
             // Готовые шаги одним файлом: в школу сдают документ, а не экран.
             + (done ? '<a class="gs-proekt__doc" href="' + API + 'doc?token='
                 + encodeURIComponent(state['токен']) + '">Скачать в Word</a>' : '')
@@ -255,7 +259,8 @@
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (res) {
                     if (res && res['шаги'] && res['тариф'] !== 'free') {
-                        note.textContent = 'Оплата прошла: тариф «' + res['тариф_название'] + '» открыт.';
+                        note.textContent = 'Оплата прошла: тариф «' + res['тариф_название']
+                            + '» открыт. Сохраните ссылку на проект — она ниже.';
                         show(res);
                         return;
                     }
@@ -278,6 +283,45 @@
         first.closest('details').open = true;
         appBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
         if (!done) { first.click(); }
+    }
+
+    /** Адрес, по которому проект открывается с любого устройства. */
+    function projectUrl() {
+        return location.origin + location.pathname + '?token='
+            + encodeURIComponent(state['токен']);
+    }
+
+    function bindShare() {
+        appBox.querySelectorAll('[data-gs-proekt-share]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var url = projectUrl();
+                var done = function () {
+                    btn.textContent = 'Ссылка скопирована';
+                    setTimeout(function () { btn.textContent = 'Ссылка на проект'; }, 2500);
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(url).then(done, function () { prompt('Ссылка на проект:', url); });
+                } else {
+                    prompt('Ссылка на проект:', url);
+                }
+            });
+        });
+    }
+
+    /**
+     * Напоминание сохранить доступ.
+     *
+     * Показываем тому, кто оплатил и не вошёл: проект держится на токене в
+     * этом браузере, и другого способа найти работу у него нет.
+     */
+    function keepNote() {
+        if (!state || state['вошёл'] || state['тариф'] === 'free') { return ''; }
+        return '<div class="gs-proekt__keep">'
+            + '<strong>Сохраните доступ к оплаченному проекту.</strong> '
+            + 'Он открывается по личной ссылке: <code>' + esc(projectUrl()) + '</code> — '
+            + 'скопируйте её или <a href="' + (cfg.loginUrl || '/tts-login/') + '" data-gs-auth>войдите</a>, '
+            + 'и проект закрепится за аккаунтом: тогда он найдётся с любого устройства.'
+            + '</div>';
     }
 
     function bind() {

@@ -279,6 +279,29 @@ class GS_Proekt {
         update_user_meta($user, self::META_LIST, array_slice(array_values(array_unique($list)), 0, 20));
     }
 
+    /**
+     * Привязать проект к тому, кто сейчас вошёл.
+     *
+     * Школьник работает по токену в браузере и платит без регистрации —
+     * так быстрее. Но токен живёт в одном браузере: почистил данные,
+     * сменил устройство — и оплаченный проект не найти. Поэтому любой
+     * заход на свой проект вошедшим человеком закрепляет его за
+     * аккаунтом: войти можно и после оплаты, доступ не потеряется.
+     */
+    public static function bind_current_user($token) {
+        $user = get_current_user_id();
+        if ($user <= 0 || !self::project($token)) {
+            return false;
+        }
+        self::remember_for_user($user, $token);
+        $row = self::project($token);
+        if (empty($row['user'])) {
+            $row['user'] = $user;
+            self::save($token, $row);
+        }
+        return true;
+    }
+
     /** Последний проект человека: к нему и возвращаем на новом устройстве. */
     public static function latest_for_user($user) {
         $user = (int) $user;
