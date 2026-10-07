@@ -111,7 +111,7 @@ class GS_Provider {
                     'shape' => function ($in) {
                         return array(
                             'prompt'        => (string) $in['prompt'],
-                            'image_urls'    => array((string) $in['image_url']),
+                            'image_urls'    => GS_Provider::image_list($in),
                             'output_format' => 'png',
                             'image_size'    => 'auto',
                         );
@@ -122,7 +122,7 @@ class GS_Provider {
                     'shape' => function ($in) {
                         return array(
                             'prompt'     => (string) $in['prompt'],
-                            'image_urls' => array((string) $in['image_url']),
+                            'image_urls' => GS_Provider::image_list($in),
                         );
                     },
                 ),
@@ -280,6 +280,30 @@ class GS_Provider {
      * Часть моделей понимает «auto» и выбирает размер сама, часть на нём
      * отказывает. $strict просит настоящее соотношение.
      */
+    /**
+     * Список исходных кадров.
+     *
+     * Семейная подборка собирается из нескольких снимков — по человеку, —
+     * и модели правки принимают их списком. Одиночный image_url остаётся
+     * для остальных сервисов: там кадр всегда один.
+     */
+    public static function image_list($in) {
+        $urls = array();
+        if (!empty($in['image_urls']) && is_array($in['image_urls'])) {
+            $urls = $in['image_urls'];
+        } elseif (!empty($in['image_url'])) {
+            $urls = array($in['image_url']);
+        }
+        $clean = array();
+        foreach ($urls as $url) {
+            $url = trim((string) $url);
+            if ($url !== '' && !in_array($url, $clean, true)) {
+                $clean[] = $url;
+            }
+        }
+        return array_slice($clean, 0, 5);
+    }
+
     public static function ratio($in, $strict = false) {
         $ratio = trim((string) ($in['ratio'] ?? ''));
         if ($ratio === '') {

@@ -103,6 +103,10 @@ class GS_Lab_Page {
                 <section class="gs-lab-intro"><?php echo $extra['intro_html']; // phpcs:ignore WordPress.Security.EscapeOutput ?></section>
             <?php endif; ?>
 
+            <?php if (!empty($service['examples_first'])): ?>
+                <?php echo self::render_examples($service); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php endif; ?>
+
             <?php if (!GS_Lab::is_available($service['id'])): ?>
                 <section class="gs-empty gs-empty--page">
                     <div class="gs-empty__icon" aria-hidden="true">🛠️</div>
@@ -113,6 +117,7 @@ class GS_Lab_Page {
             <?php else: ?>
             <div class="gs-studio__layout">
                 <form class="gs-panel gs-form" id="gs-lab-form" novalidate>
+                    <a class="gs-anchor" id="gs-lab-start" aria-hidden="true"></a>
                     <?php foreach ($service['inputs'] as $input): ?>
                         <div class="gs-field">
                             <?php $optional = in_array($input, (array) (isset($service['input_optional']) ? $service['input_optional'] : array()), true); ?>
@@ -121,7 +126,10 @@ class GS_Lab_Page {
                             // стояло «фотография или аудиофайл»: третьего вида не
                             // было, и видео представилось бы аудиофайлом.
                             $labels = array('image' => 'Фотография', 'audio' => 'Аудиофайл', 'video' => 'Видеофайл');
-                            $label = isset($labels[$input]) ? $labels[$input] : 'Файл';
+                            // Сервису может понадобиться несколько снимков — по человеку:
+                            // тогда «Фотография» четыре раза подряд ничего не объясняет.
+                            $own = isset($service['input_labels'][$input]) ? $service['input_labels'][$input] : '';
+                            $label = $own !== '' ? $own : (isset($labels[$input]) ? $labels[$input] : 'Файл');
                             ?>
                             <label class="gs-label" for="gs-lab-<?php echo esc_attr($input); ?>">
                                 <?php echo esc_html($label); ?><?php echo $optional ? ' (необязательно)' : ''; ?>
@@ -131,7 +139,7 @@ class GS_Lab_Page {
                                    accept="<?php echo esc_attr($service['accept'][$input]); ?>">
                             <span class="gs-hint" data-file-hint="<?php echo esc_attr($input); ?>">
                                 <?php
-                                if ($input === 'image') {
+                                if (strpos($input, 'image') === 0) {
                                     echo 'JPEG или PNG, до 10 МБ. Лицо анфас, крупно.';
                                 } elseif ($input === 'video') {
                                     $limit = GS_Lab::max_seconds($service['id']);
@@ -288,7 +296,9 @@ class GS_Lab_Page {
                 </section>
             <?php endif; ?>
 
-            <?php echo self::render_examples($service); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php if (empty($service['examples_first'])): ?>
+                <?php echo self::render_examples($service); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php endif; ?>
 
             <?php if ($extra['body_html'] !== ''): ?>
                 <section class="gs-lab-body"><?php echo $extra['body_html']; // phpcs:ignore WordPress.Security.EscapeOutput ?></section>
@@ -351,6 +361,14 @@ class GS_Lab_Page {
      * показывать по одной картинке, человек так и не поймёт, что получит
      * пять разных кадров, а не пять попыток одного.
      */
+    /**
+     * Каталог готовых подборок — первой секцией.
+     *
+     * Человек не хочет описывать съёмку словами: он хочет увидеть готовую
+     * подборку и сказать «вот такую же, только с нами». Поэтому примеры
+     * стоят до инструмента, а кнопка под каждой подборкой прокручивает к
+     * форме и подставляет её — заполнять выпадающие списки руками не надо.
+     */
     private static function render_examples($service) {
         $items = isset($service['examples']) && is_array($service['examples']) ? $service['examples'] : array();
         if (empty($items)) {
@@ -358,24 +376,27 @@ class GS_Lab_Page {
         }
         ob_start();
         ?>
-        <section class="gs-lab-examples">
-            <h2 class="gs-section-title">Примеры подборок</h2>
-            <p class="gs-lab-examples__lead">Слева — снимок, который загрузили, дальше — что вернула нейросеть. Исходные фото мы тоже сгенерировали: показывать чужие лица без спроса нельзя, поэтому настоящих людей здесь нет.</p>
+        <section class="gs-lab-examples" id="gs-lab-sets">
+            <h2 class="gs-section-title">Готовые подборки</h2>
+            <p class="gs-lab-examples__lead">Выберите подборку и нажмите «Повторить» — ниже останется загрузить свои фото. Снимки в примерах мы сгенерировали сами: показывать чужие лица без спроса нельзя, настоящих людей здесь нет.</p>
             <?php foreach ($items as $item): ?>
                 <figure class="gs-set">
                     <figcaption class="gs-set__cap">
-                        <strong><?php echo esc_html($item['title']); ?></strong>
+                        <div class="gs-set__head">
+                            <strong><?php echo esc_html($item['title']); ?></strong>
+                            <?php if (!empty($item['set'])): ?>
+                                <button class="gs-btn gs-btn--primary gs-set__go" type="button"
+                                        data-gs-repeat="<?php echo esc_attr($item['set']); ?>"
+                                        data-gs-count="<?php echo esc_attr((int) (isset($item['count']) ? $item['count'] : count((array) $item['shots']))); ?>">
+                                    Повторить с моими фото
+                                </button>
+                            <?php endif; ?>
+                        </div>
                         <?php if (!empty($item['note'])): ?>
                             <span><?php echo esc_html($item['note']); ?></span>
                         <?php endif; ?>
                     </figcaption>
                     <div class="gs-set__strip">
-                        <?php if (!empty($item['before'])): ?>
-                            <div class="gs-set__shot gs-set__shot--before">
-                                <img src="<?php echo esc_url($item['before']); ?>" alt="Исходное фото: <?php echo esc_attr($item['title']); ?>" loading="lazy" width="560" height="747">
-                                <span class="gs-set__tag">загрузили</span>
-                            </div>
-                        <?php endif; ?>
                         <?php foreach ((array) $item['shots'] as $shot): ?>
                             <div class="gs-set__shot">
                                 <img src="<?php echo esc_url($shot[1]); ?>" alt="<?php echo esc_attr($item['title'] . ' — ' . $shot[0]); ?>" loading="lazy" width="560" height="747">

@@ -183,3 +183,36 @@
         grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     }
 }
+
+/* Заголовок подборки и кнопка «Повторить» в одной строке: кнопка —
+   главное действие блока, прятать её под галереей нельзя. */
+.gs-set__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    width: 100%;
+}
+
+/* Название подборки забирает свободное место, кнопка прижимается вправо:
+   иначе она липнет к тексту и читается как часть заголовка. */
+.gs-set__head > strong {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.gs-set__go {
+    flex: 0 0 auto;
+    padding: 8px 16px;
+    font-size: 14px;
+}
+
+/* Якорь, к которому ведёт «Повторить»: смещаем вверх на высоту липкой
+   шапки темы, иначе первое поле уезжает под неё. */
+.gs-anchor {
+    display: block;
+    position: relative;
+    top: -90px;
+    visibility: hidden;
+}

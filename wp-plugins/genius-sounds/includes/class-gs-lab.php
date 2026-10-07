@@ -733,34 +733,38 @@ class GS_Lab {
                 'page_option' => 'gs_lab_page_photo',
                 'menu'        => 'ИИ-фотосессия',
                 'nav'         => 'ИИ-фотосессия',
-                'h1'          => 'ИИ-фотосессия: подборка кадров по одному вашему фото',
-                'seo_title'   => 'ИИ-фотосессия онлайн — семейная, детская и свадебная по фото',
-                'seo_desc'    => 'ИИ-фотосессия по вашему фото: загрузите один снимок и выберите подборку — семейную, детскую, свадебную или деловую. Нейросеть вернёт 3, 5 или 7 кадров в разных локациях: дом, студия, парк, кафе. Лицо остаётся вашим.',
-                'lead'        => 'Загрузите одно обычное фото и выберите подборку. Нейросеть вернёт сразу несколько готовых кадров в разных локациях — дома, в студии, в парке, в кафе, — а лицо на всех останется вашим.',
-                'badge'       => 'Подборка кадров по фото',
+                'h1'          => 'ИИ-фотосессия: готовые подборки с вашими лицами',
+                'seo_title'   => 'ИИ фотосессия онлайн — семейная, детская и свадебная по фото',
+                'seo_desc'    => 'ИИ фотосессия онлайн: выберите готовую подборку — семейную, детскую, свадебную или деловую — загрузите фото своих и получите 3, 5 или 7 кадров в тех же позах и локациях. Лица остаются вашими.',
+                'lead'        => 'Выберите готовую подборку ниже и нажмите «Повторить». Загрузите обычные фото — общий снимок или по одному на каждого — и получите ту же съёмку со своими лицами: те же позы, та же локация, 3, 5 или 7 кадров.',
+                'badge'       => 'Готовые подборки по вашим фото',
                 'cost_option' => 'gs_lab_cost_photo',
                 'cost'        => 19,
                 'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 19, 'max_seconds' => 0),
                 'available'   => true,
                 'history'     => true,
-                'inputs'      => array('image'),
+                'inputs'      => array('image', 'image2', 'image3', 'image4'),
+                'input_optional' => array('image2', 'image3', 'image4'),
+                'input_labels'   => array(
+                    'image'  => 'Фото 1 — общий снимок или первый человек',
+                    'image2' => 'Фото 2 — ещё человек',
+                    'image3' => 'Фото 3 — ещё человек',
+                    'image4' => 'Фото 4 — ещё человек',
+                ),
                 'accept'      => array(
-                    'image' => 'image/jpeg,image/png,image/webp',
+                    'image'  => 'image/jpeg,image/png,image/webp',
+                    'image2' => 'image/jpeg,image/png,image/webp',
+                    'image3' => 'image/jpeg,image/png,image/webp',
+                    'image4' => 'image/jpeg,image/png,image/webp',
                 ),
                 'prompt'      => false,
+                'examples_first' => true,
                 'fields'      => array(
                     'set' => array(
                         'type'    => 'select',
                         'label'   => 'Подборка',
-                        'default' => 'family',
-                        'options' => array(
-                            'family'   => 'Семейная — дом, студия, парк, кафе, прогулка',
-                            'kids'     => 'Детская — дом, студия, парк, площадка, праздник',
-                            'wedding'  => 'Свадебная и для пары — студия, парк, набережная, вечер',
-                            'business' => 'Деловая — офис, студия, переговорная, улица',
-                            'social'   => 'Для соцсетей — улица, кафе, студия, вечер, спорт',
-                            'holiday'  => 'Новогодняя — ёлка, гирлянды, окно, зимняя улица',
-                        ),
+                        'default' => 'family-home',
+                        'options' => array(),   // заполняется из каталога подборок
                     ),
                     'count' => array(
                         'type'    => 'select',
@@ -777,7 +781,7 @@ class GS_Lab {
                         'label' => 'Пожелания (необязательно)',
                         'place' => 'светлая одежда, без очков',
                         'max'   => 200,
-                        'hint'  => 'Коротко про одежду и настроение. Внешность менять не просим — лица берутся с вашего снимка.',
+                        'hint'  => 'Коротко про одежду и настроение. Внешность менять не просим — лица берутся с ваших снимков.',
                     ),
                     'ratio' => array(
                         'type'    => 'select',
@@ -797,34 +801,49 @@ class GS_Lab {
                 // и об этом прямо сказано в подписи к блоку.
                 'examples'    => array(
                     array(
-                        'title'  => 'Семейная подборка, 5 кадров',
-                        'note'   => 'Исходник — обычное домашнее фото вчетвером. Дом, студия, парк, кафе, прогулка: одна загрузка, пять локаций.',
-                        'before' => 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-src.jpg',
+                        'set'    => 'family-home',
+                        'count'  => 5,
+                        'title'  => 'Семья дома — 5 кадров',
+                        'note'   => 'Одна гостиная, разные кадры: все вместе, родители, только дети, дети с собакой, мама с дочкой.',
                         'shots'  => array(
-                            array('Дом', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-1.jpg'),
-                            array('Студия', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-2.jpg'),
-                            array('Парк', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-3.jpg'),
-                            array('Кафе', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-4.jpg'),
-                            array('Прогулка', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-5.jpg'),
+                            array('Все вместе', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-family-home-1.jpg'),
+                            array('Родители', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-family-home-2.jpg'),
+                            array('Только дети', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-family-home-3.jpg'),
+                            array('Дети с собакой', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-family-home-4.jpg'),
+                            array('Мама с дочкой', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-family-home-5.jpg'),
                         ),
                     ),
                     array(
-                        'title'  => 'Детская подборка, 3 кадра',
-                        'note'   => 'Исходник — снимок в комнате. Дом, студия, парк: ребёнка никуда не надо везти и уговаривать.',
-                        'before' => 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-kids-src.jpg',
+                        'set'    => 'family-studio',
+                        'count'  => 3,
+                        'title'  => 'Семья в студии — 3 кадра',
+                        'note'   => 'Классическая студия: общий кадр, родители, дети. То, за чем обычно идут к фотографу.',
                         'shots'  => array(
-                            array('Дома', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-kids-1.jpg'),
-                            array('Студия', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-kids-2.jpg'),
-                            array('Парк', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-kids-3.jpg'),
+                            array('Все вместе', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-family-studio-1.jpg'),
+                            array('Родители', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-family-studio-2.jpg'),
+                            array('Дети', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-family-studio-3.jpg'),
+                        ),
+                    ),
+                    array(
+                        'set'    => 'kids-home',
+                        'count'  => 5,
+                        'title'  => 'Ребёнок дома — 5 кадров',
+                        'note'   => 'Детская и мягкий дневной свет: на полу, у окна, с книгой, смех, портрет.',
+                        'shots'  => array(
+                            array('На полу', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-kids-home-1.jpg'),
+                            array('У окна', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-kids-home-2.jpg'),
+                            array('С книгой', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-kids-home-3.jpg'),
+                            array('Смеётся', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-kids-home-4.jpg'),
+                            array('Портрет', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/cat-kids-home-5.jpg'),
                         ),
                     ),
                 ),
                 'result_kind' => 'image',
                 'poll_seconds'=> 600,
                 'steps'       => array(
-                    'Загрузите фото: для семейной и парной подборки — общий снимок, для портретной — своё фото.',
-                    'Выберите подборку и число кадров: 3, 5 или 7 локаций.',
-                    'Через несколько минут заберите все кадры разом — они же останутся в истории.',
+                    'Выберите подборку в каталоге выше и нажмите «Повторить с моими фото».',
+                    'Загрузите снимки: общий кадр или по одному фото на каждого — до четырёх.',
+                    'Через несколько минут заберите всю подборку разом — она же останется в истории.',
                 ),
                 'faq'         => array(
                     array('Останутся ли лица нашими?',
@@ -932,7 +951,17 @@ class GS_Lab {
 
     public static function get_service($id) {
         $services = self::services();
-        return isset($services[$id]) ? $services[$id] : null;
+        $service = isset($services[$id]) ? $services[$id] : null;
+        // Список подборок держим в одном месте — в каталоге: иначе он
+        // разъедется с тем, что сервис на самом деле умеет снимать.
+        if ($service && $id === 'photo') {
+            $options = array();
+            foreach (self::photo_sets() as $key => $set) {
+                $options[$key] = $set['group'] . ' — ' . $set['label'];
+            }
+            $service['fields']['set']['options'] = $options;
+        }
+        return $service;
     }
 
     /**
@@ -1508,76 +1537,154 @@ class GS_Lab {
      */
     public static function photo_sets() {
         return array(
-            'family' => array(
-                'label'  => 'Семейная',
-                'scenes' => array(
-                    array('Дом', 'cosy living room at home, warm daylight from a window, soft neutral interior, casual home clothes'),
-                    array('Студия', 'photo studio with a clean light grey seamless backdrop, soft three-point lighting, smart casual outfits'),
-                    array('Парк', 'green park at golden hour, soft backlight through the leaves, light casual clothes'),
-                    array('Кафе', 'cosy cafe table by a window, warm indoor light, bokeh of lamps behind, relaxed outfits'),
-                    array('Прогулка', 'quiet city embankment on a clear day, soft diffused daylight, light coats'),
-                    array('Дома у окна', 'by a large window at home, soft side daylight, calm pastel interior, knitwear'),
-                    array('Осенний парк', 'autumn park with golden leaves, warm low sun, light jackets and scarves'),
+            'family-home' => array(
+                'group' => 'Семейные',
+                'label' => 'Семья дома, одна локация',
+                'note'  => 'Один вечер в своей гостиной: все вместе, родители вдвоём, только дети, дети с собакой. Локация одна, кадры разные.',
+                'place' => 'the same cosy living room at home, warm daylight from a window, soft neutral interior, casual home clothes',
+                'shots' => array(
+                    array('Все вместе',      'the whole family together on the sofa, relaxed natural pose'),
+                    array('Родители',        'only the two adults together, close side by side'),
+                    array('Только дети',     'only the children together, sitting on the floor'),
+                    array('Дети с собакой',  'only the children with a friendly family dog'),
+                    array('Мама с дочкой',   'the mother and the daughter together'),
+                    array('Папа с сыном',    'the father and the son together'),
+                    array('Общий план',      'the whole family standing together, full height, wider framing'),
                 ),
             ),
-            'kids' => array(
-                'label'  => 'Детская',
-                'scenes' => array(
-                    array('Дома', 'bright children room at home, soft daylight, pastel interior, comfortable home clothes'),
-                    array('Студия', 'photo studio with a light pastel backdrop, very soft lighting, neat casual outfit'),
-                    array('Парк', 'sunny park lawn, warm golden hour light, light summer clothes'),
-                    array('Площадка', 'playground on a clear day, soft daylight, casual outdoor clothes'),
-                    array('Праздник', 'festive room with balloons and soft garland bokeh, warm light, smart outfit'),
-                    array('Зима', 'snowy park, gentle falling snow, warm winter jacket and knitted hat'),
-                    array('С книгой', 'reading nook at home with bookshelves behind, warm lamp light, cosy sweater'),
+            'family-studio' => array(
+                'group' => 'Семейные',
+                'label' => 'Семья в студии',
+                'note'  => 'Классическая студия с ровным светом: общий кадр, родители, дети. То, за чем обычно и идут к фотографу.',
+                'place' => 'the same photo studio with a clean light grey seamless backdrop, soft three-point lighting, smart casual outfits',
+                'shots' => array(
+                    array('Все вместе',  'the whole family together, full height, classic studio pose'),
+                    array('Родители',    'only the two adults together'),
+                    array('Дети',        'only the children together'),
+                    array('Крупный план','the whole family, closer framing, waist-up'),
+                    array('В движении',  'the whole family mid-laugh, relaxed candid moment'),
+                    array('Сидя',        'the family seated on a simple studio bench'),
+                    array('Силуэт',      'the family in a calm symmetric composition, soft shadows'),
                 ),
             ),
-            'wedding' => array(
-                'label'  => 'Свадебная и для пары',
-                'scenes' => array(
-                    array('Студия', 'elegant photo studio, soft key light, clean light backdrop, formal wedding outfits'),
-                    array('Парк', 'park alley at golden hour, soft warm backlight, formal outfits'),
-                    array('Набережная', 'city embankment at sunset, gentle warm light, elegant outfits'),
-                    array('Интерьер', 'refined classic interior with tall windows, soft daylight, formal outfits'),
-                    array('Вечер', 'evening portrait with warm garland bokeh behind, soft rim light, formal evening outfits'),
-                    array('Зима', 'snowy park at dusk, soft blue hour light, elegant winter coats'),
-                    array('Дома', 'bright minimal interior at home, soft daylight, light formal outfits'),
+            'family-walk' => array(
+                'group' => 'Семейные',
+                'label' => 'Семейная прогулка',
+                'note'  => 'Парк и набережная в мягком вечернем свете: кадры в движении, а не постановочные.',
+                'place' => 'outdoors on a walk, green park and a city embankment, soft golden hour light, light casual clothes',
+                'shots' => array(
+                    array('В парке',     'the whole family walking together along a park path'),
+                    array('На скамейке', 'the family sitting together on a park bench'),
+                    array('Дети бегут',  'only the children running on the grass, motion in the frame'),
+                    array('Родители',    'only the two adults walking hand in hand'),
+                    array('Набережная',  'the whole family standing at a city embankment railing'),
+                    array('Смех',        'the whole family laughing together, candid moment'),
+                    array('Против света','the whole family backlit by the low sun, warm rim light'),
                 ),
             ),
-            'business' => array(
-                'label'  => 'Деловая',
-                'scenes' => array(
-                    array('Офис', 'bright modern open office, soft diffused light, well-fitted business suit'),
-                    array('Студия', 'studio headshot on a clean seamless backdrop, soft three-point lighting, business attire'),
-                    array('Переговорная', 'glass meeting room, soft daylight, business casual outfit'),
-                    array('Улица у офиса', 'business district street on an overcast day, soft even light, coat over a suit'),
-                    array('Рабочий стол', 'at a tidy desk with a laptop, warm indoor light, shirt and jacket'),
-                    array('Конференция', 'conference hall with blurred audience behind, soft stage light, business attire'),
-                    array('Лестница', 'modern office staircase, soft directional daylight, business casual outfit'),
+            'kids-home' => array(
+                'group' => 'Детские',
+                'label' => 'Ребёнок дома',
+                'note'  => 'Детская комната и мягкий дневной свет: ребёнка никуда не надо везти и уговаривать позировать.',
+                'place' => 'the same bright children room at home, soft daylight, pastel interior, comfortable home clothes',
+                'shots' => array(
+                    array('На полу',     'the child sitting on the floor playing, natural pose'),
+                    array('У окна',      'the child by the window, soft side daylight'),
+                    array('С игрушкой',  'the child holding a favourite soft toy'),
+                    array('С книгой',    'the child reading a picture book'),
+                    array('Смеётся',     'the child laughing, candid moment'),
+                    array('Портрет',     'close-up portrait of the child, soft light'),
+                    array('В кровати',   'the child on a bed with a blanket, cosy warm light'),
                 ),
             ),
-            'social' => array(
-                'label'  => 'Для соцсетей',
-                'scenes' => array(
-                    array('Улица', 'candid street portrait in a city, warm daylight, blurred urban background, stylish casual outfit'),
-                    array('Кафе', 'cosy cafe, warm indoor light, bokeh of lamps, relaxed smart casual outfit'),
-                    array('Студия', 'studio portrait on a coloured seamless backdrop, soft fashion lighting, stylish outfit'),
-                    array('Вечер', 'evening city lights behind, warm bokeh, dark stylish outfit'),
-                    array('Спорт', 'modern gym, dynamic hard light, sportswear, confident posture'),
-                    array('Крыша', 'rooftop at sunset, warm rim light, city skyline behind, casual jacket'),
-                    array('Зелень', 'green plants and soft daylight, light summer outfit'),
+            'kids-studio' => array(
+                'group' => 'Детские',
+                'label' => 'Ребёнок в студии',
+                'note'  => 'Пастельная студия: ровный свет и чистый фон, кадры годятся на печать и в рамку.',
+                'place' => 'the same photo studio with a light pastel backdrop, very soft lighting, neat casual outfit',
+                'shots' => array(
+                    array('В полный рост','the child standing, full height'),
+                    array('Сидя',         'the child sitting cross-legged on the floor'),
+                    array('Портрет',      'close-up portrait, soft catchlight in the eyes'),
+                    array('С шарами',     'the child with a few balloons'),
+                    array('В движении',   'the child mid-jump, playful moment'),
+                    array('Со спины',     'the child looking back over the shoulder'),
+                    array('Крупно',       'very close portrait, shallow depth of field'),
                 ),
             ),
-            'holiday' => array(
-                'label'  => 'Новогодняя',
-                'scenes' => array(
-                    array('У ёлки', 'next to a decorated christmas tree, warm garland bokeh, festive knitwear'),
-                    array('Гирлянды', 'warm garland lights filling the background, cosy indoor light, festive outfit'),
-                    array('У окна', 'by a frosted window with snow outside, soft cool daylight, warm sweater'),
-                    array('Зимняя улица', 'snowy evening street with warm lights, gentle falling snow, winter coat'),
-                    array('Праздничный стол', 'festive table with candles behind, warm golden light, smart festive outfit'),
-                    array('Камин', 'by a fireplace, warm firelight, cosy knitted clothes'),
-                    array('Снежный парк', 'snowy park in daylight, soft cold light, winter coat and scarf'),
+            'pair-studio' => array(
+                'group' => 'Свадебные и для пары',
+                'label' => 'Пара в студии',
+                'note'  => 'Строгая студия под свадьбу и годовщину: общий кадр, портреты, детали.',
+                'place' => 'the same elegant photo studio, soft key light, clean light backdrop, formal outfits',
+                'shots' => array(
+                    array('Вдвоём',      'the couple standing together, classic formal pose'),
+                    array('Крупно',      'the couple close together, waist-up framing'),
+                    array('Он',          'only the man, formal portrait'),
+                    array('Она',         'only the woman, formal portrait'),
+                    array('Объятие',     'the couple embracing, calm warm moment'),
+                    array('Сидя',        'the couple seated together on a simple bench'),
+                    array('Профиль',     'the couple facing each other in profile'),
+                ),
+            ),
+            'pair-outdoor' => array(
+                'group' => 'Свадебные и для пары',
+                'label' => 'Пара на улице',
+                'note'  => 'Парк, набережная и вечерние огни: тёплый свет и кадры в движении.',
+                'place' => 'outdoors, park alley and a city embankment at golden hour, soft warm backlight, elegant outfits',
+                'shots' => array(
+                    array('Аллея',       'the couple walking along a park alley'),
+                    array('Набережная',  'the couple standing at an embankment railing at sunset'),
+                    array('Объятие',     'the couple embracing, warm backlight'),
+                    array('Он',          'only the man, outdoor portrait'),
+                    array('Она',         'only the woman, outdoor portrait'),
+                    array('Вечер',       'the couple with warm garland bokeh behind, evening light'),
+                    array('Смех',        'the couple laughing together, candid moment'),
+                ),
+            ),
+            'business-office' => array(
+                'group' => 'Деловые',
+                'label' => 'Деловой портрет в офисе',
+                'note'  => 'Светлый офис и студия: кадры под резюме, LinkedIn и сайт компании.',
+                'place' => 'a bright modern office and a clean studio backdrop, soft diffused light, well-fitted business attire',
+                'shots' => array(
+                    array('Офис',         'standing in a bright open office, soft diffused light'),
+                    array('Студия',       'studio headshot on a clean seamless backdrop'),
+                    array('Переговорная', 'in a glass meeting room, soft daylight'),
+                    array('За столом',    'at a tidy desk with a laptop, warm indoor light'),
+                    array('У окна',       'by a large office window, soft side light'),
+                    array('Улица',        'on a business district street, overcast soft light, coat over a suit'),
+                    array('Конференция',  'on a stage with a blurred audience behind, soft stage light'),
+                ),
+            ),
+            'social-city' => array(
+                'group' => 'Для соцсетей',
+                'label' => 'Город и соцсети',
+                'note'  => 'Улица, кафе, крыша и вечерние огни: кадры под ленту и сторис.',
+                'place' => 'city locations: street, cafe, rooftop and evening lights, stylish casual outfits',
+                'shots' => array(
+                    array('Улица',   'candid street portrait, warm daylight, blurred urban background'),
+                    array('Кафе',    'at a cafe table, warm indoor light, bokeh of lamps behind'),
+                    array('Крыша',   'on a rooftop at sunset, city skyline behind, warm rim light'),
+                    array('Вечер',   'evening city lights behind, warm bokeh'),
+                    array('Студия',  'studio portrait on a coloured seamless backdrop, soft fashion lighting'),
+                    array('Зелень',  'among green plants, soft daylight'),
+                    array('Спорт',   'in a modern gym, dynamic hard light, sportswear'),
+                ),
+            ),
+            'holiday-home' => array(
+                'group' => 'Новогодние',
+                'label' => 'Новый год дома',
+                'note'  => 'Ёлка, гирлянды и тёплый свет: подборка, которую заказывают в декабре.',
+                'place' => 'the same cosy room decorated for New Year, christmas tree and warm garland bokeh, festive knitwear',
+                'shots' => array(
+                    array('У ёлки',      'everyone together next to the decorated christmas tree'),
+                    array('Гирлянды',    'warm garland lights filling the background, close framing'),
+                    array('У окна',      'by a frosted window with snow outside, soft cool daylight'),
+                    array('Только дети', 'only the children by the tree'),
+                    array('Камин',       'by a fireplace, warm firelight'),
+                    array('За столом',   'at a festive table with candles, warm golden light'),
+                    array('Общий план',  'everyone together, wider framing, full height'),
                 ),
             ),
         );
@@ -1606,15 +1713,18 @@ class GS_Lab {
      * Условие про лица повторяем в конце: модели сильнее слушают последние
      * предложения, а подменённое лицо обесценивает весь заказ.
      */
-    public static function photo_prompt($scene, $ratio, $extra) {
-        $prompt = 'Replace the background and clothing of the people in the photo: ' . $scene . '. '
+    public static function photo_prompt($place, $shot, $ratio, $extra, $sources = 1) {
+        $prompt = $sources > 1
+            ? 'Use the people from all the provided photos as the same people in one new photograph. '
+            : 'Keep the people from the provided photo. ';
+        $prompt .= 'Shot: ' . $shot . '. Location and styling: ' . $place . '. '
             . self::photo_frame_prompt($ratio);
         $extra = trim((string) $extra);
         if ($extra !== '') {
             $prompt .= ' Additional request: ' . $extra . '.';
         }
-        $prompt .= ' Keep every person from the source photo, their exact faces, facial features,'
-            . ' skin tone, hair colour and age unchanged. Do not add or remove people.'
+        $prompt .= ' Keep their exact faces, facial features, skin tone, hair colour and age unchanged.'
+            . ' Do not invent new people and do not merge faces.'
             . ' Do not beautify or reshape the faces.'
             . ' Photorealistic photograph, natural skin texture, sharp focus on the eyes,'
             . ' no text, no watermark, no logos.';
@@ -1676,28 +1786,42 @@ class GS_Lab {
         // задач поставщика, по одной на локацию.
         if ($id === 'photo') {
             $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
-            $set    = (string) ($fields['set'] ?? 'family');
+            $sets   = self::photo_sets();
+            $set    = (string) ($fields['set'] ?? 'family-home');
+            if (!isset($sets[$set])) {
+                $set = 'family-home';
+            }
             $count  = self::photo_count($fields['count'] ?? 5);
             $extra  = trim((string) ($fields['extra'] ?? ''));
             $ratio  = (string) ($fields['ratio'] ?? '3:4');
             if (!in_array($ratio, array('3:4', '1:1', '9:16', '16:9'), true)) {
                 $ratio = '3:4';
             }
-            $sets = self::photo_sets();
-            if (!isset($sets[$set])) {
-                $set = 'family';
-            }
-            $scenes = array_slice($sets[$set]['scenes'], 0, $count);
 
+            // Снимков может быть несколько — по человеку. Модель правки
+            // принимает их списком и собирает кадр из всех разом.
+            $images = array();
+            foreach (array('image_url', 'image2_url', 'image3_url', 'image4_url') as $key) {
+                $url = trim((string) ($params[$key] ?? ''));
+                if ($url !== '') {
+                    $images[] = $url;
+                }
+            }
+            if (empty($images)) {
+                return array('ok' => false, 'task_id' => '', 'message' => 'Нужен хотя бы один снимок');
+            }
+
+            $scenes = array_slice($sets[$set]['shots'], 0, $count);
             $jobs = array();
-            foreach ($scenes as $scene) {
+            foreach ($scenes as $shot) {
                 $res = GS_Provider::job('image_edit', array(
-                    'prompt'    => self::photo_prompt($scene[1], $ratio, $extra),
-                    'image_url' => (string) $params['image_url'],
-                    'ratio'     => $ratio,
+                    'prompt'     => self::photo_prompt($sets[$set]['place'], $shot[1], $ratio, $extra, count($images)),
+                    'image_urls' => $images,
+                    'image_url'  => $images[0],
+                    'ratio'      => $ratio,
                 ), array('callback' => $callback));
                 $jobs[] = array(
-                    'label' => (string) $scene[0],
+                    'label' => (string) $shot[0],
                     'task'  => !empty($res['ok']) ? (string) $res['task'] : '',
                     'error' => !empty($res['ok']) ? '' : (string) $res['message'],
                 );

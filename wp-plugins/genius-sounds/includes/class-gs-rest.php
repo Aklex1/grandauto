@@ -453,6 +453,15 @@ class GS_Rest {
 
         // Картинка по описанию — для оформления страниц сервисов. Только
         // для админа: это прямой расход у поставщика.
+        // Правка кадра для оформления сайта: примеры на посадочных делает
+        // администратор, и списывать их с чьего-то баланса незачем —
+        // это не покупка, а картинка для страницы.
+        register_rest_route(self::NS, '/lab/image-edit', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_lab_image_edit'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/lab/image', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_lab_image'),
@@ -967,6 +976,23 @@ class GS_Rest {
 
     /** Картинка по описанию — для оформления страниц. Только для админа:
      *  это прямой расход у поставщика. */
+    public static function handle_lab_image_edit($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = (array) $request->get_params();
+        }
+        $prompt = trim((string) ($p['prompt'] ?? ''));
+        $image  = esc_url_raw(trim((string) ($p['image_url'] ?? '')));
+        if ($prompt === '' || $image === '') {
+            return new WP_Error('gs_no_input', 'Нужны описание и ссылка на кадр', array('status' => 400));
+        }
+        return rest_ensure_response(GS_Provider::job('image_edit', array(
+            'prompt'    => $prompt,
+            'image_url' => $image,
+            'ratio'     => (string) ($p['ratio'] ?? '3:4'),
+        )));
+    }
+
     public static function handle_lab_image($request) {
         $p = $request->get_json_params();
         if (!is_array($p)) {
@@ -2403,9 +2429,12 @@ class GS_Rest {
 
     public static function handle_lab_upload($request) {
         $kind = sanitize_key((string) $request->get_param('kind'));
-        if (!in_array($kind, array('image', 'audio', 'video'), true)) {
+        // Фотосессия принимает несколько снимков — по человеку: поля
+        // называются image2..image4, но по сути это те же картинки.
+        if (!in_array($kind, array('image', 'audio', 'video', 'image2', 'image3', 'image4'), true)) {
             return new WP_Error('gs_bad_kind', 'Неизвестный тип файла', array('status' => 400));
         }
+        $store_kind = strpos($kind, 'image') === 0 ? 'image' : $kind;
         $service_id = sanitize_key((string) $request->get_param('service'));
 
         $files = $request->get_file_params();
@@ -2421,7 +2450,7 @@ class GS_Rest {
             $max = GS_Lab::MAX_VIDEO_BYTES;
         }
 
-        $stored = GS_Lab::store_upload($file, $kind, $max);
+        $stored = GS_Lab::store_upload($file, $store_kind, $max);
         if (empty($stored['ok'])) {
             return new WP_Error('gs_upload_failed', $stored['message'], array('status' => 400));
         }
