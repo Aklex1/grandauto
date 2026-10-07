@@ -1217,7 +1217,8 @@ def build_music_video(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
                       duration: float, workdir: Path, *, pingpong: bool = False,
                       equalizer: bool = False,
                       cards: Optional[list[dict]] = None,
-                      artist: str = "") -> Path:
+                      artist: str = "", header_text: str = "", tagline: str = "",
+                      logo: Optional[Path] = None) -> Path:
     """Собрать длинный ролик: заставка по кругу плюс готовый микс.
 
     Полчаса FullHD кодировать целиком не нужно и незачем: заставка — это один и
@@ -1314,7 +1315,8 @@ def build_music_video(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
         # эквалайзер, не связанный со звуком, зритель раскусывает мгновенно, а
         # карточка «сейчас играет» без точных стыков врала бы весь ролик.
         build_music_video_eq(long_video, audio, dst, duration, cards=cards,
-                             size=size, artist=artist)
+                             size=size, artist=artist, chrome_dir=workdir / "chrome",
+                             header_text=header_text, tagline=tagline, logo=logo)
     else:
         _ff([
             "-i", str(long_video), "-i", str(audio),
@@ -1418,15 +1420,32 @@ def wrap_video(body: Path, dst: Path, *, intro: Optional[Path] = None,
 EQ_WIDTH = 900
 EQ_HEIGHT = 140
 EQ_ALPHA = 0.45
-EQ_COLOR = "0x9fe8ff"
+EQ_COLOR = "0x7fe3d4"
+
+# Сколько столбиков в эквалайзере — как на макете плеера.
+EQ_BARS = 13
 
 
 def equalizer_filter(width: int = EQ_WIDTH, height: int = EQ_HEIGHT,
-                     alpha: float = EQ_ALPHA, color: str = EQ_COLOR) -> str:
-    """Кусок графа фильтров: [aviz] -> [eq] со столбиками частот."""
-    return (f"[aviz]showfreqs=s={width}x{height}:mode=bar:ascale=log:fscale=log:"
-            f"win_size=2048:colors={color},format=rgba,"
-            f"colorchannelmixer=aa={alpha:.2f}[eq]")
+                     alpha: float = EQ_ALPHA, color: str = EQ_COLOR,
+                     comb_label: str = "", bars: int = EQ_BARS) -> str:
+    """Кусок графа фильтров: [aviz] -> [eq].
+
+    Без трафарета выходит сплошной спектр. С трафаретом — отдельные столбики со
+    скруглёнными концами, как в плеере: спектр считается по небольшому числу
+    полос, растягивается ступенями, чёрный фон убирается по яркости, а трафарет
+    оставляет только сами столбики.
+    """
+    if not comb_label:
+        return (f"[aviz]showfreqs=s={width}x{height}:mode=bar:ascale=log:fscale=log:"
+                f"win_size=2048:colors={color},format=rgba,"
+                f"colorchannelmixer=aa={alpha:.2f}[eq]")
+    return (f"[aviz]showfreqs=s={bars}x{height}:mode=bar:ascale=log:fscale=log:"
+            f"win_size=2048:colors={color},"
+            f"scale={width}:{height}:flags=neighbor,format=rgba,"
+            f"lumakey=threshold=0.16:tolerance=0.10,"
+            f"colorchannelmixer=aa={alpha:.2f}[eqbars];"
+            f"[eqbars][{comb_label}]blend=all_mode=multiply[eq]")
 
 
 def build_music_video_eq(loop_long: Path, audio: Path, dst: Path, duration: float,
@@ -1434,30 +1453,63 @@ def build_music_video_eq(loop_long: Path, audio: Path, dst: Path, duration: floa
                          alpha: float = EQ_ALPHA, color: str = EQ_COLOR,
                          y_offset: float = 0.0, cards: Optional[list[dict]] = None,
                          size: tuple[int, int] = (1920, 1080),
-                         artist: str = "") -> Path:
-    """Собрать ролик с эквалайзером и карточкой «сейчас играет» поверх картинки.
+                         artist: str = "", chrome_dir: Optional[Path] = None,
+                         header_text: str = "", tagline: str = "",
+                         logo: Optional[Path] = None) -> Path:
+    """Собрать ролик с обвязкой поверх картинки.
 
     Этот путь дороже обычного: картинку приходится перекодировать целиком, потому
-    что поверх неё ложится дорожка, меняющаяся каждый кадр. Полчаса FullHD на
+    что поверх неё ложится графика, меняющаяся каждый кадр. Полчаса FullHD на
     veryfast — это минуты, а не часы, но «скопировать и склеить» тут уже нельзя.
-
-    Когда есть карточка, столбики частот уходят внутрь неё — как в плеере. Без
-    карточки они остаются по центру кадра.
     """
-    if cards:
-        eq_w, eq_h = card_eq_size(size)
-        graph = ("[1:a]asplit=2[aout][aviz];"
-                 + equalizer_filter(eq_w, eq_h, min(0.95, alpha + 0.4), color) + ";")
-        card_graph, out = now_playing_graph(cards, size, source="0:v",
-                                            artist=artist, eq_label="eq")
-        graph += card_graph + f";[{out}]null[v]"
-    else:
+    inputs = ["-i", str(loop_long), "-i", str(audio)]
+    if not cards:
         offset = f"(H-h)/2{'+' if y_offset >= 0 else '-'}{abs(int(y_offset))}"
         graph = ("[1:a]asplit=2[aout][aviz];"
                  + equalizer_filter(width, height, alpha, color)
                  + f";[0:v][eq]overlay=(W-w)/2:{offset}[v]")
+    else:
+        from . import chrome
+
+        folder = chrome_dir or dst.parent / "chrome"
+        folder.mkdir(parents=True, exist_ok=True)
+        eq_w, eq_h = card_eq_size(size)
+        comb = chrome.eq_comb(folder / "comb.png", (eq_w, eq_h), bars=EQ_BARS)
+        card_png = chrome.card(folder / "card.png", size, card_box(size),
+                               bar=card_bar(size))
+        head = chrome.header(folder / "header.png", size, name=header_text,
+                             tagline=tagline, logo=logo) if header_text else None
+        _bx, _by, bar_w, bar_h = card_bar(size)
+        bars = chrome.progress_steps(folder / "bar", bar_w, bar_h, BAR_STEPS)
+
+        index = 2
+        comb_label = f"{index}:v"
+        inputs += ["-i", str(comb)]
+        index += 1
+        card_label = f"{index}:v"
+        inputs += ["-i", str(card_png)]
+        index += 1
+        header_label = ""
+        if head is not None:
+            header_label = f"{index}:v"
+            inputs += ["-i", str(head)]
+            index += 1
+        bar_labels = []
+        for path in bars:
+            bar_labels.append(f"{index}:v")
+            inputs += ["-i", str(path)]
+            index += 1
+
+        graph = ("[1:a]asplit=2[aout][aviz];"
+                 + equalizer_filter(eq_w, eq_h, min(0.98, alpha + 0.45), color,
+                                    comb_label=comb_label) + ";")
+        card_graph, out = now_playing_graph(
+            cards, size, source="0:v", artist=artist, eq_label="eq",
+            header_label=header_label, card_label=card_label, bar_labels=bar_labels)
+        graph += card_graph + f";[{out}]null[v]"
+
     _ff([
-        "-i", str(loop_long), "-i", str(audio),
+        *inputs,
         "-filter_complex", graph, "-map", "[v]", "-map", "[aout]",
         "-t", f"{duration:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
@@ -1466,7 +1518,6 @@ def build_music_video_eq(loop_long: Path, audio: Path, dst: Path, duration: floa
         "-movflags", "+faststart", str(dst),
     ], timeout=14400)
     return dst
-
 
 def _escape_text(value: str) -> str:
     """Экранирование для drawtext: двоеточие и апостроф ломают разбор фильтра."""
@@ -1541,7 +1592,7 @@ def brand_clip(src: Path, dst: Path, *, size: tuple[int, int], title: str = "",
 CARD_X = 0.038
 CARD_BOTTOM = 0.085
 CARD_W = 0.42
-CARD_H = 0.165
+CARD_H = 0.195
 CARD_BG = "0x0E1420"
 CARD_ALPHA = 0.72
 CARD_ACCENT = "0x7FE3D4"
@@ -1563,28 +1614,48 @@ def _clip_text(value: str, limit: int = CARD_TITLE_MAX) -> str:
 
 
 def card_eq_size(size: tuple[int, int]) -> tuple[int, int]:
-    """Размер столбиков частот внутри карточки — нужен до построения графа."""
+    """Размер столбиков частот внутри плашки — нужен до построения графа."""
     w, h = size
-    return int(w * CARD_W * 0.30), int(h * CARD_H * 0.42)
+    return int(w * CARD_W * 0.30), int(h * CARD_H * 0.36)
+
+
+def card_box(size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Где стоит плашка: (x, y, ширина, высота)."""
+    w, h = size
+    bw, bh = int(w * CARD_W), int(h * CARD_H)
+    return int(w * CARD_X), h - int(h * CARD_BOTTOM) - bh, bw, bh
+
+
+def card_bar(size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Полоса хода у самого низа плашки.
+
+    Ниже имени исполнителя: когда полоса идёт по тексту, не читается ни то, ни
+    другое.
+    """
+    x, y, bw, bh = card_box(size)
+    pad = int(bh * 0.15)
+    _, h = size
+    return x + pad, y + bh - int(pad * 0.62), bw - pad * 2, max(4, int(h * 0.005))
 
 
 def now_playing_graph(cards: list[dict], size: tuple[int, int], *, source: str,
-                      label: str = "NOW PLAYING", artist: str = "",
-                      eq_label: str = "") -> tuple[str, str]:
-    """Граф карточки «сейчас играет». Возвращает (кусок графа, имя выхода).
+                      artist: str = "", eq_label: str = "",
+                      header_label: str = "", card_label: str = "",
+                      bar_labels: Optional[list[str]] = None) -> tuple[str, str]:
+    """Граф обвязки кадра: шапка, плашка, названия, «что дальше», полоса, столбики.
 
-    Что звучит в каждый момент, завод знает точно: тайм-код композиций считается
-    при сборке по их настоящим длинам с вычетом перекрытий переходов. Поэтому
+    Что звучит в каждый момент, завод знает точно: тайм-код считается при сборке
+    по настоящим длинам композиций с вычетом перекрытий переходов. Поэтому
     названия не угадываются — они переключаются ровно на стыках.
+
+    Неподвижное приходит сюда готовыми картинками: разрядку текста drawtext не
+    умеет, скругления drawbox не умеет, да и считать это на каждом кадре незачем.
     """
     w, h = size
     bold = bold_font() or "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     plain = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-
-    box_w, box_h = int(w * CARD_W), int(h * CARD_H)
-    box_x = int(w * CARD_X)
-    box_y = h - int(h * CARD_BOTTOM) - box_h
-    pad = int(box_h * 0.17)
+    box_x, box_y, box_w, box_h = card_box(size)
+    pad = int(box_h * 0.15)
 
     steps: list[str] = []
     current = source
@@ -1595,63 +1666,60 @@ def now_playing_graph(cards: list[dict], size: tuple[int, int], *, source: str,
         steps.append(f"[{current}]{filter_text}[{out}]")
         current = out
 
-    add(f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:"
-        f"color={CARD_BG}@{CARD_ALPHA:.2f}:t=fill")
-    # Тонкая линия слева — та же роль, что у акцента на макете: взгляд цепляется
-    # за край карточки, а не за её середину.
-    add(f"drawbox=x={box_x}:y={box_y}:w={max(2, int(w * 0.002))}:h={box_h}:"
-        f"color={CARD_ACCENT}@0.9:t=fill")
-    add(f"drawtext=fontfile='{plain}':text='{_escape_drawtext(label)}':"
-        f"fontcolor={CARD_ACCENT}:fontsize={int(box_h * 0.15)}:"
-        f"x={box_x + pad}:y={box_y + pad}")
+    def put(label: str, filter_text: str) -> None:
+        nonlocal current
+        out = f"np{len(steps)}"
+        steps.append(f"[{current}][{label}]{filter_text}[{out}]")
+        current = out
 
-    title_size = int(box_h * 0.30)
-    title_y = box_y + pad + int(box_h * 0.22)
-    for card in cards:
-        start, end = float(card["start"]), float(card["end"])
-        if end - start < 0.5:
-            continue
+    if header_label:
+        put(header_label, "overlay=0:0")
+    if card_label:
+        put(card_label, "overlay=0:0")
+
+    title_size = int(box_h * 0.25)
+    title_y = box_y + pad + int(box_h * 0.18)
+    live = [c for c in cards if float(c["end"]) - float(c["start"]) >= 0.5]
+
+    for index, card in enumerate(live):
+        start_at, end_at = float(card["start"]), float(card["end"])
         add(f"drawtext=fontfile='{bold}':"
             f"text='{_escape_drawtext(_clip_text(card.get('title')))}':"
             f"fontcolor={CARD_TEXT}:fontsize={title_size}:"
             f"x={box_x + pad}:y={title_y}:"
-            f"enable='between(t,{start:.2f},{end:.2f})'")
+            f"enable='between(t,{start_at:.2f},{end_at:.2f})'")
+        nxt = live[index + 1]["title"] if index + 1 < len(live) else ""
+        if nxt:
+            add(f"drawtext=fontfile='{plain}':"
+                f"text='{_escape_drawtext(_clip_text(nxt, 34))}':"
+                f"fontcolor={CARD_TEXT}:fontsize={int(h * 0.022)}:"
+                f"x=w-text_w-{int(w * 0.038)}:y={box_y + int(box_h * 0.70)}:"
+                f"enable='between(t,{start_at:.2f},{end_at:.2f})'")
 
     if artist.strip():
         add(f"drawtext=fontfile='{plain}':text='{_escape_drawtext(artist.strip())}':"
-            f"fontcolor={CARD_MUTED}:fontsize={int(box_h * 0.16)}:"
-            f"x={box_x + pad}:y={title_y + int(title_size * 1.25)}")
+            f"fontcolor={CARD_MUTED}:fontsize={int(box_h * 0.135)}:"
+            f"x={box_x + pad}:y={title_y + int(title_size * 1.18)}")
 
-    # Полоса хода. Выражение с временем здесь не годится ни в drawbox (там оно
-    # считается один раз при запуске), ни в crop (менять размер кадра посреди
-    # графа нельзя — следующий фильтр ждёт постоянный). Поэтому рисуем ступенями:
-    # на каждый отрезок свой прямоугольник со своим окном показа. При тридцати
-    # ступенях шаг меньше процента длины композиции, и на глаз это непрерывно.
-    bar_y = box_y + box_h - pad
-    bar_w = box_w - pad * 2
-    bar_h = max(3, int(h * 0.004))
-    add(f"drawbox=x={box_x + pad}:y={bar_y}:w={bar_w}:h={bar_h}:"
-        f"color={CARD_MUTED}@0.35:t=fill")
-
-    for card in cards:
-        start_at, end_at = float(card["start"]), float(card["end"])
-        span = end_at - start_at
-        if span < 0.5:
-            continue
-        for step in range(1, BAR_STEPS + 1):
-            from_t = start_at + span * (step - 1) / BAR_STEPS
-            to_t = start_at + span * step / BAR_STEPS
-            add(f"drawbox=x={box_x + pad}:y={bar_y}:"
-                f"w={max(2, int(bar_w * step / BAR_STEPS))}:h={bar_h}:"
-                f"color={CARD_ACCENT}:t=fill:"
-                f"enable='between(t,{from_t:.2f},{to_t:.2f})'")
+    # Полоса хода ступенями: перелив нельзя нарисовать drawbox'ом, а менять
+    # ширину на лету ffmpeg не даёт — размер кадра внутри графа должен быть
+    # постоянным. Ступени одни на все композиции: доля заполнения у них общая.
+    if bar_labels and live:
+        bar_x, bar_y, _bw, _bh = card_bar(size)
+        total = len(bar_labels)
+        for step, label in enumerate(bar_labels, start=1):
+            windows = []
+            for card in live:
+                start_at, end_at = float(card["start"]), float(card["end"])
+                span = end_at - start_at
+                windows.append(f"between(t,{start_at + span * (step - 1) / total:.2f},"
+                               f"{start_at + span * step / total:.2f})")
+            put(label, f"overlay={bar_x}:{bar_y}:enable='{'+'.join(windows)}'")
 
     if eq_label:
-        # Столбики кладём внутрь карточки, как на макете: один эквалайзер в
-        # кадре читается как часть плеера, два — как украшение.
-        eq_w, eq_h = card_eq_size(size)
+        eq_w, _eq_h = card_eq_size(size)
         eq_x = box_x + box_w - pad - eq_w
-        eq_y = title_y + int(title_size * 0.1)
-        steps.append(f"[{current}][{eq_label}]overlay={eq_x}:{eq_y}[npeq]")
-        current = "npeq"
+        eq_y = title_y + int(title_size * 0.05)
+        put(eq_label, f"overlay={eq_x}:{eq_y}")
     return ";".join(steps), current
+

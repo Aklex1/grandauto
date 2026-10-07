@@ -39,7 +39,8 @@ PRESETS: dict[str, dict] = {
     "aurora": {
         "sky": ((0x0A, 0x0E, 0x1C), (0x2B, 0x24, 0x52)),
         "glow": (0x3E, 0xC8, 0xC0), "glow_at": (0.42, 0.30), "glow_r": 0.58,
-        "moon": (0xF2, 0xF6, 0xFF), "moon_at": (0.80, 0.26), "moon_r": 0.052,
+        "moon": (0xF2, 0xF6, 0xFF), "moon_glow": (0x9E, 0xD8, 0xE8),
+        "moon_at": (0.80, 0.26), "moon_r": 0.052,
         "ridges": (((0x39, 0x3E, 0x75), 0.80, 9, 0.095),
                    ((0x25, 0x29, 0x55), 0.87, 7, 0.105),
                    ((0x14, 0x16, 0x31), 0.93, 5, 0.105)),
@@ -47,7 +48,8 @@ PRESETS: dict[str, dict] = {
     "snow": {
         "sky": ((0x0C, 0x16, 0x30), (0x1E, 0x33, 0x63)),
         "glow": (0x5A, 0xD0, 0xD8), "glow_at": (0.62, 0.24), "glow_r": 0.50,
-        "moon": (0xFF, 0xFF, 0xFF), "moon_at": (0.66, 0.22), "moon_r": 0.060,
+        "moon": (0xFF, 0xFF, 0xFF), "moon_glow": (0x8C, 0xE0, 0xE8),
+        "moon_at": (0.66, 0.22), "moon_r": 0.060,
         "ridges": (((0x44, 0x59, 0x92), 0.80, 9, 0.095),
                    ((0x2C, 0x3C, 0x6E), 0.87, 7, 0.105),
                    ((0x1A, 0x25, 0x48), 0.93, 5, 0.105)),
@@ -84,7 +86,8 @@ PRESETS: dict[str, dict] = {
         "sky": ((0x0C, 0x16, 0x32), (0x20, 0x36, 0x68)),
         "glow": (0x5C, 0xD6, 0xDC), "glow_at": (0.66, 0.22), "glow_r": 0.44,
         "stars": 380,
-        "moon": (0xFF, 0xFF, 0xFF), "moon_at": (0.68, 0.22), "moon_r": 0.085,
+        "moon": (0xFF, 0xFF, 0xFF), "moon_glow": (0x7A, 0xDC, 0xE6),
+        "moon_at": (0.68, 0.22), "moon_r": 0.085,
         "ridges": (((0x3A, 0x4E, 0x8C), 0.80, 8, 0.10),
                    ((0x7C, 0x92, 0xC4), 0.89, 6, 0.08),
                    ((0xDF, 0xE9, 0xF7), 0.95, 5, 0.06)),
@@ -146,14 +149,26 @@ def _moon(cfg: dict) -> Image.Image:
     cx, cy = int(W * cfg["moon_at"][0]), int(H * cfg["moon_at"][1])
     r = int(H * cfg["moon_r"])
 
-    halo = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(halo).ellipse((cx - r * 4, cy - r * 4, cx + r * 4, cy + r * 4), fill=70)
-    halo = halo.filter(ImageFilter.GaussianBlur(radius=r * 1.6))
-    layer.paste(Image.new("RGB", (W, H), cfg["moon"]), (0, 0), halo)
+    # Сияние слоями: одним размытым пятном получается ватный ореол с резкой
+    # границей, а несколько вложенных кругов разной силы дают настоящий спад
+    # яркости — ближе к диску ярче, дальше мягко сходит на нет.
+    glow_tint = cfg.get("moon_glow", cfg["moon"])
+    for spread, strength in ((6.0, 26), (4.2, 40), (2.8, 62), (1.9, 92), (1.35, 140)):
+        ring = Image.new("L", (W, H), 0)
+        rr = int(r * spread)
+        ImageDraw.Draw(ring).ellipse((cx - rr, cy - rr, cx + rr, cy + rr),
+                                     fill=strength)
+        ring = ring.filter(ImageFilter.GaussianBlur(radius=r * spread * 0.42))
+        layer.paste(Image.new("RGB", (W, H), glow_tint), (0, 0), ring)
 
+    # Сам диск с мягким краем: ровная заливка выглядит наклейкой на небе.
     disc = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(disc).ellipse((cx - r, cy - r, cx + r, cy + r), fill=255)
-    disc = disc.filter(ImageFilter.GaussianBlur(radius=max(1, r * 0.04)))
+    dd = ImageDraw.Draw(disc)
+    for step in range(14):
+        k = step / 13
+        rr = max(1, int(r * (1 - k * 0.055)))
+        dd.ellipse((cx - rr, cy - rr, cx + rr, cy + rr), fill=int(170 + k * 85))
+    disc = disc.filter(ImageFilter.GaussianBlur(radius=max(1.0, r * 0.03)))
     layer.paste(Image.new("RGB", (W, H), cfg["moon"]), (0, 0), disc)
     return layer
 
