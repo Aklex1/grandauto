@@ -1616,7 +1616,7 @@ def music_page(request: Request, tab: str = "new", session: Session = Depends(ge
                _user: str = Depends(require_user)):
     from . import musicvideo as mv
 
-    tab = tab if tab in ("new", "library") else "new"
+    tab = tab if tab in ("new", "archive", "library") else "new"
     rows = mv.library(session)
     return templates.TemplateResponse("music.html", base_context(
         request, session, tab=tab, mixes=rows,

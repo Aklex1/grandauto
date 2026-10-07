@@ -185,6 +185,15 @@ def run_ff(args: list[str], *, timeout: float = 3600.0) -> str:
     return proc.stdout
 
 
+def run_ff_bytes(args: list[str], *, timeout: float = 3600.0) -> bytes:
+    """То же, но вывод нужен сырыми байтами — например, кадры в rawvideo."""
+    proc = subprocess.run(args, capture_output=True, timeout=timeout)
+    if proc.returncode != 0:
+        tail = (proc.stderr or b"").decode("utf-8", "replace")[-1500:]
+        raise RuntimeError(f"{args[0]} завершился с кодом {proc.returncode}: {tail}")
+    return proc.stdout
+
+
 def media_duration(path: os.PathLike | str) -> float:
     out = run_ff([
         config.FFPROBE, "-v", "error", "-show_entries", "format=duration",

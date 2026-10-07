@@ -1121,6 +1121,65 @@ def stitch_music(tracks: list[Path], dst: Path, *, crossfade: float = CROSSFADE_
     return fade
 
 
+# Во сколько раз разрыв на стыке может превышать обычный шаг между кадрами,
+# чтобы повтор ещё считался незаметным. На живых клипах pixverse разрыв выходит
+# в десятки раз больше — отсюда и порог с запасом.
+SEAM_OK_RATIO = 4.0
+
+# Длина самосклейки. Секунда — достаточно, чтобы увести рывок, и мало, чтобы
+# наплыв читался как монтажный приём.
+LOOP_OVERLAP = 1.0
+
+
+def loop_seam(path: Path, *, grid: tuple[int, int] = (64, 36)) -> tuple[float, float]:
+    """Насколько рваный стык у клипа. Возвращает (разрыв, обычный шаг).
+
+    Меряем по самим кадрам, а не по обещаниям генератора: модели берут требование
+    замкнуть движение к сведению, но выполнять его нечем, и клип уезжает в одну
+    сторону. Сравниваем последний кадр с первым и смотрим, насколько это больше
+    обычной разницы между соседними кадрами.
+    """
+    width, height = grid
+    raw = storage.run_ff_bytes([
+        config.FFMPEG, "-v", "error", "-i", str(path),
+        "-vf", f"scale={width}:{height},format=gray", "-f", "rawvideo", "-"],
+        timeout=600)
+    size = width * height
+    frames = [raw[at:at + size] for at in range(0, len(raw) - size + 1, size)]
+    if len(frames) < 3:
+        return (0.0, 1.0)
+
+    def gap(a: bytes, b: bytes) -> float:
+        return sum(abs(x - y) for x, y in zip(a, b)) / size
+
+    steps = [gap(frames[i], frames[i + 1]) for i in range(len(frames) - 1)]
+    normal = max(0.01, sum(steps) / len(steps))
+    return (gap(frames[-1], frames[0]), normal)
+
+
+def close_loop(src: Path, dst: Path, *, overlap: float = LOOP_OVERLAP) -> Path:
+    """Замкнуть клип самосклейкой: хвост наплывом переходит в собственное начало.
+
+    Берём клип без первых overlap секунд и наплывом сводим его конец с этим же
+    началом. Последний кадр результата совпадает с первым по построению, поэтому
+    повтор замкнут при любом исходном материале — и, в отличие от зеркального
+    прохода, движение никуда не разворачивается. Цена — короткий наплыв раз в
+    период и потеря overlap секунд длины.
+    """
+    span = _stream_duration(src, "v") or 0.0
+    fade = max(0.3, min(overlap, span / 4.0))
+    if span <= fade * 3:
+        raise RuntimeError(f"клип {span:.1f} с слишком короткий для самосклейки")
+    graph = (f"[0:v]trim=start={fade:.3f},setpts=PTS-STARTPTS[body];"
+             f"[0:v]trim=end={fade:.3f},setpts=PTS-STARTPTS[head];"
+             f"[body][head]xfade=transition=fade:duration={fade:.3f}:"
+             f"offset={span - 2 * fade:.3f}[out]")
+    _ff(["-i", str(src), "-filter_complex", graph, "-map", "[out]",
+         "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+         "-pix_fmt", "yuv420p", str(dst)], timeout=1800)
+    return dst
+
+
 def _mem_available() -> int:
     """Сколько памяти реально доступно прямо сейчас, байт. 0 — узнать не удалось."""
     try:
@@ -1169,13 +1228,46 @@ def build_music_video(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
     chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,"
              f"crop={w}:{h},fps={FPS},format=yuv420p")
     span_in = _stream_duration(loop, "v") or 0.0
-    if pingpong and not can_reverse(span_in, size):
-        # Памяти на разворот не хватит. Это не повод отказываться от ролика:
-        # клип генерировался с требованием замкнуть движение, и обычное
-        # повторение остаётся рабочим вариантом.
-        log.warning("Зеркальное повторение заставки пропущено: мало памяти "
-                    "(доступно %s)", storage.human_size(_mem_available()))
+
+    # Замкнут ли клип на самом деле. Требование «seamless loop» генераторы видео
+    # принимают к сведению, но выполнять им его нечем: клип уезжает в одну
+    # сторону, и на живых примерах разрыв на стыке выходит в десятки раз больше
+    # обычного шага между кадрами. Поэтому не верим, а меряем.
+    try:
+        seam, normal = loop_seam(loop)
+    except Exception as exc:  # noqa: BLE001 — не смогли измерить, идём как раньше
+        log.warning("Стык заставки не измерен: %s", exc)
+        seam, normal = 0.0, 1.0
+    ratio = seam / normal
+    broken = ratio > SEAM_OK_RATIO
+    if broken:
+        log.info("Стык заставки рваный: разрыв в %.0f раз больше обычного шага", ratio)
+
+    if pingpong and broken and not can_reverse(span_in, size):
+        # Памяти на разворот не хватит — починим наплывом, он почти ничего не
+        # требует. Отказываться от починки нельзя: рывок каждые восемь секунд
+        # в получасовом ролике повторится больше двухсот раз.
+        log.warning("Зеркальное повторение пропущено: мало памяти (доступно %s), "
+                    "замыкаю самосклейкой", storage.human_size(_mem_available()))
         pingpong = False
+
+    if broken and not pingpong:
+        # Движение однонаправленное (дождь, дорога) или памяти нет: разворачивать
+        # нельзя, а наплыв хвоста на собственное начало замыкает клип при любом
+        # материале и ничего не отматывает назад.
+        try:
+            closed = workdir / "loop_closed.mp4"
+            workdir.mkdir(parents=True, exist_ok=True)
+            close_loop(loop, closed)
+            loop = closed
+            span_in = _stream_duration(loop, "v") or span_in
+            log.info("Заставка замкнута самосклейкой")
+        except Exception as exc:  # noqa: BLE001 — хуже рывка это не сделает
+            log.warning("Самосклейка не удалась: %s", exc)
+    elif pingpong and not broken:
+        # Клип и так замкнут — разворот только удвоил бы период без нужды.
+        pingpong = False
+
     if pingpong:
         graph = (f"[0:v]{chain},split[fwd][rev];"
                  f"[rev]reverse[back];[fwd][back]concat=n=2:v=1:a=0[out]")

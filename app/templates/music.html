@@ -12,6 +12,7 @@
 
 <div class="tabs">
   <a href="?tab=new" class="{% if tab == 'new' %}active{% endif %}">Создать композицию</a>
+  <a href="?tab=archive" class="{% if tab == 'archive' %}active{% endif %}">Сборка из архива</a>
   <a href="?tab=library" class="{% if tab == 'library' %}active{% endif %}">Библиотека ({{ mixes|length }})</a>
 </div>
 
@@ -39,63 +40,6 @@
 {% endif %}
 
 {% if tab == 'new' %}
-<form method="post" action="/music/import" enctype="multipart/form-data">
-  <fieldset><legend>Собрать из архива с материалами</legend>
-    <p class="small muted">
-      Zip с готовым содержимым. Разбор идёт по типам файлов, а не по раскладке:
-      музыка (<b>mp3, wav, m4a, flac</b>) становится композициями микса, видео —
-      заставкой как есть, картинка — заставкой с медленным наездом туда-обратно,
-      json и txt читаются как подсказка для заголовка и описания. Вложенные папки
-      обходятся, служебное от macOS пропускается, звуковые вставки короче
-      {{ mv_min_track }} секунд не берутся — это не композиции.
-    </p>
-    <p class="small muted">
-      <b>Чего в архиве нет, то догенерируется:</b> не хватает музыки до заказанной
-      длины — Suno допишет недостающее (уже принесённое не оплачивается), нет ни
-      видео, ни картинки — заставка закажется у генератора. Готовый микс попадёт
-      во вкладку «Библиотека».
-    </p>
-    <label>Файл архива
-      <input type="file" name="file" accept=".zip" required></label>
-    <label>Текстовое исследование (необязательно, дополняет найденное в архиве)
-      <textarea name="brief" rows="5" placeholder="Какая нужна композиция, какие инструменты, как она развивается, нужен ли бэк-вокал. Можно по-русски — для генератора это переложится в английское описание."></textarea>
-      <span class="small muted">В архиве исследование ищется само: файлы со
-        словами brief, concept, recipe, development, research в имени — как общий
-        замысел, а пронумерованные json в папке specs — как задания на отдельные
-        композиции, по одному на вещь и в том же порядке.</span></label>
-    <div style="display:flex;gap:16px;flex-wrap:wrap">
-      <label style="flex:1;min-width:160px">Длительность
-        <select name="minutes">
-          <option value="0" selected>по материалам архива</option>
-          {% for m in mv_minutes %}
-          <option value="{{ m }}">{{ m }} минут</option>
-          {% endfor %}
-        </select></label>
-      <label style="flex:1;min-width:200px">Жанр
-        <select name="style">
-          <option value="" selected>определить по архиву</option>
-          {% for s in mv_styles %}
-          <option value="{{ s.key }}">{{ s.label }}</option>
-          {% endfor %}
-        </select>
-        <span class="small muted">Имя вроде soul-notes-007 распознаётся само —
-          жанр нужен, только если в названии его нет.</span></label>
-      <label style="flex:1;min-width:160px">Модель Suno для досбора
-        <select name="suno_model">
-          {% for m in mv_models %}
-          <option value="{{ m }}" {% if m == mv_default_model %}selected{% endif %}>{{ m }}</option>
-          {% endfor %}
-        </select></label>
-      <label style="flex:1;min-width:160px">Язык обвязки
-        <select name="language">
-          <option value="en" selected>Английский — по умолчанию</option>
-          <option value="ru">Русский</option>
-        </select></label>
-    </div>
-    <button class="btn" type="submit">Загрузить и собрать</button>
-  </fieldset>
-</form>
-
 <form method="post" action="/music/create">
   <fieldset><legend>Новая композиция</legend>
     <div style="display:flex;gap:16px;flex-wrap:wrap">
@@ -183,10 +127,107 @@
   </fieldset>
 </form>
 
+{% elif tab == 'archive' %}
+<form method="post" action="/music/import" enctype="multipart/form-data">
+  <fieldset><legend>Собрать из архива с материалами</legend>
+    <p class="small muted">
+      Zip с готовым содержимым. Разбор идёт по типам файлов, а не по раскладке:
+      раскладка в архивах каждый раз своя, а то, что <b>.mp3</b> — это музыка,
+      верно всегда. Манифест, если он есть, читается сверху как подсказка и
+      ничего не требует. Всё, что уже есть в архиве, берётся как есть —
+      генерация включается только там, где дырка.
+    </p>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Что в архиве</th><th>Куда идёт</th><th>Платно</th></tr></thead>
+      <tbody>
+        <tr><td class="small">Сведённый мастер — дорожка в папке
+          <b>master</b> или с <b>full</b> в имени</td>
+          <td class="small">становится всем миксом; длина ролика равна его длине,
+            музыка не заказывается совсем</td><td class="small">нет</td></tr>
+        <tr><td class="small">Отдельные композиции
+          (<b>mp3, wav, m4a, aac, flac, ogg, opus</b>)</td>
+          <td class="small">сшиваются мягкими переходами, в человеческом порядке
+            имён; из <b>variation-01</b> и <b>variation-02</b> берётся первая —
+            это одна вещь в двух версиях</td><td class="small">нет</td></tr>
+        <tr><td class="small">Клип (<b>mp4, mov, webm, mkv</b>)</td>
+          <td class="small">заставка как есть, берётся самый длинный</td>
+          <td class="small">нет</td></tr>
+        <tr><td class="small">Картинка (<b>png, jpg, webp</b>)</td>
+          <td class="small">заставка с медленным наездом туда-обратно; выбор по
+            пропорциям, назначению и номеру версии, а не по весу файла —
+            <b>ACTIVE_PLATES.json</b> важнее всего</td><td class="small">нет</td></tr>
+        <tr><td class="small">Тайм-код: <b>timeline.json</b>, <b>CHAPTERS.txt</b> и
+          подобное</td>
+          <td class="small">берётся оттуда — мастер сведён не нами, и по длинам
+            сырья его не восстановить</td><td class="small">нет</td></tr>
+        <tr><td class="small">Исследование: <b>brief, concept, recipe,
+          development, research</b> в имени; пронумерованные json в <b>specs</b></td>
+          <td class="small">задаёт, что заказывать у Suno: одно задание — одна
+            заявка, в том же порядке</td><td class="small">нет</td></tr>
+        <tr><td class="small">Заголовок и описание в json</td>
+          <td class="small">подставляются в обвязку</td><td class="small">нет</td></tr>
+        <tr><td class="small"><b>Чего в архиве нет</b></td>
+          <td class="small">не хватает музыки до заказанной длины — Suno допишет
+            недостающее по исследованию, причём принесённое второй раз не
+            оплачивается; нет ни клипа, ни картинки — заставка закажется</td>
+          <td class="small">да</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="small muted">
+      Что не берётся: вложенные папки <b>shorts, tests, qa, tools, policy,
+      research</b> — это нарезка, прослушки и контрольные картинки, склеивать
+      микс с его же обрезками нельзя (текст из них читается, там названия и
+      порядок); служебное от macOS; звуковые вставки короче
+      {{ mv_min_track }} секунд. Готовый микс попадёт во вкладку «Библиотека».
+    </p>
+    <label>Файл архива
+      <input type="file" name="file" accept=".zip" required></label>
+    <label>Текстовое исследование (необязательно, дополняет найденное в архиве)
+      <textarea name="brief" rows="5" placeholder="Какая нужна композиция, какие инструменты, как она развивается, нужен ли бэк-вокал. Можно по-русски — для генератора это переложится в английское описание."></textarea>
+      <span class="small muted">В архиве исследование ищется само: файлы со
+        словами brief, concept, recipe, development, research в имени — как общий
+        замысел, а пронумерованные json в папке specs — как задания на отдельные
+        композиции, по одному на вещь и в том же порядке.</span></label>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <label style="flex:1;min-width:160px">Длительность
+        <select name="minutes">
+          <option value="0" selected>по материалам архива</option>
+          {% for m in mv_minutes %}
+          <option value="{{ m }}">{{ m }} минут</option>
+          {% endfor %}
+        </select></label>
+      <label style="flex:1;min-width:200px">Жанр
+        <select name="style">
+          <option value="" selected>определить по архиву</option>
+          {% for s in mv_styles %}
+          <option value="{{ s.key }}">{{ s.label }}</option>
+          {% endfor %}
+        </select>
+        <span class="small muted">Имя вроде soul-notes-007 распознаётся само —
+          жанр нужен, только если в названии его нет.</span></label>
+      <label style="flex:1;min-width:160px">Модель Suno для досбора
+        <select name="suno_model">
+          {% for m in mv_models %}
+          <option value="{{ m }}" {% if m == mv_default_model %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select></label>
+      <label style="flex:1;min-width:160px">Язык обвязки
+        <select name="language">
+          <option value="en" selected>Английский — по умолчанию</option>
+          <option value="ru">Русский</option>
+        </select></label>
+    </div>
+    <button class="btn" type="submit">Загрузить и собрать</button>
+  </fieldset>
+</form>
+
 {% else %}
 
 {% if not mixes %}
-  <p class="muted">Пока пусто. Создайте первую композицию во вкладке «Создать композицию».</p>
+  <p class="muted">Пока пусто. Создайте первую композицию во вкладке «Создать композицию»
+    или загрузите готовые материалы во вкладке «Сборка из архива».</p>
 {% endif %}
 
 {% for mix in mixes %}
