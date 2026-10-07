@@ -1357,14 +1357,21 @@ class GS_Catalog {
         if ($text === '' || $actual <= 0) {
             return $text;
         }
-        return (string) preg_replace_callback(
-            '~^(\d+)\s+звук\w*~u',
+        // Число в описании пишется при генерации и устаревает: в каталоге
+        // «звук печатной машинки» заголовок обещал 15 файлов, а описание —
+        // 42 записи, потому что старый шаблон искал число только в самом
+        // начале строки и только рядом со словом «звук». Ищем первую пару
+        // «число + звуки/записи» где угодно в первом предложении.
+        $fixed = preg_replace_callback(
+            '~(\d+)\s+(звук\w*|запис\w*)~u',
             function () use ($actual) {
                 return self::plural_sounds($actual);
             },
             $text,
-            1
+            1,
+            $hits
         );
+        return $hits > 0 ? (string) $fixed : $text;
     }
 
     public static function short_title($title) {

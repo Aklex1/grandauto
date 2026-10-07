@@ -342,16 +342,29 @@ class GS_Seo {
         if ($title === '') {
             $title = GS_Catalog::short_title((string) $category['slug']);
         }
-        if (mb_strlen($title) > 60) {
-            $title = self::fit_title($title);
+        $count = GS_Catalog::count_sounds($category);
+        $suffix = $count > 0 ? ' — скачать бесплатно, ' . $count . ' MP3' : '';
+
+        // «Скачать бесплатно» важнее описательного хвоста.
+        //
+        // В Вебмастере видно, чем это оборачивалось: «звук печатной машинки»
+        // — 162 показа и ноль кликов, «звук бритвы» — 147 и ноль, «звук
+        // медведя» — 584 показа и три клика, все на шестой-девятой позиции.
+        // В заголовке у них стояло «стук клавиш и каретка», а человек на
+        // этом запросе ищет файл, который можно скачать. Поэтому если
+        // полный заголовок с хвостом не помещается в шестьдесят знаков,
+        // сначала пробуем голову до тире плюс хвост, и только потом —
+        // обрезку по словам без хвоста.
+        if (mb_strlen($title . $suffix) <= 60) {
+            $title .= $suffix;
         } else {
-            // Дописываем «продающий» хвост только если он целиком помещается.
-            $count = GS_Catalog::count_sounds($category);
-            if ($count > 0) {
-                $suffix = ' — скачать бесплатно, ' . $count . ' MP3';
-                if (mb_strlen($title . $suffix) <= 60) {
-                    $title .= $suffix;
-                }
+            $head = preg_split('~\s+[—–-]\s+~u', $title, 2);
+            $head = (is_array($head) && isset($head[0])) ? trim($head[0]) : '';
+            if ($suffix !== '' && $head !== '' && mb_strlen($head) >= 9
+                && mb_strlen($head . $suffix) <= 60) {
+                $title = $head . $suffix;
+            } else {
+                $title = self::fit_title($title);
             }
         }
         if ($ctx['page'] > 1) {
