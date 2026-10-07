@@ -154,12 +154,27 @@ class GS_Sitemap {
                 continue;
             }
             $slug = (string) $row['slug'];
+            $count = (int) ($row['count'] ?? 0);
+            $lastmod = self::file_date(GS_Storage::base_dir() . '/cats/' . $slug . '.json');
             $urls[] = array(
                 'loc'        => GS_Catalog::category_url($slug),
-                'lastmod'    => self::file_date(GS_Storage::base_dir() . '/cats/' . $slug . '.json'),
-                'priority'   => ((int) ($row['count'] ?? 0) > 0) ? '0.8' : '0.4',
+                'lastmod'    => $lastmod,
+                'priority'   => $count > 0 ? '0.8' : '0.4',
                 'changefreq' => 'weekly',
             );
+
+            // Крупные подборки не умещаются на одну страницу, а листалка
+            // видна только внизу: без карты робот доходит до второй страницы
+            // месяцами, хотя там такие же звуки со своими названиями.
+            $pages = (int) ceil($count / GS_Catalog::SOUNDS_PER_PAGE);
+            for ($page = 2; $page <= $pages; $page++) {
+                $urls[] = array(
+                    'loc'        => GS_Catalog::page_url($slug, $page),
+                    'lastmod'    => $lastmod,
+                    'priority'   => '0.5',
+                    'changefreq' => 'weekly',
+                );
+            }
         }
 
         $extra = array(GS_Pages::get_studio_url(), GS_Pages::get_showcase_url(), GS_Api_Page::get_url(), GS_Course::get_url());
