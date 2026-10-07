@@ -873,6 +873,8 @@ class MusicShort(Base):
     title: Mapped[str] = mapped_column(String(300), default="")
     path: Mapped[str] = mapped_column(String(500), default="")
     poster_path: Mapped[str] = mapped_column(String(500), default="")
+    # Вертикальная обложка 1080×1920 — рисуется из кадра самого отрывка.
+    cover_path: Mapped[str] = mapped_column(String(500), default="")
     start_sec: Mapped[float] = mapped_column(Float, default=0.0)
     duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
     file_size: Mapped[int] = mapped_column(Integer, default=0)

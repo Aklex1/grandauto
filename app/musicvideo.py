@@ -365,14 +365,18 @@ def backdrop_dir() -> Path:
     return path
 
 
-def suno_prompt(style: Style, index: int) -> str:
+def suno_prompt(style: Style, index: int, offset: int = 0) -> str:
     """Описание музыки для одной заявки: жанр плюс оттенок.
 
     С одинаковым промптом Suno выдаёт почти неотличимые куски, и микс начинает
     звучать как один трек, зацикленный восемь раз. Оттенок меняет материал, но
     оставляет жанр — переходы между треками остаются мягкими.
+
+    offset сдвигает начало круга оттенков. Без него два микса одного жанра
+    просили у Suno буквально одно и то же в одном порядке и выходили похожими
+    друг на друга — ровно та жалоба, с которой это и всплыло.
     """
-    mood = style.moods[index % len(style.moods)]
+    mood = style.moods[(index + offset) % len(style.moods)]
     return (f"{style.suno}. Variation: {mood}. "
             f"Make it as long as possible, one continuous instrumental piece.")
 
@@ -586,7 +590,8 @@ def ensure_tracks(video_id: int, *, target_sec: float, model: str,
             jobs = []
             for offset in range(wave):
                 slot = batch_no + offset
-                prompt = plan[slot] if slot < len(plan) else suno_prompt(style, slot)
+                prompt = (plan[slot] if slot < len(plan)
+                          else suno_prompt(style, slot, offset=video_id))
                 jobs.append(pool.submit(_fetch_batch, client, prompt, model=model,
                                         dest_dir=dest_dir, index=slot))
             results = []
@@ -1773,7 +1778,7 @@ def create_for_channel(session: Session, channel, *, minutes: int = 0,
                    minutes=minutes or channel.minutes,
                    suno_model=channel.suno_model or DEFAULT_SUNO_MODEL,
                    title=title, language=channel.language or "en",
-                   brief=channel.brief or "")
+                   brief=channel.brief or "", want_cover=want_cover)
     video.channel_id = channel.id
     video.want_cover = bool(want_cover)
     session.commit()
@@ -1782,7 +1787,8 @@ def create_for_channel(session: Session, channel, *, minutes: int = 0,
 
 def create(session: Session, *, style: str, minutes: int = DEFAULT_MINUTES,
            suno_model: str = DEFAULT_SUNO_MODEL, title: str = "",
-           language: str = "en", brief: str = "") -> MusicVideo:
+           language: str = "en", brief: str = "",
+           want_cover: bool = False) -> MusicVideo:
     style_row = style_of(style)
     video = MusicVideo(
         title=title.strip()[:300], style=style_row.key, style_label=style_row.label,
@@ -1948,6 +1954,7 @@ def make_short(video_id: int, *, seed: int = 0) -> int:
             logo = storage.abspath(logo_row.path) if logo_row else None
         made = len(session.execute(
             select(MusicShort).where(MusicShort.video_id == video_id)).scalars().all())
+        style_of_video = style_of(video.style).label
 
     if not audio.is_file() or not loop.is_file():
         raise RuntimeError("файлы микса не найдены на диске")
@@ -1975,10 +1982,26 @@ def make_short(video_id: int, *, seed: int = 0) -> int:
         log.warning("Превью отрывка не снято: %s", exc)
         poster = None
 
+    # Вертикальная обложка из кадра самого отрывка: та же сцена, что в нём
+    # движется, поэтому обложка и ролик — одно целое.
+    cover = None
+    if poster is not None:
+        from . import chrome
+
+        try:
+            cover = dest.with_name(dest.stem + "_cover.jpg")
+            chrome.cover(cover, poster, title=caption or style_of_video,
+                         note=channel_name, badge=f"{span:.0f} sec", logo=logo,
+                         accent=made, size=chrome.COVER_VERTICAL)
+        except Exception as exc:  # noqa: BLE001 — отрывок важнее обложки
+            log.warning("Обложка отрывка не нарисована: %s", exc)
+            cover = None
+
     with session_scope() as session:
         row = MusicShort(video_id=video_id, title=caption[:300],
                          path=storage.rel(dest),
                          poster_path=storage.rel(poster) if poster else "",
+                         cover_path=storage.rel(cover) if cover else "",
                          start_sec=start, duration_sec=storage.media_duration(dest),
                          file_size=dest.stat().st_size)
         session.add(row)

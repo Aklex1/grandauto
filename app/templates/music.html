@@ -409,7 +409,14 @@
         <video controls preload="none" style="width:100%;margin:6px 0"
           {% if sh.poster_path %}poster="/media/{{ sh.poster_path }}"{% endif %}
           src="/media/{{ sh.path }}"></video>
+        {% if sh.cover_path %}
+        <img src="/media/{{ sh.cover_path }}" alt="обложка"
+             style="width:100%;border-radius:6px;margin-bottom:6px">
+        {% endif %}
         <a class="btn btn-sm" href="/media/{{ sh.path }}" download>Скачать</a>
+        {% if sh.cover_path %}
+        <a class="btn btn-sm btn-ghost" href="/media/{{ sh.cover_path }}" download>Обложка</a>
+        {% endif %}
         <form method="post" action="/music/shorts/{{ sh.id }}/drop" style="display:inline">
           <input type="hidden" name="back" value="/music?tab=library">
           <button class="btn btn-sm btn-ghost" type="submit">Убрать</button>
