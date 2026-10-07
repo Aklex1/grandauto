@@ -700,7 +700,7 @@ def _note(level: str, message: str) -> None:
         session.commit()
 
 
-def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "en") -> None:
+def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "") -> None:
     """Собрать музыкальное видео целиком. Повторный вызов не платит дважды.
 
     Порядок шагов выбран по цене: сначала музыка (самое дорогое и самое хрупкое),
@@ -715,6 +715,9 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "en") -
         video.error = ""
         session.commit()
         style_key, minutes = video.style, video.minutes
+        # Язык берём у микса, если вызов его не назвал: пересборка не должна
+        # менять язык уже написанного описания.
+        language = language or video.language or "en"
         suno_model = video.suno_model or DEFAULT_SUNO_MODEL
         image_model = st.get(session, "default_image_model", "nano-banana-2")
         video_model = st.get(session, "default_video_model", "")
@@ -833,7 +836,8 @@ def library(session: Session) -> list[MusicVideo]:
 
 
 def create(session: Session, *, style: str, minutes: int = DEFAULT_MINUTES,
-           suno_model: str = DEFAULT_SUNO_MODEL, title: str = "") -> MusicVideo:
+           suno_model: str = DEFAULT_SUNO_MODEL, title: str = "",
+           language: str = "en") -> MusicVideo:
     style_row = style_of(style)
     video = MusicVideo(
         title=title.strip()[:300], style=style_row.key, style_label=style_row.label,
@@ -842,6 +846,7 @@ def create(session: Session, *, style: str, minutes: int = DEFAULT_MINUTES,
         # в размер файла и время кодирования.
         minutes=max(5, min(180, int(minutes or DEFAULT_MINUTES))),
         suno_model=suno_model if suno_model in SUNO_MODELS else DEFAULT_SUNO_MODEL,
+        language="ru" if language == "ru" else "en",
         status="queued", stage="queued")
     session.add(video)
     session.commit()

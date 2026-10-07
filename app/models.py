@@ -676,6 +676,9 @@ class MusicVideo(Base):
     style_label: Mapped[str] = mapped_column(String(200), default="")
     minutes: Mapped[int] = mapped_column(Integer, default=30)
     suno_model: Mapped[str] = mapped_column(String(40), default="")
+    # Язык заголовка и описания. Хранится у микса, чтобы пересборка не
+    # переписала русское описание английским.
+    language: Mapped[str] = mapped_column(String(8), default="en")
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     stage: Mapped[str] = mapped_column(String(40), default="queued")
     # Заставка: своя запись в библиотеке лупов, чтобы один клип обслуживал все

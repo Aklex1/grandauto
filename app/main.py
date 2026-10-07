@@ -1638,7 +1638,7 @@ def music_create(session: Session = Depends(get_session), _user: str = Depends(r
     if style not in mv.STYLES:
         return RedirectResponse("/music?error=style", status_code=303)
     video = mv.create(session, style=style, minutes=minutes, suno_model=suno_model,
-                      title=title)
+                      title=title, language=language)
     queue.enqueue(session, "music_video", payload={
         "video_id": video.id, "language": "ru" if language == "ru" else "en",
         # Заставка жанра переиспользуется: перегенерация — отдельная галочка,
@@ -1650,8 +1650,7 @@ def music_create(session: Session = Depends(get_session), _user: str = Depends(r
 
 @app.post("/music/{video_id}/run")
 def music_run(video_id: int, session: Session = Depends(get_session),
-              _user: str = Depends(require_user), language: str = Form("en"),
-              new_backdrop: str = Form("")):
+              _user: str = Depends(require_user), new_backdrop: str = Form("")):
     """Дособрать или пересобрать микс: уже скачанные треки не оплачиваются заново."""
     from .models import MusicVideo
 
@@ -1662,8 +1661,9 @@ def music_run(video_id: int, session: Session = Depends(get_session),
     video.stage = "queued"
     video.error = ""
     session.commit()
+    # Язык описания у микса свой — пересборка его не меняет.
     queue.enqueue(session, "music_video", payload={
-        "video_id": video_id, "language": "ru" if language == "ru" else "en",
+        "video_id": video_id, "language": video.language or "en",
         "reuse_backdrop": not bool(new_backdrop),
     })
     return RedirectResponse(f"/music?tab=library&queued={video_id}", status_code=303)

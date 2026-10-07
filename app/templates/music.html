@@ -201,13 +201,11 @@
 
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
     <form method="post" action="/music/{{ mix.id }}/run">
-      <input type="hidden" name="language" value="en">
       <button class="btn btn-sm" type="submit">
         {% if mix.status == 'done' %}Пересобрать{% else %}Дособрать{% endif %}</button>
     </form>
     <form method="post" action="/music/{{ mix.id }}/run"
           onsubmit="return confirm('Заставка жанра будет сгенерирована заново — это платно. Продолжить?')">
-      <input type="hidden" name="language" value="en">
       <input type="hidden" name="new_backdrop" value="1">
       <button class="btn btn-sm btn-ghost" type="submit">Пересобрать с новой заставкой</button>
     </form>
