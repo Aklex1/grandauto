@@ -139,6 +139,23 @@ def ensure_default(session: Session) -> Optional[MusicChannel]:
             log.warning("Клип %s не добавлен: %s", path.name, exc)
     if added:
         log.info("Канал %s: добавлено из поставки %s клипов", row.slug, added)
+
+    # Чего в поставке больше нет, то убираем из выдачи: клип могли изъять
+    # намеренно — скажем, потому что в нём вшита обвязка, которую завод теперь
+    # накладывает сам, и она пошла бы вторым слоем. Файл на диске остаётся.
+    present = {path.stem for path in folder.glob("*.*")}
+    gone = 0
+    for asset in session.execute(
+            select(MusicAsset).where(MusicAsset.channel_id == row.id,
+                                     MusicAsset.source == "bundled",
+                                     MusicAsset.is_active.is_(True))).scalars():
+        if asset.title not in present:
+            asset.is_active = False
+            gone += 1
+    if gone:
+        session.commit()
+        log.info("Канал %s: убрано из выдачи %s клипов, которых больше нет в поставке",
+                 row.slug, gone)
     return row
 
 
