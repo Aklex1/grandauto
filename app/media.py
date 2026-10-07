@@ -1218,7 +1218,8 @@ def build_music_video(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
                       equalizer: bool = False,
                       cards: Optional[list[dict]] = None,
                       artist: str = "", header_text: str = "", tagline: str = "",
-                      logo: Optional[Path] = None) -> Path:
+                      logo: Optional[Path] = None, mascot: Optional[Path] = None,
+                      seed: int = 0) -> Path:
     """Собрать длинный ролик: заставка по кругу плюс готовый микс.
 
     Полчаса FullHD кодировать целиком не нужно и незачем: заставка — это один и
@@ -1316,7 +1317,8 @@ def build_music_video(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
         # карточка «сейчас играет» без точных стыков врала бы весь ролик.
         build_music_video_eq(long_video, audio, dst, duration, cards=cards,
                              size=size, artist=artist, chrome_dir=workdir / "chrome",
-                             header_text=header_text, tagline=tagline, logo=logo)
+                             header_text=header_text, tagline=tagline, logo=logo,
+                             mascot=mascot, seed=seed)
     else:
         _ff([
             "-i", str(long_video), "-i", str(audio),
@@ -1443,9 +1445,51 @@ def equalizer_filter(width: int = EQ_WIDTH, height: int = EQ_HEIGHT,
     return (f"[aviz]showfreqs=s={bars}x{height}:mode=bar:ascale=log:fscale=log:"
             f"win_size=2048:colors={color},"
             f"scale={width}:{height}:flags=neighbor,format=rgba,"
-            f"lumakey=threshold=0.16:tolerance=0.10,"
+            f"lumakey=threshold=0.26:tolerance=0.16,"
             f"colorchannelmixer=aa={alpha:.2f}[eqbars];"
             f"[eqbars][{comb_label}]blend=all_mode=multiply[eq]")
+
+
+def w_of(size: tuple[int, int]) -> int:
+    return size[0]
+
+
+def h_of(size: tuple[int, int]) -> int:
+    return size[1]
+
+
+# Маскот: белая лиса. Выбегает редко — раз примерно в десять минут, иначе из
+# приёма превращается в мельтешение. Действие каждый раз своё.
+FOX_EVERY = 600.0
+FOX_JITTER = 120.0
+FOX_RUN_SEC = 9.0
+FOX_SIT_SEC = 14.0
+FOX_HEIGHT = 0.115          # доля высоты кадра
+FOX_GROUND = 0.775          # где у неё лапы
+
+
+def fox_plan(duration: float, seed: int = 0) -> list[dict]:
+    """Когда и что делает лиса: [{at, action, span}].
+
+    Первый выход не в самом начале и не в конце: там идут интро и оутро, и
+    маскот поверх титров выглядит случайностью, а не задумкой.
+    """
+    import random as _random
+
+    rnd = _random.Random(seed or 1)
+    out: list[dict] = []
+    at = FOX_EVERY * rnd.uniform(0.45, 0.8)
+    while at + FOX_SIT_SEC < duration - 20:
+        action = rnd.choice(("run", "sit", "run", "sit", "run"))
+        span = FOX_RUN_SEC if action == "run" else FOX_SIT_SEC
+        out.append({"at": round(at, 2), "action": action, "span": span})
+        at += FOX_EVERY + rnd.uniform(-FOX_JITTER, FOX_JITTER)
+    return out
+
+
+def fox_frames(folder: Path) -> tuple[Path, Path]:
+    """Где лежат кадры бега и сидения."""
+    return folder / "run", folder / "sit"
 
 
 def build_music_video_eq(loop_long: Path, audio: Path, dst: Path, duration: float,
@@ -1455,7 +1499,8 @@ def build_music_video_eq(loop_long: Path, audio: Path, dst: Path, duration: floa
                          size: tuple[int, int] = (1920, 1080),
                          artist: str = "", chrome_dir: Optional[Path] = None,
                          header_text: str = "", tagline: str = "",
-                         logo: Optional[Path] = None) -> Path:
+                         logo: Optional[Path] = None,
+                         mascot: Optional[Path] = None, seed: int = 0) -> Path:
     """Собрать ролик с обвязкой поверх картинки.
 
     Этот путь дороже обычного: картинку приходится перекодировать целиком, потому
@@ -1506,7 +1551,55 @@ def build_music_video_eq(loop_long: Path, audio: Path, dst: Path, duration: floa
         card_graph, out = now_playing_graph(
             cards, size, source="0:v", artist=artist, eq_label="eq",
             header_label=header_label, card_label=card_label, bar_labels=bar_labels)
-        graph += card_graph + f";[{out}]null[v]"
+        graph += card_graph
+
+        # Лиса поверх всего: она часть кадра, а не часть плашки.
+        if mascot is not None and mascot.is_dir():
+            run_dir, sit_dir = fox_frames(mascot)
+            plan = fox_plan(duration, seed)
+            fox_h = int(h_of(size) * FOX_HEIGHT)
+            fox_w = int(fox_h * 1.5)
+            ground = int(h_of(size) * FOX_GROUND) - fox_h
+            per_action: dict[str, list[dict]] = {"run": [], "sit": []}
+            for item in plan:
+                per_action[item["action"]].append(item)
+
+            for action, items in per_action.items():
+                folder = run_dir if action == "run" else sit_dir
+                if not items or not folder.is_dir() or not any(folder.glob("*.png")):
+                    continue
+                rate = 14 if action == "run" else 10
+                label = f"{index}:v"
+                inputs += ["-framerate", str(rate), "-stream_loop", "-1",
+                           "-i", str(folder / "f%03d.png")]
+                index += 1
+                scaled = f"fox{action}"
+                graph += f";[{label}]scale={fox_w}:{fox_h}[{scaled}]"
+                if len(items) > 1:
+                    outs = "".join(f"[{scaled}{i}]" for i in range(len(items)))
+                    graph += f";[{scaled}]split={len(items)}{outs}"
+                    labels = [f"{scaled}{i}" for i in range(len(items))]
+                else:
+                    labels = [scaled]
+
+                for item, lab in zip(items, labels):
+                    at, span = item["at"], item["span"]
+                    if action == "run":
+                        # Пробегает весь кадр слева направо.
+                        x = (f"'-{fox_w}+({w_of(size)}+{fox_w})*(t-{at:.2f})/{span:.2f}'")
+                    else:
+                        # Выходит сбоку, садится, машет хвостом и уходит.
+                        stop = int(w_of(size) * 0.16)
+                        x = (f"'if(lt(t-{at:.2f},2),-{fox_w}+({stop}+{fox_w})*(t-{at:.2f})/2,"
+                             f"if(gt(t-{at:.2f},{span - 2:.2f}),"
+                             f"{stop}+({w_of(size)}+{fox_w})*((t-{at:.2f})-{span - 2:.2f})/2,"
+                             f"{stop}))'")
+                    nxt = f"fx{index}_{int(at)}"
+                    graph += (f";[{out}][{lab}]overlay=x={x}:y={ground}:eval=frame:"
+                              f"enable='between(t,{at:.2f},{at + span:.2f})'[{nxt}]")
+                    out = nxt
+
+        graph += f";[{out}]null[v]"
 
     _ff([
         *inputs,

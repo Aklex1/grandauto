@@ -1505,6 +1505,9 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
     equalizer = False
     now_playing = False
     channel_name = ""
+    tagline = ""
+    mascot_dir = None
+    logo_file = None
     if channel_id:
         from .models import MusicChannel
 
@@ -1514,6 +1517,13 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
                 equalizer = bool(row.equalizer)
                 now_playing = bool(row.now_playing)
                 channel_name = row.name
+                tagline = row.subtitle
+                mascot_dir = Path(__file__).resolve().parent.parent / "assets" / "mascot"
+                logo_row = None
+                from . import musicchannels as _mch
+
+                logo_row = _mch.one(session, channel_id, "logo")
+                logo_file = storage.abspath(logo_row.path) if logo_row else None
         # Язык берём у микса, если вызов его не назвал: пересборка не должна
         # менять язык уже написанного описания.
         language = language or video.language or "en"
@@ -1622,7 +1632,11 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
         media.build_music_video(loop_file, mix, body, size, duration, folder / "render",
                                 pingpong=style.pingpong or from_image,
                                 equalizer=equalizer, cards=cards,
-                                artist=channel_name)
+                                artist=channel_name,
+                                header_text=(f"{channel_name} RADIO"
+                                             if channel_name else ""),
+                                tagline=tagline, logo=logo_file,
+                                mascot=mascot_dir, seed=video_id)
         if body != out:
             media.wrap_video(body, out, intro=intro_file, outro=outro_file,
                              size=size, workdir=folder / "wrap")
