@@ -1632,13 +1632,14 @@ def music_page(request: Request, tab: str = "new", session: Session = Depends(ge
 def music_create(session: Session = Depends(get_session), _user: str = Depends(require_user),
                  style: str = Form(...), minutes: int = Form(30),
                  suno_model: str = Form(""), title: str = Form(""),
-                 language: str = Form("en"), new_backdrop: str = Form("")):
+                 language: str = Form("en"), new_backdrop: str = Form(""),
+                 brief: str = Form("")):
     from . import musicvideo as mv
 
     if style not in mv.STYLES:
         return RedirectResponse("/music?error=style", status_code=303)
     video = mv.create(session, style=style, minutes=minutes, suno_model=suno_model,
-                      title=title, language=language)
+                      title=title, language=language, brief=brief)
     queue.enqueue(session, "music_video", payload={
         "video_id": video.id, "language": "ru" if language == "ru" else "en",
         # Заставка жанра переиспользуется: перегенерация — отдельная галочка,
@@ -1679,7 +1680,8 @@ async def music_import(request: Request, session: Session = Depends(get_session)
             style=str(form.get("style") or ""),
             minutes=int(float(form.get("minutes") or 0)),
             suno_model=str(form.get("suno_model") or mv.DEFAULT_SUNO_MODEL),
-            language=str(form.get("language") or "en"))
+            language=str(form.get("language") or "en"),
+            brief=str(form.get("brief") or ""))
     except mv.ImportError_ as exc:
         return RedirectResponse(f"/music?error=bad-zip&detail={str(exc)[:160]}",
                                 status_code=303)

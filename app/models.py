@@ -684,6 +684,19 @@ class MusicVideo(Base):
     # Распакованный архив с готовыми материалами, если микс собирается из него.
     # Пустая строка — обычная генерация с нуля.
     source_dir: Mapped[str] = mapped_column(String(500), default="")
+    # Тайм-код, пришедший в архиве. Он важнее нашего счёта: мастер сведён не
+    # нами, и длины сырья к нему не сходятся.
+    chapters_src: Mapped[str] = mapped_column(Text, default="")
+    # В архиве пришла сведённая дорожка. Тогда музыка не генерируется совсем и
+    # длина микса равна длине мастера: дописывать к готовой работе чужое — брак.
+    master_ready: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Текстовое исследование: какая нужна композиция, какие инструменты, как она
+    # развивается, какой бэк-вокал. Задаёт, что именно заказывать у Suno, вместо
+    # общего описания жанра.
+    brief: Mapped[str] = mapped_column(Text, default="")
+    # Готовые задания на композиции, выжатые из исследования. Храним, чтобы
+    # пересборка не просила модель пересказывать то же самое заново.
+    plan_json: Mapped[str] = mapped_column(Text, default="")
     # Заставка из архива: готовый клип или картинка. Если она есть, генерировать
     # заставку не нужно — это самая дорогая часть, и платить за неё незачем.
     backdrop_src: Mapped[str] = mapped_column(String(500), default="")
@@ -716,6 +729,12 @@ class MusicVideo(Base):
     tracks: Mapped[list["MusicVideoTrack"]] = relationship(
         back_populates="video", cascade="all, delete-orphan",
         order_by="MusicVideoTrack.idx")
+
+    @property
+    def plan(self) -> list:
+        """Задания на композиции списком — для показа в панели."""
+        rows = JSONMixin.loads(self.plan_json, [])
+        return [str(row) for row in rows] if isinstance(rows, list) else []
 
 
 class MusicVideoTrack(Base):

@@ -505,15 +505,14 @@ def _tracks_of(session: Session, video_id: int) -> list[MusicVideoTrack]:
             and row.duration_sec > 1]
 
 
-def _fetch_batch(client: KieClient, style: Style, *, model: str, index: int,
-                 dest_dir: Path) -> list[dict]:
+def _fetch_batch(client: KieClient, prompt: str, *, model: str,
+                 dest_dir: Path, index: int) -> list[dict]:
     """Одна заявка к Suno: сгенерировать, скачать все варианты, измерить.
 
     Выполняется в отдельном потоке и НЕ трогает базу — только сеть и диск.
     Запись в базу делает вызывающий в своей транзакции: общая сессия
     SQLAlchemy на несколько потоков уже однажды обошлась нам сломанной сборкой.
     """
-    prompt = suno_prompt(style, index)
     pairs = music.generate_tracks(client, prompt, model=model, timeout=1800)
     out: list[dict] = []
     for number, (url, title) in enumerate(pairs):
@@ -558,6 +557,14 @@ def ensure_tracks(video_id: int, *, target_sec: float, model: str,
     batch_no = next_idx
     failures: list[str] = []
 
+    # Исследование из архива важнее общего описания жанра: человек написал, какие
+    # нужны инструменты, как развивается вещь и нужен ли бэк-вокал — заказываем
+    # именно это. Задания считаются один раз и запоминаются у микса.
+    left_sec = max(0.0, target_sec - effective_duration(lengths, fade))
+    plan = ensure_plan(video_id, count=math.ceil(left_sec / (ASSUMED_TRACK_SEC * 2)) + 1)
+    if plan:
+        log.info("Микс #%s: заказ идёт по исследованию, заданий %s", video_id, len(plan))
+
     while effective_duration(lengths, fade) < target_sec and batches < MAX_BATCHES:
         # Сколько заявок ещё нужно: пока длина треков неизвестна, берём
         # осторожную оценку, а со второго круга — уже измеренную среднюю.
@@ -567,9 +574,12 @@ def ensure_tracks(video_id: int, *, target_sec: float, model: str,
         wave = min(BATCH_CONCURRENCY, want, MAX_BATCHES - batches)
 
         with ThreadPoolExecutor(max_workers=wave) as pool:
-            jobs = [pool.submit(_fetch_batch, client, style, model=model,
-                                index=batch_no + offset, dest_dir=dest_dir)
-                    for offset in range(wave)]
+            jobs = []
+            for offset in range(wave):
+                slot = batch_no + offset
+                prompt = plan[slot] if slot < len(plan) else suno_prompt(style, slot)
+                jobs.append(pool.submit(_fetch_batch, client, prompt, model=model,
+                                        dest_dir=dest_dir, index=slot))
             results = []
             for job in jobs:
                 try:
@@ -638,8 +648,8 @@ def fallback_meta(style: Style, minutes: int, language: str) -> tuple[str, str]:
 
 
 def make_meta(session: Session, video: MusicVideo, tracks: list[MusicVideoTrack],
-              language: str = "en") -> tuple[str, str, list[str]]:
-    """Заголовок, описание и теги. Тайм-код подставляем свой — он точный."""
+              language: str = "en", chapters: str = "") -> tuple[str, str, list[str]]:
+    """Заголовок, описание и теги. Тайм-код свой, если архив не принёс готовый."""
     style = style_of(video.style)
     minutes = int(round(video.duration_sec / 60)) or video.minutes
     title, description = fallback_meta(style, minutes, language)
@@ -675,7 +685,8 @@ def make_meta(session: Session, video: MusicVideo, tracks: list[MusicVideoTrack]
             log.warning("Описание микса #%s не сгенерировано: %s", video.id, exc)
 
     head = "Тайм-код:" if language == "ru" else "Tracklist:"
-    description = f"{description.strip()}\n\n{head}\n{tracklist_text(tracks)}"
+    body = chapters.strip() or tracklist_text(tracks)
+    description = f"{description.strip()}\n\n{head}\n{body}"
     if tags:
         description += "\n\n" + " ".join("#" + t.replace(" ", "") for t in tags[:14])
     return title, description, tags
@@ -694,6 +705,25 @@ TEXT_EXT = {".json", ".txt", ".md"}
 
 # Служебное добро, которое кладут рядом macOS и архиваторы.
 SKIP_PARTS = ("__MACOSX", ".DS_STORE")
+
+# Папки с производным материалом. Их содержимое звучит как музыка и весит как
+# музыка, но в микс ему нельзя: шортсы — это нарезка из него же, тесты —
+# прослушки на 20–80 секунд, qa — контрольные картинки. Взять их значит склеить
+# микс с собственными обрезками. Текстовые файлы отсюда читаем всё равно: в
+# specs и provenance лежат названия и порядок.
+SKIP_MEDIA_DIRS = {"shorts", "short", "tests", "test", "samples", "sample",
+                   "preview", "previews", "qa", "tools", "policy", "research",
+                   "node_modules", "cache", "tmp"}
+
+# Готовый мастер. Если в пакете есть сведённая дорожка, она и есть микс: сшивать
+# сырьё заново — значит выбросить работу, которая уже сделана и оплачена.
+MASTER_DIRS = {"master", "masters", "final", "mix"}
+MASTER_WORDS = ("master", "-full", "_full", "full-", "full_")
+
+# Варианты одной композиции. Suno отдаёт на заявку несколько дублей, и в архиве
+# они лежат рядом: variation-01 и variation-02 — это ОДНА вещь в двух версиях.
+# Поставить их подряд значит проиграть одну композицию дважды.
+VARIATION = re.compile(r"(variation|variant|take|version|alt)[-_ ]*(\d+)", re.I)
 
 # Короткая звуковая вставка — не композиция микса: это джингл, отбивка или
 # пример. Берём только то, что тянет на трек.
@@ -717,22 +747,204 @@ def _usable(path: Path) -> bool:
     return not any(part in upper for part in SKIP_PARTS)
 
 
+def _derived(path: Path, root: Path) -> bool:
+    """Лежит ли файл в папке с производным материалом."""
+    parts = {part.lower() for part in path.relative_to(root).parts[:-1]}
+    return bool(parts & SKIP_MEDIA_DIRS)
+
+
 def _collect(root: Path) -> dict[str, list[Path]]:
-    """Раскладываем всё, что есть в архиве, по видам."""
+    """Раскладываем всё, что есть в архиве, по видам.
+
+    Медиа из папок с производным материалом не берём, а текст берём откуда
+    угодно: названия и порядок часто лежат именно в служебных папках.
+    """
     found: dict[str, list[Path]] = {"audio": [], "video": [], "image": [], "text": []}
     for path in sorted(root.rglob("*"), key=lambda p: _natural(p.name)):
         if not _usable(path):
             continue
         ext = path.suffix.lower()
+        if ext in TEXT_EXT:
+            found["text"].append(path)
+            continue
+        if _derived(path, root):
+            continue
         if ext in AUDIO_EXT:
             found["audio"].append(path)
         elif ext in VIDEO_EXT:
             found["video"].append(path)
         elif ext in IMAGE_EXT:
             found["image"].append(path)
-        elif ext in TEXT_EXT:
-            found["text"].append(path)
     return found
+
+
+def _is_master(path: Path, root: Path) -> bool:
+    rel = path.relative_to(root)
+    if {part.lower() for part in rel.parts[:-1]} & MASTER_DIRS:
+        return True
+    low = path.stem.lower()
+    return any(word in low for word in MASTER_WORDS)
+
+
+def pick_music(paths: list[Path], root: Path) -> tuple[list[Path], bool]:
+    """Что из звука пакета действительно составляет микс.
+
+    Возвращает (файлы, это ли готовый мастер). Порядок решений важен: сначала
+    ищем сведённую дорожку, и только если её нет — собираем из сырья, по одному
+    варианту на композицию.
+    """
+    masters = [p for p in paths if _is_master(p, root)]
+    if masters:
+        # Мастеров может лежать несколько версий — берём самый длинный.
+        best = max(masters, key=lambda p: storage.media_duration(p))
+        return [best], True
+
+    # Дубли одной композиции: группируем по папке плюс имя без номера варианта.
+    groups: dict[tuple, list[tuple[int, Path]]] = {}
+    plain: list[Path] = []
+    for path in paths:
+        match = VARIATION.search(path.stem)
+        if not match:
+            plain.append(path)
+            continue
+        key = (path.parent.parent if path.parent.name.lower() == "raw" else path.parent,
+               VARIATION.sub("", path.stem).strip("-_ ").lower())
+        groups.setdefault(key, []).append((int(match.group(2)), path))
+
+    chosen = list(plain)
+    for key in groups:
+        # Первый вариант — тот, который слушали при приёмке.
+        chosen.append(min(groups[key], key=lambda pair: pair[0])[1])
+    chosen.sort(key=lambda p: (_natural(str(p.parent)), _natural(p.name)))
+    return chosen, False
+
+
+def _plate_score(path: Path, root: Path) -> tuple:
+    """Насколько картинка годится в заставку длинного ролика.
+
+    Решает не вес файла, а пропорции и назначение: вертикальная плашка для
+    шортса может быть тяжелее горизонтальной, но в ролик 16:9 она не подходит.
+    """
+    rel = str(path.relative_to(root)).lower()
+    width, height = _dimensions(path)
+    landscape = 2 if width and height and width > height else 0
+    named = 3 if ("master" in rel or "landscape" in rel) else 0
+    version = max([int(num) for num in re.findall(r"v(\d+)", rel)] or [0])
+    return (landscape + named, version, width * height, path.stat().st_size)
+
+
+def _active_plate(texts: list[Path], images: list[Path]) -> Optional[Path]:
+    """Картинка, названная в архиве действующей.
+
+    Пакеты часто держат несколько версий плашек и отдельный файл с указанием,
+    какая из них в работе. Такое указание важнее любых наших догадок.
+    """
+    names: list[str] = []
+    for path in texts:
+        if "active" not in path.stem.lower() or path.suffix.lower() != ".json":
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, ValueError):
+            continue
+
+        def walk(node):
+            if isinstance(node, str):
+                if Path(node).suffix.lower() in IMAGE_EXT:
+                    names.append(Path(node).name.lower())
+            elif isinstance(node, dict):
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(data)
+    for name in names:
+        for image in images:
+            if image.name.lower() == name:
+                return image
+    return None
+
+
+CHAPTER_LINE = re.compile(r"^\s*((?:\d{1,2}:)?\d{1,2}:\d{2})\s+(\S.*)$")
+TIME_KEYS = ("start", "start_sec", "startsec", "start_ms", "startms", "offset",
+             "offset_sec", "at", "at_sec", "time", "timecode", "position", "from")
+NAME_KEYS = ("title", "name", "track", "composition", "label", "piece")
+
+
+def _seconds(value) -> Optional[float]:
+    """Секунды из чего угодно: числа, миллисекунд, строки 1:02:03."""
+    if isinstance(value, (int, float)):
+        number = float(value)
+        # Миллисекунды выдают себя величиной: 300000 — это не пять суток.
+        return number / 1000.0 if number > 36000 else number
+    if isinstance(value, str):
+        text = value.strip()
+        if re.fullmatch(r"\d+(\.\d+)?", text):
+            return _seconds(float(text))
+        parts = text.split(":")
+        if 2 <= len(parts) <= 3 and all(part.strip().isdigit() for part in parts):
+            total = 0.0
+            for part in parts:
+                total = total * 60 + int(part)
+            return total
+    return None
+
+
+def read_chapters(files: list[Path]) -> list[tuple[float, str]]:
+    """Готовый тайм-код из архива: [(секунда, название)].
+
+    Если пакет сам знает, где какая композиция начинается, его слово важнее
+    нашего счёта: мастер сведён не нами, и длины сырья к нему не сходятся.
+    """
+    best: list[tuple[float, str]] = []
+    for path in sorted(files, key=lambda p: _natural(p.name)):
+        rows: list[tuple[float, str]] = []
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")[:400_000]
+        except OSError:
+            continue
+        if path.suffix.lower() == ".json":
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                continue
+
+            def walk(node):
+                if isinstance(node, list):
+                    found: list[tuple[float, str]] = []
+                    for item in node:
+                        if not isinstance(item, dict):
+                            continue
+                        lower = {str(k).lower(): v for k, v in item.items()}
+                        when = next((_seconds(lower[k]) for k in TIME_KEYS
+                                     if k in lower and _seconds(lower[k]) is not None), None)
+                        title = next((str(lower[k]) for k in NAME_KEYS
+                                      if lower.get(k) and isinstance(lower[k], str)), "")
+                        if when is not None and title:
+                            found.append((when, title.strip()[:200]))
+                    if len(found) >= 2:
+                        rows.extend(found)
+                    for item in node:
+                        walk(item)
+                elif isinstance(node, dict):
+                    for value in node.values():
+                        walk(value)
+
+            walk(data)
+        else:
+            for line in raw.splitlines():
+                match = CHAPTER_LINE.match(line)
+                if match:
+                    when = _seconds(match.group(1))
+                    if when is not None:
+                        rows.append((when, match.group(2).strip()[:200]))
+        rows = sorted({(round(w, 2), t) for w, t in rows})
+        if len(rows) > len(best):
+            best = rows
+    # Тайм-код обязан начинаться с нуля — иначе это не главы, а что-то другое.
+    return best if best and best[0][0] <= 2.0 else []
 
 
 META_KEYS = {
@@ -823,7 +1035,7 @@ def guess_style(*hints: str) -> str:
 
 def import_archive(session: Session, zip_path: Path, *, name: str = "", style: str = "",
                    minutes: int = 0, suno_model: str = DEFAULT_SUNO_MODEL,
-                   language: str = "en") -> MusicVideo:
+                   language: str = "en", brief: str = "") -> MusicVideo:
     """Собрать микс из архива с готовыми материалами.
 
     Архив передаётся путём к файлу, а не содержимым: в таком архиве лежит
@@ -860,8 +1072,11 @@ def import_archive(session: Session, zip_path: Path, *, name: str = "", style: s
 
     found = _collect(root)
     meta = read_meta(found["text"])
+    archive_brief = read_brief(found["text"])
+    chapters = read_chapters(found["text"])
     style_key = style if style in STYLES else (
-        guess_style(name, meta.get("style"), meta.get("title"), root.name)
+        guess_style(name, meta.get("style"), meta.get("title"), root.name,
+                    brief[:2000], archive_brief[:2000])
         or STYLE_ORDER[0])
     style_row = style_of(style_key)
 
@@ -872,8 +1087,9 @@ def import_archive(session: Session, zip_path: Path, *, name: str = "", style: s
         except (TypeError, ValueError):
             want_minutes = 0
 
+    music_files, is_master = pick_music(found["audio"], root)
     tracks: list[dict] = []
-    for path in found["audio"]:
+    for path in music_files:
         span = storage.media_duration(path)
         if span < MIN_TRACK_SEC:
             # Короткие вставки пропускаем молча — это не композиции.
@@ -882,28 +1098,43 @@ def import_archive(session: Session, zip_path: Path, *, name: str = "", style: s
                        "duration_sec": span, "prompt": "", "model": "",
                        "source_url": ""})
 
-    # Длительность по умолчанию: столько, сколько музыки принесли, но не меньше
-    # привычной для жанра. Иначе архив на час собрался бы в тридцатиминутный
-    # микс, а половина материалов осталась бы лежать без дела.
     have_sec = effective_duration([t["duration_sec"] for t in tracks], media.CROSSFADE_SEC)
-    if not want_minutes:
-        want_minutes = max(style_row.minutes, int(have_sec // 60))
+    if is_master:
+        # Мастер сведён и принят — его длина и есть длина ролика. Ни привычная
+        # для жанра длительность, ни заказанная в форме здесь не применяются:
+        # дописать к готовой работе двадцать минут чужой музыки — это брак, а не
+        # исполнение заказа.
+        minutes_final = max(1, min(180, int(round(have_sec / 60))))
+    else:
+        # Иначе: столько, сколько музыки принесли, но не меньше привычной для
+        # жанра. Без нижней границы архив на три минуты остался бы трёхминутным
+        # роликом, хотя формат живёт на долгом просмотре.
+        if not want_minutes:
+            want_minutes = max(style_row.minutes, int(have_sec // 60))
+        minutes_final = max(5, min(180, want_minutes))
 
     backdrop = ""
     if found["video"]:
         # Самый длинный клип: короткие в таких архивах обычно превью.
         backdrop = storage.rel(max(found["video"], key=lambda p: storage.media_duration(p)))
     elif found["image"]:
-        backdrop = storage.rel(max(found["image"], key=lambda p: p.stat().st_size))
+        plate = _active_plate(found["text"], found["image"]) \
+            or max(found["image"], key=lambda p: _plate_score(p, root))
+        backdrop = storage.rel(plate)
 
     title = str(meta.get("title") or "").strip()[:300]
     video = MusicVideo(
         title=title or Path(name).stem[:300], style=style_row.key,
-        style_label=style_row.label, minutes=max(5, min(180, want_minutes)),
+        style_label=style_row.label, minutes=minutes_final,
         suno_model=suno_model if suno_model in SUNO_MODELS else DEFAULT_SUNO_MODEL,
         language="ru" if str(meta.get("language") or language).startswith("ru") else "en",
         source_dir=storage.rel(root), backdrop_src=backdrop,
         description=str(meta.get("description") or "")[:20000],
+        chapters_src="\n".join(f"{timecode(at)} {title}" for at, title in chapters),
+        master_ready=is_master,
+        # Исследование из формы идёт первым: его человек написал сейчас и под эту
+        # задачу, а файл в архиве мог остаться с прошлого раза.
+        brief="\n\n".join(part for part in (brief.strip(), archive_brief) if part)[:20000],
         status="queued", stage="queued")
     session.add(video)
     session.commit()
@@ -911,8 +1142,11 @@ def import_archive(session: Session, zip_path: Path, *, name: str = "", style: s
     for index, item in enumerate(tracks):
         session.add(MusicVideoTrack(video_id=video.id, idx=index, **item))
     session.commit()
-    log.info("Архив %s разобран: треков %s (%.0f мин), заставка %s, жанр %s",
-             root.name, len(tracks), have_sec / 60, backdrop or "нет", style_row.key)
+    log.info("Архив %s разобран: %s (%.0f мин), заставка %s, жанр %s, тайм-код %s",
+             root.name,
+             "готовый мастер" if is_master else f"композиций {len(tracks)}",
+             have_sec / 60, backdrop or "нет", style_row.key,
+             f"из архива, {len(chapters)} глав" if chapters else "посчитаем сами")
     return video
 
 
@@ -933,13 +1167,225 @@ def import_report(video: MusicVideo, tracks: int) -> str:
     """Короткая сводка для панели: что взято из архива, что будет сгенерировано."""
     parts = [f"жанр {style_of(video.style).label}"]
     parts.append(f"музыки из архива: {tracks} шт." if tracks else "музыки в архиве нет")
+    if video.chapters_src:
+        parts.append(f"тайм-код из архива ({len(video.chapters_src.splitlines())} глав)")
+    if video.brief:
+        parts.append("заказ пойдёт по исследованию из архива")
     if video.backdrop_src:
         kind = "клип" if Path(video.backdrop_src).suffix.lower() in VIDEO_EXT else "картинка"
         parts.append(f"заставка из архива ({kind}) — генерировать не нужно")
     else:
         parts.append("заставки в архиве нет — будет сгенерирована")
-    parts.append(f"заказано {video.minutes} мин")
+    if video.master_ready:
+        parts.append(f"готовый мастер — музыка не генерируется, длина {video.minutes} мин")
+    else:
+        parts.append(f"заказано {video.minutes} мин")
     return ", ".join(parts)
+
+
+# ---------------------------------------------------------------- исследование и задания
+
+# Файлы с общим описанием замысла: чего хотим от музыки в целом.
+BRIEF_WORDS = ("brief", "concept", "recipe", "development", "research", "idea",
+               "direction", "treatment", "start_here", "start here", "readme")
+
+# Папки и имена с заданиями на отдельные композиции. В таких пакетах их обычно
+# нумеруют: 01-a-instrumental.json, 02-b-wordless-female.json и так далее.
+SPEC_DIRS = {"specs", "spec", "tracks", "compositions", "pieces"}
+SPEC_NAME = re.compile(r"^\d{1,3}[-_. ]")
+
+# Сколько текста исследования имеет смысл тащить. Suno принимает около тысячи
+# знаков описания, и в них надо уложить и общий замысел, и задание на вещь.
+BRIEF_BUDGET = 1800
+SPEC_BUDGET = 700
+PROMPT_LIMIT = 980
+
+
+def _plain(text: str) -> str:
+    """Убираем разметку: решётки заголовков, звёздочки, ссылки, длинные пустоты."""
+    text = re.sub(r"```.*?```", " ", text, flags=re.S)
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"[#*_>`|]+", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _flatten(node, depth: int = 0) -> list[str]:
+    """JSON в строки «ключ: значение» — Suno читает их как обычное описание."""
+    if depth > 4:
+        return []
+    out: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if isinstance(value, (str, int, float, bool)):
+                out.append(f"{key}: {value}")
+            else:
+                nested = _flatten(value, depth + 1)
+                if nested:
+                    out.append(f"{key}: " + "; ".join(nested))
+    elif isinstance(node, list):
+        for item in node:
+            if isinstance(item, (str, int, float, bool)):
+                out.append(str(item))
+            else:
+                out.extend(_flatten(item, depth + 1))
+    elif node is not None:
+        out.append(str(node))
+    return [part for part in out if part.strip()]
+
+
+def read_brief(files: list[Path]) -> str:
+    """Общее исследование из архива: что за музыка нужна и куда она развивается."""
+    chunks: list[str] = []
+    for path in sorted(files, key=lambda p: _natural(p.name)):
+        stem = path.stem.lower().replace("-", "_")
+        if not any(word in stem for word in BRIEF_WORDS):
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")[:60_000]
+        except OSError:
+            continue
+        if path.suffix.lower() == ".json":
+            try:
+                raw = "; ".join(_flatten(json.loads(raw)))
+            except ValueError:
+                continue
+        text = _plain(raw)
+        if len(text) > 40:
+            chunks.append(f"{path.stem}: {text}")
+    return "\n".join(chunks)[:20000]
+
+
+def read_specs(files: list[Path]) -> list[str]:
+    """Задания на отдельные композиции, по одному на вещь, в порядке номеров."""
+    out: list[tuple[tuple, str]] = []
+    for path in files:
+        parts = {part.lower() for part in path.parts[:-1]}
+        if not (parts & SPEC_DIRS or SPEC_NAME.match(path.name)):
+            continue
+        if any(word in path.stem.lower() for word in ("manifest", "receipt", "report",
+                                                      "inventory", "index")):
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")[:40_000]
+        except OSError:
+            continue
+        if path.suffix.lower() == ".json":
+            try:
+                text = "; ".join(_flatten(json.loads(raw)))
+            except ValueError:
+                continue
+        else:
+            text = _plain(raw)
+        if len(text) > 30:
+            out.append((_natural(path.name), f"{path.stem}: {text}"[:4000]))
+    out.sort(key=lambda pair: pair[0])
+    return [text for _key, text in out]
+
+
+def _condense(text: str, limit: int) -> str:
+    """Укоротить до предела, не обрывая слово посередине."""
+    text = _plain(text)
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    space = cut.rfind(" ")
+    return (cut[:space] if space > limit * 0.6 else cut).strip()
+
+
+def plan_from_brief(session: Session, style: Style, brief: str, specs: list[str],
+                    *, count: int) -> list[str]:
+    """Задания на композиции по исследованию: по одному описанию для Suno.
+
+    Сначала пробуем переложить исследование в описания чат-моделью: человек пишет
+    бриф прозой и по-русски, а Suno нужен сжатый английский список признаков.
+    Если модель недоступна или молчит, обрезаем текст сами — хуже по складности,
+    но заказ всё равно пойдёт по исследованию, а не по общему описанию жанра.
+    """
+    if not brief and not specs:
+        return []
+
+    model = st.get(session, "default_chat_model", "")
+    # Заданий делаем не меньше, чем композиций в исследовании: иначе часть
+    # замысла просто не дойдёт до генератора.
+    want = max(1, min(20, max(count, len(specs), 1)))
+    if model:
+        source = ""
+        if brief:
+            source += "ОБЩЕЕ ИССЛЕДОВАНИЕ:\n" + brief[:12000] + "\n\n"
+        if specs:
+            source += "ЗАДАНИЯ НА КОМПОЗИЦИИ:\n" + "\n".join(
+                f"{index + 1}. {spec[:1500]}" for index, spec in enumerate(specs[:want]))
+        ask = (
+            f"Ниже исследование для музыкального релиза. Жанр: {style.label}.\n\n"
+            f"{source}\n\n"
+            f"Составь {want} описаний для генератора инструментальной музыки Suno — "
+            f"по одному на композицию, в том же порядке, что в исследовании. "
+            f"Каждое описание: на английском, одной строкой, до 400 знаков, "
+            f"перечислением признаков через запятую — инструменты, темп, тональность "
+            f"или лад, развитие, характер, бэк-вокал если он нужен. "
+            f"Не пиши слов песни и не повторяй описания друг за другом. "
+            f"Верни строго JSON: {{\"prompts\": [\"...\", \"...\"]}}"
+        )
+        try:
+            client = KieClient(api_key=st.get(session, "kie_api_key", "")
+                               or config.KIE_API_KEY)
+            data, _credits = client.chat_json(
+                model, [{"role": "user", "content": ask}], temperature=0.6)
+            rows = (data or {}).get("prompts") if isinstance(data, dict) else data
+            if isinstance(rows, list):
+                clean = [_condense(str(row), PROMPT_LIMIT) for row in rows
+                         if str(row).strip()]
+                if clean:
+                    log.info("Исследование переложено в %s заданий", len(clean))
+                    return clean
+        except Exception as exc:  # noqa: BLE001 — обрежем сами, заказ не сорвётся
+            log.warning("Исследование не переложено моделью: %s", exc)
+
+    head = _condense(brief, BRIEF_BUDGET)
+    if specs:
+        return [_condense(f"{style.suno}. {head}. {spec}", PROMPT_LIMIT)
+                for spec in specs[:want]]
+    # Исследование без разбивки на вещи: одно описание на все заявки, но с
+    # оттенками жанра — иначе Suno выдаст несколько почти одинаковых треков.
+    return [_condense(f"{suno_prompt(style, index)}. {head}", PROMPT_LIMIT)
+            for index in range(want)]
+
+
+def ensure_plan(video_id: int, *, count: int) -> list[str]:
+    """Задания на композиции для этого микса. Считаются один раз и запоминаются."""
+    with session_scope() as session:
+        video = session.get(MusicVideo, video_id)
+        if video is None:
+            return []
+        stored = video.plan_json
+        if stored:
+            try:
+                rows = json.loads(stored)
+                if isinstance(rows, list) and rows:
+                    return [str(row) for row in rows]
+            except ValueError:
+                pass
+        specs = _specs_of(video)
+        if not video.brief and not specs:
+            return []
+        plan = plan_from_brief(session, style_of(video.style), video.brief, specs,
+                               count=count)
+        if plan:
+            video.plan_json = json.dumps(plan, ensure_ascii=False)
+            session.commit()
+        return plan
+
+
+def _specs_of(video: MusicVideo) -> list[str]:
+    """Задания на композиции из распакованного архива этого микса."""
+    if not video.source_dir:
+        return []
+    root = storage.abspath(video.source_dir)
+    if not root.is_dir():
+        return []
+    return read_specs([path for path in root.rglob("*")
+                       if _usable(path) and path.suffix.lower() in TEXT_EXT])
 
 
 # ---------------------------------------------------------------- сборка
@@ -1008,6 +1454,7 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
         session.commit()
         style_key, minutes = video.style, video.minutes
         backdrop_src = video.backdrop_src
+        master_ready = bool(video.master_ready)
         # Язык берём у микса, если вызов его не назвал: пересборка не должна
         # менять язык уже написанного описания.
         language = language or video.language or "en"
@@ -1021,7 +1468,15 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
 
     try:
         _stage(video_id, "music")
-        tracks = ensure_tracks(video_id, target_sec=target_sec, model=suno_model)
+        if master_ready:
+            # Готовая дорожка из архива: генерировать нечего, досбор не нужен.
+            with session_scope() as session:
+                tracks = _tracks_of(session, video_id)
+                session.expunge_all()
+            if not tracks:
+                raise RuntimeError("мастер из архива не найден на диске")
+        else:
+            tracks = ensure_tracks(video_id, target_sec=target_sec, model=suno_model)
 
         _stage(video_id, "backdrop")
         size = media.target_size("1080p", "16:9")
@@ -1114,11 +1569,12 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
             tracks_cost = sum(row.credits for row in alive)
             backdrop_cost = loop_credits or max(0.0, video.credits - tracks_cost)
             video.credits = round(tracks_cost + backdrop_cost, 2)
-            title, description, tags = make_meta(session, video, alive, language)
+            title, description, tags = make_meta(session, video, alive, language,
+                                                 chapters=video.chapters_src)
             video.yt_title = title[:300]
             video.description = description
             video.tags = ", ".join(tags)
-            video.tracklist = tracklist_text(alive)
+            video.tracklist = video.chapters_src.strip() or tracklist_text(alive)
             if not video.title:
                 video.title = title[:300]
             session.commit()
@@ -1140,7 +1596,7 @@ def library(session: Session) -> list[MusicVideo]:
 
 def create(session: Session, *, style: str, minutes: int = DEFAULT_MINUTES,
            suno_model: str = DEFAULT_SUNO_MODEL, title: str = "",
-           language: str = "en") -> MusicVideo:
+           language: str = "en", brief: str = "") -> MusicVideo:
     style_row = style_of(style)
     video = MusicVideo(
         title=title.strip()[:300], style=style_row.key, style_label=style_row.label,
@@ -1150,7 +1606,7 @@ def create(session: Session, *, style: str, minutes: int = DEFAULT_MINUTES,
         minutes=max(5, min(180, int(minutes or DEFAULT_MINUTES))),
         suno_model=suno_model if suno_model in SUNO_MODELS else DEFAULT_SUNO_MODEL,
         language="ru" if language == "ru" else "en",
-        status="queued", stage="queued")
+        brief=brief.strip()[:20000], status="queued", stage="queued")
     session.add(video)
     session.commit()
     return video
