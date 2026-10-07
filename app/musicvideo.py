@@ -365,6 +365,36 @@ def backdrop_dir() -> Path:
     return path
 
 
+def blend_mood(style: Style, offset: int) -> str:
+    """Акцент выпуска: основной оттенок с примесью другого.
+
+    Оттенков у жанра четыре, и простого сдвига по кругу мало: каждый четвёртый
+    выпуск повторял бы первый. Пара «основной плюс примесь» даёт шестнадцать
+    разных акцентов на тех же четырёх оттенках, и повтор отодвигается далеко за
+    горизонт любого канала.
+    """
+    moods = style.moods
+    if not moods:
+        return ""
+    first = moods[offset % len(moods)]
+    second = moods[(offset // len(moods) + 1) % len(moods)]
+    return first if first == second else f"{first}, with a touch of {second}"
+
+
+def mood_step(count: int, offset: int) -> int:
+    """Шаг по кругу оттенков — свой у каждого выпуска, но всегда взаимно простой
+    с длиной круга.
+
+    Любой другой шаг круг не обходит: при четырёх оттенках шаг 2 гоняет два
+    оттенка по кольцу, а два других не берёт ни разу. Именно это и выходило у
+    выпусков #5 и #7 — «светлее → эйфория → светлее → эйфория».
+    """
+    if count <= 2:
+        return 1
+    steps = [step for step in range(1, count) if math.gcd(step, count) == 1]
+    return steps[(offset // count) % len(steps)]
+
+
 def suno_prompt(style: Style, index: int, offset: int = 0) -> str:
     """Описание музыки для одной заявки: жанр плюс оттенок.
 
@@ -376,7 +406,8 @@ def suno_prompt(style: Style, index: int, offset: int = 0) -> str:
     просили у Suno буквально одно и то же в одном порядке и выходили похожими
     друг на друга — ровно та жалоба, с которой это и всплыло.
     """
-    mood = style.moods[(index + offset) % len(style.moods)]
+    count = len(style.moods)
+    mood = style.moods[(index * mood_step(count, offset) + offset) % count]
     return (f"{style.suno}. Variation: {mood}. "
             f"Make it as long as possible, one continuous instrumental piece.")
 
@@ -570,13 +601,14 @@ def ensure_tracks(video_id: int, *, target_sec: float, model: str,
     batch_no = next_idx
     failures: list[str] = []
 
-    # Исследование из архива важнее общего описания жанра: человек написал, какие
-    # нужны инструменты, как развивается вещь и нужен ли бэк-вокал — заказываем
-    # именно это. Задания считаются один раз и запоминаются у микса.
+    # Промпты считаем до первой заявки: сначала описание очередного отрезка —
+    # жанр, оттенок выпуска, инструменты, развитие, — потом по нему генерация.
+    # Посчитанное запоминается у микса, поэтому «дособрать» идёт тем же замыслом.
     left_sec = max(0.0, target_sec - effective_duration(lengths, fade))
-    plan = ensure_plan(video_id, count=math.ceil(left_sec / (ASSUMED_TRACK_SEC * 2)) + 1)
+    plan = ensure_plan(video_id, count=next_idx
+                       + math.ceil(left_sec / (ASSUMED_TRACK_SEC * 2)) + 1)
     if plan:
-        log.info("Микс #%s: заказ идёт по исследованию, заданий %s", video_id, len(plan))
+        log.info("Микс #%s: промпты отрезков готовы, заданий %s", video_id, len(plan))
 
     while effective_duration(lengths, fade) < target_sec and batches < MAX_BATCHES:
         # Сколько заявок ещё нужно: пока длина треков неизвестна, берём
@@ -585,6 +617,11 @@ def ensure_tracks(video_id: int, *, target_sec: float, model: str,
         left = target_sec - effective_duration(lengths, fade)
         want = max(1, math.ceil(left / max(60.0, per_batch)))
         wave = min(BATCH_CONCURRENCY, want, MAX_BATCHES - batches)
+
+        # Плана может не хватить, если треки вышли короче ожидаемых: дописываем
+        # промпты на недостающие отрезки прежде, чем их заказывать.
+        if batch_no + wave > len(plan):
+            plan = ensure_plan(video_id, count=batch_no + wave)
 
         with ThreadPoolExecutor(max_workers=wave) as pool:
             jobs = []
@@ -1321,13 +1358,17 @@ def _condense(text: str, limit: int) -> str:
 
 
 def plan_from_brief(session: Session, style: Style, brief: str, specs: list[str],
-                    *, count: int) -> list[str]:
+                    *, count: int, offset: int = 0) -> list[str]:
     """Задания на композиции по исследованию: по одному описанию для Suno.
 
     Сначала пробуем переложить исследование в описания чат-моделью: человек пишет
     бриф прозой и по-русски, а Suno нужен сжатый английский список признаков.
     Если модель недоступна или молчит, обрезаем текст сами — хуже по складности,
     но заказ всё равно пойдёт по исследованию, а не по общему описанию жанра.
+
+    offset разводит выпуски. Исследование у канала одно, и без сдвига каждый
+    микс просил бы у Suno ровно то же самое — та же беда, что была с оттенками
+    жанра, только на уровень выше. Поэтому у каждого выпуска свой акцент.
     """
     if not brief and not specs:
         return []
@@ -1336,6 +1377,8 @@ def plan_from_brief(session: Session, style: Style, brief: str, specs: list[str]
     # Заданий делаем не меньше, чем композиций в исследовании: иначе часть
     # замысла просто не дойдёт до генератора.
     want = max(1, min(20, max(count, len(specs), 1)))
+    # Акцент выпуска: из тех же оттенков жанра, но с места, своего у каждого микса.
+    accent = blend_mood(style, offset)
     if model:
         source = ""
         if brief:
@@ -1352,6 +1395,9 @@ def plan_from_brief(session: Session, style: Style, brief: str, specs: list[str]
             f"перечислением признаков через запятую — инструменты, темп, тональность "
             f"или лад, развитие, характер, бэк-вокал если он нужен. "
             f"Не пиши слов песни и не повторяй описания друг за другом. "
+            f"У ЭТОГО выпуска свой акцент — {accent}: держи его во всех "
+            f"описаниях, чтобы выпуск отличался от прошлых по тому же "
+            f"исследованию. "
             f"Верни строго JSON: {{\"prompts\": [\"...\", \"...\"]}}"
         )
         try:
@@ -1371,33 +1417,114 @@ def plan_from_brief(session: Session, style: Style, brief: str, specs: list[str]
 
     head = _condense(brief, BRIEF_BUDGET)
     if specs:
-        return [_condense(f"{style.suno}. {head}. {spec}", PROMPT_LIMIT)
-                for spec in specs[:want]]
+        # Задания на вещи у всех выпусков одни, поэтому акцент приписываем сами.
+        return [_condense(f"{style.suno}. {head}. {spec}. Accent: {accent}",
+                          PROMPT_LIMIT) for spec in specs[:want]]
     # Исследование без разбивки на вещи: одно описание на все заявки, но с
     # оттенками жанра — иначе Suno выдаст несколько почти одинаковых треков.
-    return [_condense(f"{suno_prompt(style, index)}. {head}", PROMPT_LIMIT)
-            for index in range(want)]
+    return [_condense(f"{suno_prompt(style, index, offset=offset)}. {head}",
+                      PROMPT_LIMIT) for index in range(want)]
+
+
+def plan_from_style(session: Session, style: Style, *, count: int,
+                   offset: int = 0, start: int = 0, brief: str = "") -> list[str]:
+    """Промпты отрезков по жанру: сначала описание, потом заказ.
+
+    Раньше описание для Suno складывалось прямо в момент заказа: жанр плюс
+    название оттенка, одной строкой. Suno на такую строку отвечает «средним по
+    жанру», и отрезки выходят похожими друг на друга. Поэтому сначала считаем
+    промпт очередного отрезка целиком — инструменты, темп, лад, развитие — и
+    только потом по нему запускаем генерацию.
+
+    start — с какого отрезка продолжаем, если микс оказался длиннее плана.
+    brief — исследование, если оно есть: продолжение плана не должно терять то,
+    что человек написал про релиз.
+    """
+    head = _condense(brief, BRIEF_BUDGET) if brief else ""
+    base = [_condense(f"{suno_prompt(style, index, offset=offset)}"
+                      + (f". {head}" if head else ""), PROMPT_LIMIT)
+            for index in range(start, start + count)]
+    model = st.get(session, "default_chat_model", "")
+    if not model:
+        return base
+
+    accent = blend_mood(style, offset)
+    ask = (
+        f"Ты музыкальный продюсер длинного микса для YouTube. "
+        f"Жанр: {style.label} ({style.suno}). Слушают ради: {style.use}.\n"
+        f"Акцент этого выпуска — {accent}: он общий для всех отрезков.\n"
+        + (f"ИССЛЕДОВАНИЕ РЕЛИЗА:\n{head[:4000]}\n" if head else "")
+        +
+        f"Составь {count} описаний для генератора инструментальной музыки Suno — "
+        f"по одному на отрезок микса, подряд, как они пойдут в выпуске"
+        + (f" (это отрезки с {start + 1}-го по {start + count}-й).\n" if start
+           else ".\n")
+        + f"Каждое описание: на английском, одной строкой, до 400 знаков, "
+        f"перечислением признаков через запятую — инструменты, темп в BPM, "
+        f"тональность или лад, как вещь развивается, характер, бэк-вокал если "
+        f"он уместен. Жанр у всех один, чтобы переходы были мягкими, но "
+        f"инструменты и развитие у каждого отрезка свои — рядом стоящие "
+        f"отрезки не должны звучать как один трек. "
+        f"Не пиши слов песни. "
+        f"Верни строго JSON: {{\"prompts\": [\"...\", \"...\"]}}"
+    )
+    try:
+        client = KieClient(api_key=st.get(session, "kie_api_key", "")
+                           or config.KIE_API_KEY)
+        data, _credits = client.chat_json(
+            model, [{"role": "user", "content": ask}], temperature=0.7)
+        rows = (data or {}).get("prompts") if isinstance(data, dict) else data
+        if isinstance(rows, list):
+            clean = [_condense(str(row), PROMPT_LIMIT) for row in rows
+                     if str(row).strip()]
+            if clean:
+                # Модель может вернуть меньше описаний, чем просили: нехватку
+                # добираем механическими, иначе часть отрезков останется без
+                # промпта и заказ встанет.
+                clean = clean[:count] + base[len(clean):]
+                log.info("Промпты отрезков посчитаны моделью: %s", len(clean))
+                return clean
+    except Exception as exc:  # noqa: BLE001 — заказ идёт по механическим промптам
+        log.warning("Промпты отрезков не посчитаны моделью: %s", exc)
+    return base
 
 
 def ensure_plan(video_id: int, *, count: int) -> list[str]:
-    """Задания на композиции для этого микса. Считаются один раз и запоминаются."""
+    """Промпты отрезков этого микса. Считаются до заказа и запоминаются.
+
+    Порядок именно такой: сначала промпт очередного отрезка, потом по нему
+    генерация. Посчитанное хранится у микса, поэтому «дособрать» после сбоя
+    продолжает тот же замысел, а не начинает новый.
+
+    Если микс оказался длиннее плана (треки вышли короче ожидаемых), план
+    продолжается с того места, где кончился.
+    """
     with session_scope() as session:
         video = session.get(MusicVideo, video_id)
         if video is None:
             return []
-        stored = video.plan_json
-        if stored:
+        plan: list[str] = []
+        if video.plan_json:
             try:
-                rows = json.loads(stored)
-                if isinstance(rows, list) and rows:
-                    return [str(row) for row in rows]
+                rows = json.loads(video.plan_json)
+                if isinstance(rows, list):
+                    plan = [str(row) for row in rows if str(row).strip()]
             except ValueError:
-                pass
+                plan = []
+        if len(plan) >= count:
+            return plan
+
+        style = style_of(video.style)
         specs = _specs_of(video)
-        if not video.brief and not specs:
-            return []
-        plan = plan_from_brief(session, style_of(video.style), video.brief, specs,
-                               count=count)
+        if not plan and (video.brief or specs):
+            # Исследование из архива важнее общего описания жанра: человек
+            # написал, какие нужны инструменты и как развивается вещь.
+            plan = plan_from_brief(session, style, video.brief, specs,
+                                   count=count, offset=video_id)
+        if len(plan) < count:
+            plan = plan + plan_from_style(session, style, count=count - len(plan),
+                                          offset=video_id, start=len(plan),
+                                          brief=video.brief or "")
         if plan:
             video.plan_json = json.dumps(plan, ensure_ascii=False)
             session.commit()
@@ -1521,6 +1648,8 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
         backdrop_src = video.backdrop_src
         master_ready = bool(video.master_ready)
         channel_id = int(video.channel_id or 0)
+        mix_language = video.language or ""
+        mix_suno = video.suno_model or DEFAULT_SUNO_MODEL
     equalizer = False
     now_playing = False
     channel_name = ""
@@ -1543,10 +1672,16 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
 
                 logo_row = _mch.one(session, channel_id, "logo")
                 logo_file = storage.abspath(logo_row.path) if logo_row else None
-        # Язык берём у микса, если вызов его не назвал: пересборка не должна
-        # менять язык уже написанного описания.
-        language = language or video.language or "en"
-        suno_model = video.suno_model or DEFAULT_SUNO_MODEL
+
+    # Модели и язык нужны любому миксу, а не только канальному: пока эти строки
+    # стояли внутри ветки канала, сборка из вкладки «Музыка» падала на том, что
+    # модель Suno не задана вовсе.
+    #
+    # Язык берём у микса, если вызов его не назвал: пересборка не должна менять
+    # язык уже написанного описания.
+    language = language or mix_language or "en"
+    suno_model = mix_suno
+    with session_scope() as session:
         image_model = st.get(session, "default_image_model", "nano-banana-2")
         video_model = st.get(session, "default_video_model", "")
 
