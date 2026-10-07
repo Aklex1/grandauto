@@ -117,6 +117,10 @@ def _run_job(job_id: int) -> None:
             from . import archives
 
             archives.build_item(int(payload.get("item_id") or 0))
+        elif kind == "music_short":
+            from . import musicvideo
+
+            musicvideo.make_short(int(payload.get("video_id") or 0))
         elif kind == "music_loops":
             from . import musicchannels
 

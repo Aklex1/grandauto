@@ -1816,3 +1816,77 @@ def now_playing_graph(cards: list[dict], size: tuple[int, int], *, source: str,
         put(eq_label, f"overlay={eq_x}:{eq_y}")
     return ";".join(steps), current
 
+
+
+# ---------------------------------------------------------------- вертикальный отрывок
+
+SHORT_SIZE = (1080, 1920)
+SHORT_MIN = 40.0
+SHORT_MAX = 59.0
+SHORT_FADE = 1.2
+
+
+def build_short(loop: Path, audio: Path, dst: Path, *, start: float, span: float,
+                title: str, artist: str = "", workdir: Path,
+                logo: Optional[Path] = None) -> Path:
+    """Собрать вертикальный отрывок: та же заставка под 9:16 плюс кусок звука.
+
+    Ничего не генерируется заново: звук берётся из готового микса, картинка — из
+    той же заставки. Поэтому отрывков можно делать сколько угодно и бесплатно.
+
+    Заставка кадрируется по центру с небольшим приближением: горизонтальная
+    сцена в вертикальном кадре иначе теряет и небо, и горы разом.
+    """
+    w, h = SHORT_SIZE
+    workdir.mkdir(parents=True, exist_ok=True)
+    bold = bold_font() or "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    plain = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+    piece = workdir / "piece.m4a"
+    _ff(["-ss", f"{start:.3f}", "-t", f"{span:.3f}", "-i", str(audio),
+         "-af", (f"afade=t=in:st=0:d={SHORT_FADE},"
+                 f"afade=t=out:st={max(0.1, span - SHORT_FADE):.2f}:d={SHORT_FADE}"),
+         "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-ac", "2", str(piece)],
+        timeout=600)
+
+    inputs = ["-stream_loop", "-1", "-i", str(loop), "-i", str(piece)]
+    eq_w, eq_h = int(w * 0.62), int(h * 0.075)
+    graph = (f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+             f"crop={w}:{h},fps={FPS}[bg];"
+             f"[1:a]asplit=2[aout][aviz];"
+             f"[aviz]showfreqs=s={EQ_BARS}x{eq_h}:mode=bar:ascale=log:fscale=log:"
+             f"win_size=2048:colors={EQ_COLOR},"
+             f"scale={eq_w}:{eq_h}:flags=neighbor,format=rgba,"
+             f"lumakey=threshold=0.26:tolerance=0.16[eq];"
+             f"[bg][eq]overlay=(W-w)/2:{int(h * 0.60)}[v0]")
+    current = "v0"
+
+    index = 2
+    if logo is not None and logo.is_file():
+        inputs += ["-i", str(logo)]
+        graph += (f";[{index}:v]scale=-1:{int(h * 0.055)}[logo]"
+                  f";[{current}][logo]overlay=(W-w)/2:{int(h * 0.09)}[v1]")
+        current = "v1"
+        index += 1
+
+    graph += (f";[{current}]drawtext=fontfile='{bold}':"
+              f"text='{_escape_drawtext(_clip_text(title, 26))}':"
+              f"fontcolor={CARD_TEXT}:fontsize={int(h * 0.046)}:"
+              f"x=(w-text_w)/2:y={int(h * 0.50)}:"
+              f"shadowcolor=0x00000090:shadowx=0:shadowy=3[v2]")
+    current = "v2"
+    if artist.strip():
+        graph += (f";[{current}]drawtext=fontfile='{plain}':"
+                  f"text='{_escape_drawtext(artist.strip())}':"
+                  f"fontcolor={CARD_MUTED}:fontsize={int(h * 0.022)}:"
+                  f"x=(w-text_w)/2:y={int(h * 0.555)}[v3]")
+        current = "v3"
+    graph += f";[{current}]format=yuv420p[v]"
+
+    _ff([*inputs, "-filter_complex", graph, "-map", "[v]", "-map", "[aout]",
+         "-t", f"{span:.3f}",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-ac", "2",
+         "-movflags", "+faststart", str(dst)], timeout=3600)
+    piece.unlink(missing_ok=True)
+    return dst

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import random
 import re
 import shutil
 import zipfile
@@ -692,12 +693,24 @@ def make_meta(session: Session, video: MusicVideo, tracks: list[MusicVideoTrack]
         except Exception as exc:  # noqa: BLE001 — текст вторичен, ролик уже готов
             log.warning("Описание микса #%s не сгенерировано: %s", video.id, exc)
 
+    # Теги собираем сами, а подсказанное моделью добавляем сверху: модель хорошо
+    # придумывает формулировки, но про лимит площадки и про то, как эти миксы
+    # ищут, знает плохо.
+    from . import tags as tags_mod
+
+    series = ""
+    if " — " in title:
+        series = title.split(" — ", 1)[0].strip()
+    rows = tags_mod.build(style_tags=style.tags, series=series, genre=style.key,
+                          minutes=minutes, use=style.use, extra=tags)
+
     head = "Тайм-код:" if language == "ru" else "Tracklist:"
     body = chapters.strip() or tracklist_text(tracks)
-    description = f"{description.strip()}\n\n{head}\n{body}"
-    if tags:
-        description += "\n\n" + " ".join("#" + t.replace(" ", "") for t in tags[:14])
-    return title, description, tags
+    # Хештеги в самом верху: первые три площадка показывает над заголовком.
+    top = " ".join("#" + h for h in tags_mod.hashtags(rows))
+    description = f"{top}\n\n{description.strip()}\n\n{head}\n{body}" if top \
+        else f"{description.strip()}\n\n{head}\n{body}"
+    return title, description, rows
 
 
 # ---------------------------------------------------------------- архив с материалами
@@ -1043,7 +1056,8 @@ def guess_style(*hints: str) -> str:
 
 def import_archive(session: Session, zip_path: Path, *, name: str = "", style: str = "",
                    minutes: int = 0, suno_model: str = DEFAULT_SUNO_MODEL,
-                   language: str = "en", brief: str = "") -> MusicVideo:
+                   language: str = "en", brief: str = "",
+           want_cover: bool = False) -> MusicVideo:
     """Собрать микс из архива с готовыми материалами.
 
     Архив передаётся путём к файлу, а не содержимым: в таком архиве лежит
@@ -1709,6 +1723,30 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
                 video.title = title[:300]
             session.commit()
 
+        # Обложка: кадр той же сцены, крупный заголовок, пилюля с длительностью.
+        # Ничего не генерируется — рисуем, поэтому она бесплатна.
+        with session_scope() as session:
+            video = session.get(MusicVideo, video_id)
+            if video is not None and video.want_cover and video.video_path:
+                from . import chrome
+
+                try:
+                    shot = folder / "cover_scene.png"
+                    media.frame_grab(storage.abspath(video.video_path), shot,
+                                     at=min(12.0, duration * 0.2))
+                    series, note = (video.yt_title.split(" — ", 1) + [""])[:2]
+                    minutes_done = int(round(duration / 60)) or video.minutes
+                    cover = folder / "cover.jpg"
+                    chrome.cover(cover, shot, title=series.strip() or style.label,
+                                 note=note.split("·")[-1].strip(),
+                                 badge=f"{minutes_done} min", logo=logo_file,
+                                 accent=video_id)
+                    video.cover_path = storage.rel(cover)
+                    session.commit()
+                    shot.unlink(missing_ok=True)
+                except Exception as exc:  # noqa: BLE001 — ролик важнее обложки
+                    log.warning("Обложка микса #%s не нарисована: %s", video_id, exc)
+
         _stage(video_id, "done")
         _note("info", f"Музыкальный микс #{video_id} готов: {style.label}, "
                       f"{duration / 60:.0f} мин, треков {len(tracks)}")
@@ -1725,7 +1763,7 @@ def library(session: Session) -> list[MusicVideo]:
 
 
 def create_for_channel(session: Session, channel, *, minutes: int = 0,
-                       title: str = "") -> MusicVideo:
+                       title: str = "", want_cover: bool = False) -> MusicVideo:
     """Трек в канале: жанр, язык, исследование и модель берутся у канала.
 
     Поэтому создание и сводится к длительности — выбирать больше нечего, всё
@@ -1737,6 +1775,7 @@ def create_for_channel(session: Session, channel, *, minutes: int = 0,
                    title=title, language=channel.language or "en",
                    brief=channel.brief or "")
     video.channel_id = channel.id
+    video.want_cover = bool(want_cover)
     session.commit()
     return video
 
@@ -1753,7 +1792,8 @@ def create(session: Session, *, style: str, minutes: int = DEFAULT_MINUTES,
         minutes=max(5, min(180, int(minutes or DEFAULT_MINUTES))),
         suno_model=suno_model if suno_model in SUNO_MODELS else DEFAULT_SUNO_MODEL,
         language="ru" if language == "ru" else "en",
-        brief=brief.strip()[:20000], status="queued", stage="queued")
+        brief=brief.strip()[:20000], want_cover=bool(want_cover),
+        status="queued", stage="queued")
     session.add(video)
     session.commit()
     return video
@@ -1845,3 +1885,105 @@ def _youtube_failed(video_id: int, reason: str) -> None:
             video.youtube_state = "failed"
             video.youtube_error = reason[:4000]
             session.commit()
+
+
+# ---------------------------------------------------------------- вертикальный отрывок
+
+
+def short_window(duration: float, tracks: list, seed: int = 0) -> tuple[float, float]:
+    """Откуда резать отрывок: (начало, длина).
+
+    Не с самого начала и не с конца: там интро и оутро, а шортс из титров —
+    это шортс ни о чём. По возможности попадаем в середину одной композиции,
+    чтобы отрывок не пришёлся на стык с переходом.
+    """
+    span = min(media.SHORT_MAX, max(media.SHORT_MIN, duration * 0.12))
+    safe_from = min(duration * 0.12, 60.0)
+    safe_to = max(safe_from + 1.0, duration - span - min(duration * 0.08, 40.0))
+    rnd = random.Random(seed or 1)
+
+    middles = []
+    for track in tracks or []:
+        start = float(getattr(track, "start_sec", 0.0) or 0.0)
+        length = float(getattr(track, "duration_sec", 0.0) or 0.0)
+        if length >= span + 8:
+            # Берём с отступом от краёв композиции — там переходы.
+            middles.append((start + 4.0, start + length - span - 4.0))
+    middles = [(a, b) for a, b in middles if b > a and a >= safe_from and b <= safe_to]
+    if middles:
+        low, high = rnd.choice(middles)
+        return round(rnd.uniform(low, high), 2), round(span, 2)
+    return round(rnd.uniform(safe_from, safe_to), 2), round(span, 2)
+
+
+def make_short(video_id: int, *, seed: int = 0) -> int:
+    """Собрать вертикальный отрывок готового микса. Возвращает номер записи.
+
+    Ничего не генерируется заново: звук берётся из собранного микса, картинка —
+    из той же заставки. Поэтому отрывков можно делать сколько угодно и даром.
+    """
+    from .models import MusicShort
+
+    with session_scope() as session:
+        video = session.get(MusicVideo, video_id)
+        if video is None:
+            raise RuntimeError(f"микс #{video_id} не найден")
+        if not video.audio_path or not video.loop_path:
+            raise RuntimeError("микс ещё не собран — резать нечего")
+        audio = storage.abspath(video.audio_path)
+        loop = storage.abspath(video.loop_path)
+        duration = storage.media_duration(audio)
+        rows = session.execute(
+            select(MusicVideoTrack).where(MusicVideoTrack.video_id == video_id)
+            .order_by(MusicVideoTrack.idx)).scalars().all()
+        channel_name = ""
+        logo = None
+        if video.channel_id:
+            from . import musicchannels as mch
+            from .models import MusicChannel
+
+            channel = session.get(MusicChannel, video.channel_id)
+            channel_name = channel.name if channel else ""
+            logo_row = mch.one(session, video.channel_id, "logo")
+            logo = storage.abspath(logo_row.path) if logo_row else None
+        made = len(session.execute(
+            select(MusicShort).where(MusicShort.video_id == video_id)).scalars().all())
+
+    if not audio.is_file() or not loop.is_file():
+        raise RuntimeError("файлы микса не найдены на диске")
+
+    start, span = short_window(duration, rows, seed=seed or (video_id * 31 + made))
+    # Название берём у композиции, на которую пришёлся отрывок: в шортсе должно
+    # стоять то, что в нём звучит, а не заголовок всего микса.
+    caption = ""
+    for row in rows:
+        if row.start_sec <= start < row.start_sec + row.duration_sec:
+            caption = row.title
+            break
+    caption = caption or (rows[0].title if rows else "")
+
+    folder = work_dir(video_id) / "shorts"
+    folder.mkdir(parents=True, exist_ok=True)
+    dest = folder / f"short_{made + 1:02d}.mp4"
+    media.build_short(loop, audio, dest, start=start, span=span, title=caption,
+                      artist=channel_name, workdir=folder / "work", logo=logo)
+
+    poster = dest.with_suffix(".jpg")
+    try:
+        media.frame_grab(dest, poster, at=min(2.0, span * 0.2))
+    except Exception as exc:  # noqa: BLE001 — без превью отрывок всё равно годен
+        log.warning("Превью отрывка не снято: %s", exc)
+        poster = None
+
+    with session_scope() as session:
+        row = MusicShort(video_id=video_id, title=caption[:300],
+                         path=storage.rel(dest),
+                         poster_path=storage.rel(poster) if poster else "",
+                         start_sec=start, duration_sec=storage.media_duration(dest),
+                         file_size=dest.stat().st_size)
+        session.add(row)
+        session.commit()
+        short_id = row.id
+    _note("info", f"Отрывок микса #{video_id}: «{caption}» с {timecode(start)}, "
+                  f"{span:.0f} с")
+    return short_id

@@ -1639,13 +1639,14 @@ def music_create(session: Session = Depends(get_session), _user: str = Depends(r
                  style: str = Form(...), minutes: int = Form(30),
                  suno_model: str = Form(""), title: str = Form(""),
                  language: str = Form("en"), new_backdrop: str = Form(""),
-                 brief: str = Form("")):
+                 brief: str = Form(""), want_cover: str = Form("")):
     from . import musicvideo as mv
 
     if style not in mv.STYLES:
         return RedirectResponse("/music?error=style", status_code=303)
     video = mv.create(session, style=style, minutes=minutes, suno_model=suno_model,
-                      title=title, language=language, brief=brief)
+                      title=title, language=language, brief=brief,
+                      want_cover=bool(want_cover))
     queue.enqueue(session, "music_video", payload={
         "video_id": video.id, "language": "ru" if language == "ru" else "en",
         # Заставка жанра переиспользуется: перегенерация — отдельная галочка,
@@ -1740,6 +1741,35 @@ def music_meta(video_id: int, session: Session = Depends(get_session),
     return RedirectResponse(f"/music?tab=library&saved={video_id}", status_code=303)
 
 
+@app.post("/music/{video_id}/short")
+def music_short(video_id: int, session: Session = Depends(get_session),
+                _user: str = Depends(require_user), back: str = Form("")):
+    """Вертикальный отрывок готового микса. Ничего не генерируется — режем своё."""
+    from .models import MusicVideo
+
+    video = session.get(MusicVideo, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Микс не найден")
+    if not video.audio_path or not video.loop_path:
+        return RedirectResponse((back or "/music") + "?error=not-built", status_code=303)
+    queue.enqueue(session, "music_short", payload={"video_id": video_id})
+    where = back or "/music?tab=library"
+    joiner = "&" if "?" in where else "?"
+    return RedirectResponse(f"{where}{joiner}short={video_id}", status_code=303)
+
+
+@app.post("/music/shorts/{short_id}/drop")
+def music_short_drop(short_id: int, session: Session = Depends(get_session),
+                     _user: str = Depends(require_user), back: str = Form("")):
+    from .models import MusicShort
+
+    row = session.get(MusicShort, short_id)
+    if row is not None:
+        session.delete(row)
+        session.commit()
+    return RedirectResponse(back or "/music?tab=library", status_code=303)
+
+
 @app.post("/music/{video_id}/drop")
 def music_drop(video_id: int, session: Session = Depends(get_session),
                _user: str = Depends(require_user), with_files: str = Form("")):
@@ -1802,7 +1832,7 @@ def mchannel_page(slug: str, request: Request, tab: str = "new",
 @app.post("/music/c/{slug}/create")
 def mchannel_create(slug: str, session: Session = Depends(get_session),
                     _user: str = Depends(require_user), minutes: int = Form(0),
-                    title: str = Form("")):
+                    title: str = Form(""), want_cover: str = Form("")):
     """Трек в канале: из выбора только длительность, остальное у канала своё."""
     from . import musicchannels as mch
     from . import musicvideo as mv
@@ -1811,7 +1841,8 @@ def mchannel_create(slug: str, session: Session = Depends(get_session),
     if not mch.assets(session, channel.id, "loop"):
         return RedirectResponse(f"/music/c/{slug}?tab=look&error=no-loops",
                                 status_code=303)
-    video = mv.create_for_channel(session, channel, minutes=minutes, title=title)
+    video = mv.create_for_channel(session, channel, minutes=minutes, title=title,
+                                  want_cover=bool(want_cover))
     queue.enqueue(session, "music_video", payload={
         "video_id": video.id, "language": channel.language or "en",
         "reuse_backdrop": True})

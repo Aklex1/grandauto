@@ -729,6 +729,9 @@ class MusicVideo(Base):
     error: Mapped[str] = mapped_column(Text, default="")
     # Публикация. Пустой youtube_id значит «не выкладывали»; youtube_state
     # отличает «в очереди» и «не вышло» от просто незаполненного.
+    # Обложка для публикации: рисуется по просьбе при сборке и ничего не стоит.
+    cover_path: Mapped[str] = mapped_column(String(500), default="")
+    want_cover: Mapped[bool] = mapped_column(Boolean, default=False)
     youtube_id: Mapped[str] = mapped_column(String(40), default="")
     youtube_url: Mapped[str] = mapped_column(String(200), default="")
     youtube_privacy: Mapped[str] = mapped_column(String(20), default="")
@@ -741,6 +744,8 @@ class MusicVideo(Base):
     tracks: Mapped[list["MusicVideoTrack"]] = relationship(
         back_populates="video", cascade="all, delete-orphan",
         order_by="MusicVideoTrack.idx")
+    shorts: Mapped[list["MusicShort"]] = relationship(
+        cascade="all, delete-orphan", order_by="MusicShort.id.desc()")
 
     @property
     def plan(self) -> list:
@@ -851,3 +856,24 @@ class MusicAsset(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
     channel: Mapped[MusicChannel] = relationship(back_populates="assets")
+
+
+class MusicShort(Base):
+    """Вертикальный отрывок музыкального ролика для шортсов.
+
+    Делается из уже собранного микса, поэтому не стоит ничего: берётся кусок
+    готового звука и та же заставка, развёрнутая под 9:16. Отрывков у микса
+    может быть несколько — каждый со своей секунды.
+    """
+
+    __tablename__ = "music_shorts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    video_id: Mapped[int] = mapped_column(
+        ForeignKey("music_videos.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(300), default="")
+    path: Mapped[str] = mapped_column(String(500), default="")
+    poster_path: Mapped[str] = mapped_column(String(500), default="")
+    start_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)

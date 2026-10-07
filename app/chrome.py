@@ -165,3 +165,103 @@ def eq_comb(dst: Path, size: tuple[int, int], bars: int = 13) -> Path:
         x += bar_w + gap
     layer.save(dst)
     return dst
+
+
+COVER_SIZE = (1280, 720)
+
+# Цвета пилюли с длительностью. Яркое пятно нужно, чтобы обложка цепляла в
+# ленте: тёмная сцена с белым текстом теряется среди таких же тёмных.
+BADGE_COLORS = (
+    ((0xB9, 0xA6, 0xF0), (0x1A, 0x14, 0x2E)),
+    ((0xF8, 0xC9, 0x7A), (0x2A, 0x1C, 0x10)),
+    ((0x7F, 0xE3, 0xD4), (0x10, 0x26, 0x24)),
+    ((0xF2, 0x9A, 0xB8), (0x2A, 0x10, 0x1C)),
+)
+
+
+def _fit(draw: ImageDraw.ImageDraw, text: str, path: str, width: int,
+         start: int) -> ImageFont.FreeTypeFont:
+    """Самый крупный кегль, при котором строка влезает в ширину."""
+    size = start
+    while size > 18:
+        font = _font(path, size)
+        if draw.textlength(text, font=font) <= width:
+            return font
+        size -= 4
+    return _font(path, 18)
+
+
+def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = "",
+          logo: Optional[Path] = None, accent: int = 0) -> Path:
+    """Обложка ролика: кадр сцены, крупный заголовок, пилюля и знак канала.
+
+    Рисуем сами по той же причине, что и заставки: генераторы картинок пишут
+    кривые буквы, а здесь заголовок — главное. Сцену берём из той же заставки,
+    что пойдёт в ролик, поэтому обложка и видео выглядят одним целым.
+
+    Цвет и контраст поднимаем намеренно: в ленте обложка соседствует с десятком
+    таких же тёмных ночных картинок, и неподнятая теряется среди них.
+    """
+    from PIL import ImageEnhance
+
+    w, h = COVER_SIZE
+    base = Image.open(scene).convert("RGB").resize((w, h), Image.LANCZOS)
+    base = ImageEnhance.Color(base).enhance(1.45)
+    base = ImageEnhance.Contrast(base).enhance(1.12)
+    base = ImageEnhance.Brightness(base).enhance(1.06)
+    layer = base.convert("RGBA")
+
+    # Затемнение снизу под текст: иначе белые буквы на светлых горах пропадают.
+    shade = Image.new("L", (w, h), 0)
+    sd = ImageDraw.Draw(shade)
+    for step in range(h):
+        sd.line((0, step, w, step), fill=int(150 * max(0.0, (step / h - 0.18)) ** 1.2))
+    layer.paste(Image.new("RGB", (w, h), (0x08, 0x0C, 0x18)), (0, 0), shade)
+
+    draw = ImageDraw.Draw(layer)
+    pad = int(w * 0.055)
+    if logo is not None and logo.is_file():
+        try:
+            mark = int(h * 0.085)
+            icon = Image.open(logo).convert("RGBA").resize((mark, mark), Image.LANCZOS)
+            layer.alpha_composite(icon, (pad, int(h * 0.07)))
+            _spaced(draw, (pad + mark + int(w * 0.014), int(h * 0.095)),
+                    "LUMEN DRIFT", _font(BOLD, int(h * 0.042)), WHITE,
+                    tracking=int(h * 0.004))
+        except Exception as exc:  # noqa: BLE001 — обложка нужна и без знака
+            log.warning("Знак на обложку не лёг: %s", exc)
+
+    # Заголовок в две строки, если он длинный: одна строка мельчает до нечитаемого.
+    words = title.upper().split()
+    lines = [title.upper()]
+    if len(words) > 1:
+        half = (len(words) + 1) // 2
+        lines = [" ".join(words[:half]), " ".join(words[half:])]
+    box = w - pad * 2
+    font = _fit(draw, max(lines, key=len), BOLD, box, int(h * 0.21))
+    y = int(h * 0.30)
+    for line in lines:
+        draw.text((pad, y), line, font=font, fill=WHITE,
+                  stroke_width=max(2, int(h * 0.004)), stroke_fill=(0, 0, 0, 90))
+        y += int(font.size * 1.02)
+
+    fill, ink = BADGE_COLORS[accent % len(BADGE_COLORS)]
+    row_y = y + int(h * 0.035)
+    if badge.strip():
+        small = _font(BOLD, int(h * 0.040))
+        text = badge.strip().upper()
+        width = int(draw.textlength(text, font=small) + len(text) * 2.2 + h * 0.055)
+        height = int(h * 0.075)
+        draw.rounded_rectangle((pad, row_y, pad + width, row_y + height),
+                               radius=height // 2, fill=fill + (255,))
+        _spaced(draw, (pad + int(h * 0.027), row_y + int(height * 0.22)), text,
+                small, ink, tracking=2.2)
+        note_x = pad + width + int(w * 0.02)
+    else:
+        note_x = pad
+    if note.strip():
+        _spaced(draw, (note_x, row_y + int(h * 0.021)), note.strip().upper(),
+                _font(BOLD, int(h * 0.032)), WHITE, tracking=int(h * 0.006))
+
+    layer.convert("RGB").save(dst, quality=92)
+    return dst

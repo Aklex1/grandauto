@@ -58,6 +58,11 @@
       <label style="flex:2;min-width:220px">Название в панели (необязательно)
         <input name="title" placeholder="оставьте пустым — подставится сгенерированный заголовок"></label>
     </div>
+    <label><input type="checkbox" name="want_cover" value="1" style="width:auto" checked>
+      Сделать обложку
+      <span class="small muted">— яркая цветная картинка 1280×720 с крупным заголовком,
+        пилюлей длительности и знаком канала. Рисуется из той же сцены, что пойдёт в
+        ролик, поэтому обложка и видео выглядят одним целым. Бесплатно.</span></label>
     <button class="btn" type="submit">Создать трек</button>
     {% if not loops %}
       <p class="small" style="color:#f0a0a0">Заставок у канала нет — сначала зайдите
@@ -227,6 +232,15 @@
     <div style="flex:1;min-width:260px">
       <a class="btn btn-sm" href="/media/{{ mix.video_path }}" download>Скачать видео</a>
       <a class="btn btn-sm btn-ghost" href="/music/{{ mix.id }}/description.txt">Описание файлом</a>
+      {% if mix.cover_path %}
+      <div style="margin-top:8px">
+        <img src="/media/{{ mix.cover_path }}" alt="обложка"
+             style="width:100%;border-radius:8px">
+        <a class="btn btn-sm btn-ghost" href="/media/{{ mix.cover_path }}" download>
+          Скачать обложку</a>
+      </div>
+      {% endif %}
+
       {% if mix.tracklist %}
       <details style="margin-top:8px">
         <summary class="small">Тайм-код ({{ mix.tracks|length }} композиций)</summary>
@@ -265,6 +279,36 @@
       </form>
     {% else %}
       <span class="small muted">Публикация не настроена — <a href="/youtube">подключить</a></span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if mix.video_path %}
+  <div style="margin-top:10px">
+    <form method="post" action="/music/{{ mix.id }}/short" style="display:inline">
+      <input type="hidden" name="back" value="/music/c/{{ channel.slug }}?tab=library">
+      <button class="btn btn-sm btn-ghost" type="submit">Сделать шорт</button>
+    </form>
+    <span class="small muted">— вырежет случайный кусок на минуту, развернёт под
+      9:16 и подпишет композицией, которая в нём звучит. Бесплатно: режем своё.</span>
+    {% if mix.shorts %}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px">
+      {% for sh in mix.shorts %}
+      <div class="card" style="width:200px">
+        <div class="small"><b>{{ sh.title or 'отрывок' }}</b></div>
+        <div class="small muted">с {{ mv_timecode(sh.start_sec) }} ·
+          {{ '%.0f'|format(sh.duration_sec) }} с</div>
+        <video controls preload="none" style="width:100%;margin:6px 0"
+          {% if sh.poster_path %}poster="/media/{{ sh.poster_path }}"{% endif %}
+          src="/media/{{ sh.path }}"></video>
+        <a class="btn btn-sm" href="/media/{{ sh.path }}" download>Скачать</a>
+        <form method="post" action="/music/shorts/{{ sh.id }}/drop" style="display:inline">
+          <input type="hidden" name="back" value="/music/c/{{ channel.slug }}?tab=library">
+          <button class="btn btn-sm btn-ghost" type="submit">Убрать</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
     {% endif %}
   </div>
   {% endif %}
