@@ -1630,3 +1630,71 @@ def drop(session: Session, video_id: int, *, with_files: bool = False) -> None:
                 shutil.rmtree(source, ignore_errors=True)
     session.delete(video)
     session.commit()
+
+
+# ---------------------------------------------------------------- публикация
+
+
+def publish(video_id: int, *, privacy: str = "private") -> None:
+    """Выложить готовый микс на YouTube.
+
+    Обвязка уже написана при сборке: заголовок, описание с тайм-кодом и теги
+    берём как есть, правленные руками — тоже, потому что они лежат в тех же
+    полях. Обложку отдаём ту, что снята с ролика.
+    """
+    from . import youtube
+
+    with session_scope() as session:
+        video = session.get(MusicVideo, video_id)
+        if video is None:
+            raise RuntimeError(f"микс #{video_id} не найден")
+        if not video.video_path:
+            raise RuntimeError("микс ещё не собран — выкладывать нечего")
+        path = storage.abspath(video.video_path)
+        poster = storage.abspath(video.poster_path) if video.poster_path else None
+        title = (video.yt_title or video.title or style_of(video.style).label)
+        description = video.description or ""
+        tags = [tag.strip() for tag in (video.tags or "").split(",") if tag.strip()]
+        video.youtube_state = "running"
+        video.youtube_error = ""
+        session.commit()
+        creds = youtube.credentials(session)
+
+    if not path.is_file():
+        _youtube_failed(video_id, "файл ролика не найден")
+        raise RuntimeError("файл ролика не найден")
+
+    try:
+        # Загрузка идёт без открытой сессии базы: гигабайтный файл уходит
+        # минутами, и держать транзакцию всё это время незачем.
+        result = youtube.upload(
+            creds, path, title=title, description=description, tags=tags,
+            privacy=privacy,
+            thumbnail=poster if poster and poster.is_file() else None)
+    except Exception as exc:  # noqa: BLE001 — причину надо показать в панели
+        log.warning("Микс #%s не выложен: %s", video_id, exc)
+        _youtube_failed(video_id, str(exc))
+        _note("warn", f"Микс #{video_id} не выложен на YouTube: {exc}")
+        raise
+
+    with session_scope() as session:
+        video = session.get(MusicVideo, video_id)
+        if video is not None:
+            video.youtube_id = result["id"]
+            video.youtube_url = result["url"]
+            video.youtube_privacy = result.get("privacy") or privacy
+            video.youtube_state = "done"
+            video.youtube_error = ""
+            session.commit()
+    _note("info", f"Микс #{video_id} выложен: {result['url']} "
+                  f"({youtube.PRIVACY.get(result.get('privacy') or privacy, privacy)})")
+    log.info("Микс #%s выложен: %s", video_id, result["url"])
+
+
+def _youtube_failed(video_id: int, reason: str) -> None:
+    with session_scope() as session:
+        video = session.get(MusicVideo, video_id)
+        if video is not None:
+            video.youtube_state = "failed"
+            video.youtube_error = reason[:4000]
+            session.commit()

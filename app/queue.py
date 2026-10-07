@@ -117,6 +117,11 @@ def _run_job(job_id: int) -> None:
             from . import archives
 
             archives.build_item(int(payload.get("item_id") or 0))
+        elif kind == "youtube_upload":
+            from . import musicvideo
+
+            musicvideo.publish(int(payload.get("video_id") or 0),
+                               privacy=payload.get("privacy") or "private")
         elif kind == "music_video":
             from . import musicvideo
 

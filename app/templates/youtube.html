@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Публикация на YouTube{% endblock %}
+{% block content %}
+<h1>Публикация на YouTube</h1>
+<p class="small muted">
+  Готовый микс и так лежит с написанным заголовком, описанием, тегами и тайм-кодом —
+  руками остаётся перетащить файл в Студию и вставить текст. Здесь настраивается, чтобы
+  это делал сервер сам. Пароль от Google ему не нужен и никуда не попадает: вы один раз
+  разрешаете доступ в своём браузере, а сервер хранит только токен обновления.
+  Запрашивается единственное право — загрузка (<code>{{ yt_scope }}</code>): ни читать
+  канал, ни править плейлисты, ни удалять ролики сервер не сможет.
+</p>
+
+{% if yt_connected %}
+  <p class="badge">Доступ настроен — кнопка «Выложить на YouTube» работает во вкладке
+    «Музыка» → «Библиотека».</p>
+{% endif %}
+{% if request.query_params.get('saved') %}
+  <p class="badge">Ключи приложения сохранены.</p>
+{% endif %}
+{% if request.query_params.get('connected') %}
+  <p class="badge">Доступ разрешён, токен сохранён.</p>
+{% endif %}
+{% if request.query_params.get('forgotten') %}
+  <p class="badge">Токен удалён. Публикация не будет работать до нового разрешения.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'no-app' %}
+  <p class="badge" style="background:#5b2222">Сначала сохраните ключи приложения.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'no-code' %}
+  <p class="badge" style="background:#5b2222">Код не вставлен.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'exchange' %}
+  <p class="badge" style="background:#5b2222">Код не принят:
+    {{ request.query_params.get('detail') }}</p>
+{% endif %}
+
+<fieldset><legend>Шаг 1. Приложение в Google Cloud — один раз</legend>
+  <p class="small muted">Это ваши клики в консоли Google, сервер тут ничего сделать не может.</p>
+  <ol class="small">
+    <li>Откройте <a href="https://console.cloud.google.com/projectcreate" target="_blank"
+      rel="noopener">создание проекта</a> и сделайте проект с любым названием.</li>
+    <li>Включите в нём <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com"
+      target="_blank" rel="noopener">YouTube Data API v3</a> — кнопка «Включить».</li>
+    <li>В разделе <a href="https://console.cloud.google.com/apis/credentials/consent"
+      target="_blank" rel="noopener">«Экран согласия»</a> выберите тип
+      <b>Внешний</b>, заполните название и свою почту. Публиковать приложение не нужно:
+      добавьте себя в <b>тестовые пользователи</b> — этого достаточно.</li>
+    <li>В <a href="https://console.cloud.google.com/apis/credentials" target="_blank"
+      rel="noopener">«Учётных данных»</a> создайте
+      <b>Идентификатор клиента OAuth</b> с типом
+      <b>Приложение для настольного компьютера</b>. Именно этот тип разрешает возврат
+      на <code>{{ yt_redirect }}</code> — без своего домена и сертификата другого пути нет.</li>
+    <li>Скопируйте оттуда идентификатор и секрет клиента и вставьте ниже.</li>
+  </ol>
+  <form method="post" action="/youtube/app">
+    <label>Идентификатор клиента
+      <input name="client_id" value="{{ yt_client_id }}"
+             placeholder="…apps.googleusercontent.com" autocomplete="off"></label>
+    <label>Секрет клиента
+      <input name="client_secret" type="password" autocomplete="off"
+             placeholder="{% if yt_has_secret %}сохранён — оставьте пустым, чтобы не менять{% else %}GOCSPX-…{% endif %}"></label>
+    <button class="btn" type="submit">Сохранить</button>
+  </form>
+</fieldset>
+
+<fieldset><legend>Шаг 2. Разрешить доступ к каналу</legend>
+  {% if not yt_consent %}
+    <p class="muted">Сначала сохраните ключи приложения в шаге 1.</p>
+  {% else %}
+    <p class="small muted">
+      Откройте ссылку, выберите нужный аккаунт и разрешите доступ. Запрашивается только
+      право загрузки (<code>{{ yt_scope }}</code>) — ни читать канал, ни править
+      плейлисты сервер не сможет.
+    </p>
+    <p class="small muted">
+      После разрешения браузер попробует перейти на <code>{{ yt_redirect }}</code> и
+      покажет «Не удалось открыть страницу». <b>Так и должно быть.</b> Нужный код — в
+      адресной строке после <code>code=</code>. Можно скопировать весь адрес целиком,
+      код я достану сам.
+    </p>
+    <p><a class="btn" href="{{ yt_consent }}" target="_blank" rel="noopener">
+      Открыть страницу разрешения</a></p>
+    <form method="post" action="/youtube/code">
+      <label>Код или весь адрес из строки браузера
+        <input name="code" placeholder="4/0Ax… или http://localhost:8765/?code=4/0Ax…"
+               autocomplete="off" required></label>
+      <button class="btn" type="submit">Принять код</button>
+    </form>
+  {% endif %}
+  {% if yt_connected %}
+    <form method="post" action="/youtube/forget" style="margin-top:12px"
+          onsubmit="return confirm('Удалить токен? Публикация перестанет работать до нового разрешения.')">
+      <button class="btn btn-sm btn-ghost" type="submit">Забыть доступ</button>
+    </form>
+  {% endif %}
+</fieldset>
+
+<fieldset><legend>Что надо знать про ограничения площадки</legend>
+  <ul class="small muted">
+    <li><b>Квота.</b> Одна загрузка стоит 1600 единиц из 10 000 в сутки — около шести
+      роликов в день. Исчерпали — API отвечает отказом, но файл на месте: можно
+      повторить на следующий день.</li>
+    <li><b>Проверка канала.</b> У непроверенных аккаунтов видео, загруженные через API,
+      принудительно становятся «Личными», что бы мы ни просили. Это ограничение
+      YouTube, а не завода: пройдите проверку канала, и ограничение снимется.</li>
+    <li><b>Своя обложка</b> тоже требует проверенного канала. Если не вышло — ролик уже
+      загружен, отказ от обложки загрузку не отменяет.</li>
+    <li><b>Тестовое приложение.</b> Пока приложение в Google Cloud не опубликовано,
+      доступ выдаётся на неделю, потом токен перестаёт работать — просто разрешите
+      заново здесь же. Публикация приложения снимает и это.</li>
+  </ul>
+</fieldset>
+{% endblock %}

@@ -33,6 +33,12 @@ DEFAULTS: dict[str, Any] = {
     "stock_per_page": "24",
     # неснижаемый остаток на диске: ниже него загрузка футажей останавливается
     "disk_min_free_gb": "5",
+    # публикация на YouTube. Токен обновления — секрет наравне с паролем: он
+    # лежит здесь, в журнал не пишется и в панели не показывается.
+    "youtube_client_id": "",
+    "youtube_client_secret": "",
+    "youtube_refresh_token": "",
+    "youtube_privacy": "private",
 }
 
 

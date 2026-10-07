@@ -34,6 +34,17 @@
 {% if request.query_params.get('error') == 'no-file' %}
   <p class="badge" style="background:#5b2222">Файл не выбран.</p>
 {% endif %}
+{% if request.query_params.get('publishing') %}
+  <p class="badge">Микс #{{ request.query_params.get('publishing') }} поставлен в очередь
+    на публикацию. Гигабайтный файл уходит минутами — состояние обновится в карточке.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'no-youtube' %}
+  <p class="badge" style="background:#5b2222">Публикация не настроена —
+    <a href="/youtube">подключите YouTube</a>.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'not-built' %}
+  <p class="badge" style="background:#5b2222">Микс ещё не собран — выкладывать нечего.</p>
+{% endif %}
 {% if request.query_params.get('error') == 'bad-zip' %}
   <p class="badge" style="background:#5b2222">Архив разобрать не удалось:
     {{ request.query_params.get('detail') }}</p>
@@ -332,6 +343,38 @@
       <button class="btn btn-sm" type="submit">Сохранить</button>
     </form>
   </details>
+  {% endif %}
+
+  {% if mix.video_path %}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
+    {% if mix.youtube_url %}
+      <span class="badge">Выложено:
+        <a href="{{ mix.youtube_url }}" target="_blank" rel="noopener">{{ mix.youtube_url }}</a>
+        {% if mix.youtube_privacy %}({{ yt_privacy.get(mix.youtube_privacy, mix.youtube_privacy) }}){% endif %}
+      </span>
+    {% elif mix.youtube_state == 'queued' or mix.youtube_state == 'running' %}
+      <span class="badge">{% if mix.youtube_state == 'queued' %}в очереди на публикацию{% else %}загружается на YouTube{% endif %}</span>
+    {% endif %}
+    {% if mix.youtube_error %}
+      <span class="small" style="color:#f0a0a0">{{ mix.youtube_error }}</span>
+    {% endif %}
+    {% if yt_ready %}
+      <form method="post" action="/music/{{ mix.id }}/publish"
+            style="display:flex;gap:8px;align-items:flex-end">
+        <label style="margin:0">Доступ
+          <select name="privacy">
+            {% for key, label in yt_privacy.items() %}
+            <option value="{{ key }}" {% if key == yt_privacy_default %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select></label>
+        <button class="btn btn-sm" type="submit">
+          {% if mix.youtube_url %}Выложить ещё раз{% else %}Выложить на YouTube{% endif %}</button>
+      </form>
+    {% else %}
+      <span class="small muted">Публикация не настроена —
+        <a href="/youtube">подключить YouTube</a></span>
+    {% endif %}
+  </div>
   {% endif %}
 
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">

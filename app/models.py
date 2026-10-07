@@ -722,6 +722,13 @@ class MusicVideo(Base):
     tracklist: Mapped[str] = mapped_column(Text, default="")
     credits: Mapped[float] = mapped_column(Float, default=0.0)
     error: Mapped[str] = mapped_column(Text, default="")
+    # Публикация. Пустой youtube_id значит «не выкладывали»; youtube_state
+    # отличает «в очереди» и «не вышло» от просто незаполненного.
+    youtube_id: Mapped[str] = mapped_column(String(40), default="")
+    youtube_url: Mapped[str] = mapped_column(String(200), default="")
+    youtube_privacy: Mapped[str] = mapped_column(String(20), default="")
+    youtube_state: Mapped[str] = mapped_column(String(20), default="")
+    youtube_error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     started_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)

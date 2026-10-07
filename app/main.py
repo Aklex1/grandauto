@@ -1615,6 +1615,7 @@ def loops_drop(loop_id: int, session: Session = Depends(get_session),
 def music_page(request: Request, tab: str = "new", session: Session = Depends(get_session),
                _user: str = Depends(require_user)):
     from . import musicvideo as mv
+    from . import youtube as yt
 
     tab = tab if tab in ("new", "archive", "library") else "new"
     rows = mv.library(session)
@@ -1625,7 +1626,9 @@ def music_page(request: Request, tab: str = "new", session: Session = Depends(ge
         mv_models=mv.SUNO_MODELS, mv_default_model=mv.DEFAULT_SUNO_MODEL,
         mv_stages=mv.STAGES, mv_backdrops={row.fmt[len(mv.FMT_PREFIX):]: row
                                            for row in mv.backdrops(session)},
-        mv_timecode=mv.timecode, mv_min_track=int(mv.MIN_TRACK_SEC)))
+        mv_timecode=mv.timecode, mv_min_track=int(mv.MIN_TRACK_SEC),
+        yt_ready=yt.configured(session), yt_privacy=yt.PRIVACY,
+        yt_privacy_default=st.get(session, "youtube_privacy", "private")))
 
 
 @app.post("/music/create")
@@ -1755,6 +1758,96 @@ def music_description(video_id: int, session: Session = Depends(get_session),
     body = f"{video.yt_title}\n\n{video.description}\n"
     return Response(content=body, media_type="text/plain; charset=utf-8", headers={
         "Content-Disposition": f'attachment; filename="mix{video_id}_description.txt"'})
+
+
+@app.get("/youtube", response_class=HTMLResponse)
+def youtube_page(request: Request, session: Session = Depends(get_session),
+                 _user: str = Depends(require_user)):
+    from . import youtube as yt
+
+    client_id = st.get(session, "youtube_client_id", "").strip()
+    return templates.TemplateResponse("youtube.html", base_context(
+        request, session, yt_client_id=client_id,
+        yt_has_secret=bool(st.get(session, "youtube_client_secret", "").strip()),
+        yt_connected=yt.configured(session),
+        yt_redirect=yt.REDIRECT_URI, yt_scope=yt.SCOPE,
+        yt_consent=yt.consent_url(client_id) if client_id else "",
+        yt_privacy=yt.PRIVACY,
+        yt_privacy_default=st.get(session, "youtube_privacy", "private")))
+
+
+@app.post("/youtube/app")
+def youtube_app(session: Session = Depends(get_session), _user: str = Depends(require_user),
+                client_id: str = Form(""), client_secret: str = Form("")):
+    """Ключи приложения Google. Секрет перезаписываем только если прислали новый."""
+    if client_id.strip():
+        st.set_value(session, "youtube_client_id", client_id.strip())
+    if client_secret.strip():
+        st.set_value(session, "youtube_client_secret", client_secret.strip())
+    session.commit()
+    return RedirectResponse("/youtube?saved=1", status_code=303)
+
+
+@app.post("/youtube/code")
+def youtube_code(session: Session = Depends(get_session), _user: str = Depends(require_user),
+                 code: str = Form("")):
+    """Код со страницы разрешения доступа → токен обновления."""
+    from . import youtube as yt
+
+    client_id = st.get(session, "youtube_client_id", "").strip()
+    client_secret = st.get(session, "youtube_client_secret", "").strip()
+    if not (client_id and client_secret):
+        return RedirectResponse("/youtube?error=no-app", status_code=303)
+    cleaned = code.strip()
+    # Люди вставляют весь адрес из строки браузера — достаём код сами, это
+    # честнее, чем требовать аккуратности от человека.
+    if "code=" in cleaned:
+        from urllib.parse import parse_qs, urlparse
+
+        found = parse_qs(urlparse(cleaned).query).get("code")
+        cleaned = found[0] if found else cleaned
+    if not cleaned:
+        return RedirectResponse("/youtube?error=no-code", status_code=303)
+    try:
+        token = yt.exchange_code(client_id, client_secret, cleaned)
+    except yt.YouTubeError as exc:
+        return RedirectResponse(f"/youtube?error=exchange&detail={str(exc)[:200]}",
+                                status_code=303)
+    st.set_value(session, "youtube_refresh_token", token)
+    session.commit()
+    return RedirectResponse("/youtube?connected=1", status_code=303)
+
+
+@app.post("/youtube/forget")
+def youtube_forget(session: Session = Depends(get_session), _user: str = Depends(require_user)):
+    """Забыть токен обновления: доступ перестаёт работать до нового разрешения."""
+    st.set_value(session, "youtube_refresh_token", "")
+    session.commit()
+    return RedirectResponse("/youtube?forgotten=1", status_code=303)
+
+
+@app.post("/music/{video_id}/publish")
+def music_publish(video_id: int, session: Session = Depends(get_session),
+                  _user: str = Depends(require_user), privacy: str = Form("private")):
+    """Поставить микс в очередь на публикацию."""
+    from . import youtube as yt
+    from .models import MusicVideo
+
+    video = session.get(MusicVideo, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Микс не найден")
+    if not video.video_path:
+        return RedirectResponse("/music?tab=library&error=not-built", status_code=303)
+    if not yt.configured(session):
+        return RedirectResponse("/music?tab=library&error=no-youtube", status_code=303)
+    privacy = privacy if privacy in yt.PRIVACY else "private"
+    st.set_value(session, "youtube_privacy", privacy)
+    video.youtube_state = "queued"
+    video.youtube_error = ""
+    session.commit()
+    queue.enqueue(session, "youtube_upload",
+                  payload={"video_id": video_id, "privacy": privacy})
+    return RedirectResponse(f"/music?tab=library&publishing={video_id}", status_code=303)
 
 
 @app.post("/videos/{video_id}/action")
