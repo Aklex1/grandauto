@@ -656,3 +656,82 @@ class Voice(Base):
     gender: Mapped[str] = mapped_column(String(16), default="")
     preview_url: Mapped[str] = mapped_column(String(400), default="")
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class MusicVideo(Base):
+    """Длинное музыкальное видео: сшитый микс поверх зацикленной заставки.
+
+    Отличие от шортса принципиальное: здесь нет ни сценария, ни озвучки, ни
+    контент-плана. Единица работы — один микс на 25–35 минут: Suno выдаёт
+    несколько инструментальных треков в выбранном жанре, сервер сшивает их
+    мягкими переходами, а картинка — один зацикленный клип, который крутится по
+    кругу всё время. Поэтому платим за музыку и одну заставку, а не за минуты
+    видео: тридцатиминутный ролик стоит столько же, сколько восьмисекундный луп.
+    """
+
+    __tablename__ = "music_videos"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(300), default="")
+    style: Mapped[str] = mapped_column(String(60), default="", index=True)
+    style_label: Mapped[str] = mapped_column(String(200), default="")
+    minutes: Mapped[int] = mapped_column(Integer, default=30)
+    suno_model: Mapped[str] = mapped_column(String(40), default="")
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    stage: Mapped[str] = mapped_column(String(40), default="queued")
+    # Заставка: своя запись в библиотеке лупов, чтобы один клип обслуживал все
+    # миксы этого жанра. Здесь — только путь к файлу, который реально взят.
+    loop_id: Mapped[int] = mapped_column(Integer, default=0)
+    loop_path: Mapped[str] = mapped_column(String(500), default="")
+    poster_path: Mapped[str] = mapped_column(String(500), default="")
+    audio_path: Mapped[str] = mapped_column(String(500), default="")
+    video_path: Mapped[str] = mapped_column(String(500), default="")
+    duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    crossfade_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    # Только цена заставки, и только если её генерировали для этого микса: Suno
+    # в ответе стоимость заявки не возвращает, а заставка из библиотеки уже
+    # оплачена другим миксом.
+    # Готовая обвязка для публикации: заголовок, описание, теги и тайм-код.
+    yt_title: Mapped[str] = mapped_column(String(300), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[str] = mapped_column(Text, default="")
+    tracklist: Mapped[str] = mapped_column(Text, default="")
+    credits: Mapped[float] = mapped_column(Float, default=0.0)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    started_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+
+    tracks: Mapped[list["MusicVideoTrack"]] = relationship(
+        back_populates="video", cascade="all, delete-orphan",
+        order_by="MusicVideoTrack.idx")
+
+
+class MusicVideoTrack(Base):
+    """Один трек микса.
+
+    Треки лежат отдельными записями, а не списком в JSON, чтобы сорвавшуюся
+    генерацию можно было добрать по одной штуке: Suno падает нередко, а
+    переплачивать за уже скачанные треки не за что.
+    """
+
+    __tablename__ = "music_video_tracks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    video_id: Mapped[int] = mapped_column(
+        ForeignKey("music_videos.id", ondelete="CASCADE"), index=True)
+    idx: Mapped[int] = mapped_column(Integer, default=0)
+    title: Mapped[str] = mapped_column(String(300), default="")
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    model: Mapped[str] = mapped_column(String(40), default="")
+    path: Mapped[str] = mapped_column(String(500), default="")
+    source_url: Mapped[str] = mapped_column(String(600), default="")
+    duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    # Секунда, с которой трек слышно в готовом миксе: с учётом перекрытий
+    # переходов, иначе тайм-код в описании разъезжается к концу.
+    start_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    credits: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+    video: Mapped[MusicVideo] = relationship(back_populates="tracks")

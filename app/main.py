@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse, Response)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import UploadFile
@@ -1608,6 +1609,103 @@ def loops_drop(loop_id: int, session: Session = Depends(get_session),
         row.is_active = False
         session.commit()
     return RedirectResponse("/loops", status_code=303)
+
+
+@app.get("/music", response_class=HTMLResponse)
+def music_page(request: Request, tab: str = "new", session: Session = Depends(get_session),
+               _user: str = Depends(require_user)):
+    from . import musicvideo as mv
+
+    tab = tab if tab in ("new", "library") else "new"
+    rows = mv.library(session)
+    return templates.TemplateResponse("music.html", base_context(
+        request, session, tab=tab, mixes=rows,
+        mv_styles=[mv.STYLES[k] for k in mv.STYLE_ORDER],
+        mv_minutes=mv.MINUTES_CHOICES, mv_default_minutes=mv.DEFAULT_MINUTES,
+        mv_models=mv.SUNO_MODELS, mv_default_model=mv.DEFAULT_SUNO_MODEL,
+        mv_stages=mv.STAGES, mv_backdrops={row.fmt[len(mv.FMT_PREFIX):]: row
+                                           for row in mv.backdrops(session)},
+        mv_timecode=mv.timecode))
+
+
+@app.post("/music/create")
+def music_create(session: Session = Depends(get_session), _user: str = Depends(require_user),
+                 style: str = Form(...), minutes: int = Form(30),
+                 suno_model: str = Form(""), title: str = Form(""),
+                 language: str = Form("en"), new_backdrop: str = Form("")):
+    from . import musicvideo as mv
+
+    if style not in mv.STYLES:
+        return RedirectResponse("/music?error=style", status_code=303)
+    video = mv.create(session, style=style, minutes=minutes, suno_model=suno_model,
+                      title=title)
+    queue.enqueue(session, "music_video", payload={
+        "video_id": video.id, "language": "ru" if language == "ru" else "en",
+        # Заставка жанра переиспользуется: перегенерация — отдельная галочка,
+        # иначе каждый микс платил бы за одну и ту же картинку заново.
+        "reuse_backdrop": not bool(new_backdrop),
+    })
+    return RedirectResponse(f"/music?tab=library&queued={video.id}", status_code=303)
+
+
+@app.post("/music/{video_id}/run")
+def music_run(video_id: int, session: Session = Depends(get_session),
+              _user: str = Depends(require_user), language: str = Form("en"),
+              new_backdrop: str = Form("")):
+    """Дособрать или пересобрать микс: уже скачанные треки не оплачиваются заново."""
+    from .models import MusicVideo
+
+    video = session.get(MusicVideo, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Микс не найден")
+    video.status = "queued"
+    video.stage = "queued"
+    video.error = ""
+    session.commit()
+    queue.enqueue(session, "music_video", payload={
+        "video_id": video_id, "language": "ru" if language == "ru" else "en",
+        "reuse_backdrop": not bool(new_backdrop),
+    })
+    return RedirectResponse(f"/music?tab=library&queued={video_id}", status_code=303)
+
+
+@app.post("/music/{video_id}/meta")
+def music_meta(video_id: int, session: Session = Depends(get_session),
+               _user: str = Depends(require_user), yt_title: str = Form(""),
+               description: str = Form(""), tags: str = Form("")):
+    from .models import MusicVideo
+
+    video = session.get(MusicVideo, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Микс не найден")
+    video.yt_title = yt_title.strip()[:300]
+    video.description = description
+    video.tags = tags.strip()
+    session.commit()
+    return RedirectResponse(f"/music?tab=library&saved={video_id}", status_code=303)
+
+
+@app.post("/music/{video_id}/drop")
+def music_drop(video_id: int, session: Session = Depends(get_session),
+               _user: str = Depends(require_user), with_files: str = Form("")):
+    from . import musicvideo as mv
+
+    mv.drop(session, video_id, with_files=bool(with_files))
+    return RedirectResponse("/music?tab=library", status_code=303)
+
+
+@app.get("/music/{video_id}/description.txt")
+def music_description(video_id: int, session: Session = Depends(get_session),
+                      _user: str = Depends(require_user)):
+    """Описание с тайм-кодом отдельным файлом — его удобно вставлять на YouTube."""
+    from .models import MusicVideo
+
+    video = session.get(MusicVideo, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Микс не найден")
+    body = f"{video.yt_title}\n\n{video.description}\n"
+    return Response(content=body, media_type="text/plain; charset=utf-8", headers={
+        "Content-Disposition": f'attachment; filename="mix{video_id}_description.txt"'})
 
 
 @app.post("/videos/{video_id}/action")

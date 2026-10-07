@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Музыкальные видео{% endblock %}
+{% block content %}
+<h1>Музыкальные видео</h1>
+<p class="small muted">
+  Длинный микс: музыка одного жанра на 25–35 минут поверх одной зацикленной заставки.
+  Платим только за треки и за заставку, причём заставка генерируется один раз на жанр и
+  дальше достаётся всем миксам того же стиля бесплатно — минута готового видео не стоит
+  ничего. Сценария, озвучки и контент-плана здесь нет: выбираете длительность и жанр,
+  промпт заставки подбирается по жанру сам.
+</p>
+
+<div class="tabs">
+  <a href="?tab=new" class="{% if tab == 'new' %}active{% endif %}">Создать композицию</a>
+  <a href="?tab=library" class="{% if tab == 'library' %}active{% endif %}">Библиотека ({{ mixes|length }})</a>
+</div>
+
+{% if request.query_params.get('queued') %}
+  <p class="badge">Микс #{{ request.query_params.get('queued') }} поставлен в очередь.
+    Музыка идёт около 10 минут на заявку, весь микс — 20–40 минут. Ход — во вкладке
+    «Библиотека» и в «Очереди».</p>
+{% endif %}
+{% if request.query_params.get('saved') %}
+  <p class="badge">Описание микса #{{ request.query_params.get('saved') }} сохранено.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'style' %}
+  <p class="badge" style="background:#5b2222">Неизвестный жанр.</p>
+{% endif %}
+
+{% if tab == 'new' %}
+<form method="post" action="/music/create">
+  <fieldset><legend>Новая композиция</legend>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <label style="flex:1;min-width:160px">Длительность
+        <select name="minutes">
+          {% for m in mv_minutes %}
+          <option value="{{ m }}" {% if m == mv_default_minutes %}selected{% endif %}>{{ m }} минут</option>
+          {% endfor %}
+        </select></label>
+      <label style="flex:1;min-width:160px">Модель Suno
+        <select name="suno_model">
+          {% for m in mv_models %}
+          <option value="{{ m }}" {% if m == mv_default_model %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+        <span class="small muted">Чем новее модель, тем длиннее кусок за одну заявку —
+          и тем меньше заявок на тот же микс.</span></label>
+      <label style="flex:1;min-width:160px">Язык описания
+        <select name="language">
+          <option value="en" selected>Английский</option>
+          <option value="ru">Русский</option>
+        </select></label>
+    </div>
+    <label>Название в панели (необязательно)
+      <input name="title" placeholder="оставьте пустым — подставится сгенерированный заголовок"></label>
+    <label><input type="checkbox" name="new_backdrop" value="1" style="width:auto">
+      Сгенерировать заставку заново, даже если для жанра она уже есть
+      <span class="small muted">(без галочки заставка берётся из библиотеки и ничего не стоит)</span></label>
+
+    <h3>Жанр</h3>
+    <p class="small muted">
+      Жанр задаёт сразу три вещи: что заказывается у Suno, какая картинка пойдёт в
+      заставку и что на ней будет двигаться. Длительность в колонке «привычно» — та,
+      на которой этот формат обычно и слушают.
+    </p>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th></th><th>Жанр</th><th>Слушают ради</th><th>Заставка</th>
+        <th>Привычно</th>
+      </tr></thead>
+      <tbody>
+      {% for s in mv_styles %}
+        {% set shot = mv_backdrops.get(s.key) %}
+        <tr>
+          <td><input type="radio" name="style" value="{{ s.key }}" style="width:auto"
+                     {% if loop.first %}checked{% endif %} required></td>
+          <td><b>{{ s.label }}</b>
+            <div class="small muted">{{ s.suno[:150] }}…</div>
+            <div class="small muted">Заставка: {{ s.image[:110] }}…</div>
+            {% if s.pingpong %}
+              <div class="small muted">Повтор зеркальный — стык не виден совсем</div>
+            {% endif %}</td>
+          <td class="small">{{ s.use }}
+            <div class="small muted">{{ s.tags|join(', ') }}</div></td>
+          <td class="small">
+            {% if shot %}
+              <span class="badge">есть</span>
+              <div class="small muted">{{ '%.0f'|format(shot.duration_sec) }} с,
+                {{ shot.width }}×{{ shot.height }}</div>
+            {% else %}
+              <span class="muted">будет сгенерирована</span>
+            {% endif %}
+          </td>
+          <td class="small">{{ s.minutes }} мин</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <button class="btn" type="submit">Создать и поставить в очередь</button>
+    <p class="small muted">
+      Деньги списываются за заявки к Suno (по одной на каждые несколько минут микса) и,
+      если заставки жанра ещё нет, за одну картинку с одним оживлением. Сшивание,
+      выравнивание громкости и сборка видео делаются на сервере и не стоят ничего.
+    </p>
+  </fieldset>
+</form>
+
+{% else %}
+
+{% if not mixes %}
+  <p class="muted">Пока пусто. Создайте первую композицию во вкладке «Создать композицию».</p>
+{% endif %}
+
+{% for mix in mixes %}
+<div class="card" style="margin-bottom:16px">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div>
+      <b>#{{ mix.id }} {{ mix.title or mix.yt_title or mix.style_label }}</b>
+      <div class="small muted">{{ mix.style_label }} · заказано {{ mix.minutes }} мин ·
+        {{ mix.suno_model }}</div>
+    </div>
+    <div>
+      <span class="badge"
+            {% if mix.status == 'failed' %}style="background:#5b2222"{% endif %}>
+        {{ mv_stages.get(mix.stage, mix.stage) }}</span>
+      {% if mix.duration_sec %}
+        <span class="small">{{ '%.0f'|format(mix.duration_sec / 60) }} мин ·
+          {{ mix.width }}×{{ mix.height }} ·
+          {{ (mix.file_size / 1048576)|round(0)|int }} МБ</span>
+      {% endif %}
+      {% if mix.credits %}
+        <span class="small muted" title="Suno не сообщает цену заявки в ответе, поэтому
+          здесь только заставка">· {{ '%.0f'|format(mix.credits) }} кредитов за заставку</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if mix.error %}
+    <p class="small" style="color:#f0a0a0">{{ mix.error }}</p>
+  {% endif %}
+
+  {% if mix.video_path %}
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+    <video controls preload="none" style="width:420px;max-width:100%"
+      {% if mix.poster_path %}poster="/media/{{ mix.poster_path }}"{% endif %}
+      src="/media/{{ mix.video_path }}"></video>
+    <div style="flex:1;min-width:260px">
+      <a class="btn btn-sm" href="/media/{{ mix.video_path }}" download>Скачать видео</a>
+      {% if mix.audio_path %}
+        <a class="btn btn-sm btn-ghost" href="/media/{{ mix.audio_path }}" download>Только звук</a>
+      {% endif %}
+      <a class="btn btn-sm btn-ghost" href="/music/{{ mix.id }}/description.txt">Описание файлом</a>
+      {% if mix.tracklist %}
+      <details style="margin-top:8px">
+        <summary class="small">Тайм-код ({{ mix.tracks|length }} композиций)</summary>
+        <pre class="small" style="white-space:pre-wrap">{{ mix.tracklist }}</pre>
+      </details>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if mix.tracks %}
+  <details style="margin-top:8px">
+    <summary class="small">Треки на диске ({{ mix.tracks|length }})</summary>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>#</th><th>Название</th><th>Длина</th><th>С какой секунды</th><th></th></tr></thead>
+      <tbody>
+      {% for t in mix.tracks %}
+      <tr>
+        <td>{{ t.idx }}</td>
+        <td class="small">{{ t.title }}</td>
+        <td class="small">{{ '%.0f'|format(t.duration_sec) }} с</td>
+        <td class="small">{{ mv_timecode(t.start_sec) }}</td>
+        <td class="small">{% if t.path %}<a href="/media/{{ t.path }}" download>скачать</a>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% endif %}
+
+  {% if mix.video_path or mix.description %}
+  <details style="margin-top:8px">
+    <summary class="small">Заголовок, описание и теги</summary>
+    <form method="post" action="/music/{{ mix.id }}/meta">
+      <label>Заголовок для YouTube
+        <input name="yt_title" value="{{ mix.yt_title }}"></label>
+      <label>Описание (тайм-код уже внутри)
+        <textarea name="description" rows="12">{{ mix.description }}</textarea></label>
+      <label>Теги
+        <input name="tags" value="{{ mix.tags }}"></label>
+      <button class="btn btn-sm" type="submit">Сохранить</button>
+    </form>
+  </details>
+  {% endif %}
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    <form method="post" action="/music/{{ mix.id }}/run">
+      <input type="hidden" name="language" value="en">
+      <button class="btn btn-sm" type="submit">
+        {% if mix.status == 'done' %}Пересобрать{% else %}Дособрать{% endif %}</button>
+    </form>
+    <form method="post" action="/music/{{ mix.id }}/run"
+          onsubmit="return confirm('Заставка жанра будет сгенерирована заново — это платно. Продолжить?')">
+      <input type="hidden" name="language" value="en">
+      <input type="hidden" name="new_backdrop" value="1">
+      <button class="btn btn-sm btn-ghost" type="submit">Пересобрать с новой заставкой</button>
+    </form>
+    <form method="post" action="/music/{{ mix.id }}/drop"
+          onsubmit="return confirm('Убрать микс #{{ mix.id }} из панели? Файлы останутся на диске.')">
+      <button class="btn btn-sm btn-ghost" type="submit">Убрать</button>
+    </form>
+  </div>
+  <p class="small muted" style="margin-top:6px">
+    «Дособрать» и «Пересобрать» не платят за музыку второй раз: уже скачанные треки
+    берутся с диска, Suno просят только о недостающем.
+  </p>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

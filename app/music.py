@@ -62,9 +62,15 @@ def style_variant(style: str, index: int) -> str:
     return f"{style}. Variation: {MOODS[index % len(MOODS)]}"
 
 
-def generate_track(client: KieClient, style: str, *, model: str = DEFAULT_MODEL,
-                   timeout: float = 900.0, poll: float = 8.0) -> tuple[str, str, float]:
-    """Создаём инструментальный трек. Возвращает (ссылка, заголовок, потраченные кредиты)."""
+def generate_tracks(client: KieClient, style: str, *, model: str = DEFAULT_MODEL,
+                    timeout: float = 900.0, poll: float = 8.0) -> list[tuple[str, str]]:
+    """Создаём инструментальную музыку. Возвращает ВСЕ варианты: [(ссылка, заголовок)].
+
+    Suno на один запрос отдаёт несколько клипов — это варианты одной и той же
+    заявки, и оплачены они все. Для фона шортса нужен один, а для длинного микса
+    годятся оба: они в одном стиле и отличаются ровно настолько, чтобы не звучать
+    повтором. Поэтому здесь отдаём список, а выбор — делу вызывающего.
+    """
     # Suno требует callBackUrl даже когда результат забирается опросом статуса.
     callback = (config.PUBLIC_URL + "/api/suno-callback") if config.PUBLIC_URL \
         else "https://example.com/suno-callback"
@@ -72,7 +78,7 @@ def generate_track(client: KieClient, style: str, *, model: str = DEFAULT_MODEL,
         "prompt": style[:1000],
         "customMode": False,
         "instrumental": True,
-        "model": model,
+        "model": model or DEFAULT_MODEL,
         "callBackUrl": callback,
     }
     data = client._request("POST", GENERATE, json_body=body, timeout=120)
@@ -88,16 +94,26 @@ def generate_track(client: KieClient, style: str, *, model: str = DEFAULT_MODEL,
         payload = info.get("data") or {}
         status = (payload.get("status") or "").upper()
         if status in TERMINAL_OK:
-            tracks = ((payload.get("response") or {}).get("sunoData") or [])
-            for track in tracks:
-                url = track.get("audioUrl") or track.get("streamAudioUrl") or track.get("audio_url")
+            out: list[tuple[str, str]] = []
+            for track in ((payload.get("response") or {}).get("sunoData") or []):
+                url = track.get("audioUrl") or track.get("streamAudioUrl") \
+                    or track.get("audio_url")
                 if url:
-                    return url, str(track.get("title") or "Фоновый трек"), 0.0
+                    out.append((url, str(track.get("title") or "Без названия")))
+            if out:
+                return out
             raise MusicError("Suno вернул задачу без ссылки на аудио")
         if status in TERMINAL_FAIL:
             raise MusicError(f"Suno: {status} {payload.get('errorMessage') or ''}")
         time.sleep(poll)
     raise MusicError(f"Suno не завершил задачу за {timeout:.0f} с")
+
+
+def generate_track(client: KieClient, style: str, *, model: str = DEFAULT_MODEL,
+                   timeout: float = 900.0, poll: float = 8.0) -> tuple[str, str, float]:
+    """Один трек для фона шортса. Возвращает (ссылка, заголовок, потраченные кредиты)."""
+    url, title = generate_tracks(client, style, model=model, timeout=timeout, poll=poll)[0]
+    return url, title, 0.0
 
 
 def library_dir() -> Path:

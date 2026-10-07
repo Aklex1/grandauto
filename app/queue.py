@@ -117,6 +117,12 @@ def _run_job(job_id: int) -> None:
             from . import archives
 
             archives.build_item(int(payload.get("item_id") or 0))
+        elif kind == "music_video":
+            from . import musicvideo
+
+            musicvideo.build(int(payload.get("video_id") or 0),
+                             reuse_backdrop=bool(payload.get("reuse_backdrop", True)),
+                             language=payload.get("language") or "en")
         elif kind == "build_loops":
             from . import loops, pipeline
             from .models import Channel, Event
@@ -229,6 +235,16 @@ def recover_stuck_jobs() -> None:
         for video in videos:
             video.status = "queued"
             video.stage = "queued"
+        from .models import MusicVideo
+
+        mixes = session.execute(
+            select(MusicVideo).where(MusicVideo.status == "running")).scalars().all()
+        for mix in mixes:
+            # Сборка микса продолжается с того места, где встала: уже скачанные
+            # треки и готовая заставка никуда не делись.
+            mix.status = "queued"
+            mix.stage = "queued"
         session.commit()
-        if stuck or videos:
-            log.info("Восстановлено после рестарта: задач %s, роликов %s", len(stuck), len(videos))
+        if stuck or videos or mixes:
+            log.info("Восстановлено после рестарта: задач %s, роликов %s, миксов %s",
+                     len(stuck), len(videos), len(mixes))

@@ -1046,3 +1046,172 @@ def clips_needed(audio_sec: float, coverage_sec: float, max_clips: int = 8) -> i
     """Сколько уникальных клипов нужно, чтобы закрыть сцену без явного повтора."""
     coverage = max(4.0, coverage_sec)
     return max(1, min(max(1, max_clips), math.ceil(audio_sec / coverage)))
+
+
+# ---------------------------------------------------------------- музыкальный микс
+
+# Громкость музыкального микса. Выше, чем у разговорного ролика (-16): там
+# уровень задаёт речь с паузами, а здесь звук идёт сплошняком, и -14 LUFS —
+# то, к чему приводит музыку сам YouTube. Берём его сразу, чтобы площадка
+# ничего не трогала.
+MUSIC_LUFS = -14.0
+
+# Длина перехода между треками. Шесть секунд — это примерно четыре такта на
+# спокойном темпе: достаточно, чтобы один трек ушёл незаметно, и мало, чтобы
+# два разных гармонических центра успели столкнуться.
+CROSSFADE_SEC = 6.0
+
+
+def normalize_audio(src: Path, dst: Path, target: float = MUSIC_LUFS) -> Path:
+    """Выровнять громкость звуковой дорожки (без видео)."""
+    _ff([
+        "-i", str(src),
+        "-af", f"loudnorm=I={target}:TP={LOUDNESS_PEAK}:LRA=11",
+        "-vn", "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-ac", "2", str(dst),
+    ], timeout=3600)
+    return dst
+
+
+def stitch_music(tracks: list[Path], dst: Path, *, crossfade: float = CROSSFADE_SEC) -> float:
+    """Сшить треки в один микс мягкими переходами. Возвращает длину перехода.
+
+    acrossfade уводит хвост одного трека и одновременно поднимает начало
+    следующего, поэтому стык не слышен совсем — в отличие от простой склейки,
+    где между композициями получается щелчок и провал в тишину.
+
+    Переход съедает по своей длине на каждом стыке, поэтому итоговая длина
+    микса меньше суммы треков на (N-1) * crossfade — это учтено в тайм-коде.
+    """
+    if not tracks:
+        raise ValueError("нечего сшивать: список треков пуст")
+
+    # Переход не может быть длиннее самого короткого трека, иначе ffmpeg
+    # отказывается строить фильтр. Берём с запасом — не больше трети.
+    shortest = min((_stream_duration(t, "a") or 0.0) for t in tracks)
+    fade = max(0.5, min(crossfade, shortest / 3.0)) if shortest > 2 else 0.0
+
+    inputs: list[str] = []
+    for track in tracks:
+        inputs += ["-i", str(track)]
+
+    fmt = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
+    if len(tracks) == 1 or fade <= 0:
+        # Один трек или треки слишком короткие для перехода: просто приводим к
+        # общему формату, чтобы дальше всё работало одинаково. Формат выравниваем
+        # и здесь: concat отказывается склеивать дорожки с разной частотой.
+        steps = [f"[{i}:a]{fmt}[a{i}]" for i in range(len(tracks))]
+        parts = "".join(f"[a{i}]" for i in range(len(tracks)))
+        steps.append(f"{parts}concat=n={len(tracks)}:v=0:a=1[out]"
+                     if len(tracks) > 1 else "[a0]anull[out]")
+        chain = ";".join(steps)
+    else:
+        steps = [f"[{i}:a]{fmt}[a{i}]" for i in range(len(tracks))]
+        current = "[a0]"
+        for index in range(1, len(tracks)):
+            label = f"[x{index}]"
+            steps.append(f"{current}[a{index}]acrossfade=d={fade:.3f}:"
+                         f"c1=tri:c2=tri{label}")
+            current = label
+        steps.append(f"{current}anull[out]")
+        chain = ";".join(steps)
+
+    _ff([*inputs, "-filter_complex", chain, "-map", "[out]",
+         "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-ac", "2", str(dst)],
+        timeout=7200)
+    return fade
+
+
+def _mem_available() -> int:
+    """Сколько памяти реально доступно прямо сейчас, байт. 0 — узнать не удалось."""
+    try:
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) * 1024
+    except Exception:  # noqa: BLE001 — не на Linux или /proc закрыт
+        return 0
+    return 0
+
+
+def can_reverse(duration: float, size: tuple[int, int]) -> bool:
+    """Хватит ли памяти развернуть клип фильтром reverse.
+
+    reverse держит ВСЕ кадры в памяти: восемь секунд FullHD — это больше
+    гигабайта (измерено). На сервере с двумя воркерами и сборкой шортсов рядом
+    такой запрос может кончиться убитым процессом, поэтому спрашиваем заранее.
+    """
+    w, h = size
+    frames = max(1.0, duration * FPS)
+    need = int(frames * w * h * 1.5 * 1.5)
+    free = _mem_available()
+    if free <= 0:
+        return False
+    return free > need * 2
+
+
+def build_music_video(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
+                      duration: float, workdir: Path, *, pingpong: bool = False) -> Path:
+    """Собрать длинный ролик: заставка по кругу плюс готовый микс.
+
+    Полчаса FullHD кодировать целиком не нужно и незачем: заставка — это один и
+    тот же клип. Кодируем его ОДИН раз, а дальше повторяем файл склейкой без
+    перекодирования. Разница в скорости — десятки раз, а картинка на выходе
+    побитово та же.
+
+    pingpong добавляет к клипу его же обратный проход. Это решает задачу
+    бесшовности окончательно: конец зеркального куска совпадает с началом
+    прямого кадр в кадр, какой бы клип ни выдал генератор. Годится только для
+    ненаправленного движения — туман, облака, пылинки: льющийся дождь, поехав
+    обратно, выглядит ошибкой.
+    """
+    w, h = size
+    workdir.mkdir(parents=True, exist_ok=True)
+    segment = workdir / "backdrop.mp4"
+    chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+             f"crop={w}:{h},fps={FPS},format=yuv420p")
+    span_in = _stream_duration(loop, "v") or 0.0
+    if pingpong and not can_reverse(span_in, size):
+        # Памяти на разворот не хватит. Это не повод отказываться от ролика:
+        # клип генерировался с требованием замкнуть движение, и обычное
+        # повторение остаётся рабочим вариантом.
+        log.warning("Зеркальное повторение заставки пропущено: мало памяти "
+                    "(доступно %s)", storage.human_size(_mem_available()))
+        pingpong = False
+    if pingpong:
+        graph = (f"[0:v]{chain},split[fwd][rev];"
+                 f"[rev]reverse[back];[fwd][back]concat=n=2:v=1:a=0[out]")
+        args = ["-i", str(loop), "-filter_complex", graph, "-map", "[out]"]
+    else:
+        args = ["-i", str(loop), "-vf", chain]
+    _ff([
+        *args,
+        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        # Ключевой кадр каждую секунду: при повторе файла склейкой стык
+        # приходится на границу GOP, и декодер его не замечает.
+        "-g", str(FPS), "-keyint_min", str(FPS), "-sc_threshold", "0",
+        str(segment),
+    ], timeout=1800)
+
+    span = _stream_duration(segment, "v") or 0.0
+    if span <= 0:
+        raise RuntimeError("заставка не закодировалась")
+    repeats = max(1, int(duration / span) + 2)
+
+    listing = workdir / "backdrop.txt"
+    listing.write_text("".join(f"file '{segment.as_posix()}'\n" for _ in range(repeats)),
+                       encoding="utf-8")
+    long_video = workdir / "backdrop_long.mp4"
+    _ff(["-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(long_video)],
+        timeout=3600)
+
+    _ff([
+        "-i", str(long_video), "-i", str(audio),
+        "-map", "0:v:0", "-map", "1:a:0", "-t", f"{duration:.3f}",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(dst),
+    ], timeout=3600)
+
+    # Промежуточную дорожку без звука держать нельзя: она той же длины, что и
+    # готовый ролик, и каждый получасовой микс занимал бы диск дважды.
+    for leftover in (long_video, segment, listing):
+        leftover.unlink(missing_ok=True)
+    return dst
