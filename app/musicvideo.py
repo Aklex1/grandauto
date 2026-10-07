@@ -2123,7 +2123,8 @@ def _cover_art(folder: Path, *, shade: int, style: Style,
             return None, 0.0
         art = folder / f"cover_art_{shade:02d}{'_v' if vertical else ''}.png"
         path, credits, _prompt = covers.make(
-            KieClient(api_key=key), art, model=model, style_hint=style.suno,
+            KieClient(api_key=key), art, model=model,
+            style_hint=covers.style_hint_of(style.label, style.use),
             seed=shade, vertical=vertical)
         return path, credits
     except Exception as exc:  # noqa: BLE001 — обложка нужна и без генерации

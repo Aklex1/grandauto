@@ -158,6 +158,17 @@ def pick(seed: int, *, vertical: bool = False) -> Scene:
     return rows[seed % len(rows)]
 
 
+def style_hint_of(label: str, use: str) -> str:
+    """Короткая подсказка о жанре для картинки.
+
+    Музыкальный промпт сюда класть нельзя: «halftime drums around 140 bpm» для
+    генератора картинок шум, и он начинает рисовать барабаны. Нужны два слова
+    про настроение, не про аранжировку.
+    """
+    parts = [part.strip() for part in (label.split("(")[0], use) if part.strip()]
+    return ", ".join(parts)[:120]
+
+
 def build_prompt(style_hint: str, seed: int, *, vertical: bool = False) -> str:
     """Промпт обложки: сюжет, свет, правила кадра и запрет на надписи.
 
