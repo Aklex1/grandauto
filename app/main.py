@@ -1872,7 +1872,8 @@ def mchannel_settings(slug: str, session: Session = Depends(get_session),
                       _user: str = Depends(require_user), name: str = Form(""),
                       minutes: int = Form(0), titles: str = Form(""),
                       subtitle: str = Form(""), brief: str = Form(""),
-                      language: str = Form("en"), equalizer: str = Form("")):
+                      language: str = Form("en"), equalizer: str = Form(""),
+                      now_playing: str = Form("")):
     channel = _mchannel_or_404(session, slug)
     if name.strip():
         channel.name = name.strip()[:200]
@@ -1883,6 +1884,7 @@ def mchannel_settings(slug: str, session: Session = Depends(get_session),
     channel.brief = brief.strip()[:20000]
     channel.language = "ru" if language == "ru" else "en"
     channel.equalizer = bool(equalizer)
+    channel.now_playing = bool(now_playing)
     session.commit()
     return RedirectResponse(f"/music/c/{slug}?tab=look&saved=1", status_code=303)
 

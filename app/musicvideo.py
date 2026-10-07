@@ -1422,6 +1422,44 @@ def backdrop_from_archive(video_id: int, src: str, size: tuple[int, int],
     return dest, True
 
 
+def playing_cards(tracks, fade: float, *, offset: float = 0.0,
+                  total: float = 0.0, chapters: str = "") -> list[dict]:
+    """Что звучит в каждый момент: [{start, end, title}].
+
+    Границы берём те же, что идут в тайм-код, — иначе карточка и главы в
+    описании говорили бы разное. Если архив принёс готовый тайм-код, он главнее:
+    мастер сведён не нами, и по длинам сырья его не восстановить.
+    """
+    rows: list[dict] = []
+    if chapters.strip():
+        parsed: list[tuple[float, str]] = []
+        for line in chapters.splitlines():
+            parts = line.strip().split(" ", 1)
+            if len(parts) != 2:
+                continue
+            chunks = parts[0].split(":")
+            if not all(chunk.isdigit() for chunk in chunks) or not 2 <= len(chunks) <= 3:
+                continue
+            seconds = 0.0
+            for chunk in chunks:
+                seconds = seconds * 60 + int(chunk)
+            parsed.append((seconds + offset, parts[1].strip()))
+        for index, (start, title) in enumerate(parsed):
+            end = parsed[index + 1][0] if index + 1 < len(parsed) else (total or start + 600)
+            rows.append({"start": start, "end": end, "title": title})
+        return rows
+
+    at = offset
+    for index, track in enumerate(tracks):
+        span = float(track.duration_sec or 0.0)
+        last = index == len(tracks) - 1
+        end = at + span - (0.0 if last else fade)
+        rows.append({"start": at, "end": (total or end) if last else end,
+                     "title": track.title or f"Track {index + 1}"})
+        at = end
+    return rows
+
+
 def _stage(video_id: int, stage: str, *, error: str = "") -> None:
     with session_scope() as session:
         video = session.get(MusicVideo, video_id)
@@ -1465,12 +1503,17 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
         master_ready = bool(video.master_ready)
         channel_id = int(video.channel_id or 0)
     equalizer = False
+    now_playing = False
+    channel_name = ""
     if channel_id:
         from .models import MusicChannel
 
         with session_scope() as session:
             row = session.get(MusicChannel, channel_id)
-            equalizer = bool(row.equalizer) if row is not None else False
+            if row is not None:
+                equalizer = bool(row.equalizer)
+                now_playing = bool(row.now_playing)
+                channel_name = row.name
         # Язык берём у микса, если вызов его не назвал: пересборка не должна
         # менять язык уже написанного описания.
         language = language or video.language or "en"
@@ -1567,9 +1610,19 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
                 f"«Дособрать»: музыка уже скачана и второй раз не оплатится")
         # Наезд на картинку обязательно гоняем туда-обратно: вернуться рывком
         # к началу наезда заметнее любого другого стыка.
+        # Карточку считаем ДО сборки: границы композиций нужны самому рендеру, и
+        # они же потом идут в тайм-код — иначе карточка и главы в описании
+        # говорили бы разное.
+        intro_span = storage.media_duration(intro_file) if intro_file else 0.0
+        with session_scope() as session:
+            chapters_src = (session.get(MusicVideo, video_id).chapters_src or "")
+        cards = playing_cards(tracks, fade, offset=intro_span,
+                              total=intro_span + duration,
+                              chapters=chapters_src) if now_playing else None
         media.build_music_video(loop_file, mix, body, size, duration, folder / "render",
                                 pingpong=style.pingpong or from_image,
-                                equalizer=equalizer)
+                                equalizer=equalizer, cards=cards,
+                                artist=channel_name)
         if body != out:
             media.wrap_video(body, out, intro=intro_file, outro=outro_file,
                              size=size, workdir=folder / "wrap")
@@ -1597,10 +1650,9 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
             # минуту — на длинном ролике это сразу видно.
             # Интро идёт перед музыкой, поэтому первая композиция начинается не с
             # нуля: без этого сдвига главы разъезжаются с самой первой метки.
-            at = storage.media_duration(intro_file) if intro_file else 0.0
-            for position, row in enumerate(alive):
-                row.start_sec = at
-                at += row.duration_sec - (fade if position < len(alive) - 1 else 0.0)
+            marks = playing_cards(alive, fade, offset=intro_span)
+            for row, mark in zip(alive, marks):
+                row.start_sec = mark["start"]
 
             video.loop_id = loop_id
             video.loop_path = loop_path

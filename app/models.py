@@ -806,6 +806,9 @@ class MusicChannel(Base):
     # приходится перекодировать целиком — это дороже по времени, но нарисованный
     # «эквалайзер», живущий своей жизнью, зритель раскусывает мгновенно.
     equalizer: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Карточка «сейчас играет» в левом нижнем углу: что звучит в этот момент,
+    # с ходом композиции. Границы берутся из тайм-кода, поэтому не врут.
+    now_playing: Mapped[bool] = mapped_column(Boolean, default=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)

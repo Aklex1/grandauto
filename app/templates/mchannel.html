@@ -135,9 +135,16 @@
       <textarea name="brief" rows="5" placeholder="Какая нужна музыка, какие инструменты, как развивается композиция, нужен ли бэк-вокал.">{{ channel.brief }}</textarea></label>
     <label><input type="checkbox" name="equalizer" value="1" style="width:auto"
                   {% if channel.equalizer %}checked{% endif %}>
-      Эквалайзер по центру кадра
-      <span class="small muted">— столбики строятся из самой музыки. Ролик при этом
-        перекодируется целиком: получасовой собирается минуты, а не секунды.</span></label>
+      Эквалайзер — столбики строятся из самой музыки
+      <span class="small muted">(с карточкой они ложатся внутрь неё, без карточки —
+        по центру кадра). Ролик при этом перекодируется целиком: получасовой
+        собирается минуты, а не секунды.</span></label>
+    <label><input type="checkbox" name="now_playing" value="1" style="width:auto"
+                  {% if channel.now_playing %}checked{% endif %}>
+      Карточка «сейчас играет» в левом нижнем углу
+      <span class="small muted">— название композиции, имя канала и полоса хода.
+        Границы берутся из тайм-кода, поэтому карточка не врёт: названия
+        переключаются ровно на стыках.</span></label>
     <button class="btn btn-sm" type="submit">Сохранить</button>
   </form>
 </fieldset>
