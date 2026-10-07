@@ -140,12 +140,18 @@ PEOPLE = ("the person is the main subject and must be clearly visible in frame, 
           "the frame, never an empty landscape, not a distant tiny figure")
 # Пустая сторона — не украшение: заголовок на обложке крупный, и без неё он
 # ляжет человеку на лицо.
-FRAME_H = ("16:9 horizontal composition, the person placed in the right third of "
-           "the frame, the left half kept simpler and darker so large text can be "
-           "placed there")
-FRAME_V = ("9:16 vertical composition, the person placed in the upper half of the "
-           "frame, the lower half kept simpler and darker so large text can be "
-           "placed there")
+# «Левая половина проще и темнее» генератор понял буквально и выдал диптих:
+# отдельный тёмный кадр слева, основной справа. Поэтому теперь сначала прямо
+# сказано, что кадр один, а место под текст описано как открытый фон, а не как
+# половина картинки.
+ONE_SHOT = ("one single continuous photograph, no split screen, no diptych, no "
+            "collage, no panels, no borders, no frame inside the image")
+FRAME_H = (f"16:9 horizontal composition, {ONE_SHOT}, the person on the right side "
+           "of the frame, the left side filled with open background — sky, sea or "
+           "road — without important detail, leaving room for large text")
+FRAME_V = (f"9:16 vertical composition, {ONE_SHOT}, the person in the upper part of "
+           "the frame, the lower part filled with open background — sand, water or "
+           "road — without important detail, leaving room for large text")
 # Шортс — это движение. Говорим про него прямо, иначе генератор рисует позу.
 MOTION = ("energetic action shot, caught mid-movement, dynamic diagonal "
           "composition, motion blur on the background, vivid saturated colours, "

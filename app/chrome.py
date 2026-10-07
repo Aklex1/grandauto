@@ -199,6 +199,37 @@ def _fit(draw: ImageDraw.ImageDraw, text: str, path: str, width: int,
     return _font(path, 18)
 
 
+def _busy(image, box: tuple[int, int, int, int]) -> float:
+    """Насколько кусок кадра занят деталями.
+
+    Лицо, руль и листва дают много перепадов яркости, небо и вода — почти
+    ничего. По этому и выбираем, где заголовку не мешать картинке.
+    """
+    from PIL import ImageFilter
+
+    crop = image.crop(box).convert("L").resize((64, 64))
+    edges = crop.filter(ImageFilter.FIND_EDGES)
+    data = list(edges.getdata())
+    return sum(data) / len(data)
+
+
+def _text_column(image, w: int, h: int, pad: int, box: int) -> int:
+    """Где начать колонку с текстом: слева, по центру или справа.
+
+    Жёстко прибитая к левому краю колонка однажды легла героине прямо на лицо —
+    в том кадре она сидела за рулём слева. Поэтому колонку примеряем в трёх
+    местах и берём ту, где картинка спокойнее.
+    """
+    top, bottom = int(h * 0.24), int(h * 0.96)
+    spots = [pad, max(pad, (w - box) // 2), max(pad, w - pad - box)]
+    best, best_cost = spots[0], None
+    for x in spots:
+        cost = _busy(image, (x, top, min(w, x + box), bottom))
+        if best_cost is None or cost < best_cost - 0.5:
+            best, best_cost = x, cost
+    return best
+
+
 def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = "",
           logo: Optional[Path] = None, accent: int = 0,
           size: tuple[int, int] = COVER_SIZE) -> Path:
@@ -246,14 +277,23 @@ def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = ""
         sd.line((0, step, w, step), fill=int(150 * max(0.0, (step / h - 0.18)) ** 1.2))
     layer.paste(Image.new("RGB", (w, h), (0x08, 0x0C, 0x18)), (0, 0), shade)
 
-    # И ещё раз — ровно под колонкой с текстом. На солнечной сцене одного
-    # нижнего затемнения мало: заголовок ложится на блики воды и теряется.
+    # Где встанет текст, решаем по самой картинке: колонка идёт туда, где кадр
+    # спокойнее. Ширина колонки та же, что у заголовка ниже.
+    pad = int(w * 0.055)
+    box = int((w - pad * 2) * (0.64 if ratio_dst > 1 else 1.0))
+    text_x = _text_column(base, w, h, pad, box) if ratio_dst > 1 else pad
+
+    # Затемнение под колонкой: на солнечной сцене одного нижнего мало —
+    # заголовок ложится на блики воды и теряется.
     column = Image.new("L", (w, h), 0)
     cd = ImageDraw.Draw(column)
     if ratio_dst > 1:
         edge = int(w * 0.68)
+        from_right = text_x > (w - text_x - box)
         for step in range(edge):
-            cd.line((step, 0, step, h), fill=int(135 * (1 - step / edge) ** 1.3))
+            k = int(135 * (1 - step / edge) ** 1.3)
+            x = w - 1 - step if from_right else step
+            cd.line((x, 0, x, h), fill=k)
     else:
         edge = int(h * 0.42)
         for step in range(edge):
@@ -270,7 +310,6 @@ def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = ""
     layer.paste(Image.new("RGB", (w, h), (0x06, 0x0A, 0x14)), (0, 0), cap)
 
     draw = ImageDraw.Draw(layer)
-    pad = int(w * 0.055)
     top = int(h * (0.07 if ratio_dst > 1 else 0.10))
     if logo is not None and logo.is_file():
         try:
@@ -289,17 +328,15 @@ def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = ""
     if len(words) > 1:
         half = (len(words) + 1) // 2
         lines = [" ".join(words[:half]), " ".join(words[half:])]
-    # На горизонтальной обложке правая треть занята героем картинки, и заголовок
-    # во всю ширину налезал бы прямо на него. На вертикальной герой сверху,
-    # поэтому там ширина полная.
-    box = int((w - pad * 2) * (0.64 if ratio_dst > 1 else 1.0))
+    # Ширина колонки посчитана выше вместе с её местом: на горизонтальной
+    # обложке заголовок во всю ширину налезал бы на героя.
     font = _fit(draw, max(lines, key=len), BOLD, box, int(unit * 150))
     # Блок считаем целиком и ставим от низа: на вертикальной обложке заголовок,
     # прибитый к доле высоты, оставлял под собой пустую треть кадра.
     block = int(len(lines) * font.size * 1.02) + int(unit * 80)
     y = int(h * 0.30) if ratio_dst > 1 else max(int(h * 0.42), int(h * 0.80) - block)
     for line in lines:
-        draw.text((pad, y), line, font=font, fill=WHITE,
+        draw.text((text_x, y), line, font=font, fill=WHITE,
                   stroke_width=max(2, int(unit * 3)), stroke_fill=(0, 0, 0, 90))
         y += int(font.size * 1.02)
 
@@ -310,17 +347,17 @@ def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = ""
         text = badge.strip().upper()
         width = int(draw.textlength(text, font=small) + len(text) * 2.2 + unit * 40)
         height = int(unit * 54)
-        draw.rounded_rectangle((pad, row_y, pad + width, row_y + height),
+        draw.rounded_rectangle((text_x, row_y, text_x + width, row_y + height),
                                radius=height // 2, fill=fill + (255,))
-        _spaced(draw, (pad + int(unit * 20), row_y + int(height * 0.22)), text,
+        _spaced(draw, (text_x + int(unit * 20), row_y + int(height * 0.22)), text,
                 small, ink, tracking=2.2)
-        note_x = pad + width + int(unit * 26)
+        note_x = text_x + width + int(unit * 26)
     else:
-        note_x = pad
+        note_x = text_x
     if note.strip():
         # Подпись держим в той же колонке, что и заголовок: уехав вправо, она
         # ложится на героя картинки.
-        room = max(int(unit * 120), pad + box - note_x)
+        room = max(int(unit * 120), text_x + box - note_x)
         _spaced(draw, (note_x, row_y + int(unit * 15)), note.strip().upper(),
                 _fit(draw, note.strip().upper(), BOLD, room, int(unit * 23)),
                 WHITE, tracking=int(unit * 4))

@@ -197,6 +197,9 @@ prompt = str(payload)
 assert "no text" in prompt and "woman" in prompt, prompt[:300]
 assert "photograph" in prompt, "обложка заказана не живой сценой: " + prompt[:300]
 assert "clearly visible in frame" in prompt, "человека в кадре не потребовали"
+# Без прямого запрета генератор понимает «левая половина проще» как диптих и
+# рисует вторую картинку слева — так и вышло на первом же заказе.
+assert "no split screen" in prompt and "no diptych" in prompt, "диптих не запрещён"
 
 # Пустого пейзажа быть не должно: человек есть в каждом сюжете, у ролика и у
 # отрывка. Без явного требования генератор охотно отдаёт берег без людей.
