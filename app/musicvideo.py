@@ -16,8 +16,12 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
+import re
+import shutil
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -677,7 +681,291 @@ def make_meta(session: Session, video: MusicVideo, tracks: list[MusicVideoTrack]
     return title, description, tags
 
 
+# ---------------------------------------------------------------- архив с материалами
+
+# Разбор идёт по типам файлов, а не по именам и не по манифесту. Причина простая:
+# архивы приходят из разных мест и раскладка в них каждый раз своя, а вот то, что
+# .mp3 — это музыка, а .mp4 — видео, верно всегда. Манифест, если он есть,
+# читается сверху как подсказка, но ничего не требует.
+AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".aiff", ".aif"}
+VIDEO_EXT = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+TEXT_EXT = {".json", ".txt", ".md"}
+
+# Служебное добро, которое кладут рядом macOS и архиваторы.
+SKIP_PARTS = ("__MACOSX", ".DS_STORE")
+
+# Короткая звуковая вставка — не композиция микса: это джингл, отбивка или
+# пример. Берём только то, что тянет на трек.
+MIN_TRACK_SEC = 45.0
+
+
+class ImportError_(RuntimeError):
+    """Архив разобрать не удалось."""
+
+
+def _natural(name: str) -> tuple:
+    """Порядок как у человека: 2 раньше 10, а не наоборот."""
+    digits = re.findall(r"\d+", name)
+    return (int(digits[0]) if digits else 10 ** 9, name.lower())
+
+
+def _usable(path: Path) -> bool:
+    if not path.is_file() or path.name.startswith("._"):
+        return False
+    upper = str(path).upper()
+    return not any(part in upper for part in SKIP_PARTS)
+
+
+def _collect(root: Path) -> dict[str, list[Path]]:
+    """Раскладываем всё, что есть в архиве, по видам."""
+    found: dict[str, list[Path]] = {"audio": [], "video": [], "image": [], "text": []}
+    for path in sorted(root.rglob("*"), key=lambda p: _natural(p.name)):
+        if not _usable(path):
+            continue
+        ext = path.suffix.lower()
+        if ext in AUDIO_EXT:
+            found["audio"].append(path)
+        elif ext in VIDEO_EXT:
+            found["video"].append(path)
+        elif ext in IMAGE_EXT:
+            found["image"].append(path)
+        elif ext in TEXT_EXT:
+            found["text"].append(path)
+    return found
+
+
+META_KEYS = {
+    "title": ("title", "yt_title", "youtube_title", "name", "heading"),
+    "description": ("description", "desc", "summary", "about", "body"),
+    "style": ("style", "genre", "mood", "preset"),
+    "language": ("language", "lang", "locale"),
+    "minutes": ("minutes", "duration_minutes", "target_minutes", "length_minutes"),
+}
+
+
+def _dig(node, names: tuple[str, ...]):
+    """Находим значение по любому из имён на любой глубине JSON."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if str(key).lower() in names and isinstance(value, (str, int, float)):
+                return value
+            found = _dig(value, names)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for item in node:
+            found = _dig(item, names)
+            if found is not None:
+                return found
+    return None
+
+
+def read_meta(files: list[Path]) -> dict:
+    """Подсказки из текстовых файлов архива: заголовок, описание, жанр, язык.
+
+    Ничего не требуем: архив без описания — это нормально, обвязку мы и так
+    умеем писать сами. Поэтому любая ошибка разбора просто пропускается.
+    """
+    meta: dict = {}
+    for path in files:
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")[:200_000]
+        except OSError:
+            continue
+        if path.suffix.lower() == ".json":
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                continue
+            for field, names in META_KEYS.items():
+                if field not in meta:
+                    value = _dig(data, names)
+                    if value is not None and str(value).strip():
+                        meta[field] = value
+        else:
+            stem = path.stem.lower()
+            if "description" in stem and "description" not in meta:
+                meta["description"] = raw.strip()
+            elif "title" in stem and "title" not in meta:
+                meta["title"] = raw.strip().splitlines()[0] if raw.strip() else ""
+    return meta
+
+
+def guess_style(*hints: str) -> str:
+    """Жанр по названию архива и подсказкам из него.
+
+    Имя вроде soul-notes-007 говорит о жанре прямо, и переспрашивать человека
+    об очевидном не стоит. Не угадали — вернётся пустая строка, и жанр возьмётся
+    из формы.
+    """
+    text = " ".join(str(h or "") for h in hints).lower().replace("_", " ").replace("-", " ")
+    # Сначала составные имена, иначе «chill house» поймается как «chill».
+    pairs = (
+        ("lofi_jazz", ("lofi jazz", "lo fi jazz", "lofi", "lo fi", "lofi hip hop")),
+        ("jazz_cafe", ("smooth jazz", "jazz cafe", "cafe jazz", "jazz")),
+        ("chill_house", ("chill house", "chillhouse", "beach house")),
+        ("deep_house", ("deep house", "melodic house", "melodic techno", "house")),
+        ("chillstep", ("chillstep", "chill step", "melodic dubstep")),
+        ("ambient_sleep", ("sleep", "ambient", "drone", "meditation")),
+        ("piano_focus", ("neoclassical", "piano")),
+        ("synthwave", ("synthwave", "retrowave", "outrun", "darksynth")),
+        ("bossa", ("bossa", "samba")),
+        ("trance", ("uplifting trance", "trance")),
+        ("cinematic", ("cinematic", "epic", "orchestral")),
+        ("soul", ("neo soul", "neosoul", "soul", "rnb", "r&b")),
+    )
+    for key, words in pairs:
+        if any(word in text for word in words):
+            return key
+    return ""
+
+
+def import_archive(session: Session, zip_path: Path, *, name: str = "", style: str = "",
+                   minutes: int = 0, suno_model: str = DEFAULT_SUNO_MODEL,
+                   language: str = "en") -> MusicVideo:
+    """Собрать микс из архива с готовыми материалами.
+
+    Архив передаётся путём к файлу, а не содержимым: в таком архиве лежит
+    музыка, и десятки минут звука целиком в памяти держать незачем.
+
+    Что берём: музыку — в треки микса, видео — в заставку как есть, картинку —
+    в заставку с медленным наездом (это бесплатно), текст — как подсказку для
+    заголовка и описания. Чего в архиве нет, то догенерируется на общих
+    основаниях: не хватает музыки до заказанной длины — Suno допишет, нет ни
+    видео, ни картинки — заставка закажется.
+    """
+    zip_path = Path(zip_path)
+    if not zip_path.is_file() or zip_path.stat().st_size == 0:
+        raise ImportError_("пустой файл")
+
+    base = config.MEDIA_DIR / "_musicvideo" / "_uploads"
+    base.mkdir(parents=True, exist_ok=True)
+    stamp = utcnow().strftime("%Y%m%d_%H%M%S")
+    slug = storage.slugify(Path(name or zip_path.name).stem, 60) or "mix"
+    root = base / f"{slug}_{stamp}"
+    root.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            for member in zf.infolist():
+                target = (root / member.filename).resolve()
+                # Имя вроде ../../etc/passwd распаковалось бы за пределы папки.
+                if not str(target).startswith(str(root.resolve())):
+                    raise ImportError_(f"подозрительный путь в архиве: {member.filename}")
+            zf.extractall(root)
+    except zipfile.BadZipFile as exc:
+        shutil.rmtree(root, ignore_errors=True)
+        raise ImportError_(f"это не zip-архив: {exc}") from exc
+
+    found = _collect(root)
+    meta = read_meta(found["text"])
+    style_key = style if style in STYLES else (
+        guess_style(name, meta.get("style"), meta.get("title"), root.name)
+        or STYLE_ORDER[0])
+    style_row = style_of(style_key)
+
+    want_minutes = int(minutes or 0)
+    if not want_minutes:
+        try:
+            want_minutes = int(float(meta.get("minutes") or 0))
+        except (TypeError, ValueError):
+            want_minutes = 0
+
+    tracks: list[dict] = []
+    for path in found["audio"]:
+        span = storage.media_duration(path)
+        if span < MIN_TRACK_SEC:
+            # Короткие вставки пропускаем молча — это не композиции.
+            continue
+        tracks.append({"title": path.stem[:300], "path": storage.rel(path),
+                       "duration_sec": span, "prompt": "", "model": "",
+                       "source_url": ""})
+
+    # Длительность по умолчанию: столько, сколько музыки принесли, но не меньше
+    # привычной для жанра. Иначе архив на час собрался бы в тридцатиминутный
+    # микс, а половина материалов осталась бы лежать без дела.
+    have_sec = effective_duration([t["duration_sec"] for t in tracks], media.CROSSFADE_SEC)
+    if not want_minutes:
+        want_minutes = max(style_row.minutes, int(have_sec // 60))
+
+    backdrop = ""
+    if found["video"]:
+        # Самый длинный клип: короткие в таких архивах обычно превью.
+        backdrop = storage.rel(max(found["video"], key=lambda p: storage.media_duration(p)))
+    elif found["image"]:
+        backdrop = storage.rel(max(found["image"], key=lambda p: p.stat().st_size))
+
+    title = str(meta.get("title") or "").strip()[:300]
+    video = MusicVideo(
+        title=title or Path(name).stem[:300], style=style_row.key,
+        style_label=style_row.label, minutes=max(5, min(180, want_minutes)),
+        suno_model=suno_model if suno_model in SUNO_MODELS else DEFAULT_SUNO_MODEL,
+        language="ru" if str(meta.get("language") or language).startswith("ru") else "en",
+        source_dir=storage.rel(root), backdrop_src=backdrop,
+        description=str(meta.get("description") or "")[:20000],
+        status="queued", stage="queued")
+    session.add(video)
+    session.commit()
+
+    for index, item in enumerate(tracks):
+        session.add(MusicVideoTrack(video_id=video.id, idx=index, **item))
+    session.commit()
+    log.info("Архив %s разобран: треков %s (%.0f мин), заставка %s, жанр %s",
+             root.name, len(tracks), have_sec / 60, backdrop or "нет", style_row.key)
+    return video
+
+
+def import_zip(session: Session, data: bytes, **kw) -> MusicVideo:
+    """Тот же импорт, но архив передан содержимым: пишем во временный файл."""
+    if not data:
+        raise ImportError_("пустой файл")
+    config.TMP_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = config.TMP_DIR / f"mv_{utcnow().strftime('%Y%m%d_%H%M%S_%f')}.zip"
+    tmp.write_bytes(data)
+    try:
+        return import_archive(session, tmp, **kw)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def import_report(video: MusicVideo, tracks: int) -> str:
+    """Короткая сводка для панели: что взято из архива, что будет сгенерировано."""
+    parts = [f"жанр {style_of(video.style).label}"]
+    parts.append(f"музыки из архива: {tracks} шт." if tracks else "музыки в архиве нет")
+    if video.backdrop_src:
+        kind = "клип" if Path(video.backdrop_src).suffix.lower() in VIDEO_EXT else "картинка"
+        parts.append(f"заставка из архива ({kind}) — генерировать не нужно")
+    else:
+        parts.append("заставки в архиве нет — будет сгенерирована")
+    parts.append(f"заказано {video.minutes} мин")
+    return ", ".join(parts)
+
+
 # ---------------------------------------------------------------- сборка
+
+
+def backdrop_from_archive(video_id: int, src: str, size: tuple[int, int],
+                          *, seconds: float = 12.0) -> tuple[Path, bool]:
+    """Заставка из архива. Возвращает (клип, сделан ли он из картинки).
+
+    Готовый клип берём как есть. Картинку оживляем медленным наездом средствами
+    ffmpeg — это бесплатно, а в паре с обратным проходом наезд туда-обратно
+    выглядит ровно так, как и должна выглядеть бесконечная заставка.
+    """
+    path = storage.abspath(src)
+    if not path.exists():
+        raise RuntimeError(f"заставка из архива не найдена: {src}")
+    if path.suffix.lower() in VIDEO_EXT:
+        if storage.media_duration(path) <= 0.5:
+            raise RuntimeError(f"заставка из архива пустая: {src}")
+        return path, False
+
+    dest = work_dir(video_id) / "backdrop_from_image.mp4"
+    media.still_to_clip(path, dest, size, seconds, zoom=1.10)
+    if storage.media_duration(dest) <= 0.5:
+        raise RuntimeError(f"из картинки {src} не получилось заставки")
+    return dest, True
 
 
 def _stage(video_id: int, stage: str, *, error: str = "") -> None:
@@ -700,12 +988,16 @@ def _note(level: str, message: str) -> None:
         session.commit()
 
 
-def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "") -> None:
+def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
+          force_backdrop: bool = False) -> None:
     """Собрать музыкальное видео целиком. Повторный вызов не платит дважды.
 
     Порядок шагов выбран по цене: сначала музыка (самое дорогое и самое хрупкое),
     потом заставка (её чаще всего вообще не надо генерировать), и только потом
     сборка — она бесплатна и повторяется сколько угодно раз.
+
+    force_backdrop заставляет заказать заставку даже когда она пришла в архиве —
+    на случай, если принесённая картинка не годится.
     """
     with session_scope() as session:
         video = session.get(MusicVideo, video_id)
@@ -715,6 +1007,7 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "") -> 
         video.error = ""
         session.commit()
         style_key, minutes = video.style, video.minutes
+        backdrop_src = video.backdrop_src
         # Язык берём у микса, если вызов его не назвал: пересборка не должна
         # менять язык уже написанного описания.
         language = language or video.language or "en"
@@ -731,15 +1024,24 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "") -> 
         tracks = ensure_tracks(video_id, target_sec=target_sec, model=suno_model)
 
         _stage(video_id, "backdrop")
-        with session_scope() as session:
-            client = KieClient(api_key=st.get(session, "kie_api_key", "")
-                               or config.KIE_API_KEY)
-            loop, fresh = ensure_backdrop(session, client, style_key,
-                                          image_model=image_model,
-                                          video_model=video_model, reuse=reuse_backdrop)
-            loop_id, loop_path, loop_poster = loop.id, loop.path, loop.poster_path
-            loop_credits = loop.credits if fresh else 0.0
-        loop_file = storage.abspath(loop_path)
+        size = media.target_size("1080p", "16:9")
+        from_image = False
+        if backdrop_src and not force_backdrop:
+            # Заставка пришла в архиве — это самая дорогая часть, и заказывать
+            # её заново незачем.
+            loop_file, from_image = backdrop_from_archive(video_id, backdrop_src, size)
+            loop_id, loop_path, loop_poster, loop_credits = 0, storage.rel(loop_file), "", 0.0
+        else:
+            with session_scope() as session:
+                client = KieClient(api_key=st.get(session, "kie_api_key", "")
+                                   or config.KIE_API_KEY)
+                loop, fresh = ensure_backdrop(session, client, style_key,
+                                              image_model=image_model,
+                                              video_model=video_model,
+                                              reuse=reuse_backdrop)
+                loop_id, loop_path, loop_poster = loop.id, loop.path, loop.poster_path
+                loop_credits = loop.credits if fresh else 0.0
+            loop_file = storage.abspath(loop_path)
 
         _stage(video_id, "stitch")
         paths = [storage.abspath(row.path) for row in tracks]
@@ -758,7 +1060,6 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "") -> 
             raw_mix.unlink(missing_ok=True)
 
         _stage(video_id, "render")
-        size = media.target_size("1080p", "16:9")
         out = folder / "video.mp4"
         # Полчаса FullHD — это порядка гигабайта, и в момент сборки на диске
         # лежат и промежуточная дорожка, и готовый файл. Упереться в место на
@@ -771,8 +1072,10 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "") -> 
                 f"на диске {storage.human_size(free)}, для сборки нужно около "
                 f"{storage.human_size(need)} — освободите место и нажмите "
                 f"«Дособрать»: музыка уже скачана и второй раз не оплатится")
+        # Наезд на картинку обязательно гоняем туда-обратно: вернуться рывком
+        # к началу наезда заметнее любого другого стыка.
         media.build_music_video(loop_file, mix, out, size, duration, folder / "render",
-                                pingpong=style.pingpong)
+                                pingpong=style.pingpong or from_image)
         poster = folder / "poster.jpg"
         try:
             media.frame_grab(out, poster, at=min(5.0, duration * 0.1))
@@ -861,8 +1164,13 @@ def drop(session: Session, video_id: int, *, with_files: bool = False) -> None:
     if with_files:
         folder = config.MEDIA_DIR / "_musicvideo" / str(video_id)
         if folder.exists():
-            import shutil
-
             shutil.rmtree(folder, ignore_errors=True)
+        # Распакованный архив лежит отдельно от рабочей папки микса, и без этого
+        # он остался бы на диске навсегда — а это десятки минут музыки.
+        if video.source_dir:
+            source = storage.abspath(video.source_dir)
+            uploads = (config.MEDIA_DIR / "_musicvideo" / "_uploads").resolve()
+            if source.is_dir() and str(source.resolve()).startswith(str(uploads)):
+                shutil.rmtree(source, ignore_errors=True)
     session.delete(video)
     session.commit()

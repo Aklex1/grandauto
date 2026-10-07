@@ -681,6 +681,12 @@ class MusicVideo(Base):
     language: Mapped[str] = mapped_column(String(8), default="en")
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     stage: Mapped[str] = mapped_column(String(40), default="queued")
+    # Распакованный архив с готовыми материалами, если микс собирается из него.
+    # Пустая строка — обычная генерация с нуля.
+    source_dir: Mapped[str] = mapped_column(String(500), default="")
+    # Заставка из архива: готовый клип или картинка. Если она есть, генерировать
+    # заставку не нужно — это самая дорогая часть, и платить за неё незачем.
+    backdrop_src: Mapped[str] = mapped_column(String(500), default="")
     # Заставка: своя запись в библиотеке лупов, чтобы один клип обслуживал все
     # миксы этого жанра. Здесь — только путь к файлу, который реально взят.
     loop_id: Mapped[int] = mapped_column(Integer, default=0)

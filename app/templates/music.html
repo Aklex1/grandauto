@@ -26,8 +26,70 @@
 {% if request.query_params.get('error') == 'style' %}
   <p class="badge" style="background:#5b2222">Неизвестный жанр.</p>
 {% endif %}
+{% if request.query_params.get('imported') is not none %}
+  <p class="badge">Из архива взято композиций: {{ request.query_params.get('imported') }}.
+    Чего не хватает до заказанной длины — догенерируется.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'no-file' %}
+  <p class="badge" style="background:#5b2222">Файл не выбран.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'bad-zip' %}
+  <p class="badge" style="background:#5b2222">Архив разобрать не удалось:
+    {{ request.query_params.get('detail') }}</p>
+{% endif %}
 
 {% if tab == 'new' %}
+<form method="post" action="/music/import" enctype="multipart/form-data">
+  <fieldset><legend>Собрать из архива с материалами</legend>
+    <p class="small muted">
+      Zip с готовым содержимым. Разбор идёт по типам файлов, а не по раскладке:
+      музыка (<b>mp3, wav, m4a, flac</b>) становится композициями микса, видео —
+      заставкой как есть, картинка — заставкой с медленным наездом туда-обратно,
+      json и txt читаются как подсказка для заголовка и описания. Вложенные папки
+      обходятся, служебное от macOS пропускается, звуковые вставки короче
+      {{ mv_min_track }} секунд не берутся — это не композиции.
+    </p>
+    <p class="small muted">
+      <b>Чего в архиве нет, то догенерируется:</b> не хватает музыки до заказанной
+      длины — Suno допишет недостающее (уже принесённое не оплачивается), нет ни
+      видео, ни картинки — заставка закажется у генератора. Готовый микс попадёт
+      во вкладку «Библиотека».
+    </p>
+    <label>Файл архива
+      <input type="file" name="file" accept=".zip" required></label>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <label style="flex:1;min-width:160px">Длительность
+        <select name="minutes">
+          <option value="0" selected>по материалам архива</option>
+          {% for m in mv_minutes %}
+          <option value="{{ m }}">{{ m }} минут</option>
+          {% endfor %}
+        </select></label>
+      <label style="flex:1;min-width:200px">Жанр
+        <select name="style">
+          <option value="" selected>определить по архиву</option>
+          {% for s in mv_styles %}
+          <option value="{{ s.key }}">{{ s.label }}</option>
+          {% endfor %}
+        </select>
+        <span class="small muted">Имя вроде soul-notes-007 распознаётся само —
+          жанр нужен, только если в названии его нет.</span></label>
+      <label style="flex:1;min-width:160px">Модель Suno для досбора
+        <select name="suno_model">
+          {% for m in mv_models %}
+          <option value="{{ m }}" {% if m == mv_default_model %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select></label>
+      <label style="flex:1;min-width:160px">Язык обвязки
+        <select name="language">
+          <option value="en" selected>Английский — по умолчанию</option>
+          <option value="ru">Русский</option>
+        </select></label>
+    </div>
+    <button class="btn" type="submit">Загрузить и собрать</button>
+  </fieldset>
+</form>
+
 <form method="post" action="/music/create">
   <fieldset><legend>Новая композиция</legend>
     <div style="display:flex;gap:16px;flex-wrap:wrap">
@@ -122,7 +184,9 @@
     <div>
       <b>#{{ mix.id }} {{ mix.title or mix.yt_title or mix.style_label }}</b>
       <div class="small muted">{{ mix.style_label }} · заказано {{ mix.minutes }} мин ·
-        {{ mix.suno_model }}</div>
+        {{ mix.suno_model }}
+        {% if mix.source_dir %}· из архива{% endif %}
+        {% if mix.backdrop_src %}· заставка своя{% endif %}</div>
     </div>
     <div>
       <span class="badge"

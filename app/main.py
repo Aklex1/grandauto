@@ -1625,7 +1625,7 @@ def music_page(request: Request, tab: str = "new", session: Session = Depends(ge
         mv_models=mv.SUNO_MODELS, mv_default_model=mv.DEFAULT_SUNO_MODEL,
         mv_stages=mv.STAGES, mv_backdrops={row.fmt[len(mv.FMT_PREFIX):]: row
                                            for row in mv.backdrops(session)},
-        mv_timecode=mv.timecode))
+        mv_timecode=mv.timecode, mv_min_track=int(mv.MIN_TRACK_SEC)))
 
 
 @app.post("/music/create")
@@ -1646,6 +1646,53 @@ def music_create(session: Session = Depends(get_session), _user: str = Depends(r
         "reuse_backdrop": not bool(new_backdrop),
     })
     return RedirectResponse(f"/music?tab=library&queued={video.id}", status_code=303)
+
+
+@app.post("/music/import")
+async def music_import(request: Request, session: Session = Depends(get_session),
+                       _user: str = Depends(require_user)):
+    """Микс из архива с готовыми материалами: чего не хватает — догенерируется."""
+    from . import musicvideo as mv
+
+    form = await request.form()
+    upload = form.get("file")
+    if not isinstance(upload, UploadFile) or not upload.filename:
+        return RedirectResponse("/music?error=no-file", status_code=303)
+
+    # Пишем на диск по кускам: в таком архиве музыка, и держать её целиком в
+    # памяти не нужно — на большом файле это съело бы оперативку сервера.
+    config.TMP_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = config.TMP_DIR / f"mv_upload_{utcnow().strftime('%Y%m%d_%H%M%S_%f')}.zip"
+    size = 0
+    try:
+        with open(tmp, "wb") as fh:
+            while True:
+                chunk = await upload.read(1 << 20)
+                if not chunk:
+                    break
+                size += len(chunk)
+                fh.write(chunk)
+        if not size:
+            return RedirectResponse("/music?error=no-file", status_code=303)
+        video = mv.import_archive(
+            session, tmp, name=upload.filename,
+            style=str(form.get("style") or ""),
+            minutes=int(float(form.get("minutes") or 0)),
+            suno_model=str(form.get("suno_model") or mv.DEFAULT_SUNO_MODEL),
+            language=str(form.get("language") or "en"))
+    except mv.ImportError_ as exc:
+        return RedirectResponse(f"/music?error=bad-zip&detail={str(exc)[:160]}",
+                                status_code=303)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    tracks = len(video.tracks)
+    queue.enqueue(session, "music_video", payload={
+        "video_id": video.id, "language": video.language or "en",
+        "reuse_backdrop": True,
+    })
+    return RedirectResponse(
+        f"/music?tab=library&queued={video.id}&imported={tracks}", status_code=303)
 
 
 @app.post("/music/{video_id}/run")
