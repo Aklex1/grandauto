@@ -2105,31 +2105,50 @@ def _cover_note(tail: str) -> str:
     return ""
 
 
+def fresh_scene(session: Session, *, vertical: bool):
+    """Сюжет обложки, которого ещё не было ни у одного ролика канала.
+
+    Сюжетов сто — полсотни на ролики и полсотни на отрывки, — и человек просил,
+    чтобы кадры не повторялись. Поэтому выбираем случайно, но только из тех,
+    что использованы реже всех: пока круг не пройден, это значит «из новых».
+    """
+    from collections import Counter
+
+    from . import covers
+    from .models import MusicShort
+
+    column = MusicShort.cover_scene if vertical else MusicVideo.cover_scene
+    used = Counter(key for key in session.execute(select(column)).scalars() if key)
+    return covers.pick_fresh(used, vertical=vertical)
+
+
 def _cover_art(folder: Path, *, shade: int, style: Style,
-               vertical: bool) -> tuple[Optional[Path], float]:
-    """Сгенерировать картинку обложки. Вернёт (файл, цена) или (None, 0).
+               vertical: bool) -> tuple[Optional[Path], float, str]:
+    """Сгенерировать картинку обложки. Вернёт (файл, цена, сюжет).
 
     Падать здесь нельзя: без картинки обложку рисуем из кадра — хуже, но
     бесплатно и всегда.
     """
     from . import covers
 
+    scene = None
     try:
         with session_scope() as session:
             key = st.get(session, "kie_api_key", "") or config.KIE_API_KEY
             model = st.get(session, "default_image_model", "nano-banana-2")
+            scene = fresh_scene(session, vertical=vertical)
         if not key:
             log.info("Ключ KIE не задан — обложка будет из кадра")
-            return None, 0.0
-        art = folder / f"cover_art_{shade:02d}{'_v' if vertical else ''}.png"
+            return None, 0.0, ""
+        art = folder / f"cover_art_{scene.key}{'_v' if vertical else ''}.png"
         path, credits, _prompt = covers.make(
-            KieClient(api_key=key), art, model=model,
+            KieClient(api_key=key), art, model=model, scene=scene,
             style_hint=covers.style_hint_of(style.label, style.use),
-            seed=shade, vertical=vertical)
-        return path, credits
+            vertical=vertical)
+        return path, credits, scene.key
     except Exception as exc:  # noqa: BLE001 — обложка нужна и без генерации
         log.warning("Картинка обложки не сгенерировалась, берём кадр: %s", exc)
-        return None, 0.0
+        return None, 0.0, ""
 
 
 def _cover_frame(video: Path, shot: Path, at: float) -> Path:
@@ -2180,9 +2199,10 @@ def draw_cover(video_id: int, *, accent: Optional[int] = None,
         raise RuntimeError("файл ролика не найден на диске")
     folder = work_dir(video_id)
 
-    scene, credits = (None, 0.0)
+    scene, credits, scene_key = (None, 0.0, "")
     if source != "frame":
-        scene, credits = _cover_art(folder, shade=shade, style=style, vertical=False)
+        scene, credits, scene_key = _cover_art(folder, shade=shade, style=style,
+                                               vertical=False)
     drop_scene = False
     if scene is None:
         # Запасной вариант: кадр с разных мест ролика, чтобы обложки не
@@ -2207,9 +2227,11 @@ def draw_cover(video_id: int, *, accent: Optional[int] = None,
             video.cover_path = storage.rel(cover)
             video.want_cover = True
             video.credits = (video.credits or 0.0) + credits
+            if scene_key:
+                video.cover_scene = scene_key
             session.commit()
-    log.info("Обложка микса #%s нарисована: %s (%.1f кредитов)",
-             video_id, cover.name, credits)
+    log.info("Обложка микса #%s нарисована: %s, сюжет %s (%.1f кредитов)",
+             video_id, cover.name, scene_key or "кадр из ролика", credits)
     return storage.rel(cover)
 
 
@@ -2250,10 +2272,10 @@ def draw_short_cover(short_id: int, *, accent: Optional[int] = None,
         raise RuntimeError("файл отрывка не найден на диске")
     folder = path.parent
 
-    scene, credits = (None, 0.0)
+    scene, credits, scene_key = (None, 0.0, "")
     if source != "frame":
-        scene, credits = _cover_art(folder, shade=shade, style=style_row,
-                                    vertical=True)
+        scene, credits, scene_key = _cover_art(folder, shade=shade, style=style_row,
+                                               vertical=True)
     drop_scene = False
     if scene is None:
         # Место кадра считаем по самому файлу: длительность из базы могла
@@ -2275,13 +2297,15 @@ def draw_short_cover(short_id: int, *, accent: Optional[int] = None,
         row = session.get(MusicShort, short_id)
         if row is not None:
             row.cover_path = storage.rel(cover)
+            if scene_key:
+                row.cover_scene = scene_key
             session.commit()
         video = session.get(MusicVideo, video_id)
         if video is not None and credits:
             video.credits = (video.credits or 0.0) + credits
             session.commit()
-    log.info("Обложка отрывка #%s нарисована: %s (%.1f кредитов)",
-             short_id, cover.name, credits)
+    log.info("Обложка отрывка #%s нарисована: %s, сюжет %s (%.1f кредитов)",
+             short_id, cover.name, scene_key or "кадр из отрывка", credits)
     return storage.rel(cover)
 
 

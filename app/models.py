@@ -735,6 +735,9 @@ class MusicVideo(Base):
     # Номер оттенка обложки. Кнопка «Другая обложка» увеличивает его, поэтому
     # нажатия дают разные картинки, а не одну и ту же заново.
     cover_accent: Mapped[int] = mapped_column(Integer, default=0)
+    # Какой сюжет обложки уже израсходован. По этим отметкам следующий ролик
+    # берёт тот, которого ещё не было: сто сюжетов, и повторов быть не должно.
+    cover_scene: Mapped[str] = mapped_column(String(40), default="")
     youtube_id: Mapped[str] = mapped_column(String(40), default="")
     youtube_url: Mapped[str] = mapped_column(String(200), default="")
     youtube_privacy: Mapped[str] = mapped_column(String(20), default="")
@@ -879,6 +882,7 @@ class MusicShort(Base):
     # Вертикальная обложка 1080×1920 — рисуется из кадра самого отрывка.
     cover_path: Mapped[str] = mapped_column(String(500), default="")
     cover_accent: Mapped[int] = mapped_column(Integer, default=0)
+    cover_scene: Mapped[str] = mapped_column(String(40), default="")
     start_sec: Mapped[float] = mapped_column(Float, default=0.0)
     duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
     file_size: Mapped[int] = mapped_column(Integer, default=0)

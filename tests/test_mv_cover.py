@@ -210,7 +210,8 @@ from app import covers as _cov
 for scene in _cov.SCENES + _cov.SHORT_SCENES:
     who = scene.subject.lower()
     assert any(word in who for word in ("woman", "girl", "friends", "surfer",
-                                        "driver", "skateboarder")), scene.key
+                                        "driver", "hiker", "dancer", "cyclist",
+                                        "swimmer", "skateboarder")), scene.key
 assert "16:9" in prompt, "горизонтальная обложка заказана не в 16:9"
 with session_scope() as session:
     art_cover = session.get(MusicVideo, mix_id).cover_path
@@ -280,5 +281,54 @@ assert "chillstep mix" in rows, "фразу с пробелом убрали —
 assert len(", ".join(rows)) <= tags_mod.TAGS_LIMIT, "вышли за 500 знаков"
 print("12. хештеги: " + " ".join("#" + w for w in tags_line) +
       " — без пробелов, фразы остались отдельными ключевыми словами")
+
+# --- 12. сто сюжетов и ни одного повтора ------------------------------------------
+import app.covers as cov
+
+assert len(cov.SCENES) == 50 and len(cov.SHORT_SCENES) == 50, "план не на сто сюжетов"
+keys = [sc.key for sc in cov.SCENES + cov.SHORT_SCENES]
+assert len(set(keys)) == 100, "ключи сюжетов повторяются"
+for sc in cov.SCENES + cov.SHORT_SCENES:
+    assert sc.subject and sc.place and sc.light, sc.key
+print(f"13. контент-план: {len(cov.SCENES)} сюжетов для роликов и "
+      f"{len(cov.SHORT_SCENES)} для шортсов, все ключи разные")
+
+# Завод выбирает сюжет, которого ещё не было: отмечаем выбранный у ролика и
+# просим следующий — так же, как это делает отрисовка обложки.
+taken = []
+with session_scope() as session:
+    for _ in range(14):
+        scene = mv.fresh_scene(session, vertical=False)
+        taken.append(scene.key)
+        row = mv.create(session, style="chillstep", minutes=30, suno_model="V5")
+        row.cover_scene = scene.key
+        session.commit()
+assert len(set(taken)) == 14, f"сюжеты повторились: {taken}"
+assert len(set(taken[:3])) == 3
+print(f"14. четырнадцать роликов подряд — четырнадцать разных сюжетов, "
+      f"первые три: {', '.join(taken[:3])}")
+
+taken_v = []
+with session_scope() as session:
+    for _ in range(14):
+        scene = mv.fresh_scene(session, vertical=True)
+        taken_v.append(scene.key)
+        row = MusicShort(video_id=mix_id, title="t", path=storage.rel(media_clip),
+                         duration_sec=30.0, cover_scene=scene.key)
+        session.add(row)
+        session.commit()
+assert len(set(taken_v)) == 14, f"сюжеты отрывков повторились: {taken_v}"
+assert not (set(taken) & set(taken_v)), "ролик и отрывок берут из одного набора"
+print(f"15. у отрывков свои четырнадцать разных сюжетов, с роликами не пересекаются")
+
+# Когда круг пройден, выбор идёт по второму разу, а не падает.
+with session_scope() as session:
+    for sc in cov.SCENES:
+        row = mv.create(session, style="chillstep", minutes=30, suno_model="V5")
+        row.cover_scene = sc.key
+        session.commit()
+    again = mv.fresh_scene(session, vertical=False)
+assert again.key in {sc.key for sc in cov.SCENES}, again.key
+print("16. круг пройден — выбор идёт по второму заходу, а не ломается")
 
 print("ВСЁ ПРОШЛО")

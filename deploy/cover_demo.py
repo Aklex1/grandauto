@@ -43,19 +43,40 @@ def main() -> int:
     ap.add_argument("--go", action="store_true",
                     help="генерировать картинки (платно); без него только промпты")
     ap.add_argument("--style", default="chillstep", help="жанр, по умолчанию chillstep")
-    ap.add_argument("--seed", type=int, default=0, help="номер сюжета")
+    ap.add_argument("--seed", type=int, default=-1,
+                    help="номер сюжета; по умолчанию берётся тот, которого ещё не было")
+    ap.add_argument("--list", action="store_true",
+                    help="показать весь контент-план сюжетов и выйти")
     ap.add_argument("--title", default="Aurora Drive", help="заголовок на обложке")
     ap.add_argument("--short-title", default="Drift Beyond", help="заголовок шортса")
     args = ap.parse_args()
 
     style = mv.style_of(args.style)
     hint = covers.style_hint_of(style.label, style.use)
+
+    if args.list:
+        for vertical, title in ((False, "РОЛИКИ"), (True, "ШОРТСЫ")):
+            rows = covers.rows_for(vertical)
+            print(f"\n=== {title}: {len(rows)} сюжетов")
+            for number, scene in enumerate(rows, 1):
+                print(f"{number:3}. {scene.key:22} {scene.subject.split(',')[0]} — "
+                      f"{scene.place.split(',')[0]}")
+        print(f"\nвсего сюжетов: "
+              f"{len(covers.rows_for(False)) + len(covers.rows_for(True))}")
+        return 0
+
     print(f"жанр: {style.label}\n")
+    # Сюжет берём тот, которого ещё не было, — так же, как это делает завод.
+    scenes = {}
+    with session_scope() as session:
+        for vertical in (False, True):
+            scenes[vertical] = (covers.pick(args.seed, vertical=vertical)
+                                if args.seed >= 0
+                                else mv.fresh_scene(session, vertical=vertical))
     for vertical in (False, True):
         kind = "шортс 9:16" if vertical else "ролик 16:9"
-        scene = covers.pick(args.seed, vertical=vertical)
-        print(f"--- {kind}: сюжет «{scene.key}»")
-        print(covers.build_prompt(hint, args.seed, vertical=vertical))
+        print(f"--- {kind}: сюжет «{scenes[vertical].key}»")
+        print(covers.build_prompt(scenes[vertical], hint, vertical=vertical))
         print()
 
     if not args.go:
@@ -90,7 +111,7 @@ def main() -> int:
         art = out / f"demo_{kind}_art.png"
         try:
             _path, credits, _prompt = covers.make(
-                client, art, model=model, style_hint=hint, seed=args.seed,
+                client, art, model=model, scene=scenes[vertical], style_hint=hint,
                 vertical=vertical)
             spent += credits
             print(f"{kind}: картинка готова, {credits:.1f} кредитов")
@@ -100,7 +121,7 @@ def main() -> int:
 
         cover = out / f"demo_{kind}_cover.jpg"
         chrome.cover(cover, art, title=title, note=note, badge=badge,
-                     logo=channel_logo, accent=args.seed,
+                     logo=channel_logo, accent=abs(args.seed) + 3,
                      size=chrome.COVER_VERTICAL if vertical else chrome.COVER_SIZE)
         print(f"{kind}: обложка {cover}")
         print(f"      в панели: /media/{storage.rel(cover)}")
