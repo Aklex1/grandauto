@@ -107,14 +107,25 @@ def ensure_default(session: Session) -> Optional[MusicChannel]:
         session.commit()
         log.info("Заведён канал музыкальных видео «%s»", row.name)
 
-    if assets(session, row.id):
-        return row
     folder = BUNDLED / row.slug
     if not folder.is_dir():
         return row
+
+    # Сверяем по именам, а не по факту «есть хоть что-то»: иначе канал, в
+    # котором уже лежит один клип, никогда не получит новые из поставки. Берём
+    # и снятые с выдачи — человек мог убрать клип намеренно, и возвращать его
+    # при каждом запуске было бы навязчиво.
+    known = {
+        r.title for r in session.execute(
+            select(MusicAsset).where(MusicAsset.channel_id == row.id,
+                                     MusicAsset.source == "bundled")).scalars()
+    }
+    added = 0
     for path in sorted(folder.glob("*.*")):
         suffix = path.suffix.lower()
         if suffix not in (".mp4", ".mov", ".webm", ".mkv", ".png", ".webp", ".jpg"):
+            continue
+        if path.stem in known:
             continue
         stem = path.stem.lower()
         if suffix in (".png", ".webp", ".jpg"):
@@ -123,8 +134,11 @@ def ensure_default(session: Session) -> Optional[MusicChannel]:
             kind = "intro" if "intro" in stem else "outro" if "outro" in stem else "loop"
         try:
             add_file(session, row, kind, path, title=path.stem, source="bundled")
+            added += 1
         except Exception as exc:  # noqa: BLE001 — один клип не ломает запуск
             log.warning("Клип %s не добавлен: %s", path.name, exc)
+    if added:
+        log.info("Канал %s: добавлено из поставки %s клипов", row.slug, added)
     return row
 
 
