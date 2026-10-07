@@ -14,7 +14,14 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError as exc:  # pragma: no cover — зависимость ставится отдельно
+    raise ImportError(
+        "Нужен Pillow: на сервере выполните "
+        "cd /opt/contentfactory && venv/bin/pip install -r requirements.txt "
+        "&& systemctl restart contentfactory"
+    ) from exc
 
 log = logging.getLogger("cf.chrome")
 

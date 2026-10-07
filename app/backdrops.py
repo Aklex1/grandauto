@@ -24,7 +24,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+try:
+    from PIL import Image, ImageDraw, ImageFilter
+except ImportError as exc:  # pragma: no cover — зависимость ставится отдельно
+    raise ImportError(
+        "Нужен Pillow: на сервере выполните "
+        "cd /opt/contentfactory && venv/bin/pip install -r requirements.txt "
+        "&& systemctl restart contentfactory"
+    ) from exc
 
 W, H = 1920, 1080
 FPS = 30
