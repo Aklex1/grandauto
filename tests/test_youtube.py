@@ -179,7 +179,9 @@ client.post("/login", data={"username": "admin", "password": "test1234"},
 
 page = client.get("/youtube")
 assert page.status_code == 200 and "Приложение в Google Cloud" in page.text
-assert "localhost:8765" in page.text, "не сказано, какой адрес возврата регистрировать"
+assert yt.REDIRECT_URI in page.text, "не сказано, какой адрес возврата ожидается"
+assert yt.REDIRECT_URI.startswith("http://localhost"), \
+    f"возврат не на петлевой адрес: {yt.REDIRECT_URI} — Google примет http только там"
 assert "youtube.upload" in page.text, "не сказано, какие права запрашиваются"
 assert "Личными" in page.text, "не предупреждено про непроверенный канал"
 print("7. страница подключения: шаги, адрес возврата, права и ограничения площадки")
@@ -193,7 +195,7 @@ print("8. ключи сохранены, ссылка согласия появ�
 
 # Человек вставляет весь адрес из строки браузера — код достаётся сам.
 res = client.post("/youtube/code",
-                  data={"code": "http://localhost:8765/?code=good&scope=youtube.upload"},
+                  data={"code": "http://localhost/?code=good&scope=youtube.upload"},
                   follow_redirects=False)
 assert res.status_code == 303 and "connected=1" in res.headers["location"], \
     res.headers["location"]
