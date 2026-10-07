@@ -297,6 +297,10 @@ class Genius_Sounds_Plugin {
         // в один ряд, и перенос нужен на всех страницах, а не только на наших.
         wp_enqueue_style('genius-sounds-header', GS_PLUGIN_URL . 'assets/css/header.css', array(), GS_VERSION);
 
+        // Плашка кук приходит от чужого плагина и ложится полосой на весь низ,
+        // перекрывая липкую панель. Правим её стилями — на всех страницах.
+        wp_enqueue_style('genius-sounds-cookie', GS_PLUGIN_URL . 'assets/css/cookie.css', array(), GS_VERSION);
+
         // Посадочная примерки дисков: страницу рисует чужой плагин, стили
         // ей нужны свои.
         if (class_exists('GS_Wheel') && GS_Wheel::is_page()) {
