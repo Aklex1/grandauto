@@ -29,18 +29,29 @@ log = logging.getLogger("cf.mchannel")
 KINDS = {"intro": "интро", "loop": "заставка", "outro": "оутро",
          "logo": "логотип"}
 
-# Заголовки для заставок по умолчанию: ровно те, что уже есть в оформлении
-# канала. Их можно переписать в настройках канала.
-DEFAULT_TITLES = ("Aurora Drive", "Deep Focus", "Snow Fall", "Night Rain",
-                  "Close Your Eyes", "Drift Away")
+# Серии канала: заголовок и пояснение через тире. Заставка берётся случайная,
+# и заголовок к ней — тоже: серии не привязаны к сценам, иначе «Snowfall» вечно
+# шёл бы со снегом, а набор заставок обесценился бы.
+DEFAULT_TITLES = (
+    "Snowfall Sessions — soft winter mixes for sleep & study",
+    "Aurora Drive — melodic night-drive chillstep",
+    "Deep Focus — long sets for work and concentration",
+    "24/7 Radio — chillstep, all night, every night",
+)
+
+
+def split_title(line: str) -> tuple[str, str]:
+    """«Название — пояснение» в (название, пояснение). Тире может и не быть."""
+    for dash in ("—", "–", " - "):
+        if dash in line:
+            head, tail = line.split(dash, 1)
+            return head.strip(), tail.strip()
+    return line.strip(), ""
 
 # Канал, который просили завести. Создаётся один раз и только если его нет.
 DEFAULT_CHANNEL = {"name": "LUMEN DRIFT", "slug": "lumen-drift",
                    "style": "chillstep", "minutes": 30,
-                   "titles": "\n".join(("Aurora Drive", "Deep Focus", "Snow Fall",
-                                        "Night Rain", "Close Your Eyes",
-                                        "Drift Away")),
-                   "subtitle": "chillstep · night ambience · deep focus"}
+                   "titles": "", "subtitle": "chillstep · night ambience · deep focus"}
 
 # Оттенки для набора заставок. Промпт жанра задаёт сцену, а это — чем один клип
 # отличается от другого: время суток, погода, точка съёмки. С одинаковым
@@ -293,10 +304,10 @@ def generate_loops(channel_id: int, count: int = 5) -> None:
             # ровно такими, какими задуманы.
             with session_scope() as session:
                 channel = session.get(MusicChannel, channel_id)
-                caption = title_for(channel, have)
+                caption, note = title_for(channel, have)
                 logo_row = one(session, channel_id, "logo")
                 logo = storage.abspath(logo_row.path) if logo_row else None
-                subtitle = channel.subtitle
+                subtitle = note or channel.subtitle
             branded = config.TMP_DIR / f"branded_{slug}_{index}.mp4"
             try:
                 media.brand_clip(tmp, branded, size=media.target_size("1080p", "16:9"),
@@ -333,9 +344,21 @@ def generate_loops(channel_id: int, count: int = 5) -> None:
         raise RuntimeError("; ".join(failed[:3]))
 
 
-def title_for(channel: MusicChannel, index: int) -> str:
-    """Заголовок очередной заставки из списка канала."""
+def titles_of(channel: MusicChannel) -> list[str]:
     rows = [line.strip() for line in (channel.titles or "").splitlines() if line.strip()]
-    if not rows:
-        rows = list(DEFAULT_TITLES)
-    return rows[index % len(rows)]
+    return rows or list(DEFAULT_TITLES)
+
+
+def title_for(channel: MusicChannel, index: int) -> tuple[str, str]:
+    """Серия для очередной заставки: (название, пояснение).
+
+    По кругу, а не случайно: при генерации набора важно, чтобы каждая серия
+    получила свою заставку, а не чтобы две подряд вышли одинаковыми.
+    """
+    rows = titles_of(channel)
+    return split_title(rows[index % len(rows)])
+
+
+def pick_title(channel: MusicChannel) -> tuple[str, str]:
+    """Случайная серия — для заголовка готового ролика."""
+    return split_title(random.choice(titles_of(channel)))

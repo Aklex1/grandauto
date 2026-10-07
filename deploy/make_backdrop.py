@@ -60,6 +60,35 @@ PRESETS: dict[str, dict] = {
                    ((0x1D, 0x18, 0x3A), 0.88, 6, 0.095),
                    ((0x12, 0x10, 0x28), 0.94, 4, 0.10)),
     },
+    "road": {
+        "kind": "road",
+        "sky": ((0x0B, 0x0D, 0x22), (0x2E, 0x24, 0x52)),
+        "glow": (0x8E, 0x6B, 0xD8), "glow_at": (0.50, 0.20), "glow_r": 0.66,
+        "stars": 420,
+        "horizon": 0.42, "road_near": 0.46, "road_far": 0.012,
+        "ground": (0x0E, 0x11, 0x26), "road": (0x15, 0x19, 0x33),
+        "edge": (0x4A, 0x44, 0x7E), "dash": (0xD8, 0xDC, 0xEE),
+    },
+    "planet": {
+        "kind": "planet",
+        "sky": ((0x0B, 0x10, 0x28), (0x15, 0x1B, 0x3C)),
+        "glow": (0xE0, 0x9A, 0x58), "glow_at": (0.66, 0.46), "glow_r": 0.40,
+        "stars": 520,
+        "planet": (0xF2, 0xB4, 0x70), "planet_at": (0.66, 0.50), "planet_r": 0.30,
+        "ring": (0xE8, 0xDC, 0xC0),
+        "hills": (((0x3A, 0x30, 0x66), 0.86, 0.045, 1.3, 0.10),
+                  ((0x2A, 0x23, 0x4E), 0.93, 0.035, 0.9, 0.55)),
+    },
+    "snowfall": {
+        "kind": "snow",
+        "sky": ((0x0C, 0x16, 0x32), (0x20, 0x36, 0x68)),
+        "glow": (0x5C, 0xD6, 0xDC), "glow_at": (0.66, 0.22), "glow_r": 0.44,
+        "stars": 380,
+        "moon": (0xFF, 0xFF, 0xFF), "moon_at": (0.68, 0.22), "moon_r": 0.085,
+        "ridges": (((0x3A, 0x4E, 0x8C), 0.80, 8, 0.10),
+                   ((0x7C, 0x92, 0xC4), 0.89, 6, 0.08),
+                   ((0xDF, 0xE9, 0xF7), 0.95, 5, 0.06)),
+    },
     "deep": {
         "sky": ((0x07, 0x0B, 0x18), (0x16, 0x1B, 0x3A)),
         "glow": (0x7C, 0x6B, 0xD8), "glow_at": (0.30, 0.26), "glow_r": 0.54,
@@ -154,43 +183,197 @@ def _ridge(color: tuple, base: float, peaks: int, height: float, seed: int) -> I
     return layer
 
 
+def _wavy(color: tuple, base: float, amp: float, period: float, phase: float,
+          seed: int) -> Image.Image:
+    """Мягкая холмистая полоса — волна, а не пила. Для сцены с планетой."""
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    y0 = H * base
+    points = [(0, H)]
+    for x in range(0, W + 8, 8):
+        k = x / W
+        y = y0 - H * amp * (0.5 + 0.5 * math.sin(2 * math.pi * (k * period + phase)))
+        points.append((x, y))
+    points.append((W, H))
+    ImageDraw.Draw(layer).polygon(points, fill=color + (255,))
+    return layer
+
+
+def _planet(cfg: dict) -> Image.Image:
+    """Большая планета с тонким кольцом."""
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cx, cy = int(W * cfg["planet_at"][0]), int(H * cfg["planet_at"][1])
+    r = int(H * cfg["planet_r"])
+
+    halo = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(halo).ellipse((cx - r * 2, cy - r * 2, cx + r * 2, cy + r * 2), fill=90)
+    halo = halo.filter(ImageFilter.GaussianBlur(radius=r * 0.55))
+    layer.paste(Image.new("RGB", (W, H), cfg["planet"]), (0, 0), halo)
+
+    # Диск с мягким переходом к краю: ровная заливка выглядит наклейкой.
+    disc = Image.new("L", (W, H), 0)
+    dd = ImageDraw.Draw(disc)
+    for step in range(12):
+        k = step / 11
+        rr = int(r * (1 - k * 0.04))
+        dd.ellipse((cx - rr, cy - rr, cx + rr, cy + rr), fill=int(255 - k * 35))
+    layer.paste(Image.new("RGB", (W, H), cfg["planet"]), (0, 0), disc)
+
+    ring = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    rd = ImageDraw.Draw(ring)
+    rx, ry = int(r * 1.75), int(r * 0.42)
+    rd.ellipse((cx - rx, cy + int(r * 0.30) - ry, cx + rx, cy + int(r * 0.30) + ry),
+               outline=cfg["ring"] + (190,), width=max(2, int(r * 0.022)))
+    ring = ring.rotate(-12, center=(cx, cy), resample=Image.BICUBIC)
+    layer.alpha_composite(ring)
+    return layer
+
+
+def _road(cfg: dict) -> tuple:
+    """Дорога с уходящей перспективой. Возвращает (слой, геометрия полосы)."""
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    horizon = H * cfg["horizon"]
+    cx = W * 0.5
+    near = W * cfg["road_near"]
+    far = W * cfg["road_far"]
+
+    # Земля по обе стороны — ровный тёмный тон до низа кадра.
+    draw.rectangle((0, horizon, W, H), fill=cfg["ground"] + (255,))
+    draw.polygon([(cx - far, horizon), (cx + far, horizon),
+                  (cx + near, H), (cx - near, H)], fill=cfg["road"] + (255,))
+    # Обочины светлее дороги: по ним и читается направление.
+    edge = max(3, int(W * 0.004))
+    for side in (-1, 1):
+        draw.polygon([(cx + side * far, horizon),
+                      (cx + side * (far + edge * 0.35), horizon),
+                      (cx + side * (near + edge * 2.2), H),
+                      (cx + side * near, H)], fill=cfg["edge"] + (255,))
+    return layer, (horizon, cx, near, far)
+
+
+def _dash_strip(width: int, height: int, color: tuple) -> Image.Image:
+    """Полоса с пунктиром постоянного шага — её потом искажает перспектива."""
+    strip = Image.new("RGBA", (width, height * 2), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(strip)
+    period = height // 6
+    dash = int(period * 0.52)
+    y = 0
+    while y < height * 2:
+        draw.rectangle((width * 0.42, y, width * 0.58, y + dash), fill=color + (255,))
+        y += period
+    return strip
+
+
+def _snowfall(seed: int, count: int = 420) -> Image.Image:
+    """Снег: слой вдвое выше кадра, чтобы прокручивать его без шва."""
+    rnd = random.Random(seed)
+    layer = Image.new("RGBA", (W, H * 2), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for _ in range(count):
+        x, y = rnd.randrange(W), rnd.randrange(H * 2)
+        r = rnd.choice((2, 2, 3, 3, 4, 5))
+        a = rnd.randint(110, 240)
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, a))
+    return layer
+
+
 def render(out: Path, preset: str, seconds: float, seed: int) -> None:
+    """Собрать заставку: слои рисуем на месте, движение задаёт ffmpeg.
+
+    Движение замкнуто по построению: всё, что едет, проходит ровно свой период
+    за длину клипа и возвращается к началу. Поэтому повтор бесшовен без починки.
+    """
     cfg = PRESETS[preset]
+    kind = cfg.get("kind", "ridges")
     tmp = Path(tempfile.mkdtemp(prefix="backdrop_"))
-    sky = tmp / "sky.png"
-    _sky(cfg["sky"], cfg).save(sky)
-    stars = tmp / "stars.png"
-    _stars(seed).save(stars)
-    moon = tmp / "moon.png"
-    _moon(cfg).save(moon)
-    ridges = []
-    for index, (color, base, peaks, height) in enumerate(cfg["ridges"]):
-        path = tmp / f"ridge{index}.png"
-        _ridge(color, base, peaks, height, seed + index * 17).save(path)
-        ridges.append(path)
 
-    inputs = ["-loop", "1", "-t", f"{seconds}", "-i", str(sky),
-              "-loop", "1", "-t", f"{seconds}", "-i", str(stars),
-              "-loop", "1", "-t", f"{seconds}", "-i", str(moon)]
-    for path in ridges:
-        inputs += ["-loop", "1", "-t", f"{seconds}", "-i", str(path)]
+    layers: list[Path] = []
 
-    # Прокрутка звёзд ровно на кадр за период: на стыке поле совпадает само с
-    # собой, и повтор не виден. Горы ходят по синусу и к концу возвращаются.
-    steps = [f"[1:v]overlay=x='-{W}*mod(t/{seconds},1)':y=0:eval=frame[s1]"]
-    steps.insert(0, "[0:v]null[bg]")
-    steps[1] = f"[bg][1:v]overlay=x='-{W}*mod(t/{seconds},1)':y=0:eval=frame[s1]"
-    steps.append(f"[s1][2:v]overlay=0:0[s2]")
-    current = "s2"
-    for index in range(len(ridges)):
-        amp = 6 + index * 5
-        out_label = f"r{index}"
+    def put(image: Image.Image, name: str) -> int:
+        path = tmp / f"{name}.png"
+        image.save(path)
+        layers.append(path)
+        return len(layers) - 1
+
+    sky_i = put(_sky(cfg["sky"], cfg), "sky")
+    steps = [f"[{sky_i}:v]null[bg]"]
+    current = "bg"
+    index = 1
+
+    def chain(source: str, filt: str) -> str:
+        nonlocal current, index
+        label = f"L{index}"
+        index += 1
+        steps.append(f"[{current}][{source}]{filt}[{label}]")
+        current = label
+        return label
+
+    if kind != "road":
+        stars_i = put(_stars(seed, cfg.get("stars", 620)), "stars")
+        # Поле вдвое шире кадра уезжает ровно на кадр за период — шва нет.
+        chain(f"{stars_i}:v", f"overlay=x='-{W}*mod(t/{seconds},1)':y=0:eval=frame")
+
+    if kind == "planet":
+        planet_i = put(_planet(cfg), "planet")
+        chain(f"{planet_i}:v", "overlay=0:0")
+        for number, (color, base, amp, period, phase) in enumerate(cfg["hills"]):
+            hill_i = put(_wavy(color, base, amp, period, phase, seed + number), f"hill{number}")
+            swing = 10 + number * 7
+            chain(f"{hill_i}:v",
+                  f"overlay=x='{swing}*sin(2*PI*t/{seconds})':"
+                  f"y='{swing * 0.3:.1f}*sin(2*PI*t/{seconds})':eval=frame")
+
+    elif kind == "snow":
+        moon_i = put(_moon(cfg), "moon")
+        chain(f"{moon_i}:v", "overlay=0:0")
+        for number, (color, base, peaks, height) in enumerate(cfg["ridges"]):
+            ridge_i = put(_ridge(color, base, peaks, height, seed + number * 17), f"r{number}")
+            amp = 5 + number * 4
+            chain(f"{ridge_i}:v",
+                  f"overlay=x='{amp}*sin(2*PI*t/{seconds})':y=0:eval=frame")
+        snow_i = put(_snowfall(seed), "snow")
+        # Снег падает ровно на высоту кадра за период: на стыке картина та же.
+        chain(f"{snow_i}:v", f"overlay=x=0:y='-{H}+{H}*mod(t/{seconds},1)':eval=frame")
+
+    elif kind == "road":
+        road_layer, (horizon, cx, near, far) = _road(cfg)
+        road_i = put(road_layer, "road")
+        chain(f"{road_i}:v", "overlay=0:0")
+        stars_i = put(_stars(seed, cfg.get("stars", 420)), "stars")
+        chain(f"{stars_i}:v", f"overlay=x='-{W}*mod(t/{seconds},1)':y=0:eval=frame")
+
+        road_h = int(H - horizon)
+        strip_w = int(near * 2)
+        strip_i = put(_dash_strip(strip_w, road_h, cfg["dash"]), "dash")
+        # Пунктир: ровная полоса едет вниз на свою высоту за период, а перспектива
+        # превращает это в движение навстречу. Рисовать пунктир сразу в
+        # перспективе нельзя — при прокрутке штрихи не меняли бы размер.
         steps.append(
-            f"[{current}][{3 + index}:v]overlay="
-            f"x='{amp}*sin(2*PI*t/{seconds})':y='{amp * 0.35:.1f}*sin(2*PI*t/{seconds})':"
-            f"eval=frame[{out_label}]")
-        current = out_label
+            f"[{strip_i}:v]crop=w={strip_w}:h={road_h}:x=0:"
+            f"y='{road_h}*mod(t/{seconds},1)'[dashwin]")
+        top_in = (strip_w - int(far * 2)) / 2
+        steps.append(
+            f"[dashwin]perspective="
+            f"x0={top_in:.0f}:y0=0:x1={strip_w - top_in:.0f}:y1=0:"
+            f"x2=0:y2={road_h}:x3={strip_w}:y3={road_h}:"
+            f"sense=destination[dash]")
+        chain("dash", f"overlay=x={int(cx - near)}:y={int(horizon)}")
+
+    else:
+        moon_i = put(_moon(cfg), "moon")
+        chain(f"{moon_i}:v", "overlay=0:0")
+        for number, (color, base, peaks, height) in enumerate(cfg["ridges"]):
+            ridge_i = put(_ridge(color, base, peaks, height, seed + number * 17), f"r{number}")
+            amp = 6 + number * 5
+            chain(f"{ridge_i}:v",
+                  f"overlay=x='{amp}*sin(2*PI*t/{seconds})':"
+                  f"y='{amp * 0.35:.1f}*sin(2*PI*t/{seconds})':eval=frame")
+
     steps.append(f"[{current}]format=yuv420p[v]")
+
+    inputs: list[str] = []
+    for path in layers:
+        inputs += ["-loop", "1", "-t", f"{seconds}", "-i", str(path)]
 
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *inputs,

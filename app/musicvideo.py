@@ -1673,6 +1673,20 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
             video.credits = round(tracks_cost + backdrop_cost, 2)
             title, description, tags = make_meta(session, video, alive, language,
                                                  chapters=video.chapters_src)
+            if channel_id:
+                # Серия канала выбирается случайно — так лента не превращается в
+                # «Deep Focus 1…50», а набор заставок и серий перемешивается сам.
+                from . import musicchannels as mch
+                from .models import MusicChannel as _MC
+
+                channel_row = session.get(_MC, channel_id)
+                if channel_row is not None:
+                    series, note = mch.pick_title(channel_row)
+                    minutes_done = int(round(duration / 60)) or video.minutes
+                    title = f"{series} — {minutes_done} Minutes"
+                    if note:
+                        title += f" · {note}"
+                    title = title[:100]
             video.yt_title = title[:300]
             video.description = description
             video.tags = ", ".join(tags)
