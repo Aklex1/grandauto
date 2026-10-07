@@ -40,8 +40,10 @@ class Scene:
 # настроение, а не про конкретного человека, и не стареет от выпуска к выпуску.
 SCENES = (
     Scene("drive_sea",
-          "a young woman driving a convertible, one hand on the wheel, hair flying "
-          "in the wind, smiling, seen from the passenger side",
+          "a young woman at the wheel of a convertible, both hands on the steering "
+          "wheel in front of her, body and face turned forward along the road, "
+          "hair blowing back, smiling, photographed from the passenger seat beside "
+          "her",
           "a coastal road above a turquoise sea, cliffs and palms rushing past",
           "bright midday sun, sparkling water, warm skin tones"),
     Scene("beach_headphones",
@@ -75,8 +77,9 @@ SCENES = (
           "a sunny rooftop above a seaside city",
           "warm daylight, green plants, bright blue sky"),
     Scene("night_drive_city",
-          "a young woman in headphones driving at night, city lights reflected on "
-          "the windscreen, seen in profile",
+          "a young woman in headphones driving at night, hands on the steering "
+          "wheel in front of her, looking ahead at the road, seen in profile from "
+          "the passenger seat",
           "an empty highway into a glowing city",
           "warm street lamps and cool blue dusk, light trails"),
 )
@@ -96,8 +99,8 @@ SHORT_SCENES = (
           "a clear turquoise bay under a blue sky",
           "bright midday sun, spray and ripples below her"),
     Scene("car_window",
-          "a young woman in the passenger seat with her arm out of the window "
-          "riding the air, laughing, hair flying",
+          "a young woman sitting in the passenger seat facing forward, her arm out "
+          "of the open window riding the air, laughing, hair flying",
           "a coastal road, sea and palms blurring past",
           "golden sunlight, strong motion blur outside the window"),
     Scene("beach_dance",
@@ -128,8 +131,10 @@ SHORT_SCENES = (
 
 # Как это снято. Живая сцена с настоящими людьми, а не ночная картина: такую
 # обложку в ленте и замечают. Буквы генератору не доверяем — запрет прямой.
-LOOK = ("cinematic photograph, real people, natural skin tones, shallow depth of "
-        "field, 50mm lens, rich saturated colors, high contrast, sharp focus, "
+LOOK = ("cinematic photograph, real people, natural skin tones, correct anatomy, "
+        "natural plausible pose, body facing the direction of movement, hands "
+        "holding what they are using, shallow depth of field, 50mm lens, rich "
+        "saturated colors, high contrast, sharp focus, "
         "no text, no letters, no words, no numbers, no watermark, no logo, "
         "no signature, no user interface")
 # Человек в кадре обязателен и обязательно крупно. Без этого требования

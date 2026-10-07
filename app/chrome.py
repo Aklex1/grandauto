@@ -213,21 +213,39 @@ def _busy(image, box: tuple[int, int, int, int]) -> float:
     return sum(data) / len(data)
 
 
-def _text_column(image, w: int, h: int, pad: int, box: int) -> int:
-    """Где начать колонку с текстом: слева, по центру или справа.
+def _skin(image, box: tuple[int, int, int, int]) -> float:
+    """Доля кожи в куске кадра — грубо, по цвету.
 
-    Жёстко прибитая к левому краю колонка однажды легла героине прямо на лицо —
-    в том кадре она сидела за рулём слева. Поэтому колонку примеряем в трёх
-    местах и берём ту, где картинка спокойнее.
+    Нужна не красота оценки, а ответ на один вопрос: с какой стороны человек.
+    Текстура для этого не годится и однажды подвела: у лица и рубашки перепадов
+    меньше, чем у пальм и скал, и заголовок встал ровно на лицо. Кожа же есть
+    только там, где человек.
+    """
+    crop = image.crop(box).convert("RGB").resize((48, 48))
+    hits = 0
+    for r, g, b in crop.getdata():
+        if (r > 95 and g > 40 and b > 20 and r > g and r > b
+                and abs(r - g) > 15 and max(r, g, b) - min(r, g, b) > 15):
+            hits += 1
+    return hits / (48 * 48)
+
+
+def _text_column(image, w: int, h: int, pad: int, box: int) -> int:
+    """Где начать колонку с текстом: у левого края или у правого.
+
+    Колонка идёт туда, где человека нет. Жёстко прибитая к левому краю, она
+    однажды легла героине прямо на лицо — в том кадре она сидела за рулём слева.
     """
     top, bottom = int(h * 0.24), int(h * 0.96)
-    spots = [pad, max(pad, (w - box) // 2), max(pad, w - pad - box)]
-    best, best_cost = spots[0], None
-    for x in spots:
-        cost = _busy(image, (x, top, min(w, x + box), bottom))
-        if best_cost is None or cost < best_cost - 0.5:
-            best, best_cost = x, cost
-    return best
+    left, right = pad, max(pad, w - pad - box)
+    skin_left = _skin(image, (left, top, min(w, left + box), bottom))
+    skin_right = _skin(image, (right, top, min(w, right + box), bottom))
+    if abs(skin_left - skin_right) > 0.02:
+        return left if skin_left < skin_right else right
+    # Человека не видно ни там, ни там (или он посередине) — тогда уже по
+    # спокойствию картинки: на ровном фоне заголовок читается лучше.
+    return left if _busy(image, (left, top, min(w, left + box), bottom)) <= \
+        _busy(image, (right, top, min(w, right + box), bottom)) else right
 
 
 def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = "",
