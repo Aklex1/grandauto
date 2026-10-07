@@ -12,7 +12,9 @@ class GS_Catalog {
 
     const SHORTCODE = 'kie_tts_sounds_catalog';
     const CATS_PER_PAGE = 48;
-    const SOUNDS_PER_PAGE = 24;
+    // Одна сильная страница ранжируется лучше пяти тонких, поэтому
+    // показываем сразу большую порцию, а не бьём подборку на листалку.
+    const SOUNDS_PER_PAGE = 60;
 
     /** @var array|null Кэш каталога в пределах запроса. */
     private static $cache = null;
@@ -273,7 +275,42 @@ class GS_Catalog {
         }
         $saved = self::save_index($index);
         self::unlock_index($lock);
+
+        // Подборки — не записи, поэтому сами о себе поисковику не сообщают:
+        // перехода статуса у них нет, и правка названия или новая сотня
+        // звуков доходила до выдачи только при следующем обходе.
+        if ($saved && class_exists('GS_Index')) {
+            GS_Index::enqueue(array(self::category_url($slug)));
+        }
+        if ($saved) {
+            self::purge_page_cache($slug);
+        }
         return $saved;
+    }
+
+    /**
+     * Сбросить готовую страницу подборки в кэше страниц.
+     *
+     * Подборки не записи, поэтому кэширующий плагин о правке не узнаёт:
+     * после добора звуков и смены заголовка посетитель и робот ещё сутки
+     * видели старую страницу с прежним числом звуков. Чистим адрес самой
+     * подборки, её листалку и витрину раздела — там тоже стоит счётчик.
+     */
+    private static function purge_page_cache($slug) {
+        if (!function_exists('wpsc_delete_url_cache')) {
+            return;
+        }
+        $urls = array(self::category_url($slug), self::base_url());
+        $section = self::section_of(self::get_category($slug));
+        if ($section !== '' && class_exists('GS_Sections')) {
+            $urls[] = GS_Sections::url($section);
+        }
+        for ($page = 2; $page <= 4; $page++) {
+            $urls[] = self::page_url($slug, $page);
+        }
+        foreach (array_unique(array_filter($urls)) as $url) {
+            wpsc_delete_url_cache($url);
+        }
     }
 
     /**

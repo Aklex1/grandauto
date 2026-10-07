@@ -412,20 +412,24 @@ class GS_Links {
      * @return array<int,array>
      */
     private static function top_categories($limit = 12) {
-        // Порядок индекса повторяет структуру источника: сверху крупные разделы
-        // (музыка, авто, предметы, животные…). Именно им и стоит отдавать вес
-        // со всех страниц — дальше он расходится по их подборкам.
-        $picked = array();
-        foreach (GS_Catalog::load_index() as $row) {
-            if (count($picked) >= $limit) {
-                break;
-            }
+        // Раньше брали начало индекса — порядок источника, где сверху стоят
+        // крупные разделы. Но сквозной вес разумнее отдавать самым полным
+        // подборкам: их наполняли под реальный спрос, у них есть что держать
+        // в выдаче, и якорем становится короткое название подборки — то есть
+        // ровно тот запрос, по которому её ищут.
+        $rows = array();
+        foreach (GS_Catalog::load_index() as $i => $row) {
             if (empty($row['slug']) || (int) ($row['count'] ?? 0) <= 0) {
                 continue;
             }
-            $picked[] = $row;
+            $row['_order'] = $i;
+            $rows[] = $row;
         }
-        return $picked;
+        usort($rows, function ($a, $b) {
+            $diff = (int) $b['count'] - (int) $a['count'];
+            return $diff !== 0 ? $diff : ((int) $a['_order'] - (int) $b['_order']);
+        });
+        return array_slice($rows, 0, max(1, (int) $limit));
     }
 
     public static function render_footer_block() {

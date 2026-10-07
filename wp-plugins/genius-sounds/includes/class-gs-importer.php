@@ -22,6 +22,8 @@ class GS_Importer {
     const OPT_MAX_FILE_MB = 'gs_import_max_file_mb';
     const DEFAULT_MAX_FILE_MB = 8; // музыкальные категории тянут вверх занимаемое место
     const TICK_BUDGET    = 20;       // секунд на один тик
+    const MAX_LIMIT      = 300;      // звуков на категорию за один заход
+    const AJAX_STEP      = 50;       // источник отдаёт дозагрузкой по пятьдесят
 
     public static function boot() {
         add_action(self::CRON_HOOK, array(__CLASS__, 'run_tick'));
@@ -84,7 +86,7 @@ class GS_Importer {
         update_option(self::OPT_QUEUE, $queue, false);
         self::set_state(array(
             'running'      => !empty($queue),
-            'limit'        => max(1, min(100, (int) $limit)),
+            'limit'        => max(1, min(self::MAX_LIMIT, (int) $limit)),
             'force'        => (bool) $force,
             'done'         => 0,
             'total'        => count($queue),
@@ -149,10 +151,32 @@ class GS_Importer {
                 update_option(self::OPT_QUEUE, $queue, false);
                 self::set_state(array('current' => $slug));
 
-                $result = self::import_category($slug, (int) $state['limit'], (bool) $state['force']);
+                $result = self::import_category(
+                    $slug,
+                    (int) $state['limit'],
+                    (bool) $state['force'],
+                    $started + self::TICK_BUDGET
+                );
                 $processed[] = $result;
 
                 $state = self::get_state();
+
+                // Глубокий добор не влезает в один тик: возвращаем категорию
+                // в начало очереди и продолжаем с того же места.
+                if (!empty($result['more'])) {
+                    $queue = get_option(self::OPT_QUEUE, array());
+                    if (!is_array($queue)) {
+                        $queue = array();
+                    }
+                    array_unshift($queue, $slug);
+                    update_option(self::OPT_QUEUE, $queue, false);
+                    self::set_state(array(
+                        'imported'     => (int) $state['imported'] + (int) ($result['imported'] ?? 0),
+                        'last_message' => (string) ($result['message'] ?? ''),
+                    ));
+                    break;
+                }
+
                 self::set_state(array(
                     'done'         => (int) $state['done'] + 1,
                     'imported'     => (int) $state['imported'] + (int) ($result['imported'] ?? 0),
@@ -228,7 +252,12 @@ class GS_Importer {
             return array('ok' => false, 'message' => $page['message'], 'tracks' => array());
         }
 
+        // В разметке лежит только первая порция, остальное источник подгружает
+        // прокруткой — без этого в категории навсегда остаётся полсотни звуков,
+        // хотя в разделе их бывает под тысячу. У витрин-разделов (кнопки, мемы)
+        // в разметке нет вообще ничего, и дозагрузка — единственный путь.
         $tracks = self::parse_tracks($page['html']);
+        $tracks = self::append_lazy_tracks($slug, $page['html'], $tracks, $limit);
         if (!empty($tracks)) {
             return array('ok' => true, 'message' => '', 'tracks' => $tracks);
         }
@@ -239,6 +268,93 @@ class GS_Importer {
             'message' => empty($tracks) ? 'нет треков и подкатегорий' : '',
             'tracks'  => $tracks,
         );
+    }
+
+    /**
+     * Сколько звуков в разделе заявляет сам источник.
+     */
+    public static function source_total($html) {
+        if (preg_match('~([0-9][0-9\s ]*)\s*звук~ui', (string) $html, $m)) {
+            return (int) preg_replace('~\D~', '', $m[1]);
+        }
+        return 0;
+    }
+
+    /**
+     * Дозагрузка треков тем же запросом, которым её делает сам источник.
+     *
+     * @param array $tracks уже разобранные треки первой порции
+     * @return array
+     */
+    private static function append_lazy_tracks($slug, $html, array $tracks, $limit) {
+        $limit = max(1, (int) $limit);
+        if (count($tracks) >= $limit) {
+            return $tracks;
+        }
+        if (!preg_match('~data-v3-category="(\d+)"~', (string) $html, $m_id)) {
+            return $tracks;
+        }
+        $category_id = $m_id[1];
+        $tag = $slug;
+        if (preg_match('~data-v3-tag="([^"]*)"~', (string) $html, $m_tag)) {
+            $tag = $m_tag[1];
+        }
+
+        $seen = array();
+        foreach ($tracks as $track) {
+            $seen[$track['path']] = true;
+        }
+
+        $referer = self::SOURCE_BASE . '/category/' . rawurlencode($slug) . '/';
+        $page_no = 0;
+
+        // Источник листает дозагрузку номером страницы: offset он принимает,
+        // но учитывает только внутри групп, а для плоского списка игнорирует.
+        while (count($tracks) < $limit && $page_no < 24) {
+            $page_no++;
+            $url = self::SOURCE_BASE . '/index.php?' . http_build_query(array(
+                'r'           => 'categoryV3/categoryTracksAjax',
+                'category_id' => $category_id,
+                'tag'         => $tag,
+                'sort'        => 'popular',
+                'page'        => $page_no,
+                'limit'       => self::AJAX_STEP,
+            ));
+
+            $args = self::request_args($referer);
+            $args['headers']['X-Requested-With'] = 'XMLHttpRequest';
+            $response = wp_remote_get($url, $args);
+            if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
+                break;
+            }
+            $data = json_decode((string) wp_remote_retrieve_body($response), true);
+            if (!is_array($data) || empty($data['html'])) {
+                break;
+            }
+
+            $portion = self::parse_tracks((string) $data['html']);
+            if (empty($portion)) {
+                break;
+            }
+
+            foreach ($portion as $track) {
+                if (isset($seen[$track['path']])) {
+                    continue;
+                }
+                $seen[$track['path']] = true;
+                $tracks[] = $track;
+                if (count($tracks) >= $limit) {
+                    break;
+                }
+            }
+
+            if (empty($data['hasMore'])) {
+                break;
+            }
+            usleep(200000); // не долбим источник
+        }
+
+        return $tracks;
     }
 
     /**
@@ -389,9 +505,9 @@ class GS_Importer {
     /**
      * @return array{ok:bool,slug:string,imported:int,skipped:int,message:string}
      */
-    public static function import_category($slug, $limit = 20, $force = false) {
+    public static function import_category($slug, $limit = 20, $force = false, $deadline = 0) {
         $slug = GS_Storage::sanitize_slug($slug);
-        $result = array('ok' => false, 'slug' => $slug, 'imported' => 0, 'skipped' => 0, 'message' => '');
+        $result = array('ok' => false, 'slug' => $slug, 'imported' => 0, 'skipped' => 0, 'message' => '', 'more' => false);
 
         if ($slug === '') {
             $result['message'] = 'Пустой слаг';
@@ -400,11 +516,18 @@ class GS_Importer {
 
         $category = GS_Catalog::get_category($slug);
         $existing = ($category && !empty($category['sounds']) && is_array($category['sounds'])) ? $category['sounds'] : array();
+        $limit = max(1, min(self::MAX_LIMIT, (int) $limit));
 
         if (!$force && count($existing) > 0) {
             $result['ok'] = true;
             $result['skipped'] = count($existing);
             $result['message'] = $slug . ': уже заполнена (' . count($existing) . ')';
+            return $result;
+        }
+        if ($force && count($existing) >= $limit) {
+            $result['ok'] = true;
+            $result['skipped'] = count($existing);
+            $result['message'] = $slug . ': добирать нечего (' . count($existing) . ')';
             return $result;
         }
 
@@ -433,13 +556,26 @@ class GS_Importer {
             }
         }
 
+        // Повторный заход только добирает: уже сохранённый порядок не ломаем,
+        // иначе страница каждый раз перетасовывается и поиск видит её как новую.
         $sounds = array();
         $seen = array();
-        $limit = max(1, min(100, (int) $limit));
+        foreach ($existing as $sound) {
+            if (empty($sound['file'])) {
+                continue;
+            }
+            $sounds[] = $sound;
+            $seen[basename((string) $sound['file'])] = true;
+        }
         $referer = self::SOURCE_BASE . '/category/' . rawurlencode($slug) . '/';
+        $deadline = (float) $deadline;
 
         foreach ($fetched['tracks'] as $track) {
             if (count($sounds) >= $limit) {
+                break;
+            }
+            if ($deadline > 0 && microtime(true) >= $deadline) {
+                $result['more'] = true;
                 break;
             }
 
@@ -493,7 +629,9 @@ class GS_Importer {
         ));
 
         $result['ok'] = true;
-        $result['message'] = $slug . ': +' . $result['imported'] . ' (всего ' . count($sounds) . ')';
+        $result['total'] = count($sounds);
+        $result['message'] = $slug . ': +' . $result['imported'] . ' (всего ' . count($sounds) . ')'
+            . (!empty($result['more']) ? ', добор продолжится' : '');
         return $result;
     }
 

@@ -824,7 +824,9 @@ class GS_Seo {
         $slug     = (string) $category['slug'];
         $title    = GS_Catalog::short_title((string) $category['title']);
         $sounds   = (isset($category['sounds']) && is_array($category['sounds'])) ? $category['sounds'] : array();
-        $slice    = array_slice($sounds, ($ctx['page'] - 1) * GS_Catalog::SOUNDS_PER_PAGE, GS_Catalog::SOUNDS_PER_PAGE);
+        // В разметку берём только начало страницы: шестьдесят AudioObject
+        // весят больше, чем весь полезный текст подборки.
+        $slice    = array_slice($sounds, ($ctx['page'] - 1) * GS_Catalog::SOUNDS_PER_PAGE, 30);
 
         $items = array();
         $position = 1 + ($ctx['page'] - 1) * GS_Catalog::SOUNDS_PER_PAGE;

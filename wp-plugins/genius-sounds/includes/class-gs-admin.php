@@ -1216,7 +1216,8 @@ class GS_Admin {
                 </tr>
                 <tr>
                     <th scope="row"><label for="gs-import-limit">Звуков на категорию</label></th>
-                    <td><input id="gs-import-limit" type="number" value="20" min="1" max="100" class="small-text"></td>
+                    <td><input id="gs-import-limit" type="number" value="20" min="1" max="300" class="small-text">
+                        <span class="description">повторный запуск с «перезаписать» добирает категорию до этого числа</span></td>
                 </tr>
                 <tr>
                     <th scope="row"><label for="gs-import-maxmb">Максимальный размер файла, МБ</label></th>
