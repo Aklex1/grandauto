@@ -190,6 +190,16 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_catalog_rewrite'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        // Сгенерированный звук — в подборку каталога. Подборки наполняются
+        // из источника, и там кончается материал: в «аниме стонах» у него
+        // двенадцать файлов, и больше взять неоткуда. Свои генерации лежат
+        // в той же папке загрузок — остаётся положить их рядом с остальными.
+        register_rest_route(self::NS, '/catalog/add-sound', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_catalog_add_sound'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/catalog/sections', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_catalog_sections'),
@@ -3034,6 +3044,74 @@ class GS_Rest {
      * Правка текстов подборки. Принимаем только поля текста и раздела:
      * список звуков живёт своей жизнью и правится импортом.
      */
+    /**
+     * Положить уже сгенерированный звук в подборку каталога.
+     *
+     * Берём только файл из нашей же папки генераций: ничего не скачиваем
+     * из интернета и не даём указать произвольный путь — имя файла и слаг
+     * подборки чистятся, а дальше это обычное копирование внутри загрузок.
+     */
+    public static function handle_catalog_add_sound($request) {
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = $request->get_params();
+        }
+
+        $slug = GS_Storage::sanitize_slug((string) ($params['slug'] ?? ''));
+        if ($slug === '' || !GS_Catalog::get_category($slug)) {
+            return new WP_Error('gs_no_category', 'Подборка не найдена', array('status' => 404));
+        }
+
+        $url = trim((string) ($params['url'] ?? ''));
+        $base = GS_Storage::generated_url() . '/';
+        if ($url === '' || strpos($url, $base) !== 0) {
+            return new WP_Error('gs_bad_source', 'Звук берём только из своих генераций', array('status' => 400));
+        }
+        $name = GS_Storage::sanitize_filename(basename(wp_parse_url($url, PHP_URL_PATH)));
+        $source = GS_Storage::generated_dir() . '/' . $name;
+        if (!is_file($source) || filesize($source) < 1024) {
+            return new WP_Error('gs_no_file', 'Файл генерации не найден', array('status' => 404));
+        }
+
+        $title = sanitize_text_field((string) ($params['title'] ?? ''));
+        if ($title === '') {
+            $title = 'Сгенерированный звук';
+        }
+
+        GS_Storage::ensure_dirs();
+        $dir = GS_Storage::files_dir() . '/' . $slug;
+        if (!is_dir($dir)) {
+            wp_mkdir_p($dir);
+        }
+        $filename = 'ai-' . $name;
+        $target = $dir . '/' . $filename;
+        if (!file_exists($target)) {
+            $body = file_get_contents($source);
+            if ($body === false || !GS_Storage::atomic_put($target, $body)) {
+                return new WP_Error('gs_copy_failed', 'Не удалось положить файл в подборку', array('status' => 500));
+            }
+        }
+
+        $category = GS_Catalog::get_category($slug);
+        $sounds = (isset($category['sounds']) && is_array($category['sounds'])) ? $category['sounds'] : array();
+        foreach ($sounds as $sound) {
+            if (!empty($sound['file']) && basename((string) $sound['file']) === $filename) {
+                return rest_ensure_response(array('success' => true, 'added' => false, 'total' => count($sounds)));
+            }
+        }
+
+        $sounds[] = array(
+            'title'    => $title,
+            'file'     => $slug . '/' . $filename,
+            'duration' => max(0, (int) ($params['duration'] ?? 0)),
+            'size'     => (int) filesize($target),
+            'ai'       => true,
+        );
+        GS_Catalog::update_category($slug, array('sounds' => $sounds));
+
+        return rest_ensure_response(array('success' => true, 'added' => true, 'total' => count($sounds)));
+    }
+
     public static function handle_catalog_update($request) {
         $params = $request->get_json_params();
         if (!is_array($params)) {

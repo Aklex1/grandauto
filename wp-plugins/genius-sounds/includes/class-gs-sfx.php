@@ -23,6 +23,7 @@ class GS_SFX {
     const MODE_SFX     = 'sfx';
     const MODE_AMBIENT = 'ambient';
     const MODE_LOOP    = 'loop';
+    const MODE_VOICE   = 'voice';
 
     public static function boot() {
         // Точка расширения: пока вся работа идёт через REST-слой.
@@ -103,6 +104,7 @@ class GS_SFX {
             self::MODE_SFX     => 'Отдельный эффект (SFX)',
             self::MODE_AMBIENT => 'Атмосфера / фон',
             self::MODE_LOOP    => 'Бесшовный луп',
+            self::MODE_VOICE   => 'Голос и возглас',
         );
     }
 
@@ -139,6 +141,15 @@ class GS_SFX {
                 $suffix[] = 'seamless loopable ambience';
                 $suffix[] = 'constant level, no fade in, no fade out';
                 $suffix[] = 'no music, no voices, no melody';
+                break;
+
+            // Три прежних режима глушат голос — и правильно, эффекту он мешает.
+            // Но половина спроса в каталоге как раз голосовая: крики, возгласы,
+            // детский голос, реплики. Такие подборки студия собрать не могла.
+            case self::MODE_VOICE:
+                $suffix[] = 'human voice recording, dry close-up vocal';
+                $suffix[] = 'single short vocalization, no words';
+                $suffix[] = 'no music, no melody, no instruments';
                 break;
 
             case self::MODE_SFX:
