@@ -1112,19 +1112,86 @@ class GS_Admin {
             <input type="hidden" name="action" value="gs_yoomoney_reset">
             <?php submit_button('Очистить журнал и счётчики', 'secondary', 'submit', false); ?>
         </form>
+        <?php
+        // Какой сервис раскрыт. Сводка отвечает «сколько», но не отвечает
+        // «кто и когда»: чтобы разобрать спорный платёж, приходилось лезть
+        // в кошелёк.
+        // sanitize_key режет кириллицу, а в старых записях источник записан
+        // словом — такие строки перестали бы открываться.
+        $open = isset($_GET['gs_pay_src']) ? sanitize_text_field(wp_unslash((string) $_GET['gs_pay_src'])) : '';
+        $base = admin_url('admin.php?page=genius-sounds');
+        $total_sum = 0.0;
+        $total_cnt = 0;
+        foreach ($stats as $row) {
+            $total_sum += (float) $row['sum'];
+            $total_cnt += (int) $row['count'];
+        }
+        ?>
         <?php if (!empty($stats)): ?>
-            <table class="widefat striped" style="max-width:620px">
-                <thead><tr><th>Сервис</th><th>Платежей</th><th>Сумма</th></tr></thead>
+            <table class="widefat striped" style="max-width:700px">
+                <thead><tr><th>Сервис</th><th>Платежей</th><th>Сумма</th><th>Доля</th></tr></thead>
                 <tbody>
                     <?php foreach ($stats as $source => $row): ?>
-                        <tr>
-                            <td><?php echo esc_html($names[$source] ?? $source); ?></td>
+                        <?php $share = $total_sum > 0 ? round((float) $row['sum'] / $total_sum * 100) : 0; ?>
+                        <tr<?php echo $open === $source ? ' style="background:#fff8e1"' : ''; ?>>
+                            <td>
+                                <a href="<?php echo esc_url(add_query_arg('gs_pay_src', rawurlencode($source), $base) . '#gs-payments'); ?>">
+                                    <?php echo esc_html($names[$source] ?? $source); ?>
+                                </a>
+                            </td>
                             <td><?php echo (int) $row['count']; ?></td>
                             <td><?php echo esc_html(number_format_i18n((float) $row['sum'], 2)); ?> ₽</td>
+                            <td><?php echo (int) $share; ?>%</td>
                         </tr>
                     <?php endforeach; ?>
+                    <tr>
+                        <td><strong>Всего</strong></td>
+                        <td><strong><?php echo (int) $total_cnt; ?></strong></td>
+                        <td><strong><?php echo esc_html(number_format_i18n($total_sum, 2)); ?> ₽</strong></td>
+                        <td></td>
+                    </tr>
                 </tbody>
             </table>
+            <p class="description" style="max-width:700px">
+                Нажмите на сервис — откроется список его платежей. «Неизвестно» означает, что
+                в уведомлении не было ни метки сервиса, ни знакомого номера заказа: так
+                приходят платежи, заведённые не сайтом.
+            </p>
+        <?php endif; ?>
+
+        <?php if ($open !== ''): ?>
+            <?php $rows = GS_Yoomoney::log_for($open); $sum = GS_Yoomoney::totals_for($open); ?>
+            <h3 style="margin-top:18px">
+                <?php echo esc_html($names[$open] ?? $open); ?>
+                <a href="<?php echo esc_url($base . '#gs-payments'); ?>" style="font-weight:400;font-size:13px">свернуть</a>
+            </h3>
+            <p class="description" style="max-width:700px">
+                Дошло до нас: <strong><?php echo (int) $sum['count']; ?></strong> на
+                <strong><?php echo esc_html(number_format_i18n((float) $sum['sum'], 2)); ?> ₽</strong>.
+                Всего уведомлений по этому сервису в журнале: <?php echo count($rows); ?> —
+                ниже они целиком, вместе с неудачными: по ним деньги у плательщика списались,
+                а до сервиса не дошли, и это как раз то, что нужно разбирать.
+            </p>
+            <?php if (!$rows): ?>
+                <p class="description">Платежей этого сервиса в журнале нет. Журнал хранит последние
+                    <?php echo (int) GS_Yoomoney::LOG_LIMIT; ?> уведомлений — более ранние в нём не остаются.</p>
+            <?php else: ?>
+                <table class="widefat striped" style="max-width:1000px">
+                    <thead><tr><th>Когда</th><th>Сумма</th><th>Кто платил</th><th>Метка</th><th>Итог</th><th>Пробовал бесплатно</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($rows as $row): ?>
+                            <tr>
+                                <td><?php echo esc_html(mysql2date('d.m.Y H:i', $row['at'])); ?></td>
+                                <td><?php echo esc_html(number_format_i18n((float) $row['amount'], 2)); ?> ₽</td>
+                                <td><?php echo $row['user'] !== '' ? esc_html($row['user']) : '<span class="description">не записан</span>'; ?></td>
+                                <td><code><?php echo esc_html(mb_substr((string) $row['label'], 0, 42)); ?></code></td>
+                                <td><?php echo esc_html($row['status'] . ($row['message'] ? ' — ' . $row['message'] : '')); ?></td>
+                                <td><?php echo $row['trial'] !== '' ? esc_html(mysql2date('d.m.Y', $row['trial'])) : '—'; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
         <?php endif; ?>
 
         <?php if (!empty($log)): ?>

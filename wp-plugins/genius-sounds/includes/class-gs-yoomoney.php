@@ -249,7 +249,7 @@ class GS_Yoomoney {
         if (class_exists('GS_Legal_Doc') && strpos($label, GS_Legal_Doc::LABEL_PREFIX) === 0) {
             $result = GS_Legal_Doc::paid($label);
             self::remember($label, $amount, !empty($result['ok']) ? 'зачислено' : 'ошибка',
-                (string) ($result['message'] ?? ''), $params, 'юрдокумент');
+                (string) ($result['message'] ?? ''), $params, 'legal');
             return self::reply(!empty($result['ok']), 'legal', (string) ($result['message'] ?? ''));
         }
 
@@ -258,7 +258,7 @@ class GS_Yoomoney {
         if (class_exists('GS_Proekt') && strpos($label, GS_Proekt::LABEL_PREFIX) === 0) {
             $result = GS_Proekt::paid($label);
             self::remember($label, $amount, !empty($result['ok']) ? 'зачислено' : 'ошибка',
-                (string) ($result['message'] ?? ''), $params, 'проект');
+                (string) ($result['message'] ?? ''), $params, 'proekt');
             return self::reply(!empty($result['ok']), 'proekt', (string) ($result['message'] ?? ''));
         }
 
@@ -267,7 +267,7 @@ class GS_Yoomoney {
         if (class_exists('GS_Gift') && strpos($label, GS_Gift::LABEL_PREFIX) === 0) {
             $result = GS_Gift::paid($label);
             self::remember($label, $amount, !empty($result['ok']) ? 'зачислено' : 'ошибка',
-                (string) ($result['message'] ?? ''), $params, 'подарок');
+                (string) ($result['message'] ?? ''), $params, 'gift');
             return self::reply(!empty($result['ok']), 'gift', (string) ($result['message'] ?? ''));
         }
 
@@ -296,7 +296,12 @@ class GS_Yoomoney {
                     . (empty($sent['ok']) ? ' — отложено до ответа бота' : ''), $params, 'bot');
                 return self::reply(false, 'tts', $result['message']);
             }
-            self::remember($label, $amount, $result['ok'] ? 'зачислено' : 'ошибка', $result['message'], $params);
+            // Пополнение баланса: если окно пополнения проставило [src:],
+            // источником будет сервис, с которого человек пришёл платить,
+            // иначе — общий кабинет озвучки.
+            $src = self::source_from($params, $label);
+            self::remember($label, $amount, $result['ok'] ? 'зачислено' : 'ошибка', $result['message'],
+                $params, $src !== '' ? $src : 'tts');
             return self::reply($result['ok'], 'tts', $result['message']);
         }
 
@@ -613,20 +618,52 @@ class GS_Yoomoney {
      * ------------------------------------------------------------------ */
 
     /** Из назначения платежа достаём метку вида [src:vocal]. */
-    public static function source_from($params) {
+    public static function source_from($params, $label = '') {
         $target = (string) ($params['targets'] ?? '');
         if (preg_match('~\[src:([a-z0-9_-]{2,20})\]~i', $target, $m)) {
             return strtolower($m[1]);
+        }
+
+        // Метку [src:] ставит только окно пополнения баланса. У остальных
+        // сервисов ссылку на оплату собирает GS_Pay, и опознать платёж можно
+        // по номеру заказа: он начинается с имени сервиса. Без этого всё,
+        // кроме пополнений, валилось в «неизвестно».
+        $label = (string) ($label !== '' ? $label : ($params['label'] ?? ''));
+        $by_prefix = array(
+            'proekt_' => 'proekt',
+            'legal_'  => 'legal',
+            'gift_'   => 'gift',
+            'wheel_'  => 'wheel',
+            'photo_'  => 'photo',
+            'course_' => 'course',
+            'slides_' => 'slides',
+        );
+        foreach ($by_prefix as $prefix => $source) {
+            if (stripos($label, $prefix) === 0) {
+                return $source;
+            }
+        }
+
+        // Платежи из бота приходят со своим номером заказа — его формат
+        // знает платёжный модуль, он же помнит, с какой страницы пришёл
+        // человек, если тот платил на сайте.
+        if (class_exists('GS_Payments')) {
+            $known = GS_Payments::payment_source_of($label);
+            if ($known !== '') {
+                return $known;
+            }
         }
         return '';
     }
 
     private static function remember($label, $amount, $status, $message, $params, $source = '') {
         if ($source === '') {
-            $source = self::source_from($params);
+            $source = self::source_from($params, $label);
         }
         if ($source === '') {
-            $source = 'неизвестно';
+            // Ключом, а не словом: по слову строку не открыть — в адресе
+            // кириллица не переживает очистку параметра.
+            $source = 'unknown';
         }
 
         $log = get_option(self::OPT_LOG, array());
@@ -679,6 +716,59 @@ class GS_Yoomoney {
     public static function get_log() {
         $log = get_option(self::OPT_LOG, array());
         return is_array($log) ? $log : array();
+    }
+
+    /**
+     * Платежи одного сервиса.
+     *
+     * Сводка отвечает «сколько», но не отвечает «кто и когда»: чтобы
+     * разобрать спорный платёж, приходилось лезть в кошелёк. Здесь тот же
+     * журнал, отфильтрованный по сервису и дополненный тем, что о платеже
+     * знает сайт — кто платил и был ли до этого бесплатный пробник.
+     */
+    public static function log_for($source) {
+        $source = (string) $source;
+        $rows = array();
+        foreach (self::get_log() as $row) {
+            if ((string) ($row['source'] ?? '') !== $source) {
+                continue;
+            }
+            $label = (string) ($row['label'] ?? '');
+            $who = 0;
+            $trial = '';
+            if (class_exists('GS_Payments') && $label !== '') {
+                $who = (int) GS_Payments::payment_user_of($label);
+                $trial = (string) GS_Payments::payment_trial_of($label);
+            }
+            $row['user_id'] = $who;
+            $row['user'] = $who > 0 ? self::user_title($who) : '';
+            $row['trial'] = $trial;
+            $rows[] = $row;
+        }
+        return $rows;
+    }
+
+    /** Кто платил: показываем логин и почту, а не голый номер. */
+    private static function user_title($user_id) {
+        $user = get_userdata((int) $user_id);
+        if (!$user) {
+            return '#' . (int) $user_id;
+        }
+        $mail = (string) $user->user_email;
+        return $user->user_login . ($mail !== '' ? ' · ' . $mail : '');
+    }
+
+    /** Сколько денег принёс сервис за всё время — по журналу, а не по счётчику. */
+    public static function totals_for($source) {
+        $sum = 0.0;
+        $ok = 0;
+        foreach (self::log_for($source) as $row) {
+            if (in_array((string) $row['status'], array('зачислено', 'переслано'), true)) {
+                $sum += (float) $row['amount'];
+                $ok++;
+            }
+        }
+        return array('count' => $ok, 'sum' => round($sum, 2));
     }
 
     public static function get_stats() {

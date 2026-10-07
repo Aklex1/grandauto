@@ -680,6 +680,20 @@ class GS_Payments {
             'voicesong'=> 'песня своим голосом',
             'proekt'   => 'наставник по индивидуальному проекту',
             'slides'   => 'генерация презентаций',
+            // Ниже — то, за что тоже платят, но в списке источников этого
+            // не было: такие платежи падали в «неизвестно», и понять, что
+            // приносит деньги, было нельзя.
+            'photo'    => 'ИИ-фотосессия',
+            'legal'    => 'юридические документы',
+            'gift'     => 'песня в подарок',
+            'wheel'    => 'примерка дисков',
+            'course'   => 'обучение заработку на нейросетях',
+            'bot'      => 'телеграм-бот',
+            'lyrics'   => 'текст песни',
+            'cover'    => 'обложка для трека',
+            'dub'      => 'дубляж видео',
+            'vupscale' => 'улучшить качество видео',
+            'unknown'  => 'неизвестно — платёж заведён не сайтом',
         );
     }
 
@@ -757,6 +771,13 @@ class GS_Payments {
         $log = get_option(self::OPT_SRC_LOG, array());
         return is_array($log) && isset($log[(string) $label]['src'])
             ? (string) $log[(string) $label]['src'] : '';
+    }
+
+    /** Кто платил по этой метке: номер пользователя или ноль. */
+    public static function payment_user_of($label) {
+        $log = get_option(self::OPT_SRC_LOG, array());
+        return is_array($log) && isset($log[(string) $label]['user'])
+            ? (int) $log[(string) $label]['user'] : 0;
     }
 
     /** Когда у плательщика была бесплатная проба. Пусто — не было. */
