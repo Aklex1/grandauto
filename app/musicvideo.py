@@ -1980,6 +1980,11 @@ def publish(video_id: int, *, privacy: str = "private") -> None:
             raise RuntimeError("микс ещё не собран — выкладывать нечего")
         path = storage.abspath(video.video_path)
         poster = storage.abspath(video.poster_path) if video.poster_path else None
+        # На превью идёт нарисованная обложка, если её делали: голый кадр из
+        # ролика в выдаче YouTube не цепляет, а обложка для этого и рисовалась.
+        cover = storage.abspath(video.cover_path) if video.cover_path else None
+        if cover is not None and cover.is_file():
+            poster = cover
         title = (video.yt_title or video.title or style_of(video.style).label)
         description = video.description or ""
         tags = [tag.strip() for tag in (video.tags or "").split(",") if tag.strip()]
