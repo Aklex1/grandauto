@@ -1758,6 +1758,62 @@ def music_short(video_id: int, session: Session = Depends(get_session),
     return RedirectResponse(f"{where}{joiner}short={video_id}", status_code=303)
 
 
+@app.post("/music/{video_id}/cover")
+def music_cover(video_id: int, session: Session = Depends(get_session),
+                _user: str = Depends(require_user), back: str = Form("")):
+    """Перерисовать обложку готового микса, не пересобирая ролик.
+
+    Рисуется на месте, а не через очередь: это секунда работы и ноль трат, и
+    человек должен сразу увидеть, что получилось.
+    """
+    from . import musicvideo as mv
+    from .models import MusicVideo
+
+    video = session.get(MusicVideo, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Микс не найден")
+    where = back or "/music?tab=library"
+    joiner = "&" if "?" in where else "?"
+    if not video.video_path:
+        return RedirectResponse(f"{where}{joiner}error=not-built", status_code=303)
+    # Каждое нажатие — другой оттенок и другой кадр: обложку жмут именно затем,
+    # чтобы получить не то же самое.
+    accent = int(video.cover_accent or video.id) + 1
+    try:
+        mv.draw_cover(video_id, accent=accent)
+    except Exception as exc:  # noqa: BLE001 — причину показываем в панели
+        return RedirectResponse(f"{where}{joiner}error=cover&detail={str(exc)[:160]}",
+                                status_code=303)
+    video = session.get(MusicVideo, video_id)
+    video.cover_accent = accent
+    session.commit()
+    return RedirectResponse(f"{where}{joiner}cover={video_id}", status_code=303)
+
+
+@app.post("/music/shorts/{short_id}/cover")
+def music_short_cover(short_id: int, session: Session = Depends(get_session),
+                      _user: str = Depends(require_user), back: str = Form("")):
+    """Перерисовать вертикальную обложку отрывка."""
+    from . import musicvideo as mv
+    from .models import MusicShort
+
+    row = session.get(MusicShort, short_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Отрывок не найден")
+    where = back or "/music?tab=library"
+    joiner = "&" if "?" in where else "?"
+    accent = int(row.cover_accent or row.id) + 1
+    try:
+        mv.draw_short_cover(short_id, accent=accent)
+    except Exception as exc:  # noqa: BLE001 — причину показываем в панели
+        return RedirectResponse(f"{where}{joiner}error=cover&detail={str(exc)[:160]}",
+                                status_code=303)
+    row = session.get(MusicShort, short_id)
+    row.cover_accent = accent
+    session.commit()
+    return RedirectResponse(f"{where}{joiner}cover=short-{short_id}", status_code=303)
+
+
 @app.post("/music/shorts/{short_id}/drop")
 def music_short_drop(short_id: int, session: Session = Depends(get_session),
                      _user: str = Depends(require_user), back: str = Form("")):

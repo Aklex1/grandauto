@@ -732,6 +732,9 @@ class MusicVideo(Base):
     # Обложка для публикации: рисуется по просьбе при сборке и ничего не стоит.
     cover_path: Mapped[str] = mapped_column(String(500), default="")
     want_cover: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Номер оттенка обложки. Кнопка «Другая обложка» увеличивает его, поэтому
+    # нажатия дают разные картинки, а не одну и ту же заново.
+    cover_accent: Mapped[int] = mapped_column(Integer, default=0)
     youtube_id: Mapped[str] = mapped_column(String(40), default="")
     youtube_url: Mapped[str] = mapped_column(String(200), default="")
     youtube_privacy: Mapped[str] = mapped_column(String(20), default="")
@@ -875,6 +878,7 @@ class MusicShort(Base):
     poster_path: Mapped[str] = mapped_column(String(500), default="")
     # Вертикальная обложка 1080×1920 — рисуется из кадра самого отрывка.
     cover_path: Mapped[str] = mapped_column(String(500), default="")
+    cover_accent: Mapped[int] = mapped_column(Integer, default=0)
     start_sec: Mapped[float] = mapped_column(Float, default=0.0)
     duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
     file_size: Mapped[int] = mapped_column(Integer, default=0)

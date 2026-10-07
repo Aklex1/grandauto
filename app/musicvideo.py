@@ -1864,28 +1864,16 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
             session.commit()
 
         # Обложка: кадр той же сцены, крупный заголовок, пилюля с длительностью.
-        # Ничего не генерируется — рисуем, поэтому она бесплатна.
+        # Ничего не генерируется — рисуем, поэтому она бесплатна. Та же функция
+        # стоит за кнопкой «Другая обложка», так что рисуется это одинаково.
         with session_scope() as session:
-            video = session.get(MusicVideo, video_id)
-            if video is not None and video.want_cover and video.video_path:
-                from . import chrome
-
-                try:
-                    shot = folder / "cover_scene.png"
-                    media.frame_grab(storage.abspath(video.video_path), shot,
-                                     at=min(12.0, duration * 0.2))
-                    series, note = (video.yt_title.split(" — ", 1) + [""])[:2]
-                    minutes_done = int(round(duration / 60)) or video.minutes
-                    cover = folder / "cover.jpg"
-                    chrome.cover(cover, shot, title=series.strip() or style.label,
-                                 note=note.split("·")[-1].strip(),
-                                 badge=f"{minutes_done} min", logo=logo_file,
-                                 accent=video_id)
-                    video.cover_path = storage.rel(cover)
-                    session.commit()
-                    shot.unlink(missing_ok=True)
-                except Exception as exc:  # noqa: BLE001 — ролик важнее обложки
-                    log.warning("Обложка микса #%s не нарисована: %s", video_id, exc)
+            row = session.get(MusicVideo, video_id)
+            wanted = bool(row is not None and row.want_cover and row.video_path)
+        if wanted:
+            try:
+                draw_cover(video_id)
+            except Exception as exc:  # noqa: BLE001 — ролик важнее обложки
+                log.warning("Обложка микса #%s не нарисована: %s", video_id, exc)
 
         _stage(video_id, "done")
         _note("info", f"Музыкальный микс #{video_id} готов: {style.label}, "
@@ -2062,6 +2050,147 @@ def short_window(duration: float, tracks: list, seed: int = 0) -> tuple[float, f
     return round(rnd.uniform(safe_from, safe_to), 2), round(span, 2)
 
 
+def _logo_of(session: Session, channel_id: int) -> Optional[Path]:
+    """Логотип канала, если микс канальный."""
+    if not channel_id:
+        return None
+    from . import musicchannels as mch
+
+    row = mch.one(session, channel_id, "logo")
+    if row is None or not row.path:
+        return None
+    path = storage.abspath(row.path)
+    return path if path.is_file() else None
+
+
+def _next_cover(folder: Path, stem: str) -> Path:
+    """Свободное имя для обложки.
+
+    Поверх прежнего файла не пишем: у браузера остаётся старая картинка в
+    кэше, и кнопка «Другая обложка» выглядела бы неработающей.
+    """
+    for number in range(1, 200):
+        path = folder / f"{stem}_{number:02d}.jpg"
+        if not path.exists():
+            return path
+    return folder / f"{stem}_{int(utcnow().timestamp())}.jpg"
+
+
+def _cover_frame(video: Path, shot: Path, at: float) -> Path:
+    """Кадр для обложки. Если на этом месте кадра нет — берём начало.
+
+    ffmpeg на перемотке за конец файла молча не пишет ничего, и обложка падала
+    потом на открытии несуществующей картинки. Длительность в базе может
+    расходиться с файлом, поэтому запасной вариант нужен.
+    """
+    media.frame_grab(video, shot, at=max(0.0, at))
+    if not shot.exists():
+        media.frame_grab(video, shot, at=0.5)
+    if not shot.exists():
+        raise RuntimeError("из ролика не удалось снять ни одного кадра")
+    return shot
+
+
+def draw_cover(video_id: int, *, accent: Optional[int] = None) -> str:
+    """Нарисовать обложку готового микса. Возвращает путь для показа в панели.
+
+    Ничего не генерируется — рисуем сами, поэтому нажимать можно сколько угодно.
+    accent задаёт и цвет, и кадр: у каждой следующей обложки они другие, иначе
+    кнопка возвращала бы ту же картинку.
+    """
+    from . import chrome
+
+    with session_scope() as session:
+        video = session.get(MusicVideo, video_id)
+        if video is None:
+            raise RuntimeError(f"микс #{video_id} не найден")
+        if not video.video_path:
+            raise RuntimeError("микс ещё не собран — обложку рисовать не из чего")
+        path = storage.abspath(video.video_path)
+        style = style_of(video.style)
+        head = video.yt_title or video.title or style.label
+        minutes = int(round((video.duration_sec or 0) / 60)) or video.minutes
+        logo = _logo_of(session, int(video.channel_id or 0))
+        shade = video_id if accent is None else int(accent)
+
+    if not path.is_file():
+        raise RuntimeError("файл ролика не найден на диске")
+    duration = storage.media_duration(path)
+    folder = work_dir(video_id)
+    shot = folder / "cover_scene.png"
+    # Кадр с разных мест ролика: у заставки меняется свет, и обложки не выходят
+    # одинаковыми даже на одной сцене.
+    at = max(1.0, duration * (0.12 + 0.11 * (shade % 7))) if duration > 10 else 1.0
+    _cover_frame(path, shot, at)
+
+    series, note = (head.split(" — ", 1) + [""])[:2]
+    cover = _next_cover(folder, "cover")
+    chrome.cover(cover, shot, title=series.strip() or style.label,
+                 note=note.split("·")[-1].strip(), badge=f"{minutes} min",
+                 logo=logo, accent=shade)
+    shot.unlink(missing_ok=True)
+
+    with session_scope() as session:
+        video = session.get(MusicVideo, video_id)
+        if video is not None:
+            video.cover_path = storage.rel(cover)
+            video.want_cover = True
+            session.commit()
+    log.info("Обложка микса #%s нарисована: %s", video_id, cover.name)
+    return storage.rel(cover)
+
+
+def draw_short_cover(short_id: int, *, accent: Optional[int] = None) -> str:
+    """Нарисовать вертикальную обложку отрывка. Тоже бесплатно и сколько угодно."""
+    from . import chrome
+    from .models import MusicShort
+
+    with session_scope() as session:
+        row = session.get(MusicShort, short_id)
+        if row is None:
+            raise RuntimeError(f"отрывок #{short_id} не найден")
+        if not row.path:
+            raise RuntimeError("отрывок ещё не собран")
+        path = storage.abspath(row.path)
+        caption = row.title
+        span = row.duration_sec
+        video_id = row.video_id
+        video = session.get(MusicVideo, video_id)
+        label = style_of(video.style).label if video is not None else ""
+        channel_name = ""
+        if video is not None and video.channel_id:
+            from .models import MusicChannel
+
+            channel = session.get(MusicChannel, video.channel_id)
+            channel_name = channel.name if channel else ""
+        logo = _logo_of(session, int(video.channel_id or 0) if video is not None else 0)
+        shade = short_id if accent is None else int(accent)
+
+    if not path.is_file():
+        raise RuntimeError("файл отрывка не найден на диске")
+    folder = path.parent
+    shot = folder / f"short_{short_id}_scene.png"
+    # Место кадра считаем по самому файлу: длительность из базы могла
+    # разойтись с ним, а перемотка за конец оставила бы обложку без картинки.
+    length = storage.media_duration(path) or span or 60.0
+    at = min(length * (0.1 + 0.12 * (shade % 6)), max(0.5, length - 0.5))
+    _cover_frame(path, shot, at)
+
+    cover = _next_cover(folder, f"short_{short_id}_cover")
+    chrome.cover(cover, shot, title=caption or label, note=channel_name,
+                 badge=f"{span:.0f} sec" if span else "", logo=logo,
+                 accent=shade, size=chrome.COVER_VERTICAL)
+    shot.unlink(missing_ok=True)
+
+    with session_scope() as session:
+        row = session.get(MusicShort, short_id)
+        if row is not None:
+            row.cover_path = storage.rel(cover)
+            session.commit()
+    log.info("Обложка отрывка #%s нарисована: %s", short_id, cover.name)
+    return storage.rel(cover)
+
+
 def make_short(video_id: int, *, seed: int = 0) -> int:
     """Собрать вертикальный отрывок готового микса. Возвращает номер записи.
 
@@ -2083,18 +2212,14 @@ def make_short(video_id: int, *, seed: int = 0) -> int:
             select(MusicVideoTrack).where(MusicVideoTrack.video_id == video_id)
             .order_by(MusicVideoTrack.idx)).scalars().all()
         channel_name = ""
-        logo = None
         if video.channel_id:
-            from . import musicchannels as mch
             from .models import MusicChannel
 
             channel = session.get(MusicChannel, video.channel_id)
             channel_name = channel.name if channel else ""
-            logo_row = mch.one(session, video.channel_id, "logo")
-            logo = storage.abspath(logo_row.path) if logo_row else None
+        logo = _logo_of(session, int(video.channel_id or 0))
         made = len(session.execute(
             select(MusicShort).where(MusicShort.video_id == video_id)).scalars().all())
-        style_of_video = style_of(video.style).label
 
     if not audio.is_file() or not loop.is_file():
         raise RuntimeError("файлы микса не найдены на диске")
@@ -2122,31 +2247,23 @@ def make_short(video_id: int, *, seed: int = 0) -> int:
         log.warning("Превью отрывка не снято: %s", exc)
         poster = None
 
-    # Вертикальная обложка из кадра самого отрывка: та же сцена, что в нём
-    # движется, поэтому обложка и ролик — одно целое.
-    cover = None
-    if poster is not None:
-        from . import chrome
-
-        try:
-            cover = dest.with_name(dest.stem + "_cover.jpg")
-            chrome.cover(cover, poster, title=caption or style_of_video,
-                         note=channel_name, badge=f"{span:.0f} sec", logo=logo,
-                         accent=made, size=chrome.COVER_VERTICAL)
-        except Exception as exc:  # noqa: BLE001 — отрывок важнее обложки
-            log.warning("Обложка отрывка не нарисована: %s", exc)
-            cover = None
-
     with session_scope() as session:
         row = MusicShort(video_id=video_id, title=caption[:300],
                          path=storage.rel(dest),
                          poster_path=storage.rel(poster) if poster else "",
-                         cover_path=storage.rel(cover) if cover else "",
                          start_sec=start, duration_sec=storage.media_duration(dest),
                          file_size=dest.stat().st_size)
         session.add(row)
         session.commit()
         short_id = row.id
+
+    # Вертикальная обложка из кадра самого отрывка: та же сцена, что в нём
+    # движется, поэтому обложка и ролик — одно целое. Рисует её та же функция,
+    # что стоит за кнопкой «Другая обложка».
+    try:
+        draw_short_cover(short_id)
+    except Exception as exc:  # noqa: BLE001 — отрывок важнее обложки
+        log.warning("Обложка отрывка #%s не нарисована: %s", short_id, exc)
     _note("info", f"Отрывок микса #{video_id}: «{caption}» с {timecode(start)}, "
                   f"{span:.0f} с")
     return short_id

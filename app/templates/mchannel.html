@@ -35,6 +35,17 @@
 {% if request.query_params.get('error') == 'no-file' %}
   <p class="badge" style="background:#5b2222">Файл не выбран.</p>
 {% endif %}
+{% if request.query_params.get('error') == 'not-built' %}
+  <p class="badge" style="background:#5b2222">Трек ещё не собран.</p>
+{% endif %}
+{% if request.query_params.get('cover') %}
+  <p class="badge">Обложка нарисована заново. Если браузер показывает прежнюю —
+    обновите страницу: файл новый, но имя у картинки могло остаться в кэше.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'cover' %}
+  <p class="badge" style="background:#5b2222">Обложку нарисовать не удалось:
+    {{ request.query_params.get('detail') }}</p>
+{% endif %}
 {% if request.query_params.get('error') == 'bad-clip' %}
   <p class="badge" style="background:#5b2222">Клип не принят:
     {{ request.query_params.get('detail') }}</p>
@@ -232,14 +243,20 @@
     <div style="flex:1;min-width:260px">
       <a class="btn btn-sm" href="/media/{{ mix.video_path }}" download>Скачать видео</a>
       <a class="btn btn-sm btn-ghost" href="/music/{{ mix.id }}/description.txt">Описание файлом</a>
-      {% if mix.cover_path %}
       <div style="margin-top:8px">
+        {% if mix.cover_path %}
         <img src="/media/{{ mix.cover_path }}" alt="обложка"
              style="width:100%;border-radius:8px">
         <a class="btn btn-sm btn-ghost" href="/media/{{ mix.cover_path }}" download>
           Скачать обложку</a>
+        {% endif %}
+        <form method="post" action="/music/{{ mix.id }}/cover" style="display:inline">
+          <input type="hidden" name="back" value="/music/c/{{ channel.slug }}?tab=library">
+          <button class="btn btn-sm btn-ghost" type="submit">
+            {% if mix.cover_path %}Другая обложка{% else %}Сделать обложку{% endif %}</button>
+        </form>
+        <span class="small muted">рисуется на сервере, без трат</span>
       </div>
-      {% endif %}
 
       {% if mix.tracklist %}
       <details style="margin-top:8px">
@@ -309,6 +326,11 @@
         {% if sh.cover_path %}
         <a class="btn btn-sm btn-ghost" href="/media/{{ sh.cover_path }}" download>Обложка</a>
         {% endif %}
+        <form method="post" action="/music/shorts/{{ sh.id }}/cover" style="display:inline">
+          <input type="hidden" name="back" value="/music/c/{{ channel.slug }}?tab=library">
+          <button class="btn btn-sm btn-ghost" type="submit">
+            {% if sh.cover_path %}Другая{% else %}Обложка{% endif %}</button>
+        </form>
         <form method="post" action="/music/shorts/{{ sh.id }}/drop" style="display:inline">
           <input type="hidden" name="back" value="/music/c/{{ channel.slug }}?tab=library">
           <button class="btn btn-sm btn-ghost" type="submit">Убрать</button>
