@@ -94,15 +94,16 @@
     </div>
   </form>
 
-  <form method="post" action="/music/c/{{ channel.slug }}/loops" style="margin-top:12px"
-        onsubmit="return confirm('Это платно: за каждую заставку картинка плюс оживление. Продолжить?')">
+  <form method="post" action="/music/c/{{ channel.slug }}/loops" style="margin-top:12px">
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
-      <label style="flex:1;min-width:150px">Сгенерировать заставок
+      <label style="flex:1;min-width:150px">Нарисовать заставок
         <input name="count" type="number" min="1" max="10" value="4"></label>
-      <button class="btn btn-ghost" type="submit">Сгенерировать</button>
-      <span class="small muted" style="flex:2;min-width:240px">Каждая — своя картинка
-        и своё оживление, по одному оттенку на клип: время суток, погода, точка съёмки.
-        Платится один раз, дальше траты только на музыку.</span>
+      <button class="btn btn-ghost" type="submit">Нарисовать</button>
+      <span class="small muted" style="flex:2;min-width:240px">
+        <b>Бесплатно:</b> сцены рисует сервер — ночная гряда, дорога с уходящей
+        перспективой, планета с кольцом, снегопад. Генераторы картинок для этого не
+        годятся: они отвечают фотореализмом и кривыми буквами, а здесь нужен плоский
+        вектор без единой буквы. Платить остаётся только за музыку.</span>
     </div>
   </form>
 </fieldset>

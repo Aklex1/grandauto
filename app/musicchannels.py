@@ -276,94 +276,58 @@ def backdrop_prompts(style, count: int, *, skip: int = 0) -> list[tuple[str, str
     return out
 
 
-def generate_loops(channel_id: int, count: int = 5) -> None:
-    """Сгенерировать набор заставок канала. Делается один раз.
+# Наборы, из которых завод рисует заставки канала. Жанр сцены к серии не
+# привязан намеренно: иначе «Snowfall» вечно шёл бы со снегом, и набор
+# обесценился бы до одной заставки на серию.
+SCENE_PRESETS = ("aurora", "snowfall", "road", "planet", "deep", "ember", "snow")
 
-    Каждая заставка — своя транзакция: сорвавшийся клип не должен отменять уже
-    сгенерированные и оплаченные.
+
+def generate_loops(channel_id: int, count: int = 4, *, seconds: float = 30.0) -> None:
+    """Дорисовать заставки канала. Бесплатно: рисует сервер, генераторы не нужны.
+
+    Раньше здесь заказывались картинка и оживление у KIE. Для этого канала так
+    не годится: визуальный язык плоский векторный, а фотогенератор отвечает на
+    него фотореализмом с кривыми буквами — присланный клип это и показал. Плюс
+    каждая заставка стоила денег, а теперь не стоит ничего.
+
+    Каждая заставка — своя транзакция: сорвавшаяся не отменяет уже готовые.
     """
-    from . import kie, musicvideo as mv
-    from . import settings_store as st
+    import random as _random
+
+    from . import backdrops
     from .db import session_scope
-    from .kie import KieClient, extract_urls
     from .models import Event
 
     done, failed = [], []
-    for index in range(max(1, min(10, count))):
+    for _ in range(max(1, min(10, count))):
         with session_scope() as session:
             channel = session.get(MusicChannel, channel_id)
             if channel is None:
                 raise RuntimeError("канал не найден")
-            style = mv.style_of(channel.style)
             have = len(assets(session, channel_id, "loop"))
-            prompt_image, prompt_motion = backdrop_prompts(style, 1, skip=have)[0]
-            client = KieClient(api_key=st.get(session, "kie_api_key", "")
-                               or config.KIE_API_KEY)
-            image_model = st.get(session, "default_image_model", "nano-banana-2")
-            video_model = st.get(session, "default_video_model", "")
             slug = channel.slug
 
+        preset = SCENE_PRESETS[have % len(SCENE_PRESETS)]
+        seed = _random.Random(f"{slug}:{have}").randrange(10 ** 6)
+        tmp = config.TMP_DIR / f"scene_{slug}_{have}.mp4"
         try:
-            from . import loops as loops_mod
-
-            video_model = loops_mod.to_image_model(video_model
-                                                   or loops_mod.DEFAULT_VIDEO_MODEL)
-            shot = client.run_task(image_model, kie.image_input_payload(
-                image_model, prompt=prompt_image, aspect_ratio="16:9",
-                resolution="2K", output_format="png"), timeout=900, poll=5)
-            image_urls = extract_urls(shot)
-            if not image_urls:
-                raise RuntimeError(f"{image_model}: нет ссылки на изображение")
-            credits = float(shot.get("_credits") or 0)
-
-            clip = client.run_task(video_model, kie.image_to_video_input(
-                video_model, prompt=prompt_motion, image_urls=image_urls[:1],
-                resolution=mv.LOOP_QUALITY, duration=mv.LOOP_SECONDS),
-                timeout=1800, poll=8)
-            video_urls = extract_urls(clip)
-            if not video_urls:
-                raise RuntimeError(f"{video_model}: нет ссылки на видео")
-            credits += float(clip.get("_credits") or 0)
-
-            tmp = config.TMP_DIR / f"loop_{slug}_{index}" \
-                                   f"{storage.guess_ext(video_urls[0], '.mp4')}"
-            storage.download(video_urls[0], tmp)
-
-            # Типографику наносим сами: буквы у генераторов картинок выходят
-            # кривыми, и никакой промпт этого не лечит. Поэтому модель рисует
-            # сцену без единой буквы, а логотип и заголовок ложатся сверху
-            # ровно такими, какими задуманы.
+            backdrops.render(tmp, preset, seconds, seed)
+            if storage.media_duration(tmp) <= 1:
+                raise RuntimeError("сцена не нарисовалась")
             with session_scope() as session:
                 channel = session.get(MusicChannel, channel_id)
-                caption, note = title_for(channel, have)
-                logo_row = one(session, channel_id, "logo")
-                logo = storage.abspath(logo_row.path) if logo_row else None
-                subtitle = note or channel.subtitle
-            branded = config.TMP_DIR / f"branded_{slug}_{index}.mp4"
-            try:
-                media.brand_clip(tmp, branded, size=media.target_size("1080p", "16:9"),
-                                 title=caption, subtitle=subtitle, logo=logo)
-                ready = branded
-            except Exception as exc:  # noqa: BLE001 — клип важнее надписи
-                log.warning("Надпись на заставку не нанесена: %s", exc)
-                ready = tmp
-
-            with session_scope() as session:
-                channel = session.get(MusicChannel, channel_id)
-                row = add_file(session, channel, "loop", ready,
-                               title=caption or f"Заставка {have + 1}",
-                               source="generated", prompt=prompt_motion,
-                               image_prompt=prompt_image, model=video_model,
-                               credits=credits)
+                row = add_file(session, channel, "loop", tmp,
+                               title=f"{preset} {have + 1}", source="drawn",
+                               prompt=f"{preset}, seed {seed}")
                 done.append(f"{row.title} ({row.duration_sec:.0f} с)")
+        except Exception as exc:  # noqa: BLE001 — одна сцена не ломает набор
+            log.warning("Заставка %s не нарисовалась: %s", preset, exc)
+            failed.append(f"{preset}: {exc}")
+        finally:
             tmp.unlink(missing_ok=True)
-            branded.unlink(missing_ok=True)
-        except Exception as exc:  # noqa: BLE001 — одна заставка не ломает набор
-            log.warning("Заставка %s не сделана: %s", index + 1, exc)
-            failed.append(str(exc))
 
     with session_scope() as session:
-        message = f"Заставки канала: готово {len(done)}"
+        message = f"Заставки канала: нарисовано {len(done)}"
         if done:
             message += " — " + ", ".join(done)
         if failed:
@@ -381,11 +345,7 @@ def titles_of(channel: MusicChannel) -> list[str]:
 
 
 def title_for(channel: MusicChannel, index: int) -> tuple[str, str]:
-    """Серия для очередной заставки: (название, пояснение).
-
-    По кругу, а не случайно: при генерации набора важно, чтобы каждая серия
-    получила свою заставку, а не чтобы две подряд вышли одинаковыми.
-    """
+    """Серия по кругу: (название, пояснение)."""
     rows = titles_of(channel)
     return split_title(rows[index % len(rows)])
 
