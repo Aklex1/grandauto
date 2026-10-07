@@ -181,6 +181,7 @@ class GS_Sitemap {
         // Примерка дисков не стоит в меню, и обойти её поисковику можно
         // только по ссылке из подвала и отсюда.
         if (class_exists('GS_Wheel')) {
+            $extra[] = GS_Wheel::landing_url();
             $extra[] = GS_Wheel::url();
         }
         foreach (GS_Lab::available_services() as $service) {

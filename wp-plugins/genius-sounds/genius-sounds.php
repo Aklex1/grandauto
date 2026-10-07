@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GS_VERSION', '2.13.5');
+define('GS_VERSION', '2.14.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -190,6 +190,7 @@ class Genius_Sounds_Plugin {
         GS_Partner_Page::ensure_page();
         GS_Gift::ensure_pages();
         GS_Legal::ensure_pages();
+        GS_Wheel::ensure_page();
         flush_rewrite_rules();
     }
 
@@ -232,6 +233,7 @@ class Genius_Sounds_Plugin {
                 GS_Partner_Page::ensure_page();
                 GS_Gift::ensure_pages();
                 GS_Legal::ensure_pages();
+                GS_Wheel::ensure_page();
                 add_action('shutdown', 'flush_rewrite_rules');
             } catch (Throwable $e) {
                 error_log('genius-sounds: инициализация не удалась — ' . $e->getMessage());
@@ -305,6 +307,15 @@ class Genius_Sounds_Plugin {
         // ей нужны свои.
         if (class_exists('GS_Wheel') && GS_Wheel::is_page()) {
             wp_enqueue_style('genius-sounds-wheel', GS_PLUGIN_URL . 'assets/css/wheel.css', array(), GS_VERSION);
+        }
+
+        // Своя посадочная примерки: её рисуем мы, стили и сравнение «до и
+        // после» нужны только здесь.
+        if (class_exists('GS_Wheel') && GS_Wheel::is_landing()) {
+            wp_enqueue_style('genius-sounds-wheel-landing',
+                GS_PLUGIN_URL . 'assets/css/wheel-landing.css', array(), GS_VERSION);
+            wp_enqueue_script('genius-sounds-wheel-landing',
+                GS_PLUGIN_URL . 'assets/js/wheel-landing.js', array(), GS_VERSION, true);
         }
 
         $blog = GS_Blog::enabled() && (GS_Blog::is_single_post() || GS_Blog::is_blog_list());
