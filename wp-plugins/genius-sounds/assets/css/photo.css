@@ -1,0 +1,185 @@
+/**
+ * Нейрофотосессия: примеры кадров, история и оформление посадочной.
+ *
+ * Сервис продаёт картинку, поэтому страница должна показывать результат
+ * раньше, чем объяснять его словами: человек не поверит описанию, пока не
+ * увидит, насколько похоже вышло лицо.
+ */
+
+/* --- фон посадочной -------------------------------------------------- */
+
+.gs-lab[data-service="photo"] .gs-hero--studio {
+    position: relative;
+    overflow: hidden;
+    border-radius: 20px;
+    padding: 28px 24px;
+    background-image:
+        linear-gradient(170deg, rgba(14, 9, 24, .58) 0%, rgba(14, 9, 24, .9) 72%, rgba(14, 9, 24, .95) 100%),
+        url("../brand/photo-hero.jpg");
+    background-size: cover;
+    background-position: center;
+}
+
+/* Полоса перед примерами: отделяет инструмент от галереи, иначе две
+   сетки подряд читаются как одна длинная таблица. */
+.gs-lab[data-service="photo"] .gs-lab-examples {
+    position: relative;
+    padding: 24px 20px;
+    border-radius: 20px;
+    background-image:
+        linear-gradient(180deg, rgba(14, 9, 24, .86) 0%, rgba(14, 9, 24, .94) 100%),
+        url("../brand/photo-band.jpg");
+    background-size: cover;
+    background-position: center;
+}
+
+/* --- галерея подборок ------------------------------------------------ */
+
+.gs-lab-examples { margin: 36px 0 8px; }
+
+.gs-lab-examples__lead {
+    margin: 0 0 20px;
+    color: rgba(243, 236, 247, .78);
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+.gs-set {
+    margin: 0 0 26px;
+}
+
+.gs-set:last-child { margin-bottom: 0; }
+
+.gs-set__cap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 10px;
+}
+
+.gs-set__cap strong { font-size: 16px; color: #f3ecf7; }
+.gs-set__cap span   { font-size: 13px; line-height: 1.45; color: rgba(243, 236, 247, .68); }
+
+/* Лента кадров: на узком экране прокручивается вбок, а не ломается в
+   столбик — подборка должна читаться как один ряд. */
+.gs-set__strip {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+}
+
+.gs-set__shot {
+    position: relative;
+    flex: 0 0 auto;
+    width: 180px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, .25);
+    scroll-snap-align: start;
+}
+
+.gs-set__shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+}
+
+/* Исходник приглушаем и отделяем: он не результат, а точка отсчёта. */
+.gs-set__shot--before img { filter: saturate(.7) brightness(.9); }
+
+.gs-set__shot--before {
+    margin-right: 8px;
+    box-shadow: 10px 0 0 -9px rgba(245, 166, 35, .55);
+}
+
+.gs-set__tag {
+    position: absolute;
+    left: 7px;
+    bottom: 7px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(12, 8, 20, .84);
+    color: rgba(243, 236, 247, .88);
+}
+
+.gs-set__tag--after {
+    background: rgba(245, 166, 35, .92);
+    color: #1a1020;
+}
+
+/* --- история кадров -------------------------------------------------- */
+
+.gs-lab-history {
+    margin: 36px 0 8px;
+}
+
+.gs-lab-history__lead {
+    margin: 0 0 16px;
+    color: rgba(243, 236, 247, .76);
+    font-size: 15px;
+}
+
+.gs-lab-history__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+}
+
+.gs-lab-shot {
+    margin: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, .04);
+    border: 1px solid rgba(255, 255, 255, .09);
+}
+
+.gs-lab-shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+}
+
+.gs-lab-shot__cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: rgba(243, 236, 247, .72);
+}
+
+.gs-lab-shot__cap span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gs-lab-shot__get {
+    flex: 0 0 auto;
+    color: #ffd166;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.gs-lab-shot__get:hover {
+    text-decoration: underline;
+}
+
+/* На телефоне пара «было/стало» в две колонки съедает детали лица —
+   оставляем две колонки, но карточку растягиваем на всю ширину. */
+@media (max-width: 560px) {
+    .gs-set__shot { width: 150px; }
+    .gs-lab-history__grid {
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    }
+}

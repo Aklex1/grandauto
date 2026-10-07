@@ -280,6 +280,16 @@ class GS_Lab_Page {
             </div>
             <?php endif; ?>
 
+            <?php if (GS_Lab::keeps_history($service['id'])): ?>
+                <section class="gs-lab-history" id="gs-lab-history" hidden>
+                    <h2 class="gs-section-title">Ваши кадры</h2>
+                    <p class="gs-lab-history__lead">Последние результаты сохраняются здесь — можно вернуться и скачать позже.</p>
+                    <div class="gs-lab-history__grid" id="gs-lab-history-grid"></div>
+                </section>
+            <?php endif; ?>
+
+            <?php echo self::render_examples($service); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <?php if ($extra['body_html'] !== ''): ?>
                 <section class="gs-lab-body"><?php echo $extra['body_html']; // phpcs:ignore WordPress.Security.EscapeOutput ?></section>
             <?php endif; ?>
@@ -326,8 +336,64 @@ class GS_Lab_Page {
         return ob_get_clean();
     }
 
+    /**
+     * Галерея примеров.
+     *
+     * Сервису, который делает картинку, примеры нужны раньше текста: по
+     * описанию человек не понимает, насколько похоже выйдет лицо, и уходит
+     * со страницы, не загрузив снимок. Поэтому блок стоит сразу после
+     * инструмента, а не в конце.
+     */
+    /**
+     * Галерея примеров — подборками, а не кадр за кадром.
+     *
+     * Сервис продаёт набор: одна загрузка, несколько локаций. Если
+     * показывать по одной картинке, человек так и не поймёт, что получит
+     * пять разных кадров, а не пять попыток одного.
+     */
+    private static function render_examples($service) {
+        $items = isset($service['examples']) && is_array($service['examples']) ? $service['examples'] : array();
+        if (empty($items)) {
+            return '';
+        }
+        ob_start();
+        ?>
+        <section class="gs-lab-examples">
+            <h2 class="gs-section-title">Примеры подборок</h2>
+            <p class="gs-lab-examples__lead">Слева — снимок, который загрузили, дальше — что вернула нейросеть. Исходные фото мы тоже сгенерировали: показывать чужие лица без спроса нельзя, поэтому настоящих людей здесь нет.</p>
+            <?php foreach ($items as $item): ?>
+                <figure class="gs-set">
+                    <figcaption class="gs-set__cap">
+                        <strong><?php echo esc_html($item['title']); ?></strong>
+                        <?php if (!empty($item['note'])): ?>
+                            <span><?php echo esc_html($item['note']); ?></span>
+                        <?php endif; ?>
+                    </figcaption>
+                    <div class="gs-set__strip">
+                        <?php if (!empty($item['before'])): ?>
+                            <div class="gs-set__shot gs-set__shot--before">
+                                <img src="<?php echo esc_url($item['before']); ?>" alt="Исходное фото: <?php echo esc_attr($item['title']); ?>" loading="lazy" width="560" height="747">
+                                <span class="gs-set__tag">загрузили</span>
+                            </div>
+                        <?php endif; ?>
+                        <?php foreach ((array) $item['shots'] as $shot): ?>
+                            <div class="gs-set__shot">
+                                <img src="<?php echo esc_url($shot[1]); ?>" alt="<?php echo esc_attr($item['title'] . ' — ' . $shot[0]); ?>" loading="lazy" width="560" height="747">
+                                <span class="gs-set__tag gs-set__tag--after"><?php echo esc_html($shot[0]); ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </figure>
+            <?php endforeach; ?>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
     private static function submit_label($service) {
         switch ($service['id']) {
+            case 'photo':
+                return 'Снять кадр';
             case 'avatar':
                 return 'Сделать видео';
             case 'vocal':

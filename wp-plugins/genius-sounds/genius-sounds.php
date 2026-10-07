@@ -506,6 +506,12 @@ class Genius_Sounds_Plugin {
                 // Свой файл разбирается в браузере — серверу он не нужен.
                 wp_enqueue_script('genius-sounds-ytlocal', GS_PLUGIN_URL . 'assets/js/ytaudio-local.js', array(), GS_VERSION, true);
             }
+            // Сервису с картинкой на выходе нужна своя вёрстка: галерея
+            // примеров, история кадров и фон посадочной.
+            if ($lab['id'] === 'photo') {
+                wp_enqueue_style('genius-sounds-photo', GS_PLUGIN_URL . 'assets/css/photo.css',
+                    array('genius-sounds-studio'), GS_VERSION);
+            }
             wp_localize_script('genius-sounds-lab', 'GS_LAB', array(
                 'restUrl'     => esc_url_raw(rest_url(GS_Rest::NS . '/')),
                 'nonce'       => wp_create_nonce('wp_rest'),
@@ -514,6 +520,9 @@ class Genius_Sounds_Plugin {
                 'loginUrl'    => GS_Pages::get_login_url($back),
                 'registerUrl' => GS_Pages::get_login_url(GS_Lab::get_url('stt')),
                 'service'     => $lab['id'],
+                // Цена кадра: подборка считается на странице, чтобы сумма
+                // была видна до запуска, а не в списании.
+                'perFrame'    => $lab['id'] === 'photo' ? GS_Lab::get_cost('photo') : 0,
                 'inputs'      => array_values($lab['inputs']),
                 'inputsOptional' => array_values((array) (isset($lab['input_optional']) ? $lab['input_optional'] : array())),
                 'pollSeconds' => (int) $lab['poll_seconds'],

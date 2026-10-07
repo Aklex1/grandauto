@@ -281,6 +281,12 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
 
+        register_rest_route(self::NS, '/lab/history/(?P<service>[a-z0-9_-]+)', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_lab_history'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+
         register_rest_route(self::NS, '/lab/callback', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_lab_callback'),
@@ -2547,7 +2553,7 @@ class GS_Rest {
             }
         }
 
-        $cost = GS_Lab::price($service_id, $seconds);
+        $cost = GS_Lab::price($service_id, $seconds, isset($payload['fields']) && is_array($payload['fields']) ? $payload['fields'] : array());
         // Доступное, а не всё: подарок за ключ API сюда не считается.
         $balance = GS_SFX::spendable($user_id);
         if ($balance < $cost) {
@@ -2589,6 +2595,9 @@ class GS_Rest {
             'user_id' => $user_id,
             'service' => $service_id,
             'cost'    => $cost,
+            // Подпись к кадру в истории: по готовому результату уже не
+            // восстановить, какую сцену человек выбирал.
+            'note'    => GS_Lab::history_note($service_id, isset($payload['fields']) && is_array($payload['fields']) ? $payload['fields'] : array()),
         ), false);
 
         return rest_ensure_response(array(
@@ -2596,6 +2605,17 @@ class GS_Rest {
             'task_id' => $task_id,
             'cost'    => $cost,
             'balance' => GS_SFX::get_balance($user_id),
+        ));
+    }
+
+    public static function handle_lab_history($request) {
+        $service_id = sanitize_key((string) $request['service']);
+        if (!GS_Lab::get_service($service_id)) {
+            return new WP_Error('gs_bad_service', 'Неизвестный сервис', array('status' => 400));
+        }
+        return rest_ensure_response(array(
+            'success' => true,
+            'items'   => GS_Lab::history(get_current_user_id(), $service_id),
         ));
     }
 
@@ -2657,6 +2677,17 @@ class GS_Rest {
         }
         if (class_exists('KIE_TTS_DB') && !empty($files)) {
             KIE_TTS_DB::update_generation_status($task_id, 'completed', $files[0]['url']);
+        }
+        // Подборка могла выйти не целиком: за каждый несостоявшийся кадр
+        // возвращаем его долю, иначе человек платит за то, чего не получил.
+        $missed = (int) ($task['failed_count'] ?? 0);
+        if ($missed > 0 && is_array($meta) && !empty($meta['user_id']) && !empty($meta['cost'])) {
+            $per = (float) $meta['cost'] / max(1, $missed + count($files));
+            GS_SFX::refund_charge((int) $meta['user_id'], round($per * $missed, 2));
+        }
+        if ($owner > 0 && GS_Lab::keeps_history($service_id)) {
+            GS_Lab::remember_result($owner, $service_id, $files,
+                is_array($meta) ? (string) ($meta['note'] ?? '') : '');
         }
         delete_option('gs_lab_task_' . $task_id);
 

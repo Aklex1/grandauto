@@ -726,7 +726,208 @@ class GS_Lab {
                           'На выходе MP3 с исходной длительностью. Речь становится разборчивее, но нейросеть не добавляет того, чего в записи не было: полностью заглушенные шумом слова не восстановятся.'),
                 ),
             ),
+
+            'photo' => array(
+                'id'          => 'photo',
+                'slug'        => 'neyrofotosessiya',
+                'page_option' => 'gs_lab_page_photo',
+                'menu'        => 'ИИ-фотосессия',
+                'nav'         => 'ИИ-фотосессия',
+                'h1'          => 'ИИ-фотосессия: подборка кадров по одному вашему фото',
+                'seo_title'   => 'ИИ-фотосессия онлайн — семейная, детская и свадебная по фото',
+                'seo_desc'    => 'ИИ-фотосессия по вашему фото: загрузите один снимок и выберите подборку — семейную, детскую, свадебную или деловую. Нейросеть вернёт 3, 5 или 7 кадров в разных локациях: дом, студия, парк, кафе. Лицо остаётся вашим.',
+                'lead'        => 'Загрузите одно обычное фото и выберите подборку. Нейросеть вернёт сразу несколько готовых кадров в разных локациях — дома, в студии, в парке, в кафе, — а лицо на всех останется вашим.',
+                'badge'       => 'Подборка кадров по фото',
+                'cost_option' => 'gs_lab_cost_photo',
+                'cost'        => 19,
+                'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 19, 'max_seconds' => 0),
+                'available'   => true,
+                'history'     => true,
+                'inputs'      => array('image'),
+                'accept'      => array(
+                    'image' => 'image/jpeg,image/png,image/webp',
+                ),
+                'prompt'      => false,
+                'fields'      => array(
+                    'set' => array(
+                        'type'    => 'select',
+                        'label'   => 'Подборка',
+                        'default' => 'family',
+                        'options' => array(
+                            'family'   => 'Семейная — дом, студия, парк, кафе, прогулка',
+                            'kids'     => 'Детская — дом, студия, парк, площадка, праздник',
+                            'wedding'  => 'Свадебная и для пары — студия, парк, набережная, вечер',
+                            'business' => 'Деловая — офис, студия, переговорная, улица',
+                            'social'   => 'Для соцсетей — улица, кафе, студия, вечер, спорт',
+                            'holiday'  => 'Новогодняя — ёлка, гирлянды, окно, зимняя улица',
+                        ),
+                    ),
+                    'count' => array(
+                        'type'    => 'select',
+                        'label'   => 'Сколько кадров',
+                        'default' => '5',
+                        'options' => array(
+                            '3' => '3 кадра — 57 ₽',
+                            '5' => '5 кадров — 95 ₽',
+                            '7' => '7 кадров — 133 ₽',
+                        ),
+                    ),
+                    'extra' => array(
+                        'type'  => 'text',
+                        'label' => 'Пожелания (необязательно)',
+                        'place' => 'светлая одежда, без очков',
+                        'max'   => 200,
+                        'hint'  => 'Коротко про одежду и настроение. Внешность менять не просим — лица берутся с вашего снимка.',
+                    ),
+                    'ratio' => array(
+                        'type'    => 'select',
+                        'label'   => 'Формат кадра',
+                        'default' => '3:4',
+                        'options' => array(
+                            '3:4'  => 'Портрет — печать и профиль',
+                            '1:1'  => 'Квадрат — аватарка',
+                            '9:16' => 'Вертикаль — сторис и Shorts',
+                            '16:9' => 'Горизонталь — обложка и шапка',
+                        ),
+                    ),
+                ),
+                // Примеры сделаны этим же инструментом и лежат в ассетах плагина:
+                // в папке загрузок им не место, оттуда файлы однажды подчистят.
+                // Исходные снимки тоже сгенерированы — чужих лиц здесь нет,
+                // и об этом прямо сказано в подписи к блоку.
+                'examples'    => array(
+                    array(
+                        'title'  => 'Семейная подборка, 5 кадров',
+                        'note'   => 'Исходник — обычное домашнее фото вчетвером. Дом, студия, парк, кафе, прогулка: одна загрузка, пять локаций.',
+                        'before' => 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-src.jpg',
+                        'shots'  => array(
+                            array('Дом', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-1.jpg'),
+                            array('Студия', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-2.jpg'),
+                            array('Парк', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-3.jpg'),
+                            array('Кафе', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-4.jpg'),
+                            array('Прогулка', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-family-5.jpg'),
+                        ),
+                    ),
+                    array(
+                        'title'  => 'Детская подборка, 3 кадра',
+                        'note'   => 'Исходник — снимок в комнате. Дом, студия, парк: ребёнка никуда не надо везти и уговаривать.',
+                        'before' => 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-kids-src.jpg',
+                        'shots'  => array(
+                            array('Дома', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-kids-1.jpg'),
+                            array('Студия', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-kids-2.jpg'),
+                            array('Парк', 'https://genius-bot.ru/wp-content/plugins/genius-sounds/assets/brand/photo/set-kids-3.jpg'),
+                        ),
+                    ),
+                ),
+                'result_kind' => 'image',
+                'poll_seconds'=> 600,
+                'steps'       => array(
+                    'Загрузите фото: для семейной и парной подборки — общий снимок, для портретной — своё фото.',
+                    'Выберите подборку и число кадров: 3, 5 или 7 локаций.',
+                    'Через несколько минут заберите все кадры разом — они же останутся в истории.',
+                ),
+                'faq'         => array(
+                    array('Останутся ли лица нашими?',
+                          'Да, в этом весь смысл: нейросеть не рисует новых людей, а переснимает ваш кадр — меняет локацию, свет и одежду, сохраняя черты лиц со снимка. Чем чётче исходное фото, тем точнее сходство.'),
+                    array('Какое фото загружать для семейной подборки?',
+                          'Общий снимок, где все лица видно и они не перекрыты. Подойдёт обычное домашнее фото. Чем крупнее лица в кадре, тем лучше: на снимке издалека нейросети не из чего брать черты.'),
+                    array('Чем подборка отличается от одного кадра?',
+                          'Подборка — это сразу несколько разных локаций по одному исходнику: дом, студия, парк, кафе и так далее. Вы не описываете каждую сцену отдельно, а получаете готовый набор, из которого есть что выбрать.'),
+                    array('Сколько стоит подборка?',
+                          'Девятнадцать рублей за кадр: три кадра — 57 ₽, пять — 95 ₽, семь — 133 ₽. Деньги списываются с баланса при запуске. Если какой-то кадр не выйдет, его стоимость вернётся на баланс.'),
+                    array('Сколько ждать?',
+                          'Каждый кадр делается около минуты, подборка из пяти — примерно пять минут. Страницу можно не держать открытой: готовые кадры остаются в истории на этой же странице.'),
+                    array('Подойдут ли кадры для резюме и документов?',
+                          'Для резюме, профиля в соцсетях и сайта компании — да, для этого есть деловая подборка. На паспорт и визу не подойдёт: такие фото снимают по регламенту и генерацию там не принимают.'),
+                    array('Кому принадлежат готовые кадры?',
+                          'Вам. Они сделаны по вашему снимку, их можно публиковать, печатать и использовать в работе.'),
+                    array('Что делать, если сходство слабое?',
+                          'Возьмите снимок получше: ровный свет, лица анфас, без тёмных очков и глубокой тени. Фото в профиль, со спины и кадры издалека дают заметно худшее сходство.'),
+                ),
+            ),
         );
+    }
+
+    /* ---------------------------------------------------------------------
+     * История генераций
+     *
+     * Сервису с картинкой на выходе она нужна иначе, чем звуковому: человек
+     * делает подряд несколько кадров в разных сценах и выбирает из них. Без
+     * истории предыдущий кадр исчезал при следующем запуске, и вернуть его
+     * было уже неоткуда.
+     * ------------------------------------------------------------------ */
+
+    const HISTORY_KEEP = 24;
+
+    public static function keeps_history($id) {
+        $service = self::get_service($id);
+        return $service && !empty($service['history']);
+    }
+
+    private static function history_key($id) {
+        return 'gs_lab_history_' . sanitize_key($id);
+    }
+
+    public static function history($user_id, $id) {
+        $user_id = (int) $user_id;
+        if ($user_id <= 0 || !self::keeps_history($id)) {
+            return array();
+        }
+        $rows = get_user_meta($user_id, self::history_key($id), true);
+        return is_array($rows) ? array_values($rows) : array();
+    }
+
+    public static function remember_result($user_id, $id, array $files, $note = '') {
+        $user_id = (int) $user_id;
+        if ($user_id <= 0 || !self::keeps_history($id) || empty($files)) {
+            return;
+        }
+        $rows = self::history($user_id, $id);
+        foreach ($files as $file) {
+            $url = (string) ($file['url'] ?? '');
+            if ($url === '') {
+                continue;
+            }
+            // Один и тот же результат мог прийти дважды: страница опрашивает
+            // статус, и ответ «готово» повторяется, пока её не закрыли.
+            foreach ($rows as $row) {
+                if (isset($row['url']) && $row['url'] === $url) {
+                    return;
+                }
+            }
+            array_unshift($rows, array(
+                'url'  => $url,
+                'kind' => (string) ($file['kind'] ?? 'image'),
+                'note' => mb_substr((string) $note, 0, 120),
+                'at'   => current_time('mysql'),
+            ));
+        }
+        $rows = array_slice($rows, 0, self::HISTORY_KEEP);
+        update_user_meta($user_id, self::history_key($id), $rows);
+    }
+
+    /** Подпись к кадру в истории: сцена и пожелания человеческими словами. */
+    public static function history_note($id, array $fields) {
+        $service = self::get_service($id);
+        if (!$service || empty($service['fields'])) {
+            return '';
+        }
+        $parts = array();
+        foreach ($service['fields'] as $name => $spec) {
+            $value = trim((string) ($fields[$name] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+            if (($spec['type'] ?? '') === 'select' && isset($spec['options'][$value])) {
+                // В списке подпись длинная, с пояснением после тире —
+                // в историю берём только название сцены.
+                $label = (string) $spec['options'][$value];
+                $parts[] = trim(preg_split('~\s+—\s+~u', $label, 2)[0]);
+            } elseif (($spec['type'] ?? '') !== 'select') {
+                $parts[] = $value;
+            }
+        }
+        return implode(', ', $parts);
     }
 
     public static function get_service($id) {
@@ -855,10 +1056,17 @@ class GS_Lab {
     /**
      * Итоговая цена обработки файла длительностью $seconds.
      */
-    public static function price($id, $seconds) {
+    public static function price($id, $seconds, $fields = array()) {
         $min  = self::get_cost($id);
         $unit = (string) self::pricing($id, 'unit');
         $seconds = (float) $seconds;
+
+        // Подборка стоит столько кадров, сколько в ней заказали: цена за
+        // кадр одна, а длительности у картинки нет — считать не по чему.
+        if ($id === 'photo') {
+            return round($min * self::photo_count(is_array($fields) ? ($fields['count'] ?? 5) : 5), 2);
+        }
+
         if ($unit === 'fixed' || $seconds <= 0) {
             return $min;
         }
@@ -876,6 +1084,11 @@ class GS_Lab {
         $min  = number_format_i18n($cost, 0);
         if ($cost <= 0 && self::rate($id) <= 0) {
             return 'бесплатно';
+        }
+        if ($id === 'photo') {
+            // Цена за обработку тут ничего не говорит: заказывают подборку,
+            // и человеку нужно сразу видеть, во что обойдётся набор.
+            return $min . ' ₽ за кадр — подборка от ' . number_format_i18n($cost * 3, 0) . ' ₽';
         }
         if ($unit === 'fixed') {
             return $min . ' ₽ за обработку';
@@ -1282,6 +1495,132 @@ class GS_Lab {
         return $m > 0 ? $m . ' мин ' . $s . ' с' : $s . ' с';
     }
 
+    /**
+     * Локации подборки.
+     *
+     * Подборка — это не «одна картинка покрасивее», а набор кадров в разных
+     * местах: дома, в студии, в парке. Человеку не нужно описывать каждую
+     * сцену — он выбирает повод, а порядок локаций задан здесь. Первой в
+     * списке идёт та, ради которой подборку чаще всего и заказывают.
+     *
+     * Описания по-английски: модель правки кадра понимает их заметно
+     * точнее русских, а пользователю эти строки не видны.
+     */
+    public static function photo_sets() {
+        return array(
+            'family' => array(
+                'label'  => 'Семейная',
+                'scenes' => array(
+                    array('Дом', 'cosy living room at home, warm daylight from a window, soft neutral interior, casual home clothes'),
+                    array('Студия', 'photo studio with a clean light grey seamless backdrop, soft three-point lighting, smart casual outfits'),
+                    array('Парк', 'green park at golden hour, soft backlight through the leaves, light casual clothes'),
+                    array('Кафе', 'cosy cafe table by a window, warm indoor light, bokeh of lamps behind, relaxed outfits'),
+                    array('Прогулка', 'quiet city embankment on a clear day, soft diffused daylight, light coats'),
+                    array('Дома у окна', 'by a large window at home, soft side daylight, calm pastel interior, knitwear'),
+                    array('Осенний парк', 'autumn park with golden leaves, warm low sun, light jackets and scarves'),
+                ),
+            ),
+            'kids' => array(
+                'label'  => 'Детская',
+                'scenes' => array(
+                    array('Дома', 'bright children room at home, soft daylight, pastel interior, comfortable home clothes'),
+                    array('Студия', 'photo studio with a light pastel backdrop, very soft lighting, neat casual outfit'),
+                    array('Парк', 'sunny park lawn, warm golden hour light, light summer clothes'),
+                    array('Площадка', 'playground on a clear day, soft daylight, casual outdoor clothes'),
+                    array('Праздник', 'festive room with balloons and soft garland bokeh, warm light, smart outfit'),
+                    array('Зима', 'snowy park, gentle falling snow, warm winter jacket and knitted hat'),
+                    array('С книгой', 'reading nook at home with bookshelves behind, warm lamp light, cosy sweater'),
+                ),
+            ),
+            'wedding' => array(
+                'label'  => 'Свадебная и для пары',
+                'scenes' => array(
+                    array('Студия', 'elegant photo studio, soft key light, clean light backdrop, formal wedding outfits'),
+                    array('Парк', 'park alley at golden hour, soft warm backlight, formal outfits'),
+                    array('Набережная', 'city embankment at sunset, gentle warm light, elegant outfits'),
+                    array('Интерьер', 'refined classic interior with tall windows, soft daylight, formal outfits'),
+                    array('Вечер', 'evening portrait with warm garland bokeh behind, soft rim light, formal evening outfits'),
+                    array('Зима', 'snowy park at dusk, soft blue hour light, elegant winter coats'),
+                    array('Дома', 'bright minimal interior at home, soft daylight, light formal outfits'),
+                ),
+            ),
+            'business' => array(
+                'label'  => 'Деловая',
+                'scenes' => array(
+                    array('Офис', 'bright modern open office, soft diffused light, well-fitted business suit'),
+                    array('Студия', 'studio headshot on a clean seamless backdrop, soft three-point lighting, business attire'),
+                    array('Переговорная', 'glass meeting room, soft daylight, business casual outfit'),
+                    array('Улица у офиса', 'business district street on an overcast day, soft even light, coat over a suit'),
+                    array('Рабочий стол', 'at a tidy desk with a laptop, warm indoor light, shirt and jacket'),
+                    array('Конференция', 'conference hall with blurred audience behind, soft stage light, business attire'),
+                    array('Лестница', 'modern office staircase, soft directional daylight, business casual outfit'),
+                ),
+            ),
+            'social' => array(
+                'label'  => 'Для соцсетей',
+                'scenes' => array(
+                    array('Улица', 'candid street portrait in a city, warm daylight, blurred urban background, stylish casual outfit'),
+                    array('Кафе', 'cosy cafe, warm indoor light, bokeh of lamps, relaxed smart casual outfit'),
+                    array('Студия', 'studio portrait on a coloured seamless backdrop, soft fashion lighting, stylish outfit'),
+                    array('Вечер', 'evening city lights behind, warm bokeh, dark stylish outfit'),
+                    array('Спорт', 'modern gym, dynamic hard light, sportswear, confident posture'),
+                    array('Крыша', 'rooftop at sunset, warm rim light, city skyline behind, casual jacket'),
+                    array('Зелень', 'green plants and soft daylight, light summer outfit'),
+                ),
+            ),
+            'holiday' => array(
+                'label'  => 'Новогодняя',
+                'scenes' => array(
+                    array('У ёлки', 'next to a decorated christmas tree, warm garland bokeh, festive knitwear'),
+                    array('Гирлянды', 'warm garland lights filling the background, cosy indoor light, festive outfit'),
+                    array('У окна', 'by a frosted window with snow outside, soft cool daylight, warm sweater'),
+                    array('Зимняя улица', 'snowy evening street with warm lights, gentle falling snow, winter coat'),
+                    array('Праздничный стол', 'festive table with candles behind, warm golden light, smart festive outfit'),
+                    array('Камин', 'by a fireplace, warm firelight, cosy knitted clothes'),
+                    array('Снежный парк', 'snowy park in daylight, soft cold light, winter coat and scarf'),
+                ),
+            ),
+        );
+    }
+
+    /** Сколько кадров в подборке: только из разрешённого набора. */
+    public static function photo_count($value) {
+        $n = (int) $value;
+        return in_array($n, array(3, 5, 7), true) ? $n : 5;
+    }
+
+    /** Кадрирование под выбранный формат. */
+    private static function photo_frame_prompt($ratio) {
+        $map = array(
+            '3:4'  => 'Vertical portrait framing, aspect ratio 3:4.',
+            '1:1'  => 'Square framing, subject centred, aspect ratio 1:1.',
+            '9:16' => 'Tall vertical framing, waist-up composition, aspect ratio 9:16.',
+            '16:9' => 'Wide horizontal framing, room on one side, aspect ratio 16:9.',
+        );
+        return isset($map[$ratio]) ? $map[$ratio] : $map['3:4'];
+    }
+
+    /**
+     * Описание одного кадра подборки.
+     *
+     * Условие про лица повторяем в конце: модели сильнее слушают последние
+     * предложения, а подменённое лицо обесценивает весь заказ.
+     */
+    public static function photo_prompt($scene, $ratio, $extra) {
+        $prompt = 'Replace the background and clothing of the people in the photo: ' . $scene . '. '
+            . self::photo_frame_prompt($ratio);
+        $extra = trim((string) $extra);
+        if ($extra !== '') {
+            $prompt .= ' Additional request: ' . $extra . '.';
+        }
+        $prompt .= ' Keep every person from the source photo, their exact faces, facial features,'
+            . ' skin tone, hair colour and age unchanged. Do not add or remove people.'
+            . ' Do not beautify or reshape the faces.'
+            . ' Photorealistic photograph, natural skin texture, sharp focus on the eyes,'
+            . ' no text, no watermark, no logos.';
+        return mb_substr($prompt, 0, 1500);
+    }
+
     public static function create_task($id, $params) {
         $callback = add_query_arg('token', GS_SFX::callback_token(), rest_url(GS_Rest::NS . '/lab/callback'));
 
@@ -1326,6 +1665,59 @@ class GS_Lab {
                 'ratio'  => $ratio,
             ), array('callback' => $callback));
             return array('ok' => !empty($res['ok']), 'task_id' => (string) $res['task'], 'message' => (string) $res['message']);
+        }
+
+        // Нейрофотосессия: это правка кадра, а не рисование с нуля.
+        // Модели генерации по описанию человека со снимка не знают — лица
+        // вышли бы чужими, и весь смысл сервиса пропал бы.
+        //
+        // Подборка — несколько кадров сразу, поэтому у неё свой номер
+        // задачи: страница опрашивает один адрес, а под ним лежит список
+        // задач поставщика, по одной на локацию.
+        if ($id === 'photo') {
+            $fields = isset($params['fields']) && is_array($params['fields']) ? $params['fields'] : array();
+            $set    = (string) ($fields['set'] ?? 'family');
+            $count  = self::photo_count($fields['count'] ?? 5);
+            $extra  = trim((string) ($fields['extra'] ?? ''));
+            $ratio  = (string) ($fields['ratio'] ?? '3:4');
+            if (!in_array($ratio, array('3:4', '1:1', '9:16', '16:9'), true)) {
+                $ratio = '3:4';
+            }
+            $sets = self::photo_sets();
+            if (!isset($sets[$set])) {
+                $set = 'family';
+            }
+            $scenes = array_slice($sets[$set]['scenes'], 0, $count);
+
+            $jobs = array();
+            foreach ($scenes as $scene) {
+                $res = GS_Provider::job('image_edit', array(
+                    'prompt'    => self::photo_prompt($scene[1], $ratio, $extra),
+                    'image_url' => (string) $params['image_url'],
+                    'ratio'     => $ratio,
+                ), array('callback' => $callback));
+                $jobs[] = array(
+                    'label' => (string) $scene[0],
+                    'task'  => !empty($res['ok']) ? (string) $res['task'] : '',
+                    'error' => !empty($res['ok']) ? '' : (string) $res['message'],
+                );
+                usleep(300000); // не ставим семь задач в одну секунду
+            }
+
+            $started = array_filter($jobs, function ($j) { return $j['task'] !== ''; });
+            if (empty($started)) {
+                $first = reset($jobs);
+                return array('ok' => false, 'task_id' => '',
+                             'message' => $first && $first['error'] !== '' ? $first['error'] : 'Поставщик не принял задачу');
+            }
+
+            $task_id = 'photoset-' . wp_generate_password(20, false, false);
+            set_transient('gs_lab_photoset_' . $task_id, array(
+                'set'   => $set,
+                'ratio' => $ratio,
+                'jobs'  => $jobs,
+            ), DAY_IN_SECONDS);
+            return array('ok' => true, 'task_id' => $task_id, 'message' => '');
         }
 
         if ($id === 'dub') {
@@ -1545,6 +1937,87 @@ class GS_Lab {
      *
      * @return array{ok:bool,status:string,files:array,message:string}
      */
+    /**
+     * Состояние подборки.
+     *
+     * Каждый кадр — своя задача у поставщика. Один неудавшийся кадр не
+     * должен хоронить всю подборку: собираем то, что получилось, и
+     * сообщаем, сколько кадров не вышло — деньги за них вернёт вызывающий.
+     */
+    private static function photoset_state($task_id) {
+        $out = array('ok' => true, 'status' => 'pending', 'files' => array(), 'text' => '', 'message' => '');
+        $row = get_transient('gs_lab_photoset_' . $task_id);
+        if (!is_array($row) || empty($row['jobs'])) {
+            $out['status'] = 'failed';
+            $out['message'] = 'Задача не найдена — попробуйте запустить подборку заново';
+            return $out;
+        }
+
+        $jobs = $row['jobs'];
+        $ready = 0;
+        $failed = 0;
+        $changed = false;
+
+        foreach ($jobs as $i => $job) {
+            if (!empty($job['url']) || !empty($job['done'])) {
+                $ready += empty($job['url']) ? 0 : 1;
+                $failed += empty($job['url']) ? 1 : 0;
+                continue;
+            }
+            if ($job['task'] === '') {
+                $jobs[$i]['done'] = 1;
+                $failed++;
+                $changed = true;
+                continue;
+            }
+            $state = GS_Provider::job_state($job['task']);
+            if (!empty($state['urls'])) {
+                $jobs[$i]['url'] = (string) $state['urls'][0];
+                $jobs[$i]['done'] = 1;
+                $ready++;
+                $changed = true;
+            } elseif (stripos((string) ($state['state'] ?? ''), 'fail') !== false) {
+                $jobs[$i]['done'] = 1;
+                $failed++;
+                $changed = true;
+            }
+        }
+
+        if ($changed) {
+            $row['jobs'] = $jobs;
+            set_transient('gs_lab_photoset_' . $task_id, $row, DAY_IN_SECONDS);
+        }
+
+        $total = count($jobs);
+        if ($ready + $failed < $total) {
+            $out['message'] = sprintf('Готово %d из %d', $ready, $total);
+            return $out;
+        }
+
+        if ($ready === 0) {
+            $out['status'] = 'failed';
+            $out['message'] = 'Ни один кадр не удался, деньги возвращены';
+            return $out;
+        }
+
+        foreach ($jobs as $job) {
+            if (empty($job['url'])) {
+                continue;
+            }
+            $out['files'][] = array(
+                'label' => (string) $job['label'],
+                'kind'  => 'image',
+                'url'   => (string) $job['url'],
+            );
+        }
+        $out['status'] = 'completed';
+        $out['failed_count'] = $failed;
+        if ($failed > 0) {
+            $out['message'] = sprintf('Не вышло кадров: %d — их стоимость вернулась на баланс', $failed);
+        }
+        return $out;
+    }
+
     public static function fetch_task($id, $task_id) {
         $out = array('ok' => false, 'status' => 'pending', 'files' => array(), 'text' => '', 'message' => '');
 
@@ -1554,6 +2027,13 @@ class GS_Lab {
 
         if (class_exists('GS_MusicAI') && GS_MusicAI::is_own_task($task_id)) {
             return GS_MusicAI::fetch_job($id, $task_id);
+        }
+
+        // Подборка: под одним номером лежит несколько задач поставщика.
+        // Готовой считаем, когда все они доиграли — иначе человек увидит
+        // два кадра из пяти и решит, что остальные потерялись.
+        if (strpos($task_id, 'photoset-') === 0) {
+            return self::photoset_state($task_id);
         }
 
         if ($id === 'stt') {

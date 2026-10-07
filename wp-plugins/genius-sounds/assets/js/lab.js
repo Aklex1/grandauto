@@ -22,7 +22,9 @@
         progress: document.getElementById('gs-lab-progress'),
         files:    document.getElementById('gs-lab-files'),
         price:    document.getElementById('gs-lab-price'),
-        again:    document.getElementById('gs-lab-again')
+        again:    document.getElementById('gs-lab-again'),
+        history:  document.getElementById('gs-lab-history'),
+        historyGrid: document.getElementById('gs-lab-history-grid')
     };
 
     var polling = null;
@@ -233,6 +235,24 @@
                     stopPolling();
                     setBusy(false);
                     renderFiles(data.files || [], data.text || '');
+                    // Свежий кадр уже лежит в истории — перечитываем её,
+                    // чтобы он появился в галерее без перезагрузки страницы.
+                    loadHistory();
+
+    // Подборка: цена зависит от числа кадров, и человек должен видеть сумму
+    // до запуска, а не узнавать её из списания.
+    (function () {
+        var count = form.querySelector('[name="count"]');
+        if (!count || !els.price || !cfg.perFrame) { return; }
+        function show() {
+            var n = parseInt(count.value, 10) || 0;
+            if (n > 0) {
+                els.price.textContent = money(cfg.perFrame * n) + ' за подборку из ' + n;
+            }
+        }
+        count.addEventListener('change', show);
+        show();
+    })();
                     if (els.balance && typeof data.balance !== 'undefined') {
                         els.balance.textContent = money(data.balance);
                     }
@@ -252,6 +272,61 @@
             });
         }, POLL_INTERVAL);
     }
+
+    /**
+     * История кадров.
+     *
+     * Человек делает подряд несколько сцен и выбирает из них: без истории
+     * предыдущий кадр исчезал при следующем запуске, и вернуть его было
+     * неоткуда. Гостю блок не показываем — хранить историю некуда.
+     */
+    function loadHistory() {
+        if (!els.history || !els.historyGrid || !cfg.loggedIn) { return; }
+        api('lab/history/' + encodeURIComponent(cfg.service)).then(function (res) {
+            var items = (res && res.items) || [];
+            if (!items.length) {
+                els.history.hidden = true;
+                return;
+            }
+            els.historyGrid.innerHTML = '';
+            items.forEach(function (item) {
+                if (!item.url) { return; }
+                var card = document.createElement('figure');
+                card.className = 'gs-lab-shot';
+
+                var link = document.createElement('a');
+                link.href = item.url;
+                link.target = '_blank';
+                link.rel = 'noopener';
+
+                var img = document.createElement('img');
+                img.src = item.url;
+                img.loading = 'lazy';
+                img.alt = item.note || 'Кадр нейрофотосессии';
+                link.appendChild(img);
+                card.appendChild(link);
+
+                var cap = document.createElement('figcaption');
+                cap.className = 'gs-lab-shot__cap';
+                var who = document.createElement('span');
+                who.textContent = item.note || 'Кадр';
+                cap.appendChild(who);
+
+                var get = document.createElement('a');
+                get.className = 'gs-lab-shot__get';
+                get.href = item.url;
+                get.setAttribute('download', '');
+                get.textContent = 'Скачать';
+                cap.appendChild(get);
+
+                card.appendChild(cap);
+                els.historyGrid.appendChild(card);
+            });
+            els.history.hidden = false;
+        }).catch(function () {});
+    }
+
+    loadHistory();
 
     function renderFiles(files, text) {
         els.progress.style.width = '100%';
