@@ -239,44 +239,6 @@
                     // чтобы он появился в галерее без перезагрузки страницы.
                     loadHistory();
 
-    // «Повторить с моими фото»: подставляем подборку и уводим к форме.
-    // Человек пришёл за конкретной съёмкой, а не за выпадающими списками —
-    // заполнять их руками он не должен.
-    Array.prototype.forEach.call(document.querySelectorAll('[data-gs-repeat]'), function (btn) {
-        btn.addEventListener('click', function () {
-            var setField = form.querySelector('[data-gs-field="set"]');
-            var cntField = form.querySelector('[data-gs-field="count"]');
-            if (setField) {
-                setField.value = btn.getAttribute('data-gs-repeat');
-                setField.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            var want = parseInt(btn.getAttribute('data-gs-count'), 10);
-            if (cntField && want > 0) {
-                var allowed = [3, 5, 7].filter(function (n) { return n <= want; });
-                cntField.value = String(allowed.length ? allowed[allowed.length - 1] : 3);
-                cntField.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            var anchor = document.getElementById('gs-lab-start') || form;
-            anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            var first = form.querySelector('.gs-file');
-            if (first) { setTimeout(function () { first.focus({ preventScroll: true }); }, 400); }
-        });
-    });
-
-    // Подборка: цена зависит от числа кадров, и человек должен видеть сумму
-    // до запуска, а не узнавать её из списания.
-    (function () {
-        var count = form.querySelector('[data-gs-field="count"]');
-        if (!count || !els.price || !cfg.perFrame) { return; }
-        function show() {
-            var n = parseInt(count.value, 10) || 0;
-            if (n > 0) {
-                els.price.textContent = money(cfg.perFrame * n) + ' за подборку из ' + n;
-            }
-        }
-        count.addEventListener('change', show);
-        show();
-    })();
                     if (els.balance && typeof data.balance !== 'undefined') {
                         els.balance.textContent = money(data.balance);
                     }
@@ -351,6 +313,45 @@
     }
 
     loadHistory();
+
+    // «Повторить с моими фото»: подставляем подборку и уводим к форме.
+    // Человек пришёл за конкретной съёмкой, а не за выпадающими списками —
+    // заполнять их руками он не должен.
+    Array.prototype.forEach.call(document.querySelectorAll('[data-gs-repeat]'), function (btn) {
+        btn.addEventListener('click', function () {
+            var setField = form.querySelector('[data-gs-field="set"]');
+            var cntField = form.querySelector('[data-gs-field="count"]');
+            if (setField) {
+                setField.value = btn.getAttribute('data-gs-repeat');
+                setField.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            var want = parseInt(btn.getAttribute('data-gs-count'), 10);
+            if (cntField && want > 0) {
+                var allowed = [3, 5, 7].filter(function (n) { return n <= want; });
+                cntField.value = String(allowed.length ? allowed[allowed.length - 1] : 3);
+                cntField.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            var anchor = document.getElementById('gs-lab-start') || form;
+            anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            var first = form.querySelector('.gs-file');
+            if (first) { setTimeout(function () { first.focus({ preventScroll: true }); }, 400); }
+        });
+    });
+
+    // Подборка: цена зависит от числа кадров, и человек должен видеть сумму
+    // до запуска, а не узнавать её из списания.
+    (function () {
+        var count = form.querySelector('[data-gs-field="count"]');
+        if (!count || !els.price || !cfg.perFrame) { return; }
+        function show() {
+            var n = parseInt(count.value, 10) || 0;
+            if (n > 0) {
+                els.price.textContent = money(cfg.perFrame * n) + ' за подборку из ' + n;
+            }
+        }
+        count.addEventListener('change', show);
+        show();
+    })();
 
     function renderFiles(files, text) {
         els.progress.style.width = '100%';
