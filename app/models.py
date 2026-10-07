@@ -674,6 +674,11 @@ class MusicVideo(Base):
     title: Mapped[str] = mapped_column(String(300), default="")
     style: Mapped[str] = mapped_column(String(60), default="", index=True)
     style_label: Mapped[str] = mapped_column(String(200), default="")
+    # Канал музыкальных видео, если трек сделан в нём: от канала берутся жанр,
+    # исследование и оформление (интро, заставка, оутро).
+    channel_id: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    intro_path: Mapped[str] = mapped_column(String(500), default="")
+    outro_path: Mapped[str] = mapped_column(String(500), default="")
     minutes: Mapped[int] = mapped_column(Integer, default=30)
     suno_model: Mapped[str] = mapped_column(String(40), default="")
     # Язык заголовка и описания. Хранится у микса, чтобы пересборка не
@@ -770,3 +775,76 @@ class MusicVideoTrack(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
     video: Mapped[MusicVideo] = relationship(back_populates="tracks")
+
+
+class MusicChannel(Base):
+    """Канал музыкальных видео: один жанр, своя библиотека клипов.
+
+    Отличие от обычного канала завода принципиальное: здесь нет ни контент-плана,
+    ни сценариев, ни озвучки. Канал — это постоянное оформление: интро, набор
+    зацикленных заставок и оутро, которые делаются ОДИН раз и дальше обслуживают
+    все треки. Жанр у канала один и в форме не выбирается — создание трека
+    сводится к выбору длительности.
+    """
+
+    __tablename__ = "music_channels"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    style: Mapped[str] = mapped_column(String(60), default="chillstep")
+    minutes: Mapped[int] = mapped_column(Integer, default=30)
+    language: Mapped[str] = mapped_column(String(8), default="en")
+    suno_model: Mapped[str] = mapped_column(String(40), default="")
+    # Исследование канала: оно задаёт заказ музыки для всех его треков.
+    brief: Mapped[str] = mapped_column(Text, default="")
+    # Заголовки для заставок, по одному в строке. Сцену рисует генератор без
+    # единой буквы, а типографику наносим сами — и потому её можно менять, не
+    # трогая сцену.
+    titles: Mapped[str] = mapped_column(Text, default="")
+    subtitle: Mapped[str] = mapped_column(String(200), default="")
+    # Столбики частот по центру кадра. Строятся из самой музыки, поэтому ролик
+    # приходится перекодировать целиком — это дороже по времени, но нарисованный
+    # «эквалайзер», живущий своей жизнью, зритель раскусывает мгновенно.
+    equalizer: Mapped[bool] = mapped_column(Boolean, default=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+    assets: Mapped[list["MusicAsset"]] = relationship(
+        back_populates="channel", cascade="all, delete-orphan",
+        order_by="MusicAsset.kind, MusicAsset.id")
+
+
+class MusicAsset(Base):
+    """Клип оформления канала: интро, зацикленная заставка или оутро.
+
+    Хранятся одинаково, откуда бы ни пришли — загружены файлом или сгенерированы.
+    Заставок у канала несколько: при сборке трека берётся случайная, и лента
+    перестаёт выглядеть одним роликом, переклеенным сто раз. Платим за них один
+    раз на канал, дальше траты только на музыку.
+    """
+
+    __tablename__ = "music_assets"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("music_channels.id", ondelete="CASCADE"), index=True)
+    # intro | loop | outro
+    kind: Mapped[str] = mapped_column(String(16), default="loop", index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    path: Mapped[str] = mapped_column(String(500), default="")
+    poster_path: Mapped[str] = mapped_column(String(500), default="")
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    image_prompt: Mapped[str] = mapped_column(Text, default="")
+    model: Mapped[str] = mapped_column(String(120), default="")
+    # uploaded | generated | bundled (приехал вместе с кодом)
+    source: Mapped[str] = mapped_column(String(16), default="uploaded")
+    duration_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    credits: Mapped[float] = mapped_column(Float, default=0.0)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+    channel: Mapped[MusicChannel] = relationship(back_populates="assets")

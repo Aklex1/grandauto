@@ -1126,6 +1126,12 @@ def stitch_music(tracks: list[Path], dst: Path, *, crossfade: float = CROSSFADE_
 # в десятки раз больше — отсюда и порог с запасом.
 SEAM_OK_RATIO = 4.0
 
+# И абсолютный пол к нему. Одного отношения мало: у очень плавной рисованной
+# анимации соседние кадры отличаются на сотые доли, и тогда даже невидимый
+# разрыв в треть единицы яркости из 255 выходит «в девять раз больше обычного».
+# Чинить такой стык — значит отрезать секунду клипа без всякой причины.
+SEAM_MIN_ABS = 2.0
+
 # Длина самосклейки. Секунда — достаточно, чтобы увести рывок, и мало, чтобы
 # наплыв читался как монтажный приём.
 LOOP_OVERLAP = 1.0
@@ -1208,7 +1214,8 @@ def can_reverse(duration: float, size: tuple[int, int]) -> bool:
 
 
 def build_music_video(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
-                      duration: float, workdir: Path, *, pingpong: bool = False) -> Path:
+                      duration: float, workdir: Path, *, pingpong: bool = False,
+                      equalizer: bool = False) -> Path:
     """Собрать длинный ролик: заставка по кругу плюс готовый микс.
 
     Полчаса FullHD кодировать целиком не нужно и незачем: заставка — это один и
@@ -1239,9 +1246,13 @@ def build_music_video(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
         log.warning("Стык заставки не измерен: %s", exc)
         seam, normal = 0.0, 1.0
     ratio = seam / normal
-    broken = ratio > SEAM_OK_RATIO
+    broken = ratio > SEAM_OK_RATIO and seam > SEAM_MIN_ABS
     if broken:
-        log.info("Стык заставки рваный: разрыв в %.0f раз больше обычного шага", ratio)
+        log.info("Стык заставки рваный: разрыв %.1f из 255, в %.0f раз больше "
+                 "обычного шага", seam, ratio)
+    elif ratio > SEAM_OK_RATIO:
+        log.info("Стык заставки формально выделяется (в %.0f раз), но разрыв "
+                 "%.2f из 255 — глазу его нет, оставляю как есть", ratio, seam)
 
     if pingpong and broken and not can_reverse(span_in, size):
         # Памяти на разворот не хватит — починим наплывом, он почти ничего не
@@ -1295,15 +1306,212 @@ def build_music_video(loop: Path, audio: Path, dst: Path, size: tuple[int, int],
     _ff(["-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(long_video)],
         timeout=3600)
 
-    _ff([
-        "-i", str(long_video), "-i", str(audio),
-        "-map", "0:v:0", "-map", "1:a:0", "-t", f"{duration:.3f}",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-ac", "2",
-        "-movflags", "+faststart", str(dst),
-    ], timeout=3600)
+    if equalizer:
+        # Со столбиками частот картинку приходится перекодировать целиком: поверх
+        # неё ложится дорожка, меняющаяся каждый кадр. Это дороже по времени, но
+        # эквалайзер, не связанный со звуком, зритель раскусывает мгновенно.
+        build_music_video_eq(long_video, audio, dst, duration)
+    else:
+        _ff([
+            "-i", str(long_video), "-i", str(audio),
+            "-map", "0:v:0", "-map", "1:a:0", "-t", f"{duration:.3f}",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-ac", "2",
+            "-movflags", "+faststart", str(dst),
+        ], timeout=3600)
 
     # Промежуточную дорожку без звука держать нельзя: она той же длины, что и
     # готовый ролик, и каждый получасовой микс занимал бы диск дважды.
     for leftover in (long_video, segment, listing):
         leftover.unlink(missing_ok=True)
+    return dst
+
+
+# ---------------------------------------------------------------- обрамление ролика
+
+# Параметры, к которым приводится всё, что склеивается встык. Они совпадают с
+# тем, что выдаёт build_music_video: только при полном совпадении склейка идёт
+# без перекодирования, а перекодировать получасовой ролик ради пятисекундного
+# интро — потерянные минуты и лишняя потеря качества.
+PART_CRF = "20"
+PART_AUDIO_BITRATE = "256k"
+
+
+def normalize_part(src: Path, dst: Path, size: tuple[int, int]) -> Path:
+    """Привести клип к параметрам основного ролика, добавив тишину, если звука нет.
+
+    Склейка встык требует одинакового набора потоков у всех кусков. Интро часто
+    приходит немым, и без этой тишины склейка либо отказывается работать, либо
+    роняет звук у всего остального.
+    """
+    w, h = size
+    chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+             f"crop={w}:{h},fps={FPS},format=yuv420p")
+    has_audio = (_stream_duration(src, "a") or 0.0) > 0.01
+    args = ["-i", str(src)]
+    if not has_audio:
+        args += ["-f", "lavfi", "-i",
+                 "anullsrc=channel_layout=stereo:sample_rate=48000"]
+    args += ["-vf", chain, "-map", "0:v:0",
+             "-map", ("0:a:0" if has_audio else "1:a:0")]
+    if not has_audio:
+        args += ["-shortest"]
+    _ff([*args,
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", PART_CRF,
+         "-g", str(FPS), "-keyint_min", str(FPS), "-sc_threshold", "0",
+         "-c:a", "aac", "-b:a", PART_AUDIO_BITRATE, "-ar", "48000", "-ac", "2",
+         "-movflags", "+faststart", str(dst)], timeout=1800)
+    return dst
+
+
+def wrap_video(body: Path, dst: Path, *, intro: Optional[Path] = None,
+               outro: Optional[Path] = None, size: tuple[int, int],
+               workdir: Path) -> Path:
+    """Обрамить готовый ролик интро и оутро.
+
+    Куски приводятся к параметрам основного ролика и склеиваются БЕЗ
+    перекодирования: тридцать минут картинки трогать незачем. Если склейка
+    копированием дала негодный результат, пересобираем через фильтр — медленно,
+    зато наверняка.
+    """
+    if intro is None and outro is None:
+        return body
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    parts: list[Path] = []
+    if intro is not None:
+        parts.append(normalize_part(intro, workdir / "intro.mp4", size))
+    parts.append(body)
+    if outro is not None:
+        parts.append(normalize_part(outro, workdir / "outro.mp4", size))
+
+    expected = sum(_stream_duration(part, "v") or 0.0 for part in parts)
+    listing = workdir / "parts.txt"
+    listing.write_text("".join(f"file '{part.as_posix()}'\n" for part in parts),
+                       encoding="utf-8")
+    _ff(["-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy",
+         "-movflags", "+faststart", str(dst)], timeout=3600)
+    if dst.exists() and dst.stat().st_size > 0 and _concat_sane(dst, expected):
+        return dst
+
+    log.warning("Склейка копированием не сошлась, пересобираю через фильтр")
+    inputs: list[str] = []
+    for part in parts:
+        inputs += ["-i", str(part)]
+    chain = "".join(f"[{i}:v:0][{i}:a:0]" for i in range(len(parts)))
+    chain += f"concat=n={len(parts)}:v=1:a=1[v][a]"
+    _ff([*inputs, "-filter_complex", chain, "-map", "[v]", "-map", "[a]",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", PART_CRF,
+         "-c:a", "aac", "-b:a", PART_AUDIO_BITRATE, "-ar", "48000", "-ac", "2",
+         "-movflags", "+faststart", str(dst)], timeout=7200)
+    return dst
+
+
+# ---------------------------------------------------------------- оформление канала
+
+# Эквалайзер по центру. Он строится из самой музыки, а не нарисован: столбики
+# ходят под то, что звучит. Нарисованный «эквалайзер», живущий своей жизнью,
+# зритель считывает мгновенно — и это хуже, чем вообще без него.
+EQ_WIDTH = 900
+EQ_HEIGHT = 140
+EQ_ALPHA = 0.45
+EQ_COLOR = "0x9fe8ff"
+
+
+def equalizer_filter(width: int = EQ_WIDTH, height: int = EQ_HEIGHT,
+                     alpha: float = EQ_ALPHA, color: str = EQ_COLOR) -> str:
+    """Кусок графа фильтров: [aviz] -> [eq] со столбиками частот."""
+    return (f"[aviz]showfreqs=s={width}x{height}:mode=bar:ascale=log:fscale=log:"
+            f"win_size=2048:colors={color},format=rgba,"
+            f"colorchannelmixer=aa={alpha:.2f}[eq]")
+
+
+def build_music_video_eq(loop_long: Path, audio: Path, dst: Path, duration: float,
+                         *, width: int = EQ_WIDTH, height: int = EQ_HEIGHT,
+                         alpha: float = EQ_ALPHA, color: str = EQ_COLOR,
+                         y_offset: float = 0.0) -> Path:
+    """Собрать ролик с эквалайзером поверх картинки.
+
+    Этот путь дороже обычного: картинку приходится перекодировать целиком, потому
+    что поверх неё ложится дорожка, меняющаяся каждый кадр. Полчаса FullHD на
+    veryfast — это минуты, а не часы, но «скопировать и склеить» тут уже нельзя.
+    """
+    offset = f"(H-h)/2{'+' if y_offset >= 0 else '-'}{abs(int(y_offset))}"
+    graph = ("[1:a]asplit=2[aout][aviz];"
+             + equalizer_filter(width, height, alpha, color)
+             + f";[0:v][eq]overlay=(W-w)/2:{offset}[v]")
+    _ff([
+        "-i", str(loop_long), "-i", str(audio),
+        "-filter_complex", graph, "-map", "[v]", "-map", "[aout]",
+        "-t", f"{duration:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-g", str(FPS), "-keyint_min", str(FPS), "-sc_threshold", "0",
+        "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", str(dst),
+    ], timeout=14400)
+    return dst
+
+
+def _escape_text(value: str) -> str:
+    """Экранирование для drawtext: двоеточие и апостроф ломают разбор фильтра."""
+    return (value.replace("\\", "\\\\").replace(":", r"\:")
+            .replace("'", r"\'").replace("%", r"\%"))
+
+
+def brand_clip(src: Path, dst: Path, *, size: tuple[int, int], title: str = "",
+               subtitle: str = "", logo: Optional[Path] = None,
+               font: Optional[str] = None, color: str = "0xE8EEF8") -> Path:
+    """Нанести на клип логотип и заголовок.
+
+    Почему текст рисуем мы, а не генератор картинок: буквы у него выходят
+    кривыми и бессмысленными — это известное слабое место, и никакой промпт его
+    не лечит. Поэтому модель делает сцену без единой буквы, а типографика
+    ложится сверху ровно такой, какой задумана, и её можно менять, не трогая
+    сцену.
+    """
+    w, h = size
+    chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+             f"crop={w}:{h},fps={FPS}")
+    inputs = ["-i", str(src)]
+    graph = f"[0:v]{chain}[base]"
+    current = "base"
+
+    if logo is not None and logo.is_file():
+        inputs += ["-i", str(logo)]
+        # Логотип в левом верхнем углу, высотой в 5% кадра — он метка канала, а
+        # не содержание кадра.
+        graph += (f";[1:v]scale=-1:{int(h * 0.05)}[logo]"
+                  f";[{current}][logo]overlay={int(w * 0.035)}:{int(h * 0.055)}[branded]")
+        current = "branded"
+
+    if title.strip():
+        family = font or "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        size_px = int(h * 0.13)
+        graph += (f";[{current}]drawtext=fontfile='{family}':"
+                  f"text='{_escape_text(title.strip().upper())}':"
+                  f"fontcolor={color}:fontsize={size_px}:"
+                  f"x=(w-text_w)/2:y=(h-text_h)/2-{int(h * 0.14)}:"
+                  f"shadowcolor=0x00000080:shadowx=0:shadowy={max(2, int(h * 0.004))}[titled]")
+        current = "titled"
+
+    if subtitle.strip():
+        family = font or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        size_px = int(h * 0.032)
+        graph += (f";[{current}]drawtext=fontfile='{family}':"
+                  f"text='{_escape_text(subtitle.strip().upper())}':"
+                  f"fontcolor={color}@0.8:fontsize={size_px}:"
+                  f"x=(w-text_w)/2:y=(h-text_h)/2-{int(h * 0.02)}[subtitled]")
+        current = "subtitled"
+
+    if current == "base" and logo is None:
+        # Наносить нечего — только приводим к формату.
+        _ff(["-i", str(src), "-vf", chain + ",format=yuv420p", "-an",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(dst)],
+            timeout=1800)
+        return dst
+
+    graph += f";[{current}]format=yuv420p[v]"
+    _ff([*inputs, "-filter_complex", graph, "-map", "[v]", "-an",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+         "-g", str(FPS), "-keyint_min", str(FPS), "-sc_threshold", "0", str(dst)],
+        timeout=1800)
     return dst

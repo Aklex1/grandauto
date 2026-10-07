@@ -23,7 +23,17 @@
       </div>
     </details>
     <a href="/library" class="{% if request.url.path == '/library' %}active{% endif %}">Готовые видео</a>
-    <a href="/music" class="{% if request.url.path.startswith('/music') %}active{% endif %}">Музыка</a>
+    {% set in_music = request.url.path.startswith('/music') %}
+    <details class="menu"{% if in_music %} open{% endif %}>
+      <summary class="{% if in_music %}active{% endif %}">Музыка ▾</summary>
+      <div class="menu-body">
+        <a href="/music" class="{% if request.url.path == '/music' %}active{% endif %}">Все миксы</a>
+        {% for mc in music_channels %}
+          <a href="/music/c/{{ mc.slug }}"
+             class="{% if request.url.path == '/music/c/' ~ mc.slug %}active{% endif %}">{{ mc.name }}</a>
+        {% endfor %}
+      </div>
+    </details>
     <a href="/youtube" class="{% if request.url.path.startswith('/youtube') %}active{% endif %}">YouTube</a>
     <a href="/loops" class="{% if request.url.path == '/loops' %}active{% endif %}">Лупы</a>
     <a href="/comfy" class="{% if request.url.path == '/comfy' %}active{% endif %}">ComfyUI</a>

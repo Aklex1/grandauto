@@ -102,4 +102,16 @@ def run(admin_password: str | None = None) -> dict:
     except Exception as exc:  # noqa: BLE001
         log.warning("Каталог голосов не заполнен: %s", exc)
 
+    # Канал музыкальных видео и его оформление из поставки. Делается при каждом
+    # запуске и ничего не трогает, если всё уже на месте.
+    try:
+        from . import musicchannels
+
+        with session_scope() as session:
+            channel = musicchannels.ensure_default(session)
+            if channel is not None:
+                result["music_channel"] = channel.slug
+    except Exception as exc:  # noqa: BLE001 — запуск завода важнее
+        log.warning("Канал музыкальных видео не подготовлен: %s", exc)
+
     return result

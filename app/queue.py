@@ -117,6 +117,11 @@ def _run_job(job_id: int) -> None:
             from . import archives
 
             archives.build_item(int(payload.get("item_id") or 0))
+        elif kind == "music_loops":
+            from . import musicchannels
+
+            musicchannels.generate_loops(int(payload.get("channel_id") or 0),
+                                         int(payload.get("count") or 5))
         elif kind == "youtube_upload":
             from . import musicvideo
 

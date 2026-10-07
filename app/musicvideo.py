@@ -70,9 +70,17 @@ LOOP_RULES = ("Seamless loop: the last frame must match the first so the clip re
               "no camera moves, no people walking in or out of frame. "
               "No text, no letters, no logo, no watermark.")
 
+# Главное требование к сцене — ни одной буквы. Логотип и заголовок наносятся
+# поверх уже готового клипа средствами ffmpeg: у генераторов картинок текст
+# выходит кривым и бессмысленным, это их известное слабое место, и никакой
+# промпт его не лечит. Зато нанесённый нами заголовок можно менять, не трогая
+# сцену, и он всегда читается.
 IMAGE_RULES = ("Cinematic still, 16:9 widescreen, rich but restrained colour, soft film "
-               "grain, no text, no letters, no logo, no watermark, no people facing the "
-               "camera.")
+               "grain, no people facing the camera. ABSOLUTELY NO TEXT of any kind: no "
+               "letters, no words, no numbers, no title card, no track name, no artist "
+               "name, no caption, no subtitle, no typography, no logo, no watermark, no "
+               "signage, no handwriting. Leave the centre of the frame visually calm so "
+               "a title can be placed over it later.")
 
 
 STYLES: dict[str, Style] = {
@@ -1455,6 +1463,14 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
         style_key, minutes = video.style, video.minutes
         backdrop_src = video.backdrop_src
         master_ready = bool(video.master_ready)
+        channel_id = int(video.channel_id or 0)
+    equalizer = False
+    if channel_id:
+        from .models import MusicChannel
+
+        with session_scope() as session:
+            row = session.get(MusicChannel, channel_id)
+            equalizer = bool(row.equalizer) if row is not None else False
         # Язык берём у микса, если вызов его не назвал: пересборка не должна
         # менять язык уже написанного описания.
         language = language or video.language or "en"
@@ -1481,7 +1497,28 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
         _stage(video_id, "backdrop")
         size = media.target_size("1080p", "16:9")
         from_image = False
-        if backdrop_src and not force_backdrop:
+        intro_file = outro_file = None
+        channel_loop = ""
+        if channel_id:
+            # У канала своё оформление: случайная заставка из набора плюс
+            # постоянные интро и оутро. Генерировать тут нечего — всё это
+            # сделано один раз при заведении канала.
+            from . import musicchannels as mch
+
+            with session_scope() as session:
+                loop_row = mch.pick_loop(session, channel_id)
+                intro_row = mch.one(session, channel_id, "intro")
+                outro_row = mch.one(session, channel_id, "outro")
+                channel_loop = loop_row.path if loop_row else ""
+                intro_file = storage.abspath(intro_row.path) if intro_row else None
+                outro_file = storage.abspath(outro_row.path) if outro_row else None
+                if loop_row is not None:
+                    log.info("Микс #%s: заставка канала «%s»", video_id, loop_row.title)
+
+        if channel_loop:
+            loop_file = storage.abspath(channel_loop)
+            loop_id, loop_path, loop_poster, loop_credits = 0, channel_loop, "", 0.0
+        elif backdrop_src and not force_backdrop:
             # Заставка пришла в архиве — это самая дорогая часть, и заказывать
             # её заново незачем.
             loop_file, from_image = backdrop_from_archive(video_id, backdrop_src, size)
@@ -1516,6 +1553,7 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
 
         _stage(video_id, "render")
         out = folder / "video.mp4"
+        body = folder / "body.mp4" if (intro_file or outro_file) else out
         # Полчаса FullHD — это порядка гигабайта, и в момент сборки на диске
         # лежат и промежуточная дорожка, и готовый файл. Упереться в место на
         # последнем шаге — значит потерять уже оплаченную музыку, поэтому
@@ -1529,8 +1567,16 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
                 f"«Дособрать»: музыка уже скачана и второй раз не оплатится")
         # Наезд на картинку обязательно гоняем туда-обратно: вернуться рывком
         # к началу наезда заметнее любого другого стыка.
-        media.build_music_video(loop_file, mix, out, size, duration, folder / "render",
-                                pingpong=style.pingpong or from_image)
+        media.build_music_video(loop_file, mix, body, size, duration, folder / "render",
+                                pingpong=style.pingpong or from_image,
+                                equalizer=equalizer)
+        if body != out:
+            media.wrap_video(body, out, intro=intro_file, outro=outro_file,
+                             size=size, workdir=folder / "wrap")
+            # Длина ролика теперь с обрамлением, а тайм-код композиций — нет:
+            # сдвигаем метки на длину интро, иначе главы разъедутся с первой же.
+            duration = storage.media_duration(out)
+            body.unlink(missing_ok=True)
         poster = folder / "poster.jpg"
         try:
             media.frame_grab(out, poster, at=min(5.0, duration * 0.1))
@@ -1549,13 +1595,17 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
             # Начало каждого трека: сумма предыдущих минус перекрытия переходов.
             # Без вычета перекрытий тайм-код к концу получасового микса врёт на
             # минуту — на длинном ролике это сразу видно.
-            at = 0.0
+            # Интро идёт перед музыкой, поэтому первая композиция начинается не с
+            # нуля: без этого сдвига главы разъезжаются с самой первой метки.
+            at = storage.media_duration(intro_file) if intro_file else 0.0
             for position, row in enumerate(alive):
                 row.start_sec = at
                 at += row.duration_sec - (fade if position < len(alive) - 1 else 0.0)
 
             video.loop_id = loop_id
             video.loop_path = loop_path
+            video.intro_path = storage.rel(intro_file) if intro_file else ""
+            video.outro_path = storage.rel(outro_file) if outro_file else ""
             video.poster_path = storage.rel(poster) if poster else loop_poster
             video.audio_path = storage.rel(mix)
             video.video_path = storage.rel(out)
@@ -1592,6 +1642,23 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
 def library(session: Session) -> list[MusicVideo]:
     return list(session.execute(
         select(MusicVideo).order_by(MusicVideo.id.desc())).scalars())
+
+
+def create_for_channel(session: Session, channel, *, minutes: int = 0,
+                       title: str = "") -> MusicVideo:
+    """Трек в канале: жанр, язык, исследование и модель берутся у канала.
+
+    Поэтому создание и сводится к длительности — выбирать больше нечего, всё
+    остальное у канала постоянное.
+    """
+    video = create(session, style=channel.style,
+                   minutes=minutes or channel.minutes,
+                   suno_model=channel.suno_model or DEFAULT_SUNO_MODEL,
+                   title=title, language=channel.language or "en",
+                   brief=channel.brief or "")
+    video.channel_id = channel.id
+    session.commit()
+    return video
 
 
 def create(session: Session, *, style: str, minutes: int = DEFAULT_MINUTES,

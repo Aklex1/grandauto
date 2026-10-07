@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}{{ channel.name }}{% endblock %}
+{% block content %}
+<h1>{{ channel.name }}</h1>
+<p class="small muted">
+  {{ style.label }} · оформление постоянное: интро, набор заставок и оутро сделаны один
+  раз и обслуживают все треки. Поэтому создание трека сводится к длительности — жанр у
+  канала один, и выбирать его не нужно. Деньги уходят только на музыку.
+</p>
+
+<div class="tabs">
+  <a href="?tab=new" class="{% if tab == 'new' %}active{% endif %}">Создать трек</a>
+  <a href="?tab=library" class="{% if tab == 'library' %}active{% endif %}">Библиотека ({{ mixes|length }})</a>
+  <a href="?tab=look" class="{% if tab == 'look' %}active{% endif %}">Оформление ({{ loops|length }} заставок)</a>
+</div>
+
+{% if request.query_params.get('queued') %}
+  <p class="badge">Трек #{{ request.query_params.get('queued') }} поставлен в очередь.
+    Музыка идёт около десяти минут на заявку.</p>
+{% endif %}
+{% if request.query_params.get('saved') %}
+  <p class="badge">Настройки канала сохранены.</p>
+{% endif %}
+{% if request.query_params.get('added') %}
+  <p class="badge">Клип добавлен в оформление.</p>
+{% endif %}
+{% if request.query_params.get('generating') %}
+  <p class="badge">Генерация {{ request.query_params.get('generating') }} заставок
+    поставлена в очередь. Это платно и делается один раз.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'no-loops' %}
+  <p class="badge" style="background:#5b2222">У канала нет ни одной заставки —
+    загрузите клип или сгенерируйте набор во вкладке «Оформление».</p>
+{% endif %}
+{% if request.query_params.get('error') == 'no-file' %}
+  <p class="badge" style="background:#5b2222">Файл не выбран.</p>
+{% endif %}
+{% if request.query_params.get('error') == 'bad-clip' %}
+  <p class="badge" style="background:#5b2222">Клип не принят:
+    {{ request.query_params.get('detail') }}</p>
+{% endif %}
+
+{% if tab == 'new' %}
+<form method="post" action="/music/c/{{ channel.slug }}/create">
+  <fieldset><legend>Новый трек</legend>
+    <p class="small muted">
+      Жанр — {{ style.label }}, он у канала постоянный. Заставка берётся случайная из
+      набора, интро и оутро приклеиваются сами. Тайм-код считается с учётом интро,
+      поэтому главы на YouTube не разъедутся.
+    </p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <label style="flex:1;min-width:180px">Длительность
+        <select name="minutes">
+          {% for m in mv_minutes %}
+          <option value="{{ m }}" {% if m == channel.minutes %}selected{% endif %}>{{ m }} минут</option>
+          {% endfor %}
+        </select></label>
+      <label style="flex:2;min-width:220px">Название в панели (необязательно)
+        <input name="title" placeholder="оставьте пустым — подставится сгенерированный заголовок"></label>
+    </div>
+    <button class="btn" type="submit">Создать трек</button>
+    {% if not loops %}
+      <p class="small" style="color:#f0a0a0">Заставок у канала нет — сначала зайдите
+        во вкладку «Оформление».</p>
+    {% endif %}
+  </fieldset>
+</form>
+
+{% elif tab == 'look' %}
+<fieldset><legend>Оформление канала</legend>
+  <p class="small muted">
+    Интро и оутро — по одному, новый файл заменяет прежний в выдаче (сам файл остаётся
+    на диске: он мог войти в уже выложенный ролик). Заставок несколько, и при сборке
+    каждого трека берётся случайная из наименее использованных — так лента не выглядит
+    одним роликом, переклеенным сто раз.
+  </p>
+  <p class="small muted">
+    Клипы без звука — это нормально: при склейке к ним добавляется тишина, иначе
+    звуковая дорожка потерялась бы у всего ролика. Стык заставки проверяется
+    измерением, и если повтор заметен, завод замыкает его сам.
+  </p>
+
+  <form method="post" action="/music/c/{{ channel.slug }}/assets" enctype="multipart/form-data">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+      <label style="flex:1;min-width:150px">Что это
+        <select name="kind">
+          {% for key, label in kinds.items() %}
+          <option value="{{ key }}" {% if key == 'loop' %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select></label>
+      <label style="flex:2;min-width:220px">Файл (mp4, mov, webm, mkv)
+        <input type="file" name="file" accept="video/*" required></label>
+      <button class="btn" type="submit">Загрузить</button>
+    </div>
+  </form>
+
+  <form method="post" action="/music/c/{{ channel.slug }}/loops" style="margin-top:12px"
+        onsubmit="return confirm('Это платно: за каждую заставку картинка плюс оживление. Продолжить?')">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+      <label style="flex:1;min-width:150px">Сгенерировать заставок
+        <input name="count" type="number" min="1" max="10" value="4"></label>
+      <button class="btn btn-ghost" type="submit">Сгенерировать</button>
+      <span class="small muted" style="flex:2;min-width:240px">Каждая — своя картинка
+        и своё оживление, по одному оттенку на клип: время суток, погода, точка съёмки.
+        Платится один раз, дальше траты только на музыку.</span>
+    </div>
+  </form>
+</fieldset>
+
+<fieldset><legend>Надписи и эквалайзер</legend>
+  <p class="small muted">
+    Сцену заставки рисует генератор <b>без единой буквы</b> — буквы у него выходят
+    кривыми, и промптом это не лечится. Логотип и заголовок наносятся поверх уже
+    готового клипа, поэтому они чёткие, и их можно менять, не трогая сцену.
+    Заголовки берутся по кругу: первая заставка получает первый, вторая — второй.
+  </p>
+  <form method="post" action="/music/c/{{ channel.slug }}/settings">
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <label style="flex:2;min-width:200px">Название канала
+        <input name="name" value="{{ channel.name }}"></label>
+      <label style="flex:1;min-width:140px">Длительность по умолчанию
+        <input name="minutes" type="number" min="5" max="180" value="{{ channel.minutes }}"></label>
+      <label style="flex:1;min-width:140px">Язык обвязки
+        <select name="language">
+          <option value="en" {% if channel.language != 'ru' %}selected{% endif %}>Английский</option>
+          <option value="ru" {% if channel.language == 'ru' %}selected{% endif %}>Русский</option>
+        </select></label>
+    </div>
+    <label>Заголовки заставок — по одному в строке
+      <textarea name="titles" rows="6">{{ channel.titles }}</textarea></label>
+    <label>Подзаголовок (один на все)
+      <input name="subtitle" value="{{ channel.subtitle }}"
+             placeholder="chillstep · night ambience · deep focus"></label>
+    <label>Исследование канала: оно задаёт заказ музыки для всех треков
+      <textarea name="brief" rows="5" placeholder="Какая нужна музыка, какие инструменты, как развивается композиция, нужен ли бэк-вокал.">{{ channel.brief }}</textarea></label>
+    <label><input type="checkbox" name="equalizer" value="1" style="width:auto"
+                  {% if channel.equalizer %}checked{% endif %}>
+      Эквалайзер по центру кадра
+      <span class="small muted">— столбики строятся из самой музыки. Ролик при этом
+        перекодируется целиком: получасовой собирается минуты, а не секунды.</span></label>
+    <button class="btn btn-sm" type="submit">Сохранить</button>
+  </form>
+</fieldset>
+
+<div style="display:flex;gap:16px;flex-wrap:wrap">
+  {% for row in [intro, outro] if row %}
+  <div class="card" style="width:300px">
+    <b>{{ kinds.get(row.kind, row.kind)|capitalize }}</b>
+    <div class="small muted">{{ row.title }}</div>
+    <video controls preload="none" style="width:100%;margin:8px 0"
+      {% if row.poster_path %}poster="/media/{{ row.poster_path }}"{% endif %}
+      src="/media/{{ row.path }}"></video>
+    <div class="small">{{ '%.1f'|format(row.duration_sec) }} с · {{ row.width }}×{{ row.height }}
+      · {{ (row.file_size / 1048576)|round(1) }} МБ · {{ row.source }}</div>
+    <form method="post" action="/music/assets/{{ row.id }}/drop"
+          onsubmit="return confirm('Убрать из оформления? Файл останется на диске.')">
+      <input type="hidden" name="slug" value="{{ channel.slug }}">
+      <button class="btn btn-sm btn-ghost" type="submit">Убрать</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+
+<h2>Заставки ({{ loops|length }})</h2>
+{% if not loops %}
+  <p class="muted">Ни одной. Загрузите клип или сгенерируйте набор — без заставки трек
+    собрать не из чего.</p>
+{% endif %}
+<div style="display:flex;gap:16px;flex-wrap:wrap">
+  {% for row in loops %}
+  <div class="card" style="width:300px">
+    <b>{{ row.title }}</b>
+    <div class="small muted">использована {{ row.used_count }} раз</div>
+    <video controls preload="none" loop style="width:100%;margin:8px 0"
+      {% if row.poster_path %}poster="/media/{{ row.poster_path }}"{% endif %}
+      src="/media/{{ row.path }}"></video>
+    <div class="small">{{ '%.1f'|format(row.duration_sec) }} с · {{ row.width }}×{{ row.height }}
+      · {{ (row.file_size / 1048576)|round(1) }} МБ · {{ row.source }}
+      {% if row.credits %}· {{ '%.0f'|format(row.credits) }} кредитов{% endif %}</div>
+    <form method="post" action="/music/assets/{{ row.id }}/drop"
+          onsubmit="return confirm('Убрать заставку? Файл останется на диске.')">
+      <input type="hidden" name="slug" value="{{ channel.slug }}">
+      <button class="btn btn-sm btn-ghost" type="submit">Убрать</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+{% if not mixes %}
+  <p class="muted">Пока пусто. Создайте первый трек во вкладке «Создать трек».</p>
+{% endif %}
+{% for mix in mixes %}
+<div class="card" style="margin-bottom:16px">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div>
+      <b>#{{ mix.id }} {{ mix.title or mix.yt_title or channel.name }}</b>
+      <div class="small muted">заказано {{ mix.minutes }} мин
+        {% if mix.intro_path %}· с интро{% endif %}
+        {% if mix.outro_path %}· с оутро{% endif %}</div>
+    </div>
+    <div>
+      <span class="badge" {% if mix.status == 'failed' %}style="background:#5b2222"{% endif %}>
+        {{ mv_stages.get(mix.stage, mix.stage) }}</span>
+      {% if mix.duration_sec %}
+        <span class="small">{{ '%.0f'|format(mix.duration_sec / 60) }} мин ·
+          {{ mix.width }}×{{ mix.height }} ·
+          {{ (mix.file_size / 1048576)|round(0)|int }} МБ</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if mix.error %}<p class="small" style="color:#f0a0a0">{{ mix.error }}</p>{% endif %}
+
+  {% if mix.video_path %}
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+    <video controls preload="none" style="width:420px;max-width:100%"
+      {% if mix.poster_path %}poster="/media/{{ mix.poster_path }}"{% endif %}
+      src="/media/{{ mix.video_path }}"></video>
+    <div style="flex:1;min-width:260px">
+      <a class="btn btn-sm" href="/media/{{ mix.video_path }}" download>Скачать видео</a>
+      <a class="btn btn-sm btn-ghost" href="/music/{{ mix.id }}/description.txt">Описание файлом</a>
+      {% if mix.tracklist %}
+      <details style="margin-top:8px">
+        <summary class="small">Тайм-код ({{ mix.tracks|length }} композиций)</summary>
+        <pre class="small" style="white-space:pre-wrap">{{ mix.tracklist }}</pre>
+      </details>
+      {% endif %}
+      {% if mix.description %}
+      <details style="margin-top:8px">
+        <summary class="small">Заголовок и описание</summary>
+        <form method="post" action="/music/{{ mix.id }}/meta">
+          <label>Заголовок<input name="yt_title" value="{{ mix.yt_title }}"></label>
+          <label>Описание<textarea name="description" rows="10">{{ mix.description }}</textarea></label>
+          <label>Теги<input name="tags" value="{{ mix.tags }}"></label>
+          <button class="btn btn-sm" type="submit">Сохранить</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
+    {% if mix.youtube_url %}
+      <span class="badge">Выложено:
+        <a href="{{ mix.youtube_url }}" target="_blank" rel="noopener">{{ mix.youtube_url }}</a></span>
+    {% endif %}
+    {% if yt_ready %}
+      <form method="post" action="/music/{{ mix.id }}/publish"
+            style="display:flex;gap:8px;align-items:flex-end">
+        <label style="margin:0">Доступ
+          <select name="privacy">
+            {% for key, label in yt_privacy.items() %}
+            <option value="{{ key }}" {% if key == yt_privacy_default %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select></label>
+        <button class="btn btn-sm" type="submit">Выложить на YouTube</button>
+      </form>
+    {% else %}
+      <span class="small muted">Публикация не настроена — <a href="/youtube">подключить</a></span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    <form method="post" action="/music/{{ mix.id }}/run">
+      <button class="btn btn-sm" type="submit">
+        {% if mix.status == 'done' %}Пересобрать{% else %}Дособрать{% endif %}</button>
+    </form>
+    <form method="post" action="/music/{{ mix.id }}/drop"
+          onsubmit="return confirm('Убрать трек #{{ mix.id }}? Файлы останутся на диске.')">
+      <button class="btn btn-sm btn-ghost" type="submit">Убрать</button>
+    </form>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

@@ -152,9 +152,12 @@ def logout():
 def base_context(request: Request, session: Session, **extra) -> dict:
     channels = session.execute(
         select(Channel).order_by(Channel.position, Channel.id)).scalars().all()
+    from . import musicchannels as _mch
+
     ctx = {
         "request": request,
         "channels": channels,
+        "music_channels": _mch.channels(session),
         "weekdays": WEEKDAYS,
         "labels": STATUS_LABELS,
         "settings": st.all_settings(session),
@@ -1758,6 +1761,139 @@ def music_description(video_id: int, session: Session = Depends(get_session),
     body = f"{video.yt_title}\n\n{video.description}\n"
     return Response(content=body, media_type="text/plain; charset=utf-8", headers={
         "Content-Disposition": f'attachment; filename="mix{video_id}_description.txt"'})
+
+
+def _mchannel_or_404(session: Session, slug: str):
+    from .models import MusicChannel
+
+    row = session.execute(
+        select(MusicChannel).where(MusicChannel.slug == slug)).scalars().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    return row
+
+
+@app.get("/music/c/{slug}", response_class=HTMLResponse)
+def mchannel_page(slug: str, request: Request, tab: str = "new",
+                  session: Session = Depends(get_session),
+                  _user: str = Depends(require_user)):
+    from . import musicchannels as mch
+    from . import musicvideo as mv
+    from . import youtube as yt
+    from .models import MusicVideo
+
+    channel = _mchannel_or_404(session, slug)
+    tab = tab if tab in ("new", "library", "look") else "new"
+    mixes = list(session.execute(
+        select(MusicVideo).where(MusicVideo.channel_id == channel.id)
+        .order_by(MusicVideo.id.desc())).scalars())
+    return templates.TemplateResponse("mchannel.html", base_context(
+        request, session, tab=tab, channel=channel, mixes=mixes,
+        style=mv.style_of(channel.style),
+        intro=mch.one(session, channel.id, "intro"),
+        outro=mch.one(session, channel.id, "outro"),
+        loops=mch.assets(session, channel.id, "loop"),
+        kinds=mch.KINDS,
+        mv_minutes=mv.MINUTES_CHOICES, mv_stages=mv.STAGES, mv_timecode=mv.timecode,
+        yt_ready=yt.configured(session), yt_privacy=yt.PRIVACY,
+        yt_privacy_default=st.get(session, "youtube_privacy", "private")))
+
+
+@app.post("/music/c/{slug}/create")
+def mchannel_create(slug: str, session: Session = Depends(get_session),
+                    _user: str = Depends(require_user), minutes: int = Form(0),
+                    title: str = Form("")):
+    """Трек в канале: из выбора только длительность, остальное у канала своё."""
+    from . import musicchannels as mch
+    from . import musicvideo as mv
+
+    channel = _mchannel_or_404(session, slug)
+    if not mch.assets(session, channel.id, "loop"):
+        return RedirectResponse(f"/music/c/{slug}?tab=look&error=no-loops",
+                                status_code=303)
+    video = mv.create_for_channel(session, channel, minutes=minutes, title=title)
+    queue.enqueue(session, "music_video", payload={
+        "video_id": video.id, "language": channel.language or "en",
+        "reuse_backdrop": True})
+    return RedirectResponse(f"/music/c/{slug}?tab=library&queued={video.id}",
+                            status_code=303)
+
+
+@app.post("/music/c/{slug}/assets")
+async def mchannel_asset_add(slug: str, request: Request,
+                             session: Session = Depends(get_session),
+                             _user: str = Depends(require_user)):
+    """Загрузка клипа оформления: интро, заставка или оутро."""
+    from . import musicchannels as mch
+
+    channel = _mchannel_or_404(session, slug)
+    form = await request.form()
+    upload = form.get("file")
+    kind = str(form.get("kind") or "loop")
+    if not isinstance(upload, UploadFile) or not upload.filename:
+        return RedirectResponse(f"/music/c/{slug}?tab=look&error=no-file",
+                                status_code=303)
+    config.TMP_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = Path(upload.filename).suffix.lower() or ".mp4"
+    tmp = config.TMP_DIR / f"asset_{utcnow().strftime('%Y%m%d_%H%M%S_%f')}{suffix}"
+    try:
+        # Пишем по кускам: клипы бывают на сотни мегабайт, и в памяти им делать
+        # нечего.
+        with open(tmp, "wb") as fh:
+            while True:
+                chunk = await upload.read(1 << 20)
+                if not chunk:
+                    break
+                fh.write(chunk)
+        mch.add_file(session, channel, kind, tmp,
+                     title=Path(upload.filename).stem, source="uploaded")
+    except Exception as exc:  # noqa: BLE001 — показать причину, а не пятисотку
+        return RedirectResponse(
+            f"/music/c/{slug}?tab=look&error=bad-clip&detail={str(exc)[:160]}",
+            status_code=303)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return RedirectResponse(f"/music/c/{slug}?tab=look&added=1", status_code=303)
+
+
+@app.post("/music/c/{slug}/loops")
+def mchannel_loops(slug: str, session: Session = Depends(get_session),
+                   _user: str = Depends(require_user), count: int = Form(4)):
+    """Догенерировать набор заставок канала. Платно и делается один раз."""
+    channel = _mchannel_or_404(session, slug)
+    queue.enqueue(session, "music_loops", payload={
+        "channel_id": channel.id, "count": max(1, min(10, count))})
+    return RedirectResponse(f"/music/c/{slug}?tab=look&generating={count}",
+                            status_code=303)
+
+
+@app.post("/music/c/{slug}/settings")
+def mchannel_settings(slug: str, session: Session = Depends(get_session),
+                      _user: str = Depends(require_user), name: str = Form(""),
+                      minutes: int = Form(0), titles: str = Form(""),
+                      subtitle: str = Form(""), brief: str = Form(""),
+                      language: str = Form("en"), equalizer: str = Form("")):
+    channel = _mchannel_or_404(session, slug)
+    if name.strip():
+        channel.name = name.strip()[:200]
+    if minutes:
+        channel.minutes = max(5, min(180, minutes))
+    channel.titles = titles.strip()[:4000]
+    channel.subtitle = subtitle.strip()[:200]
+    channel.brief = brief.strip()[:20000]
+    channel.language = "ru" if language == "ru" else "en"
+    channel.equalizer = bool(equalizer)
+    session.commit()
+    return RedirectResponse(f"/music/c/{slug}?tab=look&saved=1", status_code=303)
+
+
+@app.post("/music/assets/{asset_id}/drop")
+def mchannel_asset_drop(asset_id: int, session: Session = Depends(get_session),
+                        _user: str = Depends(require_user), slug: str = Form("")):
+    from . import musicchannels as mch
+
+    mch.drop_asset(session, asset_id)
+    return RedirectResponse(f"/music/c/{slug}?tab=look", status_code=303)
 
 
 @app.get("/youtube", response_class=HTMLResponse)
