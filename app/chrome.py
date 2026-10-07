@@ -233,17 +233,41 @@ def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = ""
         base = base.crop((0, (base.height - cut) // 2,
                           base.width, (base.height + cut) // 2))
     base = base.resize((w, h), Image.LANCZOS)
-    base = ImageEnhance.Color(base).enhance(1.45)
-    base = ImageEnhance.Contrast(base).enhance(1.12)
-    base = ImageEnhance.Brightness(base).enhance(1.06)
+    # Цвет поднимаем умеренно: сцена теперь снимок, а не рисунок, и прежняя
+    # прибавка в полтора раза делала из солнца и моря кислотную открытку.
+    base = ImageEnhance.Color(base).enhance(1.18)
+    base = ImageEnhance.Contrast(base).enhance(1.08)
     layer = base.convert("RGBA")
 
-    # Затемнение снизу под текст: иначе белые буквы на светлых горах пропадают.
+    # Затемнение снизу под текст: иначе белые буквы на светлом песке пропадают.
     shade = Image.new("L", (w, h), 0)
     sd = ImageDraw.Draw(shade)
     for step in range(h):
         sd.line((0, step, w, step), fill=int(150 * max(0.0, (step / h - 0.18)) ** 1.2))
     layer.paste(Image.new("RGB", (w, h), (0x08, 0x0C, 0x18)), (0, 0), shade)
+
+    # И ещё раз — ровно под колонкой с текстом. На солнечной сцене одного
+    # нижнего затемнения мало: заголовок ложится на блики воды и теряется.
+    column = Image.new("L", (w, h), 0)
+    cd = ImageDraw.Draw(column)
+    if ratio_dst > 1:
+        edge = int(w * 0.68)
+        for step in range(edge):
+            cd.line((step, 0, step, h), fill=int(135 * (1 - step / edge) ** 1.3))
+    else:
+        edge = int(h * 0.42)
+        for step in range(edge):
+            y = h - 1 - step
+            cd.line((0, y, w, y), fill=int(120 * (1 - step / edge) ** 1.3))
+    layer.paste(Image.new("RGB", (w, h), (0x06, 0x0A, 0x14)), (0, 0), column)
+
+    # И полоска сверху под знак канала: на ярком небе белые буквы пропадали.
+    cap = Image.new("L", (w, h), 0)
+    capd = ImageDraw.Draw(cap)
+    top_edge = int(h * (0.22 if ratio_dst > 1 else 0.14))
+    for step in range(top_edge):
+        capd.line((0, step, w, step), fill=int(95 * (1 - step / top_edge) ** 1.4))
+    layer.paste(Image.new("RGB", (w, h), (0x06, 0x0A, 0x14)), (0, 0), cap)
 
     draw = ImageDraw.Draw(layer)
     pad = int(w * 0.055)
@@ -265,9 +289,15 @@ def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = ""
     if len(words) > 1:
         half = (len(words) + 1) // 2
         lines = [" ".join(words[:half]), " ".join(words[half:])]
-    box = w - pad * 2
+    # На горизонтальной обложке правая треть занята героем картинки, и заголовок
+    # во всю ширину налезал бы прямо на него. На вертикальной герой сверху,
+    # поэтому там ширина полная.
+    box = int((w - pad * 2) * (0.64 if ratio_dst > 1 else 1.0))
     font = _fit(draw, max(lines, key=len), BOLD, box, int(unit * 150))
-    y = int(h * (0.30 if ratio_dst > 1 else 0.40))
+    # Блок считаем целиком и ставим от низа: на вертикальной обложке заголовок,
+    # прибитый к доле высоты, оставлял под собой пустую треть кадра.
+    block = int(len(lines) * font.size * 1.02) + int(unit * 80)
+    y = int(h * 0.30) if ratio_dst > 1 else max(int(h * 0.42), int(h * 0.80) - block)
     for line in lines:
         draw.text((pad, y), line, font=font, fill=WHITE,
                   stroke_width=max(2, int(unit * 3)), stroke_fill=(0, 0, 0, 90))
@@ -288,8 +318,12 @@ def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = ""
     else:
         note_x = pad
     if note.strip():
+        # Подпись держим в той же колонке, что и заголовок: уехав вправо, она
+        # ложится на героя картинки.
+        room = max(int(unit * 120), pad + box - note_x)
         _spaced(draw, (note_x, row_y + int(unit * 15)), note.strip().upper(),
-                _font(BOLD, int(unit * 23)), WHITE, tracking=int(unit * 4))
+                _fit(draw, note.strip().upper(), BOLD, room, int(unit * 23)),
+                WHITE, tracking=int(unit * 4))
 
     layer.convert("RGB").save(dst, quality=92)
     return dst

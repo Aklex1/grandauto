@@ -56,14 +56,28 @@ def build(*, style_tags: tuple | list = (), series: str = "", genre: str = "",
         if tag and tag not in rows:
             rows.append(tag)
 
+    def push_pair(value: str) -> None:
+        """Фраза и её слитный близнец: «chillstep mix» плюс «chillstepmix».
+
+        Слитная форма — это то, во что превращается хештег, и ровно её ищут,
+        когда переходят по хештегу из описания. Фразу с пробелом тоже
+        оставляем: по ней работает обычный поиск, а слитная там совпадает хуже.
+        """
+        push(value)
+        glued = re.sub(r"[^a-z0-9]+", "", _clean(value))
+        if glued and glued != _clean(value):
+            push(glued)
+
+    # Слитные близнецы — только у жанровых и у фирменных тегов. Делать их всем
+    # подряд значит забить лимит в 500 знаков повторами вместо новых слов.
     for tag in style_tags:
-        push(tag)
+        push_pair(tag)
     if genre:
         push(genre)
     if series:
-        push(series)
+        push_pair(series)
         # «Aurora Drive mix» ищут чаще, чем просто «Aurora Drive».
-        push(f"{series} mix")
+        push_pair(f"{series} mix")
     for term in LENGTH_TERMS.get(int(minutes or 0), ()):
         push(term)
     if use:
@@ -92,10 +106,15 @@ def build(*, style_tags: tuple | list = (), series: str = "", genre: str = "",
 
 
 def hashtags(tags: list[str], limit: int = HASHTAGS_SHOWN) -> list[str]:
-    """Хештеги для описания: первые показываются над заголовком ролика.
+    """Хештеги для описания: #chillstep #chillstepmix #melodicdubstep.
 
-    Берём короткие и односложные: длинный хештег из трёх слов над заголовком
-    выглядит мусором и место занимает зря.
+    Пробелов внутри хештега быть не может — площадка обрывает его на первом же
+    пробеле, и «#chillstep mix» превратился бы в «#chillstep» и слово «mix»
+    рядом. Поэтому многословные теги склеиваем.
+
+    Почему их мало. Если хештегов в заголовке, описании и поле тегов вместе
+    больше пятнадцати, YouTube перестаёт учитывать их все до единого. Над
+    заголовком показываются первые три — ими и ограничиваемся.
     """
     out: list[str] = []
     for tag in tags:

@@ -33,7 +33,9 @@ media_clip.parent.mkdir(parents=True, exist_ok=True)
 media_clip.write_bytes(clip.read_bytes())
 
 with session_scope() as session:
-    st.set_value(session, "kie_api_key", "test-key")
+    # Ключа нет — значит первые проверки идут по бесплатному пути из кадра и
+    # наружу не ходят. Генерацию включаем ниже, подставным клиентом.
+    st.set_value(session, "kie_api_key", "")
     session.commit()
     row = mv.create(session, style="chillstep", minutes=30, suno_model="V5")
     row.video_path = storage.rel(media_clip)
@@ -149,5 +151,128 @@ assert sent["thumbnail"] is not None, "превью не передано вов
 assert sent["thumbnail"] == storage.abspath(cover_now), \
     f"на превью ушёл не тот файл: {sent['thumbnail']}"
 print("8. при выгрузке на YouTube превью — нарисованная обложка, а не кадр из ролика")
+
+# --- 6. картинка обложки генерируется по своему промпту ----------------------------
+# Кадр из ролика на обложке не годится: на нём уже шапка, знак канала и плашка
+# плеера. Проверяем, что берётся отдельная картинка, а не кадр.
+art_src = OUT / "art.png"
+from PIL import Image as _Image
+_Image.new("RGB", (1920, 1080), (120, 40, 90)).save(art_src)
+
+asked = []
+hits = {"download": 0}
+
+
+class FakeKie:
+    def __init__(self, *a, **kw):
+        pass
+
+    def run_task(self, model, payload, **kw):
+        asked.append((model, payload))
+        return {"resultUrls": ["http://fake/art.png"], "_credits": 12.0}
+
+
+def fake_download(url, dest, **kw):
+    hits["download"] += 1
+    Path(dest).parent.mkdir(parents=True, exist_ok=True)
+    Path(dest).write_bytes(art_src.read_bytes())
+    return dest
+
+
+mv.KieClient = FakeKie
+import app.storage as storage_mod
+storage_mod.download = fake_download
+
+with session_scope() as session:
+    st.set_value(session, "default_image_model", "nano-banana-2")
+    st.set_value(session, "kie_api_key", "test-key")
+    session.commit()
+
+before = len(asked)
+client.post(f"/music/{mix_id}/cover", data={"back": "/music?tab=library"},
+            follow_redirects=False)
+assert len(asked) == before + 1, "картинку обложки не заказывали"
+model, payload = asked[-1]
+prompt = str(payload)
+assert "no text" in prompt and "woman" in prompt, prompt[:300]
+assert "photograph" in prompt, "обложка заказана не живой сценой: " + prompt[:300]
+assert "clearly visible in frame" in prompt, "человека в кадре не потребовали"
+
+# Пустого пейзажа быть не должно: человек есть в каждом сюжете, у ролика и у
+# отрывка. Без явного требования генератор охотно отдаёт берег без людей.
+from app import covers as _cov
+for scene in _cov.SCENES + _cov.SHORT_SCENES:
+    who = scene.subject.lower()
+    assert any(word in who for word in ("woman", "girl", "friends", "surfer",
+                                        "driver", "skateboarder")), scene.key
+assert "16:9" in prompt, "горизонтальная обложка заказана не в 16:9"
+with session_scope() as session:
+    art_cover = session.get(MusicVideo, mix_id).cover_path
+    spent = session.get(MusicVideo, mix_id).credits
+assert spent >= 12.0, f"трата не записана: {spent}"
+# Обложка собрана поверх сгенерированной картинки, а не поверх кадра ролика:
+# у кадра ночная синева, у нашей подмены — пурпур.
+img = _Image.open(storage.abspath(art_cover)).convert("RGB")
+r, g, b = img.getpixel((img.width - 60, 40))
+assert r > b and r > g, f"обложка не из сгенерированной картинки: {(r, g, b)}"
+print(f"7. обложка собрана поверх своей картинки, {spent:.0f} кредитов, "
+      f"промпт с запретом надписей")
+
+# --- 7. подпись не повторяет пилюлю ------------------------------------------------
+assert mv._cover_note("melodic night-drive chillstep · 30 min") == \
+    "melodic night-drive chillstep", mv._cover_note("melodic night-drive chillstep · 30 min")
+assert mv._cover_note("35 minutes") == "", "длительность всё ещё лезет в подпись"
+print("8. подпись под заголовком — смысл, а не вторая длительность")
+
+# --- 8. бесплатный вариант из кадра ------------------------------------------------
+before = len(asked)
+client.post(f"/music/{mix_id}/cover",
+            data={"back": "/music?tab=library", "source": "frame"},
+            follow_redirects=False)
+assert len(asked) == before, "вариант «из кадра» всё равно пошёл в генерацию"
+print("9. кнопка «Из кадра» ничего не заказывает и не тратит")
+
+# --- 9. вертикальная обложка отрывка заказывается в 9:16 ---------------------------
+before = len(asked)
+client.post(f"/music/shorts/{short_id}/cover", data={"back": "/music?tab=library"},
+            follow_redirects=False)
+assert len(asked) == before + 1, "картинку обложки отрывка не заказывали"
+short_prompt = str(asked[-1][1])
+assert "9:16" in short_prompt, "вертикальная обложка заказана не в 9:16"
+assert "mid-movement" in short_prompt, "у шортса сцена без движения: " + short_prompt[:300]
+from app import covers as covers_mod
+assert ({s.key for s in covers_mod.SHORT_SCENES} &
+        {s.key for s in covers_mod.SCENES}) == set(), "сюжеты ролика и шортса совпадают"
+print("10. обложка отрывка заказана в вертикальном кадре 9:16")
+
+# --- 10. скачивание по кнопке ------------------------------------------------------
+reply = client.get(f"/music/{mix_id}/cover.jpg")
+assert reply.status_code == 200, reply.status_code
+assert reply.headers["content-type"] == "image/jpeg", reply.headers["content-type"]
+assert "attachment" in reply.headers.get("content-disposition", ""), \
+    reply.headers.get("content-disposition")
+assert len(reply.content) > 10000, "скачался пустой файл"
+name_mix = reply.headers["content-disposition"]
+reply = client.get(f"/music/shorts/{short_id}/cover.jpg")
+assert reply.status_code == 200 and reply.headers["content-type"] == "image/jpeg"
+assert "attachment" in reply.headers.get("content-disposition", "")
+print(f"11. обложка скачивается файлом: {name_mix.split('filename=')[-1].strip()} "
+      f"и отдельно вертикальная у отрывка")
+
+# --- 11. хештеги без пробелов ------------------------------------------------------
+from app import tags as tags_mod
+
+style_row = mv.style_of("chillstep")
+rows = tags_mod.build(style_tags=style_row.tags, series="Aurora Drive",
+                      genre=style_row.key, minutes=30, use=style_row.use)
+tags_line = tags_mod.hashtags(rows)
+assert tags_line[:3] == ["chillstep", "chillstepmix", "melodicdubstep"], tags_line
+assert all(" " not in word for word in tags_line), tags_line
+assert len(tags_line) <= 3, f"хештегов больше трёх: {tags_line}"
+assert "chillstepmix" in rows, "слитного близнеца нет среди ключевых слов"
+assert "chillstep mix" in rows, "фразу с пробелом убрали — обычный поиск её ищет"
+assert len(", ".join(rows)) <= tags_mod.TAGS_LIMIT, "вышли за 500 знаков"
+print("12. хештеги: " + " ".join("#" + w for w in tags_line) +
+      " — без пробелов, фразы остались отдельными ключевыми словами")
 
 print("ВСЁ ПРОШЛО")

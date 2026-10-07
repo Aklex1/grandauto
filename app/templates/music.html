@@ -139,9 +139,12 @@
     </div>
     <label><input type="checkbox" name="want_cover" value="1" style="width:auto" checked>
       Сделать обложку
-      <span class="small muted">— яркая цветная картинка 1280×720 с крупным заголовком,
-        пилюлей длительности и знаком канала. Рисуется из той же сцены, что пойдёт в
-        ролик, поэтому обложка и видео выглядят одним целым. Бесплатно.</span></label>
+      <span class="small muted">— живая сцена 1280×720 под свой промпт: девушка в
+        наушниках на берегу, за рулём кабриолета над морем, на пирсе в закатном
+        солнце. Кадром из ролика обложку не делаем: на нём уже лежат шапка, знак
+        канала и плашка плеера, и всё это налезло бы на заголовок. Картинка
+        платная — одна на ролик; в библиотеке есть кнопка «Из кадра» для
+        бесплатного варианта.</span></label>
     <button class="btn" type="submit">Создать и поставить в очередь</button>
     <p class="small muted">
       Деньги списываются за заявки к Suno (по одной на каждые несколько минут микса) и,
@@ -302,15 +305,23 @@
         {% if mix.cover_path %}
         <img src="/media/{{ mix.cover_path }}" alt="обложка"
              style="width:100%;border-radius:8px">
-        <a class="btn btn-sm btn-ghost" href="/media/{{ mix.cover_path }}" download>
-          Скачать обложку</a>
+        <a class="btn btn-sm" href="/music/{{ mix.id }}/cover.jpg">Скачать обложку</a>
         {% endif %}
         <form method="post" action="/music/{{ mix.id }}/cover" style="display:inline">
           <input type="hidden" name="back" value="/music?tab=library">
           <button class="btn btn-sm btn-ghost" type="submit">
             {% if mix.cover_path %}Другая обложка{% else %}Сделать обложку{% endif %}</button>
         </form>
-        <span class="small muted">рисуется на сервере, без трат</span>
+        <form method="post" action="/music/{{ mix.id }}/cover" style="display:inline">
+          <input type="hidden" name="back" value="/music?tab=library">
+          <input type="hidden" name="source" value="frame">
+          <button class="btn btn-sm btn-ghost" type="submit">Из кадра (даром)</button>
+        </form>
+        <p class="small muted">Картинка генерируется по своему промпту: живая
+          сцена — девушка в наушниках, море, солнце, место под заголовок. У
+          отрывка свой набор сюжетов, с движением: бег по воде, прыжок с пирса,
+          рука из окна машины. Это платно, одна картинка на нажатие. «Из кадра»
+          берёт кадр ролика и не стоит ничего.</p>
       </div>
 
       {% if mix.tracklist %}
@@ -366,8 +377,14 @@
         <input name="yt_title" value="{{ mix.yt_title }}"></label>
       <label>Описание (тайм-код уже внутри)
         <textarea name="description" rows="12">{{ mix.description }}</textarea></label>
-      <label>Теги
+      <label>Теги (ключевые слова для YouTube, через запятую)
         <input name="tags" value="{{ mix.tags }}"></label>
+      {% if mix.tags %}
+      <p class="small muted">Хештеги в описании: <code>{{ mv_hashtags(mix.tags) }}</code>
+        — внутри хештега пробелов нет, площадка обрывает его на первом же пробеле.
+        Больше трёх не ставим: если в заголовке, описании и тегах вместе их
+        наберётся больше пятнадцати, YouTube перестанет учитывать все.</p>
+      {% endif %}
       <button class="btn btn-sm" type="submit">Сохранить</button>
     </form>
   </details>
@@ -429,12 +446,17 @@
         {% endif %}
         <a class="btn btn-sm" href="/media/{{ sh.path }}" download>Скачать</a>
         {% if sh.cover_path %}
-        <a class="btn btn-sm btn-ghost" href="/media/{{ sh.cover_path }}" download>Обложка</a>
+        <a class="btn btn-sm" href="/music/shorts/{{ sh.id }}/cover.jpg">Скачать обложку</a>
         {% endif %}
         <form method="post" action="/music/shorts/{{ sh.id }}/cover" style="display:inline">
           <input type="hidden" name="back" value="/music?tab=library">
           <button class="btn btn-sm btn-ghost" type="submit">
             {% if sh.cover_path %}Другая{% else %}Обложка{% endif %}</button>
+        </form>
+        <form method="post" action="/music/shorts/{{ sh.id }}/cover" style="display:inline">
+          <input type="hidden" name="back" value="/music?tab=library">
+          <input type="hidden" name="source" value="frame">
+          <button class="btn btn-sm btn-ghost" type="submit">Из кадра</button>
         </form>
         <form method="post" action="/music/shorts/{{ sh.id }}/drop" style="display:inline">
           <input type="hidden" name="back" value="/music?tab=library">

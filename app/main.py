@@ -1630,6 +1630,7 @@ def music_page(request: Request, tab: str = "new", session: Session = Depends(ge
         mv_stages=mv.STAGES, mv_backdrops={row.fmt[len(mv.FMT_PREFIX):]: row
                                            for row in mv.backdrops(session)},
         mv_timecode=mv.timecode, mv_min_track=int(mv.MIN_TRACK_SEC),
+        mv_hashtags=mv.hashtag_line,
         yt_ready=yt.configured(session), yt_privacy=yt.PRIVACY,
         yt_privacy_default=st.get(session, "youtube_privacy", "private")))
 
@@ -1758,9 +1759,60 @@ def music_short(video_id: int, session: Session = Depends(get_session),
     return RedirectResponse(f"{where}{joiner}short={video_id}", status_code=303)
 
 
+def _slug_name(text: str, fallback: str) -> str:
+    """Имя файла для скачивания: латиница, цифры и дефисы.
+
+    Обложка уходит человеку на диск, и «Aurora Drive — 30 мин.jpg» там
+    превращается в мусор из процентов.
+    """
+    import re as _re
+    import unicodedata
+
+    plain = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    slug = _re.sub(r"[^A-Za-z0-9]+", "-", plain).strip("-").lower()
+    return slug[:60] or fallback
+
+
+@app.get("/music/{video_id}/cover.jpg")
+def music_cover_file(video_id: int, session: Session = Depends(get_session),
+                     _user: str = Depends(require_user)):
+    """Отдать обложку файлом с человеческим именем."""
+    from . import storage
+    from .models import MusicVideo
+
+    video = session.get(MusicVideo, video_id)
+    if video is None or not video.cover_path:
+        raise HTTPException(status_code=404, detail="Обложки нет")
+    path = storage.abspath(video.cover_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Файл обложки не найден")
+    name = _slug_name(video.yt_title or video.title or "cover", f"mix{video_id}")
+    return FileResponse(path, media_type="image/jpeg",
+                        filename=f"{name}-cover.jpg")
+
+
+@app.get("/music/shorts/{short_id}/cover.jpg")
+def music_short_cover_file(short_id: int, session: Session = Depends(get_session),
+                           _user: str = Depends(require_user)):
+    """Отдать вертикальную обложку отрывка файлом."""
+    from . import storage
+    from .models import MusicShort
+
+    row = session.get(MusicShort, short_id)
+    if row is None or not row.cover_path:
+        raise HTTPException(status_code=404, detail="Обложки нет")
+    path = storage.abspath(row.cover_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Файл обложки не найден")
+    name = _slug_name(row.title or "short", f"short{short_id}")
+    return FileResponse(path, media_type="image/jpeg",
+                        filename=f"{name}-short-cover.jpg")
+
+
 @app.post("/music/{video_id}/cover")
 def music_cover(video_id: int, session: Session = Depends(get_session),
-                _user: str = Depends(require_user), back: str = Form("")):
+                _user: str = Depends(require_user), back: str = Form(""),
+                source: str = Form("art")):
     """Перерисовать обложку готового микса, не пересобирая ролик.
 
     Рисуется на месте, а не через очередь: это секунда работы и ноль трат, и
@@ -1780,7 +1832,7 @@ def music_cover(video_id: int, session: Session = Depends(get_session),
     # чтобы получить не то же самое.
     accent = int(video.cover_accent or video.id) + 1
     try:
-        mv.draw_cover(video_id, accent=accent)
+        mv.draw_cover(video_id, accent=accent, source=source)
     except Exception as exc:  # noqa: BLE001 — причину показываем в панели
         return RedirectResponse(f"{where}{joiner}error=cover&detail={str(exc)[:160]}",
                                 status_code=303)
@@ -1792,7 +1844,8 @@ def music_cover(video_id: int, session: Session = Depends(get_session),
 
 @app.post("/music/shorts/{short_id}/cover")
 def music_short_cover(short_id: int, session: Session = Depends(get_session),
-                      _user: str = Depends(require_user), back: str = Form("")):
+                      _user: str = Depends(require_user), back: str = Form(""),
+                      source: str = Form("art")):
     """Перерисовать вертикальную обложку отрывка."""
     from . import musicvideo as mv
     from .models import MusicShort
@@ -1804,7 +1857,7 @@ def music_short_cover(short_id: int, session: Session = Depends(get_session),
     joiner = "&" if "?" in where else "?"
     accent = int(row.cover_accent or row.id) + 1
     try:
-        mv.draw_short_cover(short_id, accent=accent)
+        mv.draw_short_cover(short_id, accent=accent, source=source)
     except Exception as exc:  # noqa: BLE001 — причину показываем в панели
         return RedirectResponse(f"{where}{joiner}error=cover&detail={str(exc)[:160]}",
                                 status_code=303)
@@ -1881,6 +1934,7 @@ def mchannel_page(slug: str, request: Request, tab: str = "new",
         loops=mch.assets(session, channel.id, "loop"),
         kinds=mch.KINDS,
         mv_minutes=mv.MINUTES_CHOICES, mv_stages=mv.STAGES, mv_timecode=mv.timecode,
+        mv_hashtags=mv.hashtag_line,
         yt_ready=yt.configured(session), yt_privacy=yt.PRIVACY,
         yt_privacy_default=st.get(session, "youtube_privacy", "private")))
 

@@ -678,6 +678,17 @@ def timecode(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
+def hashtag_line(tags_csv: str) -> str:
+    """Строка хештегов из сохранённых тегов — чтобы её было видно и можно скопировать.
+
+    Пробелов внутри хештега нет: площадка обрывает его на первом пробеле.
+    """
+    from . import tags as tags_mod
+
+    rows = [tag.strip() for tag in (tags_csv or "").split(",") if tag.strip()]
+    return " ".join("#" + word for word in tags_mod.hashtags(rows))
+
+
 def tracklist_text(tracks: list[MusicVideoTrack]) -> str:
     """Тайм-код: где какая композиция начинается в готовом миксе."""
     return "\n".join(f"{timecode(row.start_sec)} {row.title}" for row in tracks)
@@ -2076,6 +2087,50 @@ def _next_cover(folder: Path, stem: str) -> Path:
     return folder / f"{stem}_{int(utcnow().timestamp())}.jpg"
 
 
+def _cover_note(tail: str) -> str:
+    """Подпись под заголовком обложки: смысл, а не длительность.
+
+    В заголовке для YouTube хвост выглядит как «melodic night-drive chillstep ·
+    30 min». Раньше бралась последняя часть — то есть длительность, которую
+    рядом и так показывает пилюля, и на обложке стояло «35 MIN   35 MINUTES».
+    """
+    for part in tail.split("·"):
+        clean = part.strip()
+        if not clean:
+            continue
+        if re.fullmatch(r"[\d\s]*(min|mins|minutes|hours|hrs|мин|минут|ч)\.?",
+                        clean, re.IGNORECASE):
+            continue
+        return clean
+    return ""
+
+
+def _cover_art(folder: Path, *, shade: int, style: Style,
+               vertical: bool) -> tuple[Optional[Path], float]:
+    """Сгенерировать картинку обложки. Вернёт (файл, цена) или (None, 0).
+
+    Падать здесь нельзя: без картинки обложку рисуем из кадра — хуже, но
+    бесплатно и всегда.
+    """
+    from . import covers
+
+    try:
+        with session_scope() as session:
+            key = st.get(session, "kie_api_key", "") or config.KIE_API_KEY
+            model = st.get(session, "default_image_model", "nano-banana-2")
+        if not key:
+            log.info("Ключ KIE не задан — обложка будет из кадра")
+            return None, 0.0
+        art = folder / f"cover_art_{shade:02d}{'_v' if vertical else ''}.png"
+        path, credits, _prompt = covers.make(
+            KieClient(api_key=key), art, model=model, style_hint=style.suno,
+            seed=shade, vertical=vertical)
+        return path, credits
+    except Exception as exc:  # noqa: BLE001 — обложка нужна и без генерации
+        log.warning("Картинка обложки не сгенерировалась, берём кадр: %s", exc)
+        return None, 0.0
+
+
 def _cover_frame(video: Path, shot: Path, at: float) -> Path:
     """Кадр для обложки. Если на этом месте кадра нет — берём начало.
 
@@ -2091,11 +2146,18 @@ def _cover_frame(video: Path, shot: Path, at: float) -> Path:
     return shot
 
 
-def draw_cover(video_id: int, *, accent: Optional[int] = None) -> str:
+def draw_cover(video_id: int, *, accent: Optional[int] = None,
+               source: str = "art") -> str:
     """Нарисовать обложку готового микса. Возвращает путь для показа в панели.
 
-    Ничего не генерируется — рисуем сами, поэтому нажимать можно сколько угодно.
-    accent задаёт и цвет, и кадр: у каждой следующей обложки они другие, иначе
+    source="art" — картинка генерируется по своему промпту (девушка в наушниках
+    у камина, у окна с дождём, в ночной машине): кадр из ролика на обложке не
+    работает, потому что на нём уже лежат шапка, знак канала и плашка плеера, и
+    всё это наложилось бы на заголовок. Это единственная платная часть обложки.
+
+    source="frame" — старый бесплатный вариант из кадра ролика.
+
+    accent задаёт и цвет, и сюжет: у каждой следующей обложки они другие, иначе
     кнопка возвращала бы ту же картинку.
     """
     from . import chrome
@@ -2115,33 +2177,49 @@ def draw_cover(video_id: int, *, accent: Optional[int] = None) -> str:
 
     if not path.is_file():
         raise RuntimeError("файл ролика не найден на диске")
-    duration = storage.media_duration(path)
     folder = work_dir(video_id)
-    shot = folder / "cover_scene.png"
-    # Кадр с разных мест ролика: у заставки меняется свет, и обложки не выходят
-    # одинаковыми даже на одной сцене.
-    at = max(1.0, duration * (0.12 + 0.11 * (shade % 7))) if duration > 10 else 1.0
-    _cover_frame(path, shot, at)
 
-    series, note = (head.split(" — ", 1) + [""])[:2]
+    scene, credits = (None, 0.0)
+    if source != "frame":
+        scene, credits = _cover_art(folder, shade=shade, style=style, vertical=False)
+    drop_scene = False
+    if scene is None:
+        # Запасной вариант: кадр с разных мест ролика, чтобы обложки не
+        # повторялись и без генерации.
+        duration = storage.media_duration(path)
+        scene = folder / "cover_scene.png"
+        at = max(1.0, duration * (0.12 + 0.11 * (shade % 7))) if duration > 10 else 1.0
+        _cover_frame(path, scene, at)
+        drop_scene = True
+
+    series, tail = (head.split(" — ", 1) + [""])[:2]
     cover = _next_cover(folder, "cover")
-    chrome.cover(cover, shot, title=series.strip() or style.label,
-                 note=note.split("·")[-1].strip(), badge=f"{minutes} min",
+    chrome.cover(cover, scene, title=series.strip() or style.label,
+                 note=_cover_note(tail), badge=f"{minutes} min",
                  logo=logo, accent=shade)
-    shot.unlink(missing_ok=True)
+    if drop_scene:
+        scene.unlink(missing_ok=True)
 
     with session_scope() as session:
         video = session.get(MusicVideo, video_id)
         if video is not None:
             video.cover_path = storage.rel(cover)
             video.want_cover = True
+            video.credits = (video.credits or 0.0) + credits
             session.commit()
-    log.info("Обложка микса #%s нарисована: %s", video_id, cover.name)
+    log.info("Обложка микса #%s нарисована: %s (%.1f кредитов)",
+             video_id, cover.name, credits)
     return storage.rel(cover)
 
 
-def draw_short_cover(short_id: int, *, accent: Optional[int] = None) -> str:
-    """Нарисовать вертикальную обложку отрывка. Тоже бесплатно и сколько угодно."""
+def draw_short_cover(short_id: int, *, accent: Optional[int] = None,
+                     source: str = "art") -> str:
+    """Вертикальная обложка отрывка — тем же путём, что и у ролика.
+
+    Шортс в ленте стоит рядом с такими же вертикальными роликами, и кадр из
+    самого отрывка там теряется ровно так же. Поэтому по умолчанию картинка
+    генерируется под свой промпт, в вертикальном кадре.
+    """
     from . import chrome
     from .models import MusicShort
 
@@ -2156,7 +2234,8 @@ def draw_short_cover(short_id: int, *, accent: Optional[int] = None) -> str:
         span = row.duration_sec
         video_id = row.video_id
         video = session.get(MusicVideo, video_id)
-        label = style_of(video.style).label if video is not None else ""
+        style_row = style_of(video.style) if video is not None else style_of("chillstep")
+        label = style_row.label if video is not None else ""
         channel_name = ""
         if video is not None and video.channel_id:
             from .models import MusicChannel
@@ -2169,25 +2248,39 @@ def draw_short_cover(short_id: int, *, accent: Optional[int] = None) -> str:
     if not path.is_file():
         raise RuntimeError("файл отрывка не найден на диске")
     folder = path.parent
-    shot = folder / f"short_{short_id}_scene.png"
-    # Место кадра считаем по самому файлу: длительность из базы могла
-    # разойтись с ним, а перемотка за конец оставила бы обложку без картинки.
-    length = storage.media_duration(path) or span or 60.0
-    at = min(length * (0.1 + 0.12 * (shade % 6)), max(0.5, length - 0.5))
-    _cover_frame(path, shot, at)
+
+    scene, credits = (None, 0.0)
+    if source != "frame":
+        scene, credits = _cover_art(folder, shade=shade, style=style_row,
+                                    vertical=True)
+    drop_scene = False
+    if scene is None:
+        # Место кадра считаем по самому файлу: длительность из базы могла
+        # разойтись с ним, а перемотка за конец оставила бы обложку без картинки.
+        scene = folder / f"short_{short_id}_scene.png"
+        length = storage.media_duration(path) or span or 60.0
+        at = min(length * (0.1 + 0.12 * (shade % 6)), max(0.5, length - 0.5))
+        _cover_frame(path, scene, at)
+        drop_scene = True
 
     cover = _next_cover(folder, f"short_{short_id}_cover")
-    chrome.cover(cover, shot, title=caption or label, note=channel_name,
+    chrome.cover(cover, scene, title=caption or label, note=channel_name,
                  badge=f"{span:.0f} sec" if span else "", logo=logo,
                  accent=shade, size=chrome.COVER_VERTICAL)
-    shot.unlink(missing_ok=True)
+    if drop_scene:
+        scene.unlink(missing_ok=True)
 
     with session_scope() as session:
         row = session.get(MusicShort, short_id)
         if row is not None:
             row.cover_path = storage.rel(cover)
             session.commit()
-    log.info("Обложка отрывка #%s нарисована: %s", short_id, cover.name)
+        video = session.get(MusicVideo, video_id)
+        if video is not None and credits:
+            video.credits = (video.credits or 0.0) + credits
+            session.commit()
+    log.info("Обложка отрывка #%s нарисована: %s (%.1f кредитов)",
+             short_id, cover.name, credits)
     return storage.rel(cover)
 
 
