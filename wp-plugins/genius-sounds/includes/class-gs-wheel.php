@@ -114,18 +114,48 @@ class GS_Wheel {
      * Снимки сделаны этим же инструментом и лежат в ассетах плагина: чужие
      * машины без спроса показывать нельзя, поэтому и кузова сгенерированы.
      *
-     * Четвёртой пары (купе) здесь нет намеренно: на исходном кадре уже
-     * стояли светлые литые диски, почти такие же, как получились после
-     * примерки, — разницы не было видно, и пример работал против страницы.
-     * Вернётся, когда будет снят с заметно другими дисками.
+     * Пары перечислены все, а на страницу идут только те, чьи оба файла
+     * действительно лежат рядом. Так новая пара появляется сама, стоит
+     * положить снимки, и ни одна карточка не выходит с битой картинкой,
+     * пока снимков ещё нет.
+     *
+     * Купе временно без снимков: на исходном кадре уже стояли светлые
+     * литые диски, почти такие же, как вышли после примерки, — разницы не
+     * было видно, и пример работал против страницы.
      */
     public static function examples() {
-        $base = GS_PLUGIN_URL . 'assets/brand/wheel/';
-        return array(
-            array('Седан', 'Многоспицевые 18 дюймов', $base . 'sedan-before.jpg', $base . 'sedan-after.jpg'),
-            array('Кроссовер', 'Чёрные матовые 20 дюймов', $base . 'suv-before.jpg', $base . 'suv-after.jpg'),
-            array('Хэтчбек', 'Двухцветные 17 дюймов', $base . 'hatch-before.jpg', $base . 'hatch-after.jpg'),
+        $pairs = array(
+            array('Лада Гранта', 'Литые 15 дюймов вместо штампов', 'granta'),
+            array('Лада Приора', 'Чёрные матовые 16 дюймов', 'priora'),
+            array('Седан', 'Многоспицевые 18 дюймов', 'sedan'),
+            array('Кроссовер', 'Чёрные матовые 20 дюймов', 'suv'),
+            array('Хэтчбек', 'Двухцветные 17 дюймов', 'hatch'),
+            array('Купе', 'Бронзовые литые 19 дюймов', 'coupe'),
         );
+
+        $dir  = GS_PLUGIN_DIR . 'assets/brand/wheel/';
+        $base = GS_PLUGIN_URL . 'assets/brand/wheel/';
+        $out  = array();
+        foreach ($pairs as $pair) {
+            list($body, $wheels, $slug) = $pair;
+            if (!file_exists($dir . $slug . '-before.jpg')
+                || !file_exists($dir . $slug . '-after.jpg')) {
+                continue;
+            }
+            $out[] = array($body, $wheels, $base . $slug . '-before.jpg', $base . $slug . '-after.jpg');
+        }
+        return $out;
+    }
+
+    /** Сколько машин в примерах — склоняем, чтобы заголовок не врал. */
+    private static function examples_title() {
+        $n = count(self::examples());
+        if ($n === 1) {
+            return 'примерка на одной машине';
+        }
+        $words = array(2 => 'двух', 3 => 'трёх', 4 => 'четырёх', 5 => 'пяти', 6 => 'шести');
+        $word = isset($words[$n]) ? $words[$n] : (string) $n;
+        return 'примерка на ' . $word . ' машинах';
     }
 
     public static function url() {
@@ -521,7 +551,7 @@ class GS_Wheel {
 
             <section class="gs-wl__sec" id="gs-wl-examples">
                 <div class="gs-wl__wrap">
-                    <h2 class="gs-wl__h2">До и после: примерка на трёх машинах</h2>
+                    <h2 class="gs-wl__h2">До и после: <?php echo esc_html(self::examples_title()); ?></h2>
                     <p class="gs-wl__sub">
                         Потяните ползунок — слева исходная фотография, справа тот же
                         кадр после примерки. Кузов, фон, свет и ракурс не меняются:
