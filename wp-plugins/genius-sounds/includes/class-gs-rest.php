@@ -31,6 +31,16 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_prompts_add'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/prompts/ingest', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_prompts_ingest'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/prompts/delete', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_prompts_delete'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/prompts/stats', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_prompts_stats'),
@@ -3941,9 +3951,19 @@ class GS_Rest {
             return new WP_Error('gs_bad', 'Нужен адрес картинки', array('status' => 400));
         }
         $hint = sanitize_text_field((string) $request->get_param('hint'));
+        // Кадр видит не всякая модель: соседние по списку отвечают так,
+        // будто картинки не было, и сочиняют описание на пустом месте.
+        // Поэтому здесь модель названа прямо, а не подбирается.
+        $model = sanitize_text_field((string) $request->get_param('model'));
+        if ($model === '') {
+            $model = apply_filters('gs_prompts_vision_model', 'gemini-3-5-flash-openai');
+        }
 
         $system = 'Ты пишешь промты для генерации фотографий на русском языке. '
-            . 'Отвечай строго в формате JSON без пояснений: '
+            . 'Смотри на приложенный кадр и описывай именно его. '
+            . 'Если на кадре не пример съёмки, а реклама товара, скриншот, картинка '
+            . 'с крупной надписью или коллаж с текстом — ответь строго {"skip":true}. '
+            . 'Иначе отвечай строго в формате JSON без пояснений: '
             . '{"title":"...","prompt":"...","tags":["...","..."]}. '
             . 'title — короткое название кадра, 3–6 слов, с заглавной буквы, без кавычек и точки. '
             . 'prompt — связный текст на русском, 40–80 слов, которым такой кадр можно повторить: '
@@ -3951,14 +3971,33 @@ class GS_Rest {
             . 'Не описывай конкретную внешность и не называй людей. '
             . 'Не упоминай никакие нейросети, модели и сервисы. '
             . 'tags — 3–6 коротких слов-меток на русском.';
-        $user = 'Опиши промт для этого кадра.' . ($hint !== '' ? ' Подсказка по теме: ' . $hint . '.' : '');
+        $user = 'Опиши промт для этого кадра.'
+            . ($hint !== ''
+                ? ' В канале кадр помечен как «' . $hint . '» — но метка бывает ошибочной,'
+                  . ' поэтому описывай то, что действительно видишь на снимке.'
+                : '');
 
-        $out = GS_Gemini::ask_vision($system, $user, $url);
+        // Идём через общий подбор маршрутов, а не через жёстко названную
+        // модель: у поставщика они приходят и уходят, и один снятый канал
+        // не должен останавливать наполнение каталога.
+        $out = GS_Provider::chat_messages(array(
+            array('role' => 'system', 'content' => $system),
+            array('role' => 'user', 'content' => array(
+                array('type' => 'text', 'text' => $user),
+                array('type' => 'image_url', 'image_url' => array('url' => $url)),
+            )),
+        ), array('timeout' => 180, 'model' => $model));
         if (empty($out['ok'])) {
-            return new WP_Error('gs_vision', (string) ($out['message'] ?? 'Не удалось описать кадр'),
+            return new WP_Error('gs_vision',
+                (string) ($out['detail'] ?? $out['message'] ?? 'Не удалось описать кадр'),
                 array('status' => 502));
         }
-        return array('ok' => true, 'raw' => (string) $out['text']);
+        return array(
+            'ok'      => true,
+            'raw'     => (string) $out['content'],
+            'model'   => (string) ($out['model'] ?? ''),
+            'credits' => (float) ($out['credits'] ?? 0),
+        );
     }
 
     public static function handle_prompts_add($request) {
@@ -3972,14 +4011,31 @@ class GS_Rest {
         if ($slug === '' || $title === '' || $prompt === '') {
             return new WP_Error('gs_bad', 'Нужны slug, title и prompt', array('status' => 400));
         }
+        // Читаем и пишем под замком: наполнение идёт в несколько потоков.
+        GS_Prompts::lock();
         $items = GS_Prompts::load(true);
-        // Повторный заход не должен плодить дубли: карточку с тем же
-        // адресом обновляем на месте.
+        $msg = (int) ($p['msg'] ?? 0);
+        // Повторный заход не должен плодить дубли: карточку того же поста
+        // обновляем на месте. А вот разные кадры с одинаковым названием —
+        // это разные карточки, им адрес разводим номером поста.
         $pos = -1;
         foreach ($items as $i => $it) {
-            if ((string) ($it['slug'] ?? '') === $slug) {
+            if ((string) ($it['slug'] ?? '') !== $slug) {
+                continue;
+            }
+            if ((int) ($it['msg'] ?? 0) === $msg) {
                 $pos = $i;
-                break;
+            } else {
+                $slug .= '-' . $msg;
+            }
+            break;
+        }
+        if ($pos < 0) {
+            foreach ($items as $i => $it) {
+                if ((string) ($it['slug'] ?? '') === $slug) {
+                    $pos = $i;
+                    break;
+                }
             }
         }
         $entry = array(
@@ -3993,21 +4049,192 @@ class GS_Rest {
                 array_keys(GS_Prompts::rubrics())
             )),
             'source'  => sanitize_key((string) ($p['source'] ?? 'tg')),
-            'msg'     => (int) ($p['msg'] ?? 0),
+            'msg'     => $msg,
             'added'   => current_time('mysql'),
         );
-        if (!$entry['rubrics']) {
-            $entry['rubrics'] = GS_Prompts::detect_rubrics($title . ' ' . $prompt . ' ' . implode(' ', $entry['tags']));
+        // Рубрику берём из самого описания: метка канала иногда не про то,
+        // что на снимке, и тогда карточка уходила бы в чужой раздел.
+        $seen = GS_Prompts::detect_rubrics($title . ' ' . $prompt . ' ' . implode(' ', $entry['tags']));
+        if ($seen) {
+            $entry['rubrics'] = array_values(array_unique(array_merge($seen, $entry['rubrics'])));
         }
         if ($pos >= 0) {
             $items[$pos] = $entry;
         } else {
             $items[] = $entry;
         }
-        if (!GS_Prompts::save($items)) {
+        $saved = GS_Prompts::save($items);
+        GS_Prompts::unlock();
+        if (!$saved) {
             return new WP_Error('gs_io', 'Не удалось сохранить каталог', array('status' => 500));
         }
         return array('ok' => true, 'slug' => $slug, 'total' => count($items));
+    }
+
+    /**
+     * Кадр -> промт -> карточка одним заходом.
+     *
+     * Наполнение идёт сотнями снимков, и три отдельных запроса на каждый
+     * кадр — это втрое больше времени на дорогу. Здесь всё делается на
+     * сервере подряд, а наружу уходит одна готовая карточка.
+     */
+    public static function handle_prompts_ingest($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+
+        $up = new WP_REST_Request('POST');
+        $up->set_param('name', (string) ($p['name'] ?? ''));
+        $up->set_param('data', (string) ($p['data'] ?? ''));
+        $stored = self::handle_prompts_upload($up);
+        if (is_wp_error($stored)) {
+            return $stored;
+        }
+
+        $ask = new WP_REST_Request('POST');
+        $ask->set_param('image_url', (string) $stored['url']);
+        $ask->set_param('hint', (string) ($p['hint'] ?? ''));
+        $ask->set_param('model', (string) ($p['model'] ?? ''));
+        $said = self::handle_prompts_describe($ask);
+        if (is_wp_error($said)) {
+            return $said;
+        }
+
+        $card = self::prompts_parse_card((string) $said['raw']);
+        if (!$card) {
+            return new WP_Error('gs_parse', 'Ответ модели не разобрать', array('status' => 502));
+        }
+        if (!empty($card['skip'])) {
+            // Кадр не годится в витрину — убираем и файл, чтобы в папке не
+            // оставалось того, на что никто не ссылается.
+            @unlink(GS_Prompts::img_dir() . '/' . (string) $stored['file']);
+            return array('ok' => true, 'skipped' => true,
+                         'credits' => (float) ($said['credits'] ?? 0));
+        }
+
+        $msg  = (int) ($p['msg'] ?? 0);
+        $slug = GS_Prompts::slugify($card['title']);
+        if ($slug === '') {
+            $slug = 'promt-' . $msg;
+        }
+
+        $save = new WP_REST_Request('POST');
+        $save->set_param('slug', $slug);
+        $save->set_param('title', $card['title']);
+        $save->set_param('prompt', $card['prompt']);
+        $save->set_param('tags', $card['tags']);
+        $save->set_param('image', (string) $stored['file']);
+        $save->set_param('msg', $msg);
+        $save->set_param('source', 'tg');
+        if (!empty($p['rubrics'])) {
+            $save->set_param('rubrics', (array) $p['rubrics']);
+        }
+        $added = self::handle_prompts_add($save);
+        if (is_wp_error($added)) {
+            return $added;
+        }
+
+        return array(
+            'ok'      => true,
+            'slug'    => (string) $added['slug'],
+            'title'   => $card['title'],
+            'total'   => (int) $added['total'],
+            'model'   => (string) ($said['model'] ?? ''),
+            'credits' => (float) ($said['credits'] ?? 0),
+        );
+    }
+
+    /** Разбор ответа модели: иногда JSON приходит в рамке из ``` . */
+    private static function prompts_parse_card($raw) {
+        $text = trim((string) $raw);
+        $text = preg_replace('~^```[a-z]*\s*|\s*```$~i', '', $text);
+        $data = json_decode($text, true);
+        if (!is_array($data)) {
+            $from = strpos($text, '{');
+            $to   = strrpos($text, '}');
+            if ($from === false || $to === false || $to <= $from) {
+                return null;
+            }
+            $data = json_decode(substr($text, $from, $to - $from + 1), true);
+        }
+        if (!is_array($data)) {
+            return null;
+        }
+        if (!empty($data['skip'])) {
+            return array('skip' => true);
+        }
+        $title  = trim((string) ($data['title'] ?? ''));
+        $prompt = trim((string) ($data['prompt'] ?? ''));
+        if ($title === '' || $prompt === '') {
+            return null;
+        }
+        // Если модель отвечает, что кадра не видит, — это не карточка, а
+        // выдумка: такой текст на витрину попасть не должен ни при каких
+        // обстоятельствах, слишком дорого потом вычищать вручную.
+        $blind = array('кадр отсутств', 'кадр не предоставл', 'кадр для описания',
+                       'не хватает изображени', 'изображение не предоставл',
+                       'снимок не предоставл', 'не указан исходн', 'исходное изображение',
+                       'прикрепите', 'приложите фото', 'загрузите фото',
+                       'нет картинки', 'нет фото', 'необходимо исходное');
+        $hay = mb_strtolower($title . ' ' . mb_substr($prompt, 0, 200, 'UTF-8'), 'UTF-8');
+        foreach ($blind as $sign) {
+            if (mb_strpos($hay, $sign, 0, 'UTF-8') !== false) {
+                return null;
+            }
+        }
+        $tags = array();
+        foreach ((array) ($data['tags'] ?? array()) as $tag) {
+            $tag = trim((string) $tag);
+            if ($tag !== '') {
+                $tags[] = $tag;
+            }
+        }
+        return array('title' => $title, 'prompt' => $prompt, 'tags' => $tags);
+    }
+
+    /**
+     * Убрать карточку из каталога.
+     *
+     * Витрина наполняется пачками, и часть кадров в ней лишняя: реклама,
+     * скриншот, просто неудачный снимок. Отбирать такое глазами быстрее
+     * всего прямо на странице, поэтому у администратора на каждой карточке
+     * есть «Удалить», а здесь — то, что он нажимает.
+     */
+    public static function handle_prompts_delete($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        $slug = sanitize_title((string) ($p['slug'] ?? ''));
+        if ($slug === '') {
+            return new WP_Error('gs_bad', 'Нужен адрес карточки', array('status' => 400));
+        }
+        GS_Prompts::lock();
+        $items = GS_Prompts::load(true);
+        $kept = array();
+        $gone = null;
+        foreach ($items as $it) {
+            if ((string) ($it['slug'] ?? '') === $slug && $gone === null) {
+                $gone = $it;
+                continue;
+            }
+            $kept[] = $it;
+        }
+        if ($gone === null) {
+            GS_Prompts::unlock();
+            return new WP_Error('gs_none', 'Такой карточки нет', array('status' => 404));
+        }
+        $saved = GS_Prompts::save($kept);
+        GS_Prompts::unlock();
+        if (!$saved) {
+            return new WP_Error('gs_io', 'Не удалось сохранить каталог', array('status' => 500));
+        }
+        $file = (string) ($gone['image'] ?? '');
+        if ($file !== '') {
+            @unlink(GS_Prompts::img_dir() . '/' . $file);
+        }
+        return array('ok' => true, 'slug' => $slug, 'total' => count($kept));
     }
 
     public static function handle_prompts_stats($request) {

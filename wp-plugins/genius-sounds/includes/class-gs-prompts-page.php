@@ -80,6 +80,12 @@ class GS_Prompts_Page {
         $s = preg_quote(GS_Prompts::SLUG, '~');
         add_rewrite_rule('^' . $s . '/page/([0-9]{1,5})/?$',
             'index.php?page_id=' . $pid . '&gs_prompt_page=$matches[1]', 'top');
+        // Рубрика — отдельный адрес, а не параметр: на такую страницу
+        // ведёт объявление и её же индексирует поиск.
+        add_rewrite_rule('^' . $s . '/rubrika/([^/]+)/page/([0-9]{1,5})/?$',
+            'index.php?page_id=' . $pid . '&gs_prompt_rubric=$matches[1]&gs_prompt_page=$matches[2]', 'top');
+        add_rewrite_rule('^' . $s . '/rubrika/([^/]+)/?$',
+            'index.php?page_id=' . $pid . '&gs_prompt_rubric=$matches[1]', 'top');
         add_rewrite_rule('^' . $s . '/([^/]+)/?$',
             'index.php?page_id=' . $pid . '&gs_prompt_slug=$matches[1]', 'top');
     }
@@ -87,6 +93,7 @@ class GS_Prompts_Page {
     public static function query_vars($vars) {
         $vars[] = 'gs_prompt_slug';
         $vars[] = 'gs_prompt_page';
+        $vars[] = 'gs_prompt_rubric';
         return $vars;
     }
 
@@ -98,6 +105,25 @@ class GS_Prompts_Page {
     public static function page_url($n) {
         $n = max(1, (int) $n);
         return $n === 1 ? self::url() : home_url('/' . GS_Prompts::SLUG . '/page/' . $n . '/');
+    }
+
+    /** Адрес рубрики. */
+    public static function rubric_url($key, $n = 1) {
+        $key = sanitize_key((string) $key);
+        if ($key === '') {
+            return self::page_url($n);
+        }
+        $base = home_url('/' . GS_Prompts::SLUG . '/rubrika/' . $key . '/');
+        return (int) $n > 1 ? $base . 'page/' . (int) $n . '/' : $base;
+    }
+
+    /** Какая рубрика открыта: адресом или старым параметром ?r=. */
+    public static function current_rubric() {
+        $key = sanitize_key((string) get_query_var('gs_prompt_rubric'));
+        if ($key === '' && isset($_GET['r'])) {
+            $key = sanitize_key(wp_unslash((string) $_GET['r']));
+        }
+        return isset(GS_Prompts::rubrics()[$key]) ? $key : '';
     }
 
     /** Открыта ли наша страница (посадочная или промт). */
@@ -138,7 +164,12 @@ class GS_Prompts_Page {
         if ($item) {
             $parts['title'] = (string) $item['title'] . ' — промт для фото';
         } else {
-            $parts['title'] = 'Готовые промты для фото: ' . GS_Prompts::count() . ' примеров с кадрами';
+            $rubric = self::current_rubric();
+            if ($rubric !== '') {
+                $parts['title'] = GS_Prompts::rubric_title($rubric) . ' промты для фото — готовые примеры с кадрами';
+            } else {
+                $parts['title'] = 'Готовые промты для фото: ' . GS_Prompts::count() . ' примеров с кадрами';
+            }
         }
         return $parts;
     }
@@ -152,11 +183,19 @@ class GS_Prompts_Page {
             $desc = 'Готовый промт: ' . mb_substr((string) $item['prompt'], 0, 150, 'UTF-8');
             $canonical = self::url((string) $item['slug']);
         } else {
-            $n = GS_Prompts::count();
-            $desc = 'Каталог готовых промтов для фото: ' . $n . ' примеров с кадрами. '
-                . 'Поиск по словам, рубрики, кнопка «Повторить фото» — результат сразу на сайте.';
+            $rubric = self::current_rubric();
             $page = (int) get_query_var('gs_prompt_page');
-            $canonical = self::page_url($page > 1 ? $page : 1);
+            $page = $page > 1 ? $page : 1;
+            if ($rubric !== '') {
+                $desc = GS_Prompts::rubric_lead($rubric) . '. Готовые промты с примерами кадров: '
+                    . 'смотрите снимок, копируйте текст или нажмите «Повторить фото».';
+                $canonical = self::rubric_url($rubric, $page);
+            } else {
+                $n = GS_Prompts::count();
+                $desc = 'Каталог готовых промтов для фото: ' . $n . ' примеров с кадрами. '
+                    . 'Поиск по словам, рубрики, кнопка «Повторить фото» — результат сразу на сайте.';
+                $canonical = self::page_url($page);
+            }
         }
         echo "\n" . '<meta name="description" content="' . esc_attr($desc) . '">' . "\n";
         echo '<link rel="canonical" href="' . esc_url($canonical) . '">' . "\n";
@@ -224,7 +263,7 @@ class GS_Prompts_Page {
 
     private static function render_landing() {
         $q      = isset($_GET['q']) ? sanitize_text_field(wp_unslash((string) $_GET['q'])) : '';
-        $rubric = isset($_GET['r']) ? sanitize_key(wp_unslash((string) $_GET['r'])) : '';
+        $rubric = self::current_rubric();
         $page   = max(1, (int) get_query_var('gs_prompt_page'));
 
         $found = GS_Prompts::search($q, $rubric);
@@ -284,32 +323,27 @@ class GS_Prompts_Page {
 
             <section class="gs-pr__sec" id="gs-pr-catalog">
                 <div class="gs-pr__wrap">
-                    <h2 class="gs-pr__h2">Каталог промтов</h2>
+                    <h2 class="gs-pr__h2">
+                        <?php echo $rubric !== ''
+                            ? esc_html(GS_Prompts::rubric_title($rubric) . ' промты')
+                            : 'Каталог промтов'; ?>
+                    </h2>
 
-                    <form class="gs-pr__search" method="get" action="<?php echo esc_url(self::url()); ?>">
+                    <form class="gs-pr__search" method="get"
+                          action="<?php echo esc_url($rubric !== '' ? self::rubric_url($rubric) : self::url()); ?>">
+                        <span class="gs-pr__search-ic" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+                                 stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
+                            </svg>
+                        </span>
                         <input type="search" name="q" value="<?php echo esc_attr($q); ?>"
                                placeholder="Что нужно снять: новогодний парный, деловой портрет, с машиной…"
                                aria-label="Поиск промтов">
-                        <?php if ($rubric !== ''): ?>
-                            <input type="hidden" name="r" value="<?php echo esc_attr($rubric); ?>">
-                        <?php endif; ?>
                         <button type="submit">Найти</button>
                     </form>
 
-                    <nav class="gs-pr__rubrics" aria-label="Рубрики">
-                        <a class="gs-pr__chip<?php echo $rubric === '' ? ' is-on' : ''; ?>"
-                           href="<?php echo esc_url(add_query_arg(array_filter(array('q' => $q)), self::url())); ?>">
-                            Все <span><?php echo (int) $all; ?></span>
-                        </a>
-                        <?php foreach (GS_Prompts::rubrics() as $key => $r): ?>
-                            <?php if (empty($counts[$key])) { continue; } ?>
-                            <a class="gs-pr__chip<?php echo $rubric === $key ? ' is-on' : ''; ?>"
-                               href="<?php echo esc_url(add_query_arg(array_filter(array('q' => $q, 'r' => $key)), self::url())); ?>"
-                               title="<?php echo esc_attr(GS_Prompts::rubric_lead($key)); ?>">
-                                <?php echo esc_html($r[0]); ?> <span><?php echo (int) $counts[$key]; ?></span>
-                            </a>
-                        <?php endforeach; ?>
-                    </nav>
+                    <?php self::rubricator($rubric, $q, $counts, $all); ?>
 
                     <?php if ($rubric !== ''): ?>
                         <p class="gs-pr__sub"><?php echo esc_html(GS_Prompts::rubric_lead($rubric)); ?></p>
@@ -332,9 +366,9 @@ class GS_Prompts_Page {
                                 Всего промтов: <strong><?php echo (int) $total; ?></strong>
                             <?php endif; ?>
                         </p>
-                        <div class="gs-pr__grid">
-                            <?php foreach ($slice as $it): ?>
-                                <?php self::card($it); ?>
+                        <div class="gs-pr__mosaic">
+                            <?php foreach ($slice as $n => $it): ?>
+                                <?php self::card($it, self::tile_size($n)); ?>
                             <?php endforeach; ?>
                         </div>
                         <?php self::pagination($page, $pages, $q, $rubric); ?>
@@ -343,6 +377,50 @@ class GS_Prompts_Page {
             </section>
         </div>
         <?php
+    }
+
+    /**
+     * Рубрикатор под поисковой строкой.
+     *
+     * Показываем все рубрики, даже пустые: это ещё и карта раздела для
+     * человека с рекламы — он должен сразу видеть, что тут есть, а пустая
+     * рубрика честно открывается и предлагает сделать кадр по описанию.
+     */
+    private static function rubricator($rubric, $q, $counts, $all) {
+        $q_arg = $q !== '' ? array('q' => $q) : array();
+        ?>
+        <nav class="gs-pr__rubrics" aria-label="Рубрики промтов">
+            <a class="gs-pr__chip<?php echo $rubric === '' ? ' is-on' : ''; ?>"
+               href="<?php echo esc_url($q_arg ? add_query_arg($q_arg, self::url()) : self::url()); ?>">
+                Все<?php if ($all > 0): ?> <span><?php echo (int) $all; ?></span><?php endif; ?>
+            </a>
+            <?php foreach (GS_Prompts::rubrics() as $key => $r): ?>
+                <?php $n = (int) ($counts[$key] ?? 0); ?>
+                <a class="gs-pr__chip<?php echo $rubric === $key ? ' is-on' : ''; ?><?php echo $n === 0 ? ' is-thin' : ''; ?>"
+                   href="<?php echo esc_url($q_arg
+                        ? add_query_arg($q_arg, self::rubric_url($key))
+                        : self::rubric_url($key)); ?>"
+                   title="<?php echo esc_attr($r[1]); ?>">
+                    <?php echo esc_html($r[0]); ?><?php if ($n > 0): ?> <span><?php echo $n; ?></span><?php endif; ?>
+                </a>
+            <?php endforeach; ?>
+        </nav>
+        <?php
+    }
+
+    /**
+     * Размер плитки в мозаике.
+     *
+     * Ровная сетка из одинаковых прямоугольников выглядит как таблица, а
+     * здесь главное — сами кадры. Поэтому ширина у плиток двух видов
+     * (четверть и половина ряда), а высота четырёх — рисунок повторяется
+     * каждые десять карточек и всегда складывается в целые ряды, так что
+     * дырок в кладке не остаётся.
+     */
+    private static function tile_size($n) {
+        $plan = array('is-xl', 'is-s', 'is-m', 'is-s', 'is-t',
+                      'is-w', 'is-s', 'is-t', 'is-s', 'is-m');
+        return $plan[$n % count($plan)];
     }
 
     /**
@@ -394,23 +472,40 @@ class GS_Prompts_Page {
         <?php
     }
 
-    private static function card($item) {
+    /**
+     * Карточка промта.
+     *
+     * Кадр занимает плитку целиком, название лежит поверх него на
+     * затемнении — так витрина читается как лента снимков, а не как
+     * таблица с подписями. Кнопка «Повторить фото» выезжает при наведении
+     * и остаётся на виду там, где наведения нет (телефон).
+     */
+    private static function card($item, $size = '') {
         $url = self::url((string) $item['slug']);
         $img = self::img($item);
+        $cls = 'gs-pr__card' . ($size !== '' ? ' ' . $size : '');
         ?>
-        <article class="gs-pr__card">
-            <a class="gs-pr__card-img" href="<?php echo esc_url($url); ?>">
-                <?php if ($img !== ''): ?>
-                    <img src="<?php echo esc_url($img); ?>"
-                         alt="<?php echo esc_attr((string) $item['title']); ?>"
-                         loading="lazy" decoding="async">
-                <?php endif; ?>
+        <article class="<?php echo esc_attr($cls); ?>">
+            <a class="gs-pr__card-link" href="<?php echo esc_url($url); ?>">
+                <span class="gs-pr__card-ph">
+                    <?php if ($img !== ''): ?>
+                        <img src="<?php echo esc_url($img); ?>"
+                             alt="<?php echo esc_attr((string) $item['title']); ?>"
+                             loading="lazy" decoding="async">
+                    <?php endif; ?>
+                </span>
+                <span class="gs-pr__card-veil" aria-hidden="true"></span>
+                <span class="gs-pr__card-txt">
+                    <span class="gs-pr__card-t"><?php echo esc_html((string) $item['title']); ?></span>
+                    <span class="gs-pr__card-p"><?php
+                        echo esc_html(mb_substr((string) $item['prompt'], 0, 120, 'UTF-8')); ?>…</span>
+                </span>
             </a>
-            <div class="gs-pr__card-b">
-                <h3><a href="<?php echo esc_url($url); ?>"><?php echo esc_html((string) $item['title']); ?></a></h3>
-                <p><?php echo esc_html(mb_substr((string) $item['prompt'], 0, 110, 'UTF-8')); ?>…</p>
-                <a class="gs-pr__card-go" href="<?php echo esc_url(self::make_url($item['prompt'])); ?>">Повторить фото</a>
-            </div>
+            <a class="gs-pr__card-go" href="<?php echo esc_url(self::make_url($item['prompt'])); ?>">Повторить фото</a>
+            <?php if (current_user_can('manage_options')): ?>
+                <button type="button" class="gs-pr__card-del" data-gs-del="<?php echo esc_attr((string) $item['slug']); ?>"
+                        title="Убрать карточку из каталога">Удалить</button>
+            <?php endif; ?>
         </article>
         <?php
     }
@@ -419,9 +514,9 @@ class GS_Prompts_Page {
         if ($pages < 2) {
             return;
         }
-        $args = array_filter(array('q' => $q, 'r' => $rubric));
-        $link = function ($n) use ($args) {
-            $u = self::page_url($n);
+        $args = $q !== '' ? array('q' => $q) : array();
+        $link = function ($n) use ($args, $rubric) {
+            $u = $rubric !== '' ? self::rubric_url($rubric, $n) : self::page_url($n);
             return $args ? add_query_arg($args, $u) : $u;
         };
         ?>
@@ -461,7 +556,7 @@ class GS_Prompts_Page {
                 <p class="gs-pr__crumbs">
                     <a href="<?php echo esc_url(self::url()); ?>">Каталог промтов</a>
                     <?php if ($rubrics): ?>
-                        · <a href="<?php echo esc_url(add_query_arg('r', $rubrics[0], self::url())); ?>">
+                        · <a href="<?php echo esc_url(self::rubric_url($rubrics[0])); ?>">
                             <?php echo esc_html(GS_Prompts::rubric_title($rubrics[0])); ?></a>
                     <?php endif; ?>
                 </p>
@@ -485,7 +580,7 @@ class GS_Prompts_Page {
                         <?php if ($rubrics): ?>
                             <p class="gs-pr__tags">
                                 <?php foreach ($rubrics as $rk): ?>
-                                    <a href="<?php echo esc_url(add_query_arg('r', $rk, self::url())); ?>">
+                                    <a href="<?php echo esc_url(self::rubric_url($rk)); ?>">
                                         <?php echo esc_html(GS_Prompts::rubric_title($rk)); ?></a>
                                 <?php endforeach; ?>
                             </p>
@@ -514,9 +609,9 @@ class GS_Prompts_Page {
 
                 <?php if ($related): ?>
                     <h2 class="gs-pr__h2">Похожие промты</h2>
-                    <div class="gs-pr__grid">
-                        <?php foreach ($related as $r): ?>
-                            <?php self::card($r); ?>
+                    <div class="gs-pr__mosaic gs-pr__mosaic--near">
+                        <?php foreach ($related as $n => $r): ?>
+                            <?php self::card($r, self::tile_size($n + 1)); ?>
                         <?php endforeach; ?>
                     </div>
                 <?php endif; ?>

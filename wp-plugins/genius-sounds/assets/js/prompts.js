@@ -18,6 +18,57 @@
     window.addEventListener('resize', syncView);
     window.addEventListener('orientationchange', syncView);
 
+    /* Отбор витрины «на глаз»: администратор видит на карточке «Удалить»
+       и убирает лишний кадр прямо со страницы. Для всех остальных этой
+       кнопки в разметке просто нет. */
+    var admin = window.gsPrompts || null;
+    if (admin && admin.rest) {
+        document.addEventListener('click', function (e) {
+            var del = e.target.closest ? e.target.closest('[data-gs-del]') : null;
+            if (!del) {
+                return;
+            }
+            e.preventDefault();
+            var slug = del.getAttribute('data-gs-del');
+            var card = del.closest('.gs-pr__card');
+            if (!slug || del.disabled) {
+                return;
+            }
+            if (!window.confirm('Убрать эту карточку из каталога?')) {
+                return;
+            }
+            del.disabled = true;
+            del.textContent = '…';
+            fetch(admin.rest + 'prompts/delete', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-WP-Nonce': admin.nonce
+                },
+                body: JSON.stringify({ slug: slug })
+            }).then(function (r) {
+                return r.json();
+            }).then(function (res) {
+                if (res && res.ok) {
+                    if (card) {
+                        card.style.transition = 'opacity .25s';
+                        card.style.opacity = '0';
+                        setTimeout(function () { card.remove(); }, 250);
+                    }
+                } else {
+                    del.disabled = false;
+                    del.textContent = 'Удалить';
+                    window.alert((res && res.message) || 'Не удалось удалить');
+                }
+            }).catch(function () {
+                del.disabled = false;
+                del.textContent = 'Удалить';
+                window.alert('Не удалось удалить');
+            });
+        });
+    }
+
     var btn = document.querySelector('[data-gs-copy]');
     var box = document.querySelector('[data-gs-prompt]');
     if (!btn || !box) {

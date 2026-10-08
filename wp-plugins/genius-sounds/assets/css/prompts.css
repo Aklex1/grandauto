@@ -281,147 +281,364 @@ body.gs-prompts-page .l-main > .l-section > .l-section-h {
 
 /* --- Поиск и рубрики ------------------------------------------------------ */
 
-.gs-pr__search {
+/*
+ * Поисковая строка — одна «таблетка»: поле и кнопка лежат в общей рамке,
+ * слева лупа. Тема красит input и button по-своему, поэтому ключевые
+ * свойства приходится перебивать: иначе в тёмном каталоге появляется
+ * белая рамка и голубая кнопка.
+ */
+.gs-pr .gs-pr__search {
+    position: relative;
     display: flex;
-    gap: 10px;
-    margin: 0 0 16px;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 18px;
+    padding: 6px 6px 6px 48px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 999px;
+    background:
+        linear-gradient(180deg, rgba(27, 38, 61, 0.95), rgba(16, 24, 40, 0.95));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 20px 44px -30px rgba(0, 0, 0, 0.95);
+    transition: border-color 0.25s var(--pr-ease), box-shadow 0.25s var(--pr-ease);
 }
 
-.gs-pr__search input[type="search"] {
+.gs-pr .gs-pr__search:focus-within {
+    border-color: rgba(129, 140, 248, 0.6);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 0 0 4px rgba(99, 102, 241, 0.16),
+        0 20px 44px -30px rgba(0, 0, 0, 0.95);
+}
+
+.gs-pr__search-ic {
+    position: absolute;
+    left: 17px;
+    top: 50%;
+    display: flex;
+    transform: translateY(-50%);
+    color: #7d8aa3;
+    pointer-events: none;
+}
+
+.gs-pr .gs-pr__search input[type="search"] {
     flex: 1 1 auto;
     min-width: 0;
-    padding: 14px 18px;
-    border: 1px solid var(--pr-border);
-    border-radius: 12px;
-    background: var(--pr-surface);
-    color: var(--pr-text);
+    height: 48px;
+    margin: 0 !important;
+    padding: 0 6px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--pr-text) !important;
     font-size: 16px;
     font-family: inherit;
+    line-height: 48px;
+    -webkit-appearance: none;
+    appearance: none;
 }
 
-.gs-pr__search input[type="search"]::placeholder { color: #64748b; }
+.gs-pr .gs-pr__search input[type="search"]::placeholder { color: #6b7a91; opacity: 1; }
+.gs-pr .gs-pr__search input[type="search"]:focus { outline: none; box-shadow: none !important; }
+.gs-pr .gs-pr__search input[type="search"]::-webkit-search-cancel-button { filter: invert(0.6); }
 
-.gs-pr__search input[type="search"]:focus {
-    outline: none;
-    border-color: rgba(129, 140, 248, 0.6);
-}
-
-.gs-pr__search button {
+.gs-pr .gs-pr__search button[type="submit"] {
     flex: none;
-    padding: 14px 26px;
-    border: 0;
-    border-radius: 12px;
-    background: linear-gradient(135deg, var(--pr-primary), #8b5cf6);
-    color: #fff;
-    font-size: 16px;
+    height: 48px;
+    min-width: 128px;
+    padding: 0 28px !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: linear-gradient(135deg, #7c5cff, #4f46e5) !important;
+    box-shadow: 0 10px 26px -10px rgba(124, 92, 255, 0.85);
+    color: #fff !important;
+    font-size: 15.5px;
     font-weight: 650;
     font-family: inherit;
+    letter-spacing: 0.01em;
     cursor: pointer;
+    transition: transform 0.18s var(--pr-ease), box-shadow 0.25s var(--pr-ease);
 }
 
+.gs-pr .gs-pr__search button[type="submit"]:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px -10px rgba(124, 92, 255, 1);
+}
+
+/* Рубрикатор: карта раздела, поэтому видны все рубрики, даже пустые. */
 .gs-pr__rubrics {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin: 0 0 20px;
+    margin: 0 0 22px;
 }
 
 .gs-pr__chip {
-    padding: 7px 14px;
-    border: 1px solid var(--pr-border);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 8px 15px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
     border-radius: 999px;
-    background: var(--pr-surface);
-    color: var(--pr-muted);
+    background: rgba(24, 34, 54, 0.75);
+    color: #c3cde0;
     font-size: 14px;
     text-decoration: none;
     white-space: nowrap;
+    transition: color 0.2s var(--pr-ease), border-color 0.2s var(--pr-ease),
+                background 0.2s var(--pr-ease), transform 0.2s var(--pr-ease);
 }
 
-.gs-pr__chip span { opacity: 0.6; font-size: 12.5px; }
+.gs-pr__chip span {
+    color: #7c8aa3;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+}
 
-.gs-pr__chip:hover { border-color: rgba(129, 140, 248, 0.5); text-decoration: none; }
+.gs-pr__chip.is-thin { color: #8c99ad; border-style: dashed; }
+
+.gs-pr__chip:hover {
+    transform: translateY(-1px);
+    border-color: rgba(129, 140, 248, 0.55);
+    background: rgba(99, 102, 241, 0.14);
+    color: #fff;
+    text-decoration: none;
+}
 
 .gs-pr__chip.is-on {
     border-color: transparent;
-    background: linear-gradient(135deg, var(--pr-primary), #8b5cf6);
+    background: linear-gradient(135deg, #7c5cff, #4f46e5);
+    box-shadow: 0 10px 24px -12px rgba(124, 92, 255, 0.9);
     color: #fff;
 }
 
-/* --- Карточки ------------------------------------------------------------- */
+.gs-pr__chip.is-on span { color: rgba(255, 255, 255, 0.72); }
 
-.gs-pr__grid {
+/* --- Мозаика карточек ------------------------------------------------------
+ *
+ * Витрина промтов — это прежде всего кадры, поэтому плитки разного
+ * размера: ширина двух видов (четверть и половина ряда), высота четырёх.
+ * Сетка на восемь колонок и плотная укладка: любой остаток ряда чётный,
+ * и следующая карточка его занимает, так что пустых мест не возникает.
+ */
+
+.gs-pr__mosaic {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-    gap: 18px;
+    grid-template-columns: repeat(8, 1fr);
+    grid-auto-rows: clamp(52px, 4.6vw, 74px);
+    grid-auto-flow: row dense;
+    gap: 16px;
 }
+
+.gs-pr__card { grid-column: span 2; grid-row: span 5; }
+.gs-pr__card.is-s  { grid-column: span 2; grid-row: span 5; }
+.gs-pr__card.is-m  { grid-column: span 2; grid-row: span 6; }
+.gs-pr__card.is-t  { grid-column: span 2; grid-row: span 7; }
+.gs-pr__card.is-w  { grid-column: span 4; grid-row: span 5; }
+.gs-pr__card.is-xl { grid-column: span 4; grid-row: span 7; }
 
 .gs-pr__card {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--pr-border);
-    border-radius: var(--pr-radius);
-    background: var(--pr-surface);
+    position: relative;
     overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 18px;
+    background: #0b111d;
+    transform: translateZ(0);
+    transition: transform 0.45s var(--pr-ease), box-shadow 0.45s var(--pr-ease),
+                border-color 0.35s var(--pr-ease);
 }
 
-.gs-pr__card-img {
+.gs-pr__card:hover,
+.gs-pr__card:focus-within {
+    transform: translateY(-6px);
+    border-color: rgba(129, 140, 248, 0.5);
+    box-shadow:
+        0 26px 54px -22px rgba(99, 102, 241, 0.65),
+        0 0 0 1px rgba(129, 140, 248, 0.22);
+}
+
+.gs-pr__card-link {
+    position: absolute;
+    inset: 0;
     display: block;
-    aspect-ratio: 3 / 4;
+    text-decoration: none;
+    color: inherit;
+}
+
+.gs-pr__card-link:hover,
+.gs-pr__card-link:focus { text-decoration: none; }
+
+.gs-pr__card-ph {
+    position: absolute;
+    inset: 0;
+    display: block;
     background: #0b111d;
     overflow: hidden;
 }
 
-.gs-pr__card-img img {
+.gs-pr__card-ph img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
-    transition: transform 0.3s var(--pr-ease);
+    transition: transform 0.75s var(--pr-ease), filter 0.45s var(--pr-ease);
 }
 
-.gs-pr__card:hover .gs-pr__card-img img { transform: scale(1.04); }
+.gs-pr__card:hover .gs-pr__card-ph img {
+    transform: scale(1.07);
+    filter: saturate(1.12) contrast(1.04);
+}
 
-.gs-pr__card-b {
+.gs-pr__card-veil {
+    position: absolute;
+    inset: 0;
+    display: block;
+    background: linear-gradient(
+        to top,
+        rgba(5, 9, 17, 0.94) 0%,
+        rgba(5, 9, 17, 0.72) 26%,
+        rgba(5, 9, 17, 0.18) 56%,
+        rgba(5, 9, 17, 0) 78%);
+    transition: opacity 0.4s var(--pr-ease);
+}
+
+.gs-pr__card:hover .gs-pr__card-veil { opacity: 0.96; }
+
+/* Блик по диагонали — короткий, только как отклик на наведение. */
+.gs-pr__card-link::after {
+    content: "";
+    position: absolute;
+    top: -60%;
+    left: -120%;
+    width: 60%;
+    height: 220%;
+    background: linear-gradient(100deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.14) 50%,
+        rgba(255, 255, 255, 0) 100%);
+    transform: rotate(8deg);
+    pointer-events: none;
+    opacity: 0;
+}
+
+.gs-pr__card:hover .gs-pr__card-link::after { animation: gs-pr-sheen 0.9s var(--pr-ease) forwards; }
+
+@keyframes gs-pr-sheen {
+    from { opacity: 0.9; left: -120%; }
+    to   { opacity: 0;   left: 130%; }
+}
+
+.gs-pr__card-txt {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    left: 14px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 14px 16px 16px;
+    gap: 6px;
+    transition: bottom 0.42s var(--pr-ease);
 }
 
-.gs-pr__card-b h3 {
-    margin: 0;
-    font-family: inherit;
+/* При наведении подпись поднимается — под ней встаёт кнопка. */
+.gs-pr__card:hover .gs-pr__card-txt,
+.gs-pr__card:focus-within .gs-pr__card-txt { bottom: 62px; }
+
+.gs-pr__card-t {
+    display: block;
+    color: #fff;
     font-size: 16px;
     font-weight: 650;
-    line-height: 1.3;
-    text-align: left;
+    line-height: 1.28;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
 }
 
-.gs-pr__card-b h3 a { color: var(--pr-text); text-decoration: none; }
-.gs-pr__card-b h3 a:hover { color: var(--pr-primary-light); }
+.gs-pr__card.is-xl .gs-pr__card-t,
+.gs-pr__card.is-w .gs-pr__card-t { font-size: 19px; }
 
-.gs-pr__card-b p {
-    margin: 0;
-    font-size: 13.5px;
-    line-height: 1.55;
-    color: #7f8ca1;
+.gs-pr__card-p {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-height: 0;
+    color: #b7c2d4;
+    font-size: 13px;
+    line-height: 1.5;
+    opacity: 0;
+    transition: max-height 0.42s var(--pr-ease), opacity 0.32s var(--pr-ease);
 }
+
+.gs-pr__card:hover .gs-pr__card-p,
+.gs-pr__card:focus-within .gs-pr__card-p { max-height: 4em; opacity: 1; }
 
 .gs-pr__card-go {
-    margin-top: auto;
-    padding: 9px 14px;
-    border: 1px solid rgba(129, 140, 248, 0.42);
-    border-radius: 10px;
-    color: var(--pr-primary-light);
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    left: 14px;
+    z-index: 2;
+    padding: 10px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 11px;
+    background: linear-gradient(135deg, rgba(124, 92, 255, 0.95), rgba(79, 70, 229, 0.95));
+    color: #fff;
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 620;
     text-align: center;
     text-decoration: none;
+    opacity: 0;
+    transform: translateY(130%);
+    transition: transform 0.42s var(--pr-ease), opacity 0.3s var(--pr-ease),
+                box-shadow 0.3s var(--pr-ease);
 }
 
+.gs-pr__card:hover .gs-pr__card-go,
+.gs-pr__card:focus-within .gs-pr__card-go { opacity: 1; transform: translateY(0); }
+
 .gs-pr__card-go:hover {
-    background: rgba(99, 102, 241, 0.14);
+    color: #fff;
     text-decoration: none;
+    box-shadow: 0 12px 26px -10px rgba(124, 92, 255, 1);
+}
+
+/* Метка для администратора: видна только ему и только на витрине. */
+.gs-pr__card-del {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    padding: 5px 11px;
+    border: 1px solid rgba(248, 113, 113, 0.55);
+    border-radius: 999px;
+    background: rgba(28, 10, 14, 0.78);
+    color: #fca5a5;
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 1.2;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.25s var(--pr-ease), background 0.2s var(--pr-ease),
+                color 0.2s var(--pr-ease);
+}
+
+.gs-pr__card:hover .gs-pr__card-del,
+.gs-pr__card:focus-within .gs-pr__card-del { opacity: 1; }
+
+.gs-pr__card-del:hover { background: #b91c1c; color: #fff; }
+.gs-pr__card-del[disabled] { opacity: 1; cursor: default; }
+
+/*
+ * Там, где наведения нет (телефон, планшет), прятать кнопку и описание
+ * не за что: показываем сразу.
+ */
+@media (hover: none) {
+    .gs-pr__card-txt { bottom: 62px; }
+    .gs-pr__card-del { opacity: 1; }
+    .gs-pr__card-p { max-height: 4em; opacity: 1; }
+    .gs-pr__card-go { opacity: 1; transform: none; }
+    .gs-pr__card-veil { opacity: 0.98; }
 }
 
 /* --- Пусто и постранично --------------------------------------------------- */
@@ -622,16 +839,59 @@ body.gs-prompts-page .l-main > .l-section > .l-section-h {
     margin: 26px 0 0;
 }
 
+@media (max-width: 1100px) {
+    .gs-pr__mosaic { grid-template-columns: repeat(6, 1fr); gap: 14px; }
+    .gs-pr__card.is-w,
+    .gs-pr__card.is-xl { grid-column: span 3; }
+    .gs-pr__card,
+    .gs-pr__card.is-s,
+    .gs-pr__card.is-m,
+    .gs-pr__card.is-t { grid-column: span 3; }
+    .gs-pr__card.is-s  { grid-row: span 6; }
+    .gs-pr__card.is-m  { grid-row: span 7; }
+    .gs-pr__card.is-t  { grid-row: span 8; }
+    .gs-pr__card.is-w  { grid-row: span 6; }
+    .gs-pr__card.is-xl { grid-row: span 8; }
+}
+
 @media (max-width: 640px) {
     .gs-pr__hero { padding: 36px 0 32px; }
     .gs-pr__sec { padding: 32px 0 44px; }
-    .gs-pr__search { flex-wrap: wrap; }
-    .gs-pr__search button { width: 100%; }
+    .gs-pr .gs-pr__search { flex-wrap: wrap; border-radius: 22px; padding: 6px 6px 6px 44px; }
+    .gs-pr .gs-pr__search input[type="search"] { flex: 1 1 100%; }
+    .gs-pr .gs-pr__search button[type="submit"] { width: 100%; border-radius: 16px !important; }
+    .gs-pr__search-ic { top: 30px; }
+    .gs-pr__rubrics { gap: 7px; }
+    .gs-pr__chip { padding: 7px 13px; font-size: 13.5px; }
     .gs-pr__btn { width: 100%; }
-    .gs-pr__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    .gs-pr__mosaic {
+        grid-template-columns: repeat(4, 1fr);
+        grid-auto-rows: clamp(42px, 9vw, 60px);
+        gap: 12px;
+    }
+    .gs-pr__card,
+    .gs-pr__card.is-s,
+    .gs-pr__card.is-m,
+    .gs-pr__card.is-t,
+    .gs-pr__card.is-w,
+    .gs-pr__card.is-xl { grid-column: span 2; }
+    .gs-pr__card.is-s  { grid-row: span 5; }
+    .gs-pr__card.is-m  { grid-row: span 6; }
+    .gs-pr__card.is-t  { grid-row: span 7; }
+    .gs-pr__card.is-w  { grid-column: span 4; grid-row: span 6; }
+    .gs-pr__card.is-xl { grid-column: span 4; grid-row: span 8; }
+    .gs-pr__card-t { font-size: 14.5px; }
+    .gs-pr__card.is-xl .gs-pr__card-t,
+    .gs-pr__card.is-w .gs-pr__card-t { font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .gs-pr__btn, .gs-pr__pick, .gs-pr__card-img img { transition: none; }
-    .gs-pr__btn:hover, .gs-pr__pick:hover { transform: none; }
+    .gs-pr__btn, .gs-pr__pick, .gs-pr__card, .gs-pr__card-ph img,
+    .gs-pr__card-txt, .gs-pr__card-p, .gs-pr__card-go { transition: none; }
+    .gs-pr__btn:hover, .gs-pr__pick:hover, .gs-pr__card:hover { transform: none; }
+    .gs-pr__card:hover .gs-pr__card-ph img { transform: none; }
+    .gs-pr__card:hover .gs-pr__card-link::after { animation: none; }
+    .gs-pr__card-go { opacity: 1; transform: none; }
+    .gs-pr__card-txt { bottom: 62px; }
+    .gs-pr__card-p { max-height: 4em; opacity: 1; }
 }
