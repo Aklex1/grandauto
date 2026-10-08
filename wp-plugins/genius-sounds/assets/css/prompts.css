@@ -279,6 +279,29 @@ body.gs-prompts-page .l-main > .l-section > .l-section-h {
 .gs-pr__sub { margin: 0 0 18px; max-width: 70ch; font-size: 15px; }
 .gs-pr__count { margin: 0 0 16px; font-size: 14.5px; }
 
+/* --- Подбор под фразу из объявления --------------------------------------- */
+
+.gs-pr__sec--picked {
+    position: relative;
+    background:
+        radial-gradient(900px 420px at 18% 0%, rgba(124, 92, 255, 0.18), transparent 70%),
+        radial-gradient(700px 380px at 86% 10%, rgba(34, 211, 238, 0.12), transparent 72%);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.gs-pr__badge--soft {
+    background: rgba(124, 92, 255, 0.16);
+    border-color: rgba(129, 140, 248, 0.45);
+    color: #c7d2fe;
+}
+
+.gs-pr__picked-more {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 20px 0 0;
+}
+
 /* --- Поиск и рубрики ------------------------------------------------------ */
 
 /*

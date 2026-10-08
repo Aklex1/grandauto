@@ -31,6 +31,7 @@ class GS_Prompts_Page {
         add_filter('body_class', array(__CLASS__, 'body_class'));
         add_filter('document_title_parts', array(__CLASS__, 'title_parts'), PHP_INT_MAX);
         add_action('wp_head', array(__CLASS__, 'head'), 2);
+        add_action('template_redirect', array(__CLASS__, 'no_cache_for_ads'), 1);
         // Своя липкая плашка: штатная работает только на статьях.
         add_action('wp_footer', array(__CLASS__, 'sticky'), 5);
     }
@@ -42,6 +43,16 @@ class GS_Prompts_Page {
     /* ---------------------------------------------------------------------
      * Страница и адреса
      * ------------------------------------------------------------------ */
+
+    /**
+     * Страница с подбором под фразу — персональная, из общего кэша её
+     * отдавать нельзя: все увидели бы подбор первого зашедшего.
+     */
+    public static function no_cache_for_ads() {
+        if (self::is_page() && self::ad_phrase() !== '' && class_exists('GS_Cache')) {
+            GS_Cache::no_cache();
+        }
+    }
 
     public static function page_id() {
         return (int) get_option(GS_Prompts::OPT_PAGE);
@@ -115,6 +126,33 @@ class GS_Prompts_Page {
         }
         $base = home_url('/' . GS_Prompts::SLUG . '/rubrika/' . $key . '/');
         return (int) $n > 1 ? $base . 'page/' . (int) $n . '/' : $base;
+    }
+
+    /**
+     * Фраза, с которой человек пришёл.
+     *
+     * В объявлении Директа в адрес подставляется макрос {keyword} — текст
+     * ключевой фразы, по которой объявление сработало. Из обычного поиска
+     * фразу не узнать: и Яндекс, и Google давно её в переходе не передают.
+     * Поэтому единственный честный источник — метка в рекламной ссылке.
+     */
+    public static function ad_phrase() {
+        // utm_term сюда не доходит: хостинг вырезает utm-метки из запроса
+        // ещё до PHP (в браузере они остаются, и Метрика их видит, а мы —
+        // нет). Поэтому в рекламной ссылке фразу дублируем своим именем.
+        foreach (array('kw', 'term', 'keyword', 'utm_term') as $key) {
+            if (empty($_GET[$key])) {
+                continue;
+            }
+            $raw = sanitize_text_field(wp_unslash((string) $_GET[$key]));
+            $raw = trim(preg_replace('~\s+~u', ' ', $raw));
+            // Незаполненный макрос приезжает как есть — это не фраза.
+            if ($raw === '' || strpos($raw, '{') !== false || mb_strlen($raw, 'UTF-8') > 120) {
+                continue;
+            }
+            return $raw;
+        }
+        return '';
     }
 
     /** Какая рубрика открыта: адресом или старым параметром ?r=. */
@@ -294,7 +332,8 @@ class GS_Prompts_Page {
                     </p>
 
                     <div class="gs-pr__choice">
-                        <a class="gs-pr__pick gs-pr__pick--main" href="#gs-pr-catalog">
+                        <a class="gs-pr__pick gs-pr__pick--main"
+                           href="#<?php echo self::ad_phrase() !== '' && !$q ? 'gs-pr-picked' : 'gs-pr-catalog'; ?>">
                             <span class="gs-pr__pick-k">Смотреть на сайте</span>
                             <span class="gs-pr__pick-t">
                                 Весь каталог ниже: поиск по словам и рубрики.
@@ -320,6 +359,8 @@ class GS_Prompts_Page {
                     </ul>
                 </div>
             </section>
+
+            <?php self::picked($q, $rubric); ?>
 
             <section class="gs-pr__sec" id="gs-pr-catalog">
                 <div class="gs-pr__wrap">
@@ -376,6 +417,62 @@ class GS_Prompts_Page {
                 </div>
             </section>
         </div>
+        <?php
+    }
+
+    /**
+     * Подбор под фразу из объявления.
+     *
+     * Человек пришёл по рекламе с конкретным запросом — «детские
+     * новогодние», «с машиной», «для мужчин». Показывать ему сразу общую
+     * витрину значит заставить искать заново то, за что мы уже заплатили
+     * клик. Поэтому подходящие кадры идут первыми, а весь каталог —
+     * следом: сузить до одной рубрики и оставить человека с пустой
+     * страницей было бы хуже.
+     */
+    private static function picked($q, $rubric) {
+        if ($q !== '') {
+            return;
+        }
+        $phrase = self::ad_phrase();
+        if ($phrase === '') {
+            return;
+        }
+        // На странице рубрики подбираем внутри неё: объявление привело
+        // человека в раздел, уводить его из раздела незачем.
+        $items = GS_Prompts::match_phrase($phrase, 8, $rubric);
+        // Фразу записываем в тот же журнал, что и поиск по сайту, — так
+        // видно и то, за какие запросы мы платим, и то, по каким из них
+        // показать нечего.
+        GS_Prompts::log_query($phrase, count($items), 'ad');
+        if (!$items) {
+            return;
+        }
+        $near = GS_Prompts::detect_rubrics(implode(' ', GS_Prompts::phrase_words($phrase)));
+        ?>
+        <section class="gs-pr__sec gs-pr__sec--picked" id="gs-pr-picked">
+            <div class="gs-pr__wrap">
+                <p class="gs-pr__badge gs-pr__badge--soft">Подобрали по вашему запросу</p>
+                <h2 class="gs-pr__h2">«<?php echo esc_html($phrase); ?>»</h2>
+                <p class="gs-pr__sub">
+                    Вот что подходит ближе всего. Нажмите «Повторить фото» — промт
+                    уже вписан, останется загрузить своё фото.
+                </p>
+                <div class="gs-pr__mosaic">
+                    <?php foreach ($items as $n => $it): ?>
+                        <?php self::card($it, self::tile_size($n)); ?>
+                    <?php endforeach; ?>
+                </div>
+                <p class="gs-pr__picked-more">
+                    <?php if ($near && $rubric === ''): ?>
+                        <a class="gs-pr__chip is-on" href="<?php echo esc_url(self::rubric_url($near[0])); ?>">
+                            Вся рубрика «<?php echo esc_html(GS_Prompts::rubric_title($near[0])); ?>»
+                        </a>
+                    <?php endif; ?>
+                    <a class="gs-pr__chip" href="#gs-pr-catalog">Весь каталог ниже ↓</a>
+                </p>
+            </div>
+        </section>
         <?php
     }
 

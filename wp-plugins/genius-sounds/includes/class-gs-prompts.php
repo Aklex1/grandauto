@@ -163,6 +163,111 @@ class GS_Prompts {
     }
 
     /* ---------------------------------------------------------------------
+     * Подбор под фразу, с которой пришёл человек
+     *
+     * В объявлении Директа стоит макрос {keyword}: по клику он
+     * подставляет в адрес ту ключевую фразу, по которой объявление
+     * сработало. Фраза приходит длинной и рекламной — «готовые промты для
+     * ии фотосессии детские новогодние», — поэтому обычный поиск по ней
+     * ничего не найдёт: он требует все слова разом. Здесь мягче: служебные
+     * слова выбрасываем, по остатку считаем вес и показываем лучшее сверху.
+     * ------------------------------------------------------------------ */
+
+    /** Слова, которые есть в каждом втором рекламном запросе и ничего не значат. */
+    private static function noise() {
+        return array(
+            'промт', 'промты', 'промта', 'промтов', 'промпт', 'промпты', 'промпта', 'промптов',
+            'для', 'или', 'как', 'что', 'это', 'все', 'мой', 'моя', 'свои', 'своих', 'своё', 'свое',
+            'ии', 'нейросеть', 'нейросети', 'нейросетью', 'нейросетей', 'нейро', 'нейросетке',
+            'нейрофотосессия', 'нейрофотосессии', 'нейрофото',
+            'nano', 'banana', 'babana', 'pro', 'gemini', 'chatgpt', 'gpt', 'midjourney', 'ai',
+            'готовые', 'готовый', 'готовая', 'готовых', 'готовое', 'лучшие', 'лучший', 'лучшая',
+            'бесплатно', 'бесплатные', 'бесплатный', 'скачать', 'пример', 'примеры', 'примера',
+            'список', 'подборка', 'подборки', 'сделать', 'создать', 'создания', 'генерации',
+            'генератор', 'сгенерировать', 'русском', 'русские', 'языке', 'где', 'брать',
+            'фото', 'фотка', 'фотки', 'фоток', 'фотографии', 'изображений', 'изображения',
+            'картинок', 'картинки', 'картинка', 'снимок', 'кадр', 'телеграм', 'тг', 'бот',
+            'онлайн', 'сайт', 'сайте', 'новые', 'крутые', 'классные', 'красивые', 'популярные',
+        );
+    }
+
+    /** Значащие слова фразы. */
+    public static function phrase_words($phrase) {
+        $phrase = mb_strtolower(trim((string) $phrase), 'UTF-8');
+        $parts = preg_split('~[^\p{L}\p{N}]+~u', $phrase, -1, PREG_SPLIT_NO_EMPTY);
+        $noise = array_flip(self::noise());
+        $out = array();
+        foreach ((array) $parts as $w) {
+            if (mb_strlen($w, 'UTF-8') < 3 || isset($noise[$w])) {
+                continue;
+            }
+            $out[] = $w;
+            if (count($out) >= 8) {
+                break;
+            }
+        }
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * Карточки под фразу: сначала самые подходящие.
+     *
+     * Окончания в русском мешают сравнивать слова целиком («детские» и
+     * «детский»), поэтому сверяем по усечённой основе. Совпадение в
+     * названии весит больше, чем в теле промта, а попадание в рубрику —
+     * больше всего: именно рубрика и есть смысл запроса.
+     */
+    public static function match_phrase($phrase, $limit = 8, $rubric = '') {
+        $words = self::phrase_words($phrase);
+        if (!$words) {
+            return array();
+        }
+        $want = self::detect_rubrics(implode(' ', $words));
+        $pool = self::load();
+        $rubric = (string) $rubric;
+        if ($rubric !== '') {
+            $pool = array_values(array_filter($pool, function ($i) use ($rubric) {
+                return in_array($rubric, (array) ($i['rubrics'] ?? array()), true);
+            }));
+        }
+        $hits = array();
+        foreach ($pool as $item) {
+            $title = mb_strtolower((string) ($item['title'] ?? ''), 'UTF-8');
+            $body = $title . ' ' . mb_strtolower(
+                (string) ($item['prompt'] ?? '') . ' ' . implode(' ', (array) ($item['tags'] ?? array())),
+                'UTF-8'
+            );
+            $score = 0;
+            foreach ($words as $w) {
+                $len = mb_strlen($w, 'UTF-8');
+                $stem = $len > 5 ? mb_substr($w, 0, $len - 2, 'UTF-8') : $w;
+                if (mb_strpos($title, $stem, 0, 'UTF-8') !== false) {
+                    $score += 3;
+                } elseif (mb_strpos($body, $stem, 0, 'UTF-8') !== false) {
+                    $score += 1;
+                }
+            }
+            $mine = (array) ($item['rubrics'] ?? array());
+            foreach ($want as $r) {
+                if (in_array($r, $mine, true)) {
+                    $score += 4;
+                }
+            }
+            if ($score > 0) {
+                $hits[] = array($score, $item);
+            }
+        }
+        if (!$hits) {
+            return array();
+        }
+        usort($hits, function ($a, $b) {
+            return $b[0] <=> $a[0];
+        });
+        $hits = array_slice($hits, 0, max(1, (int) $limit));
+        return array_map(function ($h) { return $h[1]; }, $hits);
+    }
+
+    /* ---------------------------------------------------------------------
      * Хранилище
      * ------------------------------------------------------------------ */
 
@@ -367,7 +472,7 @@ class GS_Prompts {
      * выдача пустая — это прямое указание, что дописать.
      * ------------------------------------------------------------------ */
 
-    public static function log_query($query, $found) {
+    public static function log_query($query, $found, $source = 'site') {
         $query = trim(preg_replace('~\s+~u', ' ', (string) $query));
         if ($query === '' || mb_strlen($query, 'UTF-8') > 120) {
             return;
@@ -386,9 +491,14 @@ class GS_Prompts {
         }
 
         if (empty($log['totals'][$key])) {
-            $log['totals'][$key] = array('n' => 0, 'empty' => 0, 'last' => '');
+            $log['totals'][$key] = array('n' => 0, 'empty' => 0, 'last' => '', 'ad' => 0);
         }
         $log['totals'][$key]['n']++;
+        if ($source === 'ad') {
+            // Фразы из объявлений считаем отдельно: по ним видно, за что
+            // мы платим и что при этом нечем показать.
+            $log['totals'][$key]['ad'] = (int) ($log['totals'][$key]['ad'] ?? 0) + 1;
+        }
         if ((int) $found === 0) {
             $log['totals'][$key]['empty']++;
         }
@@ -398,6 +508,7 @@ class GS_Prompts {
             'q'     => $query,
             'found' => (int) $found,
             'at'    => current_time('mysql'),
+            'src'   => $source,
         ));
         $log['recent'] = array_slice($log['recent'], 0, self::QUERY_LOG);
 

@@ -29,6 +29,8 @@ class GS_Noindex {
     const JUNK_PARAMS = array(
         'prompt', 'add-to-cart', 'gs_page', 'x', 'ref', 'from',
         'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+        // Фраза из объявления: та же страница, только подбор сверху.
+        'kw', 'term', 'keyword',
         'yclid', 'gclid', 'ymclid', 'etext', 'fbclid',
     );
 
