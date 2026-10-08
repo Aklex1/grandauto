@@ -41,6 +41,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_prompts_delete'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/prompts/retag', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_prompts_retag'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/prompts/stats', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_prompts_stats'),
@@ -4235,6 +4240,44 @@ class GS_Rest {
             @unlink(GS_Prompts::img_dir() . '/' . $file);
         }
         return array('ok' => true, 'slug' => $slug, 'total' => count($kept));
+    }
+
+    /**
+     * Пересобрать рубрики у всех карточек.
+     *
+     * Слова-признаки рубрик приходится уточнять по живому каталогу: «пар»
+     * ловил «парк», «семь» — «восемь», «чёрно» — «на чёрном фоне».
+     * После правки списка раскладку надо пересчитать, иначе рубрикатор
+     * врёт на тысяче уже заведённых карточек.
+     */
+    public static function handle_prompts_retag($request) {
+        GS_Prompts::lock();
+        $items = GS_Prompts::load(true);
+        $moved = 0;
+        foreach ($items as $i => $it) {
+            $seen = GS_Prompts::detect_rubrics(
+                (string) ($it['title'] ?? '') . ' '
+                . (string) ($it['prompt'] ?? '') . ' '
+                . implode(' ', (array) ($it['tags'] ?? array()))
+            );
+            // Нашлось пусто — оставляем как было: пустая рубрика хуже
+            // неточной, карточку тогда не найти совсем.
+            if (!$seen) {
+                continue;
+            }
+            $was = (array) ($it['rubrics'] ?? array());
+            if ($was !== $seen) {
+                $items[$i]['rubrics'] = $seen;
+                $moved++;
+            }
+        }
+        $saved = GS_Prompts::save($items);
+        GS_Prompts::unlock();
+        if (!$saved) {
+            return new WP_Error('gs_io', 'Не удалось сохранить каталог', array('status' => 500));
+        }
+        return array('ok' => true, 'всего' => count($items), 'переложено' => $moved,
+                     'рубрики' => GS_Prompts::rubric_counts());
     }
 
     public static function handle_prompts_stats($request) {
