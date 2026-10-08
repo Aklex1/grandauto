@@ -69,30 +69,101 @@ body.gs-prompts-page .l-main > .l-section > .l-section-h {
 /* --- Первый экран -------------------------------------------------------- */
 
 .gs-pr__hero {
-    padding: 52px 0 46px;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    padding: 64px 0 58px;
     background:
-        radial-gradient(900px 420px at 10% -10%, rgba(99, 102, 241, 0.26), transparent 70%),
-        radial-gradient(760px 380px at 92% 6%, rgba(34, 211, 238, 0.16), transparent 68%),
-        var(--pr-bg);
+        radial-gradient(1100px 520px at 8% -12%, rgba(124, 92, 255, 0.42), transparent 68%),
+        radial-gradient(900px 460px at 96% 4%, rgba(34, 211, 238, 0.30), transparent 66%),
+        radial-gradient(700px 420px at 52% 112%, rgba(236, 72, 153, 0.24), transparent 70%),
+        linear-gradient(160deg, #0d1026 0%, var(--pr-bg) 58%);
     border-bottom: 1px solid var(--pr-border);
 }
 
-.gs-pr__hero-in { max-width: 900px; }
+/* Стена кадров за текстом: лучшая реклама каталога — сами кадры. */
+.gs-pr__wall {
+    position: absolute;
+    inset: -8% -2%;
+    z-index: -2;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    opacity: 0.5;
+    transform: rotate(-7deg) scale(1.22);
+    pointer-events: none;
+}
+
+.gs-pr__wall-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    will-change: transform;
+    animation: gs-pr-drift 70s linear infinite;
+}
+
+/* Колонки едут вразнобой — иначе стена читается как одна картинка. */
+.gs-pr__wall-col--1 { animation-duration: 92s; animation-direction: reverse; }
+.gs-pr__wall-col--2 { animation-duration: 78s; }
+.gs-pr__wall-col--3 { animation-duration: 104s; animation-direction: reverse; }
+
+.gs-pr__wall img {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+    border-radius: 14px;
+    display: block;
+}
+
+@keyframes gs-pr-drift {
+    from { transform: translateY(0); }
+    /* Лента продублирована, поэтому сдвиг ровно на половину — без шва. */
+    to   { transform: translateY(-50%); }
+}
+
+/* Заливка поверх стены: без неё заголовок не читается. */
+.gs-pr__wall-veil {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        linear-gradient(90deg, rgba(8, 12, 20, 0.97) 0%, rgba(8, 12, 20, 0.9) 42%,
+                        rgba(8, 12, 20, 0.62) 68%, rgba(8, 12, 20, 0.86) 100%),
+        linear-gradient(180deg, rgba(8, 12, 20, 0.72) 0%, rgba(8, 12, 20, 0.2) 40%,
+                        rgba(8, 12, 20, 0.94) 100%);
+}
+
+.gs-pr__hero-in { position: relative; max-width: 900px; }
+
+@media (max-width: 760px) {
+    /* На телефоне стена съедает читаемость — оставляем две колонки и тише. */
+    .gs-pr__wall { grid-template-columns: repeat(2, 1fr); opacity: 0.34; }
+    .gs-pr__wall-col--2,
+    .gs-pr__wall-col--3 { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gs-pr__wall-col { animation: none; }
+}
 
 .gs-pr__badge {
     display: inline-block;
     margin: 0 0 16px;
-    padding: 6px 13px;
-    border: 1px solid rgba(129, 140, 248, 0.4);
+    padding: 7px 15px;
+    border: 1px solid rgba(129, 140, 248, 0.55);
     border-radius: 999px;
-    background: rgba(99, 102, 241, 0.14);
-    color: var(--pr-primary-light);
+    background: rgba(99, 102, 241, 0.22);
+    box-shadow: 0 6px 22px rgba(99, 102, 241, 0.28);
+    color: #c7d2fe;
     font-size: 13px;
+    font-weight: 600;
 }
 
 .gs-pr__h1 {
     margin: 0 0 16px;
     color: var(--pr-text);
+    text-shadow: 0 2px 28px rgba(8, 12, 20, 0.75);
     font-family: inherit;
     font-size: clamp(27px, 4.2vw, 42px);
     font-weight: 800;
@@ -122,7 +193,8 @@ body.gs-prompts-page .l-main > .l-section > .l-section-h {
     padding: 22px;
     border: 1px solid var(--pr-border);
     border-radius: var(--pr-radius);
-    background: var(--pr-surface);
+    background: rgba(19, 27, 43, 0.88);
+    backdrop-filter: blur(6px);
     color: var(--pr-muted);
     text-decoration: none;
     transition: transform 0.18s var(--pr-ease), border-color 0.18s var(--pr-ease);
@@ -136,8 +208,9 @@ body.gs-prompts-page .l-main > .l-section > .l-section-h {
 }
 
 .gs-pr__pick--main {
-    border-color: rgba(129, 140, 248, 0.45);
-    background: linear-gradient(180deg, rgba(99, 102, 241, 0.16), var(--pr-surface) 62%);
+    border-color: rgba(129, 140, 248, 0.6);
+    background: linear-gradient(145deg, rgba(124, 92, 255, 0.38), rgba(19, 27, 43, 0.92) 64%);
+    box-shadow: 0 16px 40px rgba(99, 102, 241, 0.26);
 }
 
 .gs-pr__pick-k {

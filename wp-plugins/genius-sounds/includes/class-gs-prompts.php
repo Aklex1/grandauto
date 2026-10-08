@@ -251,6 +251,14 @@ class GS_Prompts {
             }));
         }
         if ($query === '') {
+            // Без поиска и без рубрики витрина должна выглядеть живой, а не
+            // «первая тысяча по порядку загрузки». Перемешиваем — но не
+            // случайно на каждый заход: иначе одна и та же карточка лезла бы
+            // на вторую страницу, а кэш страницы терял бы смысл. Порядок
+            // одинаков в пределах суток и меняется назавтра.
+            if ($rubric === '') {
+                $items = self::shuffle_daily($items);
+            }
             return $items;
         }
 
@@ -283,6 +291,21 @@ class GS_Prompts {
             return $b[0] <=> $a[0];
         });
         return array_map(function ($h) { return $h[1]; }, $hits);
+    }
+
+    /** Устойчивое в пределах суток перемешивание. */
+    private static function shuffle_daily($items) {
+        $seed = (int) current_time('Ymd');
+        $keyed = array();
+        foreach ($items as $i => $it) {
+            // Простая и быстрая смесь номера с днём: порядок выглядит
+            // случайным, но повторяем его при каждом запросе.
+            $keyed[] = array(crc32($seed . '|' . (string) ($it['slug'] ?? $i)), $it);
+        }
+        usort($keyed, function ($a, $b) {
+            return $a[0] <=> $b[0];
+        });
+        return array_map(function ($k) { return $k[1]; }, $keyed);
     }
 
     /* ---------------------------------------------------------------------

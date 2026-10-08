@@ -16,6 +16,26 @@ class GS_Rest {
     }
 
     public static function register_routes() {
+        register_rest_route(self::NS, '/prompts/upload', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_prompts_upload'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/prompts/describe', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_prompts_describe'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/prompts/add', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_prompts_add'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/prompts/stats', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_prompts_stats'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/sfx/generate', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_generate'),
@@ -3870,4 +3890,132 @@ class GS_Rest {
             'items'   => count(GS_SFX::get_showcase()),
         ));
     }
+
+    /* ---------------------------------------------------------------------
+     * Каталог промтов
+     *
+     * Служебные маршруты, которыми наполняется каталог: положить кадр,
+     * описать его промтом и добавить карточку. Только для администратора —
+     * это наполнение, а не пользовательская возможность.
+     * ------------------------------------------------------------------ */
+
+    public static function handle_prompts_upload($request) {
+        GS_Prompts::ensure_dirs();
+        $name = sanitize_file_name((string) $request->get_param('name'));
+        $data = (string) $request->get_param('data');
+        if ($name === '' || $data === '') {
+            return new WP_Error('gs_bad', 'Нужны имя файла и содержимое', array('status' => 400));
+        }
+        if (!preg_match('~\.(jpe?g|png|webp)$~i', $name)) {
+            return new WP_Error('gs_bad', 'Только картинки', array('status' => 400));
+        }
+        $bin = base64_decode($data, true);
+        if ($bin === false || strlen($bin) < 500) {
+            return new WP_Error('gs_bad', 'Содержимое не разобрать', array('status' => 400));
+        }
+        // Проверяем, что это действительно картинка, а не что-то с нужным
+        // расширением: файл ляжет в открытую папку.
+        $info = @getimagesizefromstring($bin);
+        if (!$info) {
+            return new WP_Error('gs_bad', 'Это не картинка', array('status' => 400));
+        }
+        $path = GS_Prompts::img_dir() . '/' . $name;
+        if (file_put_contents($path, $bin) === false) {
+            return new WP_Error('gs_io', 'Не удалось записать файл', array('status' => 500));
+        }
+        return array('ok' => true, 'file' => $name,
+                     'url' => GS_Prompts::img_url() . '/' . $name,
+                     'w' => (int) $info[0], 'h' => (int) $info[1]);
+    }
+
+    /**
+     * Промт по кадру.
+     *
+     * Модель смотрит на снимок и пишет промт, которым такой кадр можно
+     * повторить. Просим по-русски и без имён нейросетей: текст попадёт на
+     * страницу каталога как есть.
+     */
+    public static function handle_prompts_describe($request) {
+        $url = esc_url_raw((string) $request->get_param('image_url'));
+        if ($url === '') {
+            return new WP_Error('gs_bad', 'Нужен адрес картинки', array('status' => 400));
+        }
+        $hint = sanitize_text_field((string) $request->get_param('hint'));
+
+        $system = 'Ты пишешь промты для генерации фотографий на русском языке. '
+            . 'Отвечай строго в формате JSON без пояснений: '
+            . '{"title":"...","prompt":"...","tags":["...","..."]}. '
+            . 'title — короткое название кадра, 3–6 слов, с заглавной буквы, без кавычек и точки. '
+            . 'prompt — связный текст на русском, 40–80 слов, которым такой кадр можно повторить: '
+            . 'кто в кадре, поза и настроение, одежда, место и фон, свет, план и ракурс, цвет и настроение. '
+            . 'Не описывай конкретную внешность и не называй людей. '
+            . 'Не упоминай никакие нейросети, модели и сервисы. '
+            . 'tags — 3–6 коротких слов-меток на русском.';
+        $user = 'Опиши промт для этого кадра.' . ($hint !== '' ? ' Подсказка по теме: ' . $hint . '.' : '');
+
+        $out = GS_Gemini::ask_vision($system, $user, $url);
+        if (empty($out['ok'])) {
+            return new WP_Error('gs_vision', (string) ($out['message'] ?? 'Не удалось описать кадр'),
+                array('status' => 502));
+        }
+        return array('ok' => true, 'raw' => (string) $out['text']);
+    }
+
+    public static function handle_prompts_add($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        $slug = sanitize_title((string) ($p['slug'] ?? ''));
+        $title = sanitize_text_field((string) ($p['title'] ?? ''));
+        $prompt = trim(wp_strip_all_tags((string) ($p['prompt'] ?? '')));
+        if ($slug === '' || $title === '' || $prompt === '') {
+            return new WP_Error('gs_bad', 'Нужны slug, title и prompt', array('status' => 400));
+        }
+        $items = GS_Prompts::load(true);
+        // Повторный заход не должен плодить дубли: карточку с тем же
+        // адресом обновляем на месте.
+        $pos = -1;
+        foreach ($items as $i => $it) {
+            if ((string) ($it['slug'] ?? '') === $slug) {
+                $pos = $i;
+                break;
+            }
+        }
+        $entry = array(
+            'slug'    => $slug,
+            'title'   => $title,
+            'prompt'  => $prompt,
+            'image'   => sanitize_file_name((string) ($p['image'] ?? '')),
+            'tags'    => array_slice(array_map('sanitize_text_field', (array) ($p['tags'] ?? array())), 0, 8),
+            'rubrics' => array_values(array_intersect(
+                array_map('sanitize_key', (array) ($p['rubrics'] ?? array())),
+                array_keys(GS_Prompts::rubrics())
+            )),
+            'source'  => sanitize_key((string) ($p['source'] ?? 'tg')),
+            'msg'     => (int) ($p['msg'] ?? 0),
+            'added'   => current_time('mysql'),
+        );
+        if (!$entry['rubrics']) {
+            $entry['rubrics'] = GS_Prompts::detect_rubrics($title . ' ' . $prompt . ' ' . implode(' ', $entry['tags']));
+        }
+        if ($pos >= 0) {
+            $items[$pos] = $entry;
+        } else {
+            $items[] = $entry;
+        }
+        if (!GS_Prompts::save($items)) {
+            return new WP_Error('gs_io', 'Не удалось сохранить каталог', array('status' => 500));
+        }
+        return array('ok' => true, 'slug' => $slug, 'total' => count($items));
+    }
+
+    public static function handle_prompts_stats($request) {
+        return array(
+            'ok'      => true,
+            'total'   => GS_Prompts::count(),
+            'rubrics' => GS_Prompts::rubric_counts(),
+        );
+    }
+
 }

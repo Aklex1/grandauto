@@ -244,6 +244,7 @@ class GS_Prompts_Page {
         <div class="gs-pr">
 
             <section class="gs-pr__hero">
+                <?php self::hero_wall(); ?>
                 <div class="gs-pr__wrap gs-pr__hero-in">
                     <p class="gs-pr__badge">Промты для фото · <?php echo (int) $all; ?> готовых примеров</p>
                     <h1 class="gs-pr__h1">Готовые промты для фото — с кадром, который они дают</h1>
@@ -341,6 +342,55 @@ class GS_Prompts_Page {
                 </div>
             </section>
         </div>
+        <?php
+    }
+
+    /**
+     * Стена кадров за первым экраном.
+     *
+     * Лучшая реклама каталога промтов — сами кадры, поэтому фон собран из
+     * настоящих карточек, а не из абстрактной картинки. Колонки едут в
+     * разные стороны и притушены плотной заливкой, чтобы заголовок читался.
+     *
+     * Если каталог ещё пуст, стена просто не печатается — остаются
+     * цветные разводы, и первый экран не ломается.
+     */
+    private static function hero_wall() {
+        $items = GS_Prompts::load();
+        $shots = array();
+        foreach ($items as $it) {
+            $u = self::img($it);
+            if ($u !== '') {
+                $shots[] = $u;
+            }
+        }
+        if (count($shots) < 8) {
+            return;
+        }
+        // Берём вперемешку, но одинаково при каждой загрузке: случайный
+        // порядок ломал бы кэш страницы.
+        $pick = array();
+        $step = max(1, (int) floor(count($shots) / 24));
+        for ($i = 0; $i < count($shots) && count($pick) < 24; $i += $step) {
+            $pick[] = $shots[$i];
+        }
+        $cols = array(array(), array(), array(), array());
+        foreach ($pick as $i => $u) {
+            $cols[$i % 4][] = $u;
+        }
+        ?>
+        <div class="gs-pr__wall" aria-hidden="true">
+            <?php foreach ($cols as $n => $col): ?>
+                <?php if (!$col) { continue; } ?>
+                <div class="gs-pr__wall-col gs-pr__wall-col--<?php echo (int) $n; ?>">
+                    <?php /* дважды — чтобы лента ехала без шва */ ?>
+                    <?php foreach (array_merge($col, $col) as $u): ?>
+                        <img src="<?php echo esc_url($u); ?>" alt="" loading="lazy" decoding="async">
+                    <?php endforeach; ?>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <div class="gs-pr__wall-veil" aria-hidden="true"></div>
         <?php
     }
 

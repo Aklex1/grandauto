@@ -137,6 +137,53 @@ class GS_Gemini {
      *
      * @return array{body:?array,message:string,final:bool}
      */
+    /**
+     * Свободный вопрос к модели по картинке.
+     *
+     * Та же семья моделей, что и у расшифровки, только задача своя: по
+     * кадру написать текст. Нужна для наполнения каталога промтов —
+     * модель смотрит на снимок и пишет, каким промтом его повторить.
+     *
+     * @return array{ok:bool,text:string,message:string}
+     */
+    public static function ask_vision($system, $user, $image_url) {
+        $key = trim((string) get_option('kie_tts_api_key', ''));
+        if ($key === '') {
+            return array('ok' => false, 'text' => '', 'message' => 'Не задан ключ поставщика');
+        }
+        $payload = array(
+            'stream'   => false,
+            'messages' => array(
+                array('role' => 'system', 'content' => (string) $system),
+                array('role' => 'user', 'content' => array(
+                    array('type' => 'text', 'text' => (string) $user),
+                    array('type' => 'image_url', 'image_url' => array('url' => (string) $image_url)),
+                )),
+            ),
+        );
+        $last = '';
+        foreach (self::models() as $model) {
+            $payload['model'] = $model;
+            $attempt = self::ask(sprintf(self::ENDPOINT, $model), $payload, $key);
+            if (is_array($attempt['body'])) {
+                $text = '';
+                if (isset($attempt['body']['choices'][0]['message']['content'])) {
+                    $text = (string) $attempt['body']['choices'][0]['message']['content'];
+                }
+                if (trim($text) !== '') {
+                    return array('ok' => true, 'text' => $text, 'message' => '');
+                }
+                $last = 'Поставщик вернул пустой ответ';
+                continue;
+            }
+            $last = (string) $attempt['message'];
+            if (!empty($attempt['final'])) {
+                break;
+            }
+        }
+        return array('ok' => false, 'text' => '', 'message' => $last !== '' ? $last : 'Не удалось получить ответ');
+    }
+
     private static function ask($endpoint, $payload, $key) {
         $last = '';
         foreach (array(0, 6) as $pause) {
