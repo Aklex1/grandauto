@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.44.0
+ * Version:     2.45.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.44.0');
+define('GS_VERSION', '2.45.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -152,6 +152,7 @@ class Genius_Sounds_Plugin {
         GS_Legal::boot();
         GS_Sticky::boot();
         GS_Seo::boot();
+        GS_Lab_Page::boot();
         GS_Adsrc::boot();
         GS_Sitemap::boot();
         GS_Noindex::boot();
@@ -577,6 +578,8 @@ class Genius_Sounds_Plugin {
             if ($lab['id'] === 'photo') {
                 wp_enqueue_style('genius-sounds-photo', GS_PLUGIN_URL . 'assets/css/photo.css',
                     array('genius-sounds-studio'), GS_VERSION);
+                wp_enqueue_script('genius-sounds-promts-band',
+                    GS_PLUGIN_URL . 'assets/js/promts-band.js', array(), GS_VERSION, true);
             }
             wp_localize_script('genius-sounds-lab', 'GS_LAB', array(
                 'restUrl'     => esc_url_raw(rest_url(GS_Rest::NS . '/')),
