@@ -25,6 +25,7 @@ if (!defined('ABSPATH')) {
 class GS_Adsrc {
 
     const COOKIE = 'gs_ad';
+    const COOKIE_YM = 'gs_ymid';
     const META   = 'gs_ad_first';
     const TTL    = 7776000; // 90 дней
 
@@ -51,7 +52,7 @@ class GS_Adsrc {
 
     public static function parse($raw) {
         $out = array('src' => '', 'medium' => '', 'campaign' => '',
-                     'group' => '', 'keyword' => '', 'at' => '');
+                     'group' => '', 'keyword' => '', 'yclid' => '', 'at' => '');
         $raw = trim((string) $raw);
         if ($raw === '') {
             return $out;
@@ -62,7 +63,7 @@ class GS_Adsrc {
             return $out;
         }
         $map = array('s' => 'src', 'm' => 'medium', 'c' => 'campaign',
-                     'g' => 'group', 'k' => 'keyword', 't' => 'at');
+                     'g' => 'group', 'k' => 'keyword', 'y' => 'yclid', 't' => 'at');
         foreach ($map as $short => $long) {
             if (!empty($pairs[$short])) {
                 $out[$long] = mb_substr(sanitize_text_field((string) $pairs[$short]), 0, 120, 'UTF-8');
@@ -139,7 +140,7 @@ class GS_Adsrc {
     public static function of_user($user_id) {
         $mark = get_user_meta((int) $user_id, self::META, true);
         return is_array($mark) ? $mark : array('src' => '', 'medium' => '', 'campaign' => '',
-                                               'group' => '', 'keyword' => '', 'at' => '');
+                                               'group' => '', 'keyword' => '', 'yclid' => '', 'at' => '');
     }
 
     /**
@@ -149,6 +150,18 @@ class GS_Adsrc {
      * устройства. Тогда берём ту, что осталась на учётной записи с
      * первого прихода.
      */
+    /**
+     * Номер посетителя в Метрике.
+     *
+     * Платёж подтверждается на сервере, когда человека на сайте уже нет,
+     * и привязать оплату к его визиту можно только по этому номеру.
+     */
+    public static function client_id() {
+        $raw = isset($_COOKIE[self::COOKIE_YM]) ? (string) wp_unslash($_COOKIE[self::COOKIE_YM]) : '';
+        $raw = preg_replace('~[^0-9]~', '', $raw);
+        return mb_substr((string) $raw, 0, 40, 'UTF-8');
+    }
+
     public static function for_payment($user_id = 0) {
         $mark = self::current();
         if (self::has($mark)) {

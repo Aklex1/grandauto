@@ -1194,6 +1194,20 @@ class GS_Admin {
             <?php endif; ?>
         <?php endif; ?>
 
+        <?php
+        // Доход отдаём Метрике очередью, и отправляем её заодно с
+        // открытием этой страницы: часовой крон на тихом сайте может
+        // проснуться позже, чем хозяин захочет увидеть цифры.
+        $ym_flush = null;
+        if (class_exists('GS_Metrika') && GS_Metrika::queue_size() > 0) {
+            $ym_flush = GS_Metrika::flush();
+        }
+        ?>
+        <?php if ($ym_flush): ?>
+            <div class="notice notice-<?php echo !empty($ym_flush['ok']) ? 'success' : 'warning'; ?> inline">
+                <p>Доход в Метрику: <?php echo esc_html((string) $ym_flush['message']); ?></p>
+            </div>
+        <?php endif; ?>
         <?php $ads = class_exists('GS_Payments') ? GS_Payments::ad_summary(90) : array(); ?>
         <?php if ($ads): ?>
             <h3>Откуда пришли плательщики</h3>
@@ -1202,6 +1216,15 @@ class GS_Admin {
                 вплоть до группы и фразы. Метка живёт в браузере три месяца, поэтому
                 оплата с другого устройства или через бота в неё не попадёт — цифры стоит
                 читать как «не меньше чем».
+                <?php if (class_exists('GS_Metrika')): ?>
+                    Те же оплаты уходят в Метрику целью «<?php echo esc_html(GS_Metrika::GOAL); ?>»
+                    с суммой — после этого доход по кампаниям, группам и фразам виден в
+                    отчётах Директа.
+                    <?php $q = GS_Metrika::queue_size(); ?>
+                    <?php if ($q > 0): ?>
+                        Сейчас в очереди на отправку: <strong><?php echo (int) $q; ?></strong>.
+                    <?php endif; ?>
+                <?php endif; ?>
             </p>
             <table class="widefat striped" style="max-width:900px;margin-bottom:18px">
                 <thead><tr><th>Метка перехода</th><th>Платежей</th><th>Сумма</th></tr></thead>

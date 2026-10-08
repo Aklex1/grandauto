@@ -710,6 +710,14 @@ class GS_Yoomoney {
             $stats[$source]['count']++;
             $stats[$source]['sum'] = round((float) $stats[$source]['sum'] + $amount, 2);
             update_option(self::OPT_STATS, $stats, false);
+
+            // Доход в Метрику — только отложить. Уведомление ЮMoney должно
+            // закрыться быстро и не зависеть от того, ответила ли Метрика:
+            // при таймауте кошелёк повторит уведомление, а платёж уже
+            // зачислен.
+            if ($status === 'зачислено' && class_exists('GS_Metrika')) {
+                GS_Metrika::queue_payment((string) $label, (float) $amount);
+            }
         }
     }
 

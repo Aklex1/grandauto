@@ -46,6 +46,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_prompts_retag'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/metrika/goal', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_metrika_goal'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/prompts/stats', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_prompts_stats'),
@@ -4284,6 +4289,31 @@ class GS_Rest {
         }
         return array('ok' => true, 'всего' => count($items), 'переложено' => $moved,
                      'рубрики' => GS_Prompts::rubric_counts());
+    }
+
+    /**
+     * Готова ли Метрика принимать доход.
+     *
+     * Заводит цель, если её нет, и показывает очередь: без цели Метрика
+     * молча отбрасывает загруженные оплаты, и понять это по отчётам
+     * невозможно — там просто пусто.
+     */
+    public static function handle_metrika_goal($request) {
+        if (!class_exists('GS_Metrika')) {
+            return new WP_Error('gs_none', 'Метрика не подключена', array('status' => 404));
+        }
+        $ready = GS_Metrika::ensure_goal();
+        $out = array(
+            'ok'       => true,
+            'счётчик'  => GS_Metrika::counter(),
+            'цель'     => GS_Metrika::GOAL,
+            'заведена' => $ready,
+            'в_очереди' => GS_Metrika::queue_size(),
+        );
+        if ($request->get_param('send')) {
+            $out['отправка'] = GS_Metrika::flush();
+        }
+        return $out;
     }
 
     public static function handle_prompts_stats($request) {

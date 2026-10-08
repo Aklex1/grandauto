@@ -759,6 +759,11 @@ class GS_Payments {
             // Что привело человека на сайт. Сервис-источник отвечает на
             // вопрос «за что заплатили», а это — «кого мы за это купили».
             'ad'   => class_exists('GS_Adsrc') ? GS_Adsrc::label(GS_Adsrc::for_payment($user)) : '',
+            // Номера, по которым оплату потом привяжут к визиту в Метрике:
+            // подтверждение придёт на сервер, когда человека тут уже нет.
+            'ymid'  => class_exists('GS_Adsrc') ? GS_Adsrc::client_id() : '',
+            'yclid' => class_exists('GS_Adsrc')
+                ? (string) (GS_Adsrc::for_payment($user)['yclid'] ?? '') : '',
             // Был ли у плательщика бесплатный звук: путь «попробовал —
             // вернулся — заплатил» иначе не виден ни в одном отчёте.
             'trial' => class_exists('GS_Rest') ? GS_Rest::trial_of_user($user) : '',
@@ -817,6 +822,16 @@ class GS_Payments {
             return $b['sum'] <=> $a['sum'];
         });
         return $out;
+    }
+
+    /** Номера визита у платежа: ClientID Метрики и yclid Директа. */
+    public static function payment_ids_of($label) {
+        $log = get_option(self::OPT_SRC_LOG, array());
+        $row = is_array($log) && isset($log[$label]) ? (array) $log[$label] : array();
+        return array(
+            'ymid'  => (string) ($row['ymid'] ?? ''),
+            'yclid' => (string) ($row['yclid'] ?? ''),
+        );
     }
 
     public static function payment_source_of($label) {

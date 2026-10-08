@@ -54,6 +54,7 @@
             'c=' + encodeURIComponent(cut(q.get('utm_campaign'))),
             'g=' + encodeURIComponent(cut(q.get('utm_content') || q.get('gbid'))),
             'k=' + encodeURIComponent(kw),
+            'y=' + encodeURIComponent(yclid || ''),
             't=' + new Date().toISOString().slice(0, 10)
         ].join('&');
 
@@ -62,5 +63,30 @@
             + (window.location.protocol === 'https:' ? '; secure' : '');
     } catch (e) {
         /* старый браузер или заблокированные куки — не наша забота */
+    }
+
+    /*
+     * Номер посетителя в Метрике.
+     *
+     * Он нужен, чтобы потом привязать оплату к визиту: платёж
+     * подтверждается на сервере, когда человека на сайте уже нет, и
+     * связать одно с другим можно только по этому номеру. Счётчик к
+     * этому моменту мог ещё не загрузиться — обёртка ym копит вызовы и
+     * выполняет их сама, когда будет готова.
+     */
+    try {
+        var counter = (window.gsAd && window.gsAd.counter) || 0;
+        if (counter && typeof window.ym === 'function') {
+            window.ym(counter, 'getClientID', function (id) {
+                if (!id) {
+                    return;
+                }
+                document.cookie = 'gs_ymid=' + encodeURIComponent(id)
+                    + '; max-age=' + TTL + '; path=/; samesite=lax'
+                    + (window.location.protocol === 'https:' ? '; secure' : '');
+            });
+        }
+    } catch (e2) {
+        /* счётчика нет или он вырезан блокировщиком */
     }
 }());
