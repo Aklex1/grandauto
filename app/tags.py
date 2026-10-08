@@ -18,6 +18,11 @@ import re
 TAGS_LIMIT = 500
 TAG_MAX = 100
 HASHTAGS_SHOWN = 3
+# Больше двенадцати не ставим. Теги уходят на площадку с решётками, то есть
+# считаются хештегами; вместе с тремя в описании это ровно пятнадцать — предел,
+# после которого YouTube перестаёт учитывать все хештеги разом, включая те три,
+# что показываются над заголовком.
+TAGS_COUNT = 12
 
 # Как такие миксы ищут независимо от жанра: по занятию и по длине.
 USE_TERMS = (
@@ -110,6 +115,8 @@ def build(*, style_tags: tuple | list = (), series: str = "", genre: str = "",
     out: list[str] = []
     total = 0
     for tag in rows:
+        if len(out) >= TAGS_COUNT:
+            break
         cost = len(tag) + 1 + (1 if out else 0)
         if total + cost > TAGS_LIMIT:
             break

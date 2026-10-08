@@ -1989,14 +1989,13 @@ def publish(video_id: int, *, privacy: str = "private") -> None:
             poster = cover
         title = (video.yt_title or video.title or style_of(video.style).label)
         description = video.description or ""
-        # В поле теги лежат хештегами, а в заявку на выгрузку идут без
-        # решётки: поле тегов у площадки — это ключевые слова, и помеченные
-        # решёткой записи там считаются хештегами. Если их вместе с описанием
-        # наберётся больше пятнадцати, YouTube перестанет учитывать все хештеги,
-        # включая три главных над заголовком.
+        # Теги уходят с решётками, как они стоят в поле. Их не больше
+        # двенадцати: вместе с тремя хештегами описания это ровно пятнадцать —
+        # предел, после которого площадка перестаёт учитывать хештеги вообще.
         from . import tags as tags_mod
 
-        tags = tags_mod.parse(video.tags or "")
+        tags = ["#" + tag for tag in tags_mod.parse(video.tags or "")
+                ][:tags_mod.TAGS_COUNT]
         video.youtube_state = "running"
         video.youtube_error = ""
         session.commit()

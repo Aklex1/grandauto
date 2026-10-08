@@ -132,6 +132,7 @@ sent = {}
 
 def fake_upload(creds, path, *, title, description, tags, privacy, thumbnail=None):
     sent["thumbnail"] = thumbnail
+    sent["tags"] = tags
     return {"id": "vid123", "url": "https://youtu.be/vid123"}
 
 
@@ -144,13 +145,19 @@ yt_mod.upload = fake_upload
 with session_scope() as session:
     video = session.get(MusicVideo, mix_id)
     video.poster_path = storage.rel(media_clip)  # голый кадр тоже есть
+    video.tags = "#chillstep #chillstepmix #melodicdubstep #studymusic"
     session.commit()
     cover_now = video.cover_path
 mv.publish(mix_id, privacy="private")
 assert sent["thumbnail"] is not None, "превью не передано вовсе"
 assert sent["thumbnail"] == storage.abspath(cover_now), \
     f"на превью ушёл не тот файл: {sent['thumbnail']}"
-print("8. при выгрузке на YouTube превью — нарисованная обложка, а не кадр из ролика")
+assert sent["tags"], "теги не ушли в заявку"
+assert all(tag.startswith("#") for tag in sent["tags"]), sent["tags"]
+assert all(" " not in tag for tag in sent["tags"]), sent["tags"]
+assert len(sent["tags"]) <= 12, f"ушло тегов: {len(sent['tags'])}"
+print("8. при выгрузке: превью — нарисованная обложка, теги с решётками "
+      f"и без пробелов, {len(sent['tags'])} штук")
 
 # --- 6. картинка обложки генерируется по своему промпту ----------------------------
 # Кадр из ролика на обложке не годится: на нём уже шапка, знак канала и плашка
@@ -279,6 +286,9 @@ assert all(" " not in word for word in rows), rows
 stored = tags_mod.as_text(rows)
 assert "," not in stored and stored.startswith("#chillstep #chillstepmix"), stored
 assert len(stored) <= tags_mod.TAGS_LIMIT, f"вышли за 500 знаков: {len(stored)}"
+# Двенадцать плюс три в описании — ровно пятнадцать, предел площадки.
+assert len(rows) == 12, f"тегов {len(rows)}, а должно быть двенадцать"
+assert len(rows) + tags_mod.HASHTAGS_SHOWN <= 15, "перебор по хештегам"
 # Что бы ни ввёл человек, в базе остаётся один вид.
 assert tags_mod.parse("#Chillstep, chillstepmix  #MELODICDUBSTEP") == \
     ["chillstep", "chillstepmix", "melodicdubstep"], tags_mod.parse("#Chillstep,")
