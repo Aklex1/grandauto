@@ -1,0 +1,564 @@
+/**
+ * Genius Sounds — каталог промтов для фото.
+ *
+ * Страница тёмная и живёт в обычном шаблоне темы, поэтому красит себя
+ * сама и выходит из контейнера на всю ширину — так же, как посадочная
+ * примерки дисков.
+ */
+
+body.gs-prompts-page {
+    background: #080c14 !important;
+}
+
+body.gs-prompts-page .l-canvas,
+body.gs-prompts-page .l-main,
+body.gs-prompts-page #page-content,
+body.gs-prompts-page .l-section,
+body.gs-prompts-page .l-section__content,
+body.gs-prompts-page .w-grid,
+body.gs-prompts-page article,
+body.gs-prompts-page .post_content {
+    background: transparent !important;
+}
+
+body.gs-prompts-page .l-main .l-section,
+body.gs-prompts-page .l-main > .l-section > .l-section-h {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+.gs-pr {
+    --pr-bg: #080c14;
+    --pr-surface: #131b2b;
+    --pr-surface-2: #182236;
+    --pr-border: rgba(148, 163, 184, 0.16);
+    --pr-text: #f1f5f9;
+    --pr-muted: #94a3b8;
+    --pr-primary: #6366f1;
+    --pr-primary-light: #818cf8;
+    --pr-accent: #22d3ee;
+    --pr-ok: #34d399;
+    --pr-radius: 16px;
+    --pr-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+    /* Выходим из колонки темы: иначе тёмные полосы обрываются посреди
+       экрана. Ширину окна ставит сценарий — в ней, в отличие от 100vw,
+       нет полосы прокрутки. */
+    margin: 0 calc(50% - 50vw);
+    margin: 0 calc(50% - var(--pr-view, 100vw) / 2);
+    background: var(--pr-bg);
+    color: var(--pr-muted);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    text-align: left;
+}
+
+.gs-pr * { box-sizing: border-box; }
+
+.gs-pr__wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+@media (max-width: 640px) {
+    .gs-pr__wrap { padding: 0 16px; }
+}
+
+/* --- Первый экран -------------------------------------------------------- */
+
+.gs-pr__hero {
+    padding: 52px 0 46px;
+    background:
+        radial-gradient(900px 420px at 10% -10%, rgba(99, 102, 241, 0.26), transparent 70%),
+        radial-gradient(760px 380px at 92% 6%, rgba(34, 211, 238, 0.16), transparent 68%),
+        var(--pr-bg);
+    border-bottom: 1px solid var(--pr-border);
+}
+
+.gs-pr__hero-in { max-width: 900px; }
+
+.gs-pr__badge {
+    display: inline-block;
+    margin: 0 0 16px;
+    padding: 6px 13px;
+    border: 1px solid rgba(129, 140, 248, 0.4);
+    border-radius: 999px;
+    background: rgba(99, 102, 241, 0.14);
+    color: var(--pr-primary-light);
+    font-size: 13px;
+}
+
+.gs-pr__h1 {
+    margin: 0 0 16px;
+    color: var(--pr-text);
+    font-family: inherit;
+    font-size: clamp(27px, 4.2vw, 42px);
+    font-weight: 800;
+    line-height: 1.14;
+    letter-spacing: -0.02em;
+    text-align: left;
+}
+
+.gs-pr__h1--one { font-size: clamp(24px, 3.4vw, 34px); }
+
+.gs-pr__lead {
+    margin: 0 0 26px;
+    max-width: 70ch;
+    font-size: clamp(16px, 1.8vw, 18px);
+}
+
+/* Выбор: сайт или Телеграм. Ровно два пути, без мелкого шрифта. */
+.gs-pr__choice {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 16px;
+    margin: 0 0 26px;
+}
+
+.gs-pr__pick {
+    display: block;
+    padding: 22px;
+    border: 1px solid var(--pr-border);
+    border-radius: var(--pr-radius);
+    background: var(--pr-surface);
+    color: var(--pr-muted);
+    text-decoration: none;
+    transition: transform 0.18s var(--pr-ease), border-color 0.18s var(--pr-ease);
+}
+
+.gs-pr__pick:hover,
+.gs-pr__pick:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(129, 140, 248, 0.5);
+    text-decoration: none;
+}
+
+.gs-pr__pick--main {
+    border-color: rgba(129, 140, 248, 0.45);
+    background: linear-gradient(180deg, rgba(99, 102, 241, 0.16), var(--pr-surface) 62%);
+}
+
+.gs-pr__pick-k {
+    display: block;
+    margin: 0 0 7px;
+    color: var(--pr-text);
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.gs-pr__pick-t {
+    display: block;
+    margin: 0 0 12px;
+    font-size: 14.5px;
+    line-height: 1.6;
+}
+
+.gs-pr__pick-go {
+    display: inline-block;
+    color: var(--pr-primary-light);
+    font-size: 15px;
+    font-weight: 650;
+}
+
+.gs-pr__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 26px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 14.5px;
+}
+
+.gs-pr__facts li { position: relative; padding-left: 22px; }
+
+.gs-pr__facts li::before {
+    content: "";
+    position: absolute;
+    top: 0.62em;
+    left: 2px;
+    width: 11px;
+    height: 6px;
+    border-left: 2px solid var(--pr-ok);
+    border-bottom: 2px solid var(--pr-ok);
+    transform: rotate(-45deg);
+}
+
+/* --- Секции -------------------------------------------------------------- */
+
+.gs-pr__sec { padding: 44px 0 56px; }
+
+.gs-pr__h2 {
+    margin: 34px 0 12px;
+    color: var(--pr-text);
+    font-family: inherit;
+    font-size: clamp(21px, 2.8vw, 28px);
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.gs-pr__sec > .gs-pr__wrap > .gs-pr__h2:first-child { margin-top: 0; }
+
+.gs-pr__sub { margin: 0 0 18px; max-width: 70ch; font-size: 15px; }
+.gs-pr__count { margin: 0 0 16px; font-size: 14.5px; }
+
+/* --- Поиск и рубрики ------------------------------------------------------ */
+
+.gs-pr__search {
+    display: flex;
+    gap: 10px;
+    margin: 0 0 16px;
+}
+
+.gs-pr__search input[type="search"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 14px 18px;
+    border: 1px solid var(--pr-border);
+    border-radius: 12px;
+    background: var(--pr-surface);
+    color: var(--pr-text);
+    font-size: 16px;
+    font-family: inherit;
+}
+
+.gs-pr__search input[type="search"]::placeholder { color: #64748b; }
+
+.gs-pr__search input[type="search"]:focus {
+    outline: none;
+    border-color: rgba(129, 140, 248, 0.6);
+}
+
+.gs-pr__search button {
+    flex: none;
+    padding: 14px 26px;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--pr-primary), #8b5cf6);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 650;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.gs-pr__rubrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 20px;
+}
+
+.gs-pr__chip {
+    padding: 7px 14px;
+    border: 1px solid var(--pr-border);
+    border-radius: 999px;
+    background: var(--pr-surface);
+    color: var(--pr-muted);
+    font-size: 14px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.gs-pr__chip span { opacity: 0.6; font-size: 12.5px; }
+
+.gs-pr__chip:hover { border-color: rgba(129, 140, 248, 0.5); text-decoration: none; }
+
+.gs-pr__chip.is-on {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--pr-primary), #8b5cf6);
+    color: #fff;
+}
+
+/* --- Карточки ------------------------------------------------------------- */
+
+.gs-pr__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 18px;
+}
+
+.gs-pr__card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--pr-border);
+    border-radius: var(--pr-radius);
+    background: var(--pr-surface);
+    overflow: hidden;
+}
+
+.gs-pr__card-img {
+    display: block;
+    aspect-ratio: 3 / 4;
+    background: #0b111d;
+    overflow: hidden;
+}
+
+.gs-pr__card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s var(--pr-ease);
+}
+
+.gs-pr__card:hover .gs-pr__card-img img { transform: scale(1.04); }
+
+.gs-pr__card-b {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 16px 16px;
+}
+
+.gs-pr__card-b h3 {
+    margin: 0;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 1.3;
+    text-align: left;
+}
+
+.gs-pr__card-b h3 a { color: var(--pr-text); text-decoration: none; }
+.gs-pr__card-b h3 a:hover { color: var(--pr-primary-light); }
+
+.gs-pr__card-b p {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: #7f8ca1;
+}
+
+.gs-pr__card-go {
+    margin-top: auto;
+    padding: 9px 14px;
+    border: 1px solid rgba(129, 140, 248, 0.42);
+    border-radius: 10px;
+    color: var(--pr-primary-light);
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+}
+
+.gs-pr__card-go:hover {
+    background: rgba(99, 102, 241, 0.14);
+    text-decoration: none;
+}
+
+/* --- Пусто и постранично --------------------------------------------------- */
+
+.gs-pr__empty {
+    padding: 26px;
+    border: 1px solid var(--pr-border);
+    border-radius: var(--pr-radius);
+    background: var(--pr-surface);
+    max-width: 70ch;
+}
+
+.gs-pr__empty p { margin: 0 0 8px; }
+.gs-pr__empty p:last-child { margin: 0; }
+.gs-pr__empty strong { color: var(--pr-text); }
+.gs-pr__empty a { color: var(--pr-primary-light); }
+
+.gs-pr__pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    margin: 28px 0 0;
+    font-size: 15px;
+}
+
+.gs-pr__pager a {
+    padding: 10px 18px;
+    border: 1px solid var(--pr-border);
+    border-radius: 10px;
+    color: var(--pr-text);
+    text-decoration: none;
+}
+
+.gs-pr__pager a:hover { border-color: rgba(129, 140, 248, 0.5); }
+
+/* --- Страница промта ------------------------------------------------------- */
+
+.gs-pr--one { padding: 36px 0 56px; }
+
+.gs-pr__crumbs { margin: 0 0 14px; font-size: 14px; }
+.gs-pr__crumbs a { color: var(--pr-primary-light); text-decoration: none; }
+
+.gs-pr__one-top {
+    display: grid;
+    grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+    gap: 26px;
+    align-items: start;
+    margin: 0 0 10px;
+}
+
+@media (max-width: 760px) {
+    .gs-pr__one-top { grid-template-columns: 1fr; }
+}
+
+.gs-pr__shot {
+    border: 1px solid var(--pr-border);
+    border-radius: var(--pr-radius);
+    background: #0b111d;
+    overflow: hidden;
+}
+
+.gs-pr__shot img { display: block; width: 100%; height: auto; }
+
+.gs-pr__one-side .gs-pr__lead { margin-bottom: 18px; }
+
+.gs-pr__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 18px 0 0;
+}
+
+.gs-pr__tags a {
+    padding: 5px 12px;
+    border: 1px solid var(--pr-border);
+    border-radius: 999px;
+    color: var(--pr-muted);
+    font-size: 13.5px;
+    text-decoration: none;
+}
+
+.gs-pr__prompt {
+    border: 1px solid var(--pr-border);
+    border-radius: var(--pr-radius);
+    background: var(--pr-surface);
+    overflow: hidden;
+}
+
+.gs-pr__prompt pre {
+    margin: 0;
+    padding: 20px;
+    background: transparent;
+    border: 0;
+    color: var(--pr-text);
+    font-family: inherit;
+    font-size: 15.5px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.gs-pr__prompt-act {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 0 20px 20px;
+}
+
+.gs-pr__copy {
+    padding: 11px 20px;
+    border: 1px solid var(--pr-border);
+    border-radius: 10px;
+    background: var(--pr-surface-2);
+    color: var(--pr-text);
+    font-size: 15px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.gs-pr__copy:hover { border-color: rgba(129, 140, 248, 0.5); }
+.gs-pr__copy.is-done { color: var(--pr-ok); border-color: rgba(52, 211, 153, 0.45); }
+
+.gs-pr__steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: pr;
+}
+
+.gs-pr__steps li {
+    position: relative;
+    padding: 20px 20px 20px 60px;
+    border: 1px solid var(--pr-border);
+    border-radius: var(--pr-radius);
+    background: var(--pr-surface);
+    font-size: 14.5px;
+    line-height: 1.6;
+    counter-increment: pr;
+}
+
+.gs-pr__steps li::before {
+    content: counter(pr);
+    position: absolute;
+    top: 19px;
+    left: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 29px;
+    height: 29px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--pr-primary), #8b5cf6);
+    color: #fff;
+    font-size: 14.5px;
+    font-weight: 700;
+}
+
+.gs-pr__steps b { color: var(--pr-text); }
+
+/* --- Кнопки ---------------------------------------------------------------- */
+
+.gs-pr__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 13px 26px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--pr-primary), #8b5cf6);
+    box-shadow: 0 12px 28px rgba(99, 102, 241, 0.3);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 650;
+    text-decoration: none;
+    transition: transform 0.18s var(--pr-ease);
+}
+
+.gs-pr__btn:hover,
+.gs-pr__btn:focus-visible { transform: translateY(-2px); color: #fff; text-decoration: none; }
+
+.gs-pr__btn--big { padding: 16px 34px; font-size: 17px; }
+
+.gs-pr__btn--ghost {
+    background: transparent;
+    border-color: var(--pr-border);
+    box-shadow: none;
+    color: var(--pr-text);
+}
+
+.gs-pr__cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 26px 0 0;
+}
+
+@media (max-width: 640px) {
+    .gs-pr__hero { padding: 36px 0 32px; }
+    .gs-pr__sec { padding: 32px 0 44px; }
+    .gs-pr__search { flex-wrap: wrap; }
+    .gs-pr__search button { width: 100%; }
+    .gs-pr__btn { width: 100%; }
+    .gs-pr__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gs-pr__btn, .gs-pr__pick, .gs-pr__card-img img { transition: none; }
+    .gs-pr__btn:hover, .gs-pr__pick:hover { transform: none; }
+}

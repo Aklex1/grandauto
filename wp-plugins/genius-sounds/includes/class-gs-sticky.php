@@ -452,7 +452,24 @@ class GS_Sticky {
         if (!self::needed()) {
             return;
         }
-        $target = self::target();
+        self::render_card(self::target());
+    }
+
+    /**
+     * Панель по готовой карточке.
+     *
+     * Вынесено отдельно, чтобы свои страницы — например каталог промтов —
+     * печатали ту же разметку и получали то же поведение: появление после
+     * прокрутки, закрытие с запоминанием и подъём над уведомлением о
+     * cookie. Иначе на каждой новой странице это писалось бы заново и
+     * разъезжалось.
+     *
+     * @param array{url:string,title:string,text:string,cta:string} $target
+     */
+    public static function render_card($target) {
+        if (!is_array($target) || empty($target['url'])) {
+            return;
+        }
         $key = 'gs-sticky-' . sanitize_title($target['title']);
         ?>
         <aside class="gs-sticky" id="gs-sticky" data-gs-sticky-key="<?php echo esc_attr($key); ?>"

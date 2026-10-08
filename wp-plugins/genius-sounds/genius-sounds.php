@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.37.0
+ * Version:     2.38.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,13 +19,15 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.37.0');
+define('GS_VERSION', '2.38.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 require_once GS_PLUGIN_DIR . 'includes/class-gs-storage.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-legacy.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-catalog.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sections.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rewrite.php';
@@ -179,6 +181,7 @@ class Genius_Sounds_Plugin {
         GS_Voice_Rank::boot();
         GS_Wheel::boot();
         GS_Legacy::boot();
+        GS_Prompts_Page::boot();
         GS_Backup::boot();
         GS_Api::boot();
         GS_Openapi::boot();
@@ -200,6 +203,7 @@ class Genius_Sounds_Plugin {
         GS_Gift::ensure_pages();
         GS_Legal::ensure_pages();
         GS_Wheel::ensure_page();
+        GS_Prompts_Page::ensure_page();
         flush_rewrite_rules();
     }
 
@@ -222,6 +226,7 @@ class Genius_Sounds_Plugin {
         GS_Partner_Page::register_shortcodes();
         GS_Gift::register_shortcodes();
         GS_Legal::register_shortcodes();
+        GS_Prompts_Page::register_shortcodes();
 
         // Разовая инициализация после обновления версии плагина.
         //
@@ -243,6 +248,7 @@ class Genius_Sounds_Plugin {
                 GS_Gift::ensure_pages();
                 GS_Legal::ensure_pages();
                 GS_Wheel::ensure_page();
+                GS_Prompts_Page::ensure_page();
                 add_action('shutdown', 'flush_rewrite_rules');
             } catch (Throwable $e) {
                 error_log('genius-sounds: инициализация не удалась — ' . $e->getMessage());
@@ -320,6 +326,19 @@ class Genius_Sounds_Plugin {
 
         // Своя посадочная примерки: её рисуем мы, стили и сравнение «до и
         // после» нужны только здесь.
+        // Каталог промтов: своя вёрстка плюс липкая плашка и общий стиль
+        // шапки с остальными тёмными страницами плагина.
+        if (class_exists('GS_Prompts_Page') && GS_Prompts_Page::is_page()) {
+            wp_enqueue_style('genius-sounds-prompts',
+                GS_PLUGIN_URL . 'assets/css/prompts.css', array(), GS_VERSION);
+            wp_enqueue_script('genius-sounds-prompts',
+                GS_PLUGIN_URL . 'assets/js/prompts.js', array(), GS_VERSION, true);
+            wp_enqueue_style('genius-sounds-sticky',
+                GS_PLUGIN_URL . 'assets/css/sticky.css', array(), GS_VERSION);
+            wp_enqueue_script('genius-sounds-sticky',
+                GS_PLUGIN_URL . 'assets/js/sticky.js', array(), GS_VERSION, true);
+        }
+
         if (class_exists('GS_Wheel') && GS_Wheel::is_landing()) {
             wp_enqueue_style('genius-sounds-wheel-landing',
                 GS_PLUGIN_URL . 'assets/css/wheel-landing.css', array(), GS_VERSION);
@@ -346,7 +365,8 @@ class Genius_Sounds_Plugin {
         $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
             || GS_Pages::is_studio_request() || GS_Lab::current_service() || GS_Landing::current()
             || GS_Songs::is_page() || GS_Course::is_page() || GS_404::is_page() || GS_Slides_Page::is_any() || $blog || $api || $dashboard || $partner || $voicehub
-            || (class_exists('GS_Wheel') && GS_Wheel::is_landing());
+            || (class_exists('GS_Wheel') && GS_Wheel::is_landing())
+            || (class_exists('GS_Prompts_Page') && GS_Prompts_Page::is_page());
         if ($ours) {
             // Перекрашиваем шапку и подвал темы под тёмные страницы плагина.
             wp_enqueue_style('genius-sounds-chrome', GS_PLUGIN_URL . 'assets/css/chrome.css', array(), GS_VERSION);
