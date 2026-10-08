@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.38.0
+ * Version:     2.39.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.38.0');
+define('GS_VERSION', '2.39.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -326,6 +326,12 @@ class Genius_Sounds_Plugin {
 
         // Своя посадочная примерки: её рисуем мы, стили и сравнение «до и
         // после» нужны только здесь.
+        // Имя поставщика в надписях чужих плагинов. Грузим на всех страницах
+        // сайта: надписи о ходе работы всплывают и в кабинете озвучки, и на
+        // генерации фото, и в окнах входа, а весит сценарий считаные байты.
+        wp_enqueue_script('genius-sounds-noprovider',
+            GS_PLUGIN_URL . 'assets/js/noprovider.js', array(), GS_VERSION, false);
+
         // Каталог промтов: своя вёрстка плюс липкая плашка и общий стиль
         // шапки с остальными тёмными страницами плагина.
         if (class_exists('GS_Prompts_Page') && GS_Prompts_Page::is_page()) {
