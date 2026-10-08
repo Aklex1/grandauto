@@ -206,7 +206,14 @@ class GS_Wheel {
 
         // Разметку дописываем перед закрытием головы, а не в конец страницы:
         // иначе она окажется вне <head> и часть разборщиков её не увидит.
-        $html = preg_replace('~</head>~i', self::schema() . '</head>', $html, 1);
+        $head = self::schema();
+        if (self::is_embedded()) {
+            // В рамке разметка услуги не нужна и вредна: тот же объект уже
+            // описан посадочной, а поисковику этот адрес мы не отдаём.
+            $head = self::embed_styles()
+                . '<meta name="robots" content="noindex,nofollow">' . "\n";
+        }
+        $html = preg_replace('~</head>~i', $head . '</head>', $html, 1);
 
         echo $html; // phpcs:ignore WordPress.Security.EscapeOutput
     }
@@ -293,7 +300,7 @@ class GS_Wheel {
     }
 
     public static function render() {
-        if (!self::is_page()) {
+        if (!self::is_page() || self::is_embedded()) {
             return;
         }
         ?>
@@ -491,7 +498,7 @@ class GS_Wheel {
                         <span class="gs-wl__pill">цвет, диаметр и номер — опциями</span>
                     </div>
                     <p class="gs-wl__cta-row">
-                        <a class="gs-wl__btn" href="<?php echo esc_url($tool); ?>">Перейти к примерке</a>
+                        <a class="gs-wl__btn" href="#gs-wl-tool">Перейти к примерке</a>
                         <a class="gs-wl__btn gs-wl__btn--ghost" href="#gs-wl-examples">Сначала посмотреть примеры</a>
                     </p>
                     <ul class="gs-wl__facts">
@@ -549,7 +556,7 @@ class GS_Wheel {
                         инструментом, которым воспользуетесь вы.
                     </p>
                     <p class="gs-wl__cta-row">
-                        <a class="gs-wl__btn" href="<?php echo esc_url($tool); ?>">Примерить на свою машину</a>
+                        <a class="gs-wl__btn" href="#gs-wl-tool">Примерить на свою машину</a>
                     </p>
                 </div>
             </section>
@@ -601,6 +608,28 @@ class GS_Wheel {
                             Результат остаётся в истории, его можно скачать.
                         </li>
                     </ol>
+                </div>
+            </section>
+
+            <section class="gs-wl__sec gs-wl__tool-sec" id="gs-wl-tool">
+                <div class="gs-wl__wrap">
+                    <h2 class="gs-wl__h2">Примерьте прямо здесь</h2>
+                    <p class="gs-wl__sub">
+                        Это тот же инструмент, что и на отдельной странице: тот же
+                        баланс, те же настройки, та же история примерок. Уходить
+                        со страницы не нужно.
+                    </p>
+                    <div class="gs-wl__tool" data-gs-tool data-gs-tool-state="loading">
+                        <iframe class="gs-wl__frame"
+                                data-gs-tool-frame
+                                src="<?php echo esc_url(add_query_arg(self::EMBED_FLAG, 1, $tool)); ?>"
+                                title="Примерка дисков по фотографии"
+                                scrolling="no"></iframe>
+                        <p class="gs-wl__tool-note">
+                            Инструмент не открылся прямо здесь —
+                            <a href="<?php echo esc_url($tool); ?>">откройте его отдельной страницей</a>.
+                        </p>
+                    </div>
                 </div>
             </section>
 
@@ -711,7 +740,7 @@ class GS_Wheel {
                         платить за комплект, который нельзя вернуть.
                     </p>
                     <p class="gs-wl__cta-row">
-                        <a class="gs-wl__btn gs-wl__btn--big" href="<?php echo esc_url($tool); ?>">Перейти к примерке</a>
+                        <a class="gs-wl__btn gs-wl__btn--big" href="#gs-wl-tool">Перейти к примерке</a>
                     </p>
                 </div>
             </section>
@@ -721,6 +750,52 @@ class GS_Wheel {
         return (string) ob_get_clean();
     }
 
+
+
+    /* ---------------------------------------------------------------------
+     * Инструмент внутри посадочной
+     * ------------------------------------------------------------------ */
+
+    /** Метка, по которой инструмент понимает, что открыт в рамке. */
+    const EMBED_FLAG = 'gswl';
+
+    /**
+     * Открыт ли инструмент внутри посадочной.
+     *
+     * Вставлять инструмент копией разметки нельзя: его рисует отдельный
+     * плагин, который подключает свои стили, сценарии и сессию по своему
+     * адресу, — в чужой странице от него осталась бы мёртвая форма. Поэтому
+     * на посадочной стоит рамка с тем же адресом: оплата, личный кабинет и
+     * история работают ровно те же, и в чужом плагине ничего не правится.
+     *
+     * В рамке страница должна быть голой — без шапки, подвала и наших
+     * собственных блоков вокруг.
+     */
+    public static function is_embedded() {
+        return self::is_page()
+            && isset($_GET[self::EMBED_FLAG])
+            && $_GET[self::EMBED_FLAG] !== '';
+    }
+
+    /**
+     * Стили голого режима.
+     *
+     * Прячем всё, что рисуется вокруг инструмента: шапку и подвал темы,
+     * наш текст под инструментом, липкую панель, уведомление о cookie и
+     * блок ссылок на каталог. Внутри рамки это дубли того, что уже есть на
+     * посадочной, да ещё и со своей прокруткой.
+     */
+    private static function embed_styles() {
+        return "\n" . '<style id="gs-wheel-embed">'
+            . 'html,body{background:#0b111d!important;margin:0!important;padding:0!important}'
+            . '#page-header,header.l-header,.l-header,.l-subheader,.l-titlebar,'
+            . '#page-footer,footer#page-footer,.l-footer,'
+            . '.gs-wheel,.gs-footer-links,.gs-sticky,#gs-sticky,#cookie-notice'
+            . '{display:none!important}'
+            . '.l-main,.l-canvas,.l-section,.l-section__content{padding-top:0!important;'
+            . 'padding-bottom:0!important;margin-top:0!important;margin-bottom:0!important}'
+            . '</style>' . "\n";
+    }
 
     /* ---------------------------------------------------------------------
      * Голова посадочной
