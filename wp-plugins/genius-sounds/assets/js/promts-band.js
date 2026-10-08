@@ -59,7 +59,11 @@
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
 
-    var form = document.getElementById('gs-lab-form');
+    /* За чем следим, чтобы не мешать: у фотосессии это форма, в
+       нейрохабе — поле ввода чужого приложения. Селектор приходит с
+       разметкой, здесь он не зашит. */
+    var watch = band.getAttribute('data-gs-band-watch');
+    var form = watch ? document.querySelector(watch) : null;
     if (form && 'IntersectionObserver' in window) {
         new IntersectionObserver(function (entries) {
             formOnScreen = entries[0].isIntersecting;

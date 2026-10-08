@@ -13,20 +13,6 @@ class GS_Lab_Page {
         add_shortcode('genius_lab', array(__CLASS__, 'render'));
     }
 
-    public static function boot() {
-        // Полоса прилеплена к окну, поэтому печатаем её в подвале: внутри
-        // секции с примерами она попала бы в контейнер со своим контекстом
-        // наложения, и прилипание бы не сработало.
-        add_action('wp_footer', array(__CLASS__, 'promts_band'), 6);
-    }
-
-    public static function promts_band() {
-        $service = class_exists('GS_Lab') ? GS_Lab::current_service() : null;
-        if (!is_array($service)) {
-            return;
-        }
-        echo self::render_prompts_banner($service);
-    }
 
     public static function render($atts = array()) {
         $atts = shortcode_atts(array('id' => ''), (array) $atts, 'genius_lab');
@@ -422,69 +408,6 @@ class GS_Lab_Page {
                 </figure>
             <?php endforeach; ?>
         </section>
-        <?php
-        return ob_get_clean();
-    }
-
-    /**
-     * Мостик в каталог промтов.
-     *
-     * Готовых подборок здесь десяток, и человеку, которому ни одна не
-     * подошла, идти больше некуда — он просто закрывает страницу. В
-     * каталоге промтов таких кадров больше тысячи, причём с текстом,
-     * который их повторяет. Поэтому в конце подборок — узкая полоса с
-     * несколькими кадрами оттуда и прямой ссылкой.
-     */
-    private static function render_prompts_banner($service) {
-        if ((string) ($service['id'] ?? '') !== 'photo'
-            || !class_exists('GS_Prompts') || !class_exists('GS_Prompts_Page')) {
-            return '';
-        }
-        $total = GS_Prompts::count();
-        if ($total < 20) {
-            // Пустой каталог звать не за чем.
-            return '';
-        }
-        $shots = array();
-        foreach (GS_Prompts::search('', '') as $item) {
-            $file = (string) ($item['image'] ?? '');
-            if ($file === '') {
-                continue;
-            }
-            $shots[] = array(
-                'url'   => GS_Prompts::shot_url($file),
-                'title' => (string) ($item['title'] ?? ''),
-            );
-            if (count($shots) >= 4) {
-                break;
-            }
-        }
-        ob_start();
-        ?>
-        <aside class="gs-promts-band" data-gs-band hidden>
-            <button type="button" class="gs-promts-band__close" data-gs-band-close
-                    aria-label="Скрыть подсказку">×</button>
-            <?php if ($shots): ?>
-                <div class="gs-promts-band__shots" aria-hidden="true">
-                    <?php foreach ($shots as $shot): ?>
-                        <img src="<?php echo esc_url($shot['url']); ?>" alt=""
-                             loading="lazy" decoding="async" width="120" height="160">
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
-            <span class="gs-promts-band__tab" aria-hidden="true">Ещё <?php echo (int) $total; ?> кадров</span>
-            <div class="gs-promts-band__body">
-                <div class="gs-promts-band__text">
-                    <strong>Не нашли подходящую подборку?</strong>
-                    <span>В каталоге промтов — <?php echo (int) $total; ?> готовых кадра с текстами
-                        к каждому: поиск по словам и 15 рубрик.</span>
-                </div>
-                <a class="gs-btn gs-btn--primary gs-promts-band__go"
-                   href="<?php echo esc_url(GS_Prompts_Page::url()); ?>"><span
-                   class="gs-promts-band__cta-long">Выбрать другой кадр</span><span
-                   class="gs-promts-band__cta-short">Каталог</span></a>
-            </div>
-        </aside>
         <?php
         return ob_get_clean();
     }
