@@ -97,7 +97,7 @@ class GS_Brand {
     }
 
     public static function logo($variant = 'dark') {
-        $file = $variant === 'light' ? 'genus-bot-logo.svg' : 'genus-bot-logo-dark.svg';
+        $file = $variant === 'light' ? 'genius-bot-logo.svg' : 'genius-bot-logo-dark.svg';
         return self::url('logo/' . $file);
     }
 }
