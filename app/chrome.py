@@ -199,55 +199,6 @@ def _fit(draw: ImageDraw.ImageDraw, text: str, path: str, width: int,
     return _font(path, 18)
 
 
-def _busy(image, box: tuple[int, int, int, int]) -> float:
-    """Насколько кусок кадра занят деталями.
-
-    Лицо, руль и листва дают много перепадов яркости, небо и вода — почти
-    ничего. По этому и выбираем, где заголовку не мешать картинке.
-    """
-    from PIL import ImageFilter
-
-    crop = image.crop(box).convert("L").resize((64, 64))
-    edges = crop.filter(ImageFilter.FIND_EDGES)
-    data = list(edges.getdata())
-    return sum(data) / len(data)
-
-
-def _skin(image, box: tuple[int, int, int, int]) -> float:
-    """Доля кожи в куске кадра — грубо, по цвету.
-
-    Нужна не красота оценки, а ответ на один вопрос: с какой стороны человек.
-    Текстура для этого не годится и однажды подвела: у лица и рубашки перепадов
-    меньше, чем у пальм и скал, и заголовок встал ровно на лицо. Кожа же есть
-    только там, где человек.
-    """
-    crop = image.crop(box).convert("RGB").resize((48, 48))
-    hits = 0
-    for r, g, b in crop.getdata():
-        if (r > 95 and g > 40 and b > 20 and r > g and r > b
-                and abs(r - g) > 15 and max(r, g, b) - min(r, g, b) > 15):
-            hits += 1
-    return hits / (48 * 48)
-
-
-def _text_column(image, w: int, h: int, pad: int, box: int) -> int:
-    """Где начать колонку с текстом: у левого края или у правого.
-
-    Колонка идёт туда, где человека нет. Жёстко прибитая к левому краю, она
-    однажды легла героине прямо на лицо — в том кадре она сидела за рулём слева.
-    """
-    top, bottom = int(h * 0.24), int(h * 0.96)
-    left, right = pad, max(pad, w - pad - box)
-    skin_left = _skin(image, (left, top, min(w, left + box), bottom))
-    skin_right = _skin(image, (right, top, min(w, right + box), bottom))
-    if abs(skin_left - skin_right) > 0.02:
-        return left if skin_left < skin_right else right
-    # Человека не видно ни там, ни там (или он посередине) — тогда уже по
-    # спокойствию картинки: на ровном фоне заголовок читается лучше.
-    return left if _busy(image, (left, top, min(w, left + box), bottom)) <= \
-        _busy(image, (right, top, min(w, right + box), bottom)) else right
-
-
 def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = "",
           logo: Optional[Path] = None, accent: int = 0,
           size: tuple[int, int] = COVER_SIZE) -> Path:
@@ -295,11 +246,14 @@ def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = ""
         sd.line((0, step, w, step), fill=int(150 * max(0.0, (step / h - 0.18)) ** 1.2))
     layer.paste(Image.new("RGB", (w, h), (0x08, 0x0C, 0x18)), (0, 0), shade)
 
-    # Где встанет текст, решаем по самой картинке: колонка идёт туда, где кадр
-    # спокойнее. Ширина колонки та же, что у заголовка ниже.
+    # Текст всегда слева. Выбирать сторону по картинке я пробовал — по доле
+    # кожи и по перепадам яркости, — и оба раза вышло наоборот: на закатном
+    # снимке тёплое небо и коричневая куртка «кожнее» лица, а у лица перепадов
+    # меньше, чем у пальм. Правило надёжнее догадки: генератор получает прямое
+    # указание держать человека справа, а левую часть оставлять под текст.
     pad = int(w * 0.055)
     box = int((w - pad * 2) * (0.64 if ratio_dst > 1 else 1.0))
-    text_x = _text_column(base, w, h, pad, box) if ratio_dst > 1 else pad
+    text_x = pad
 
     # Затемнение под колонкой: на солнечной сцене одного нижнего мало —
     # заголовок ложится на блики воды и теряется.
@@ -307,11 +261,8 @@ def cover(dst: Path, scene: Path, *, title: str, note: str = "", badge: str = ""
     cd = ImageDraw.Draw(column)
     if ratio_dst > 1:
         edge = int(w * 0.68)
-        from_right = text_x > (w - text_x - box)
         for step in range(edge):
-            k = int(135 * (1 - step / edge) ** 1.3)
-            x = w - 1 - step if from_right else step
-            cd.line((x, 0, x, h), fill=k)
+            cd.line((step, 0, step, h), fill=int(135 * (1 - step / edge) ** 1.3))
     else:
         edge = int(h * 0.42)
         for step in range(edge):

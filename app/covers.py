@@ -540,12 +540,13 @@ PEOPLE = ("the person is the main subject and must be clearly visible in frame, 
 # половина картинки.
 ONE_SHOT = ("one single continuous photograph, no split screen, no diptych, no "
             "collage, no panels, no borders, no frame inside the image")
-FRAME_H = (f"16:9 horizontal composition, {ONE_SHOT}, the person on the right side "
-           "of the frame, the left side filled with open background — sky, sea or "
-           "road — without important detail, leaving room for large text")
-FRAME_V = (f"9:16 vertical composition, {ONE_SHOT}, the person in the upper part of "
-           "the frame, the lower part filled with open background — sand, water or "
-           "road — without important detail, leaving room for large text")
+FRAME_H = (f"16:9 horizontal composition, {ONE_SHOT}, the person stands in the "
+           "right third of the frame, nothing important on the left: the left 45% "
+           "of the width is open background — sky, sea, road or field — kept clear "
+           "for large text, and the person must not cross into it")
+FRAME_V = (f"9:16 vertical composition, {ONE_SHOT}, the person in the upper half "
+           "of the frame, nothing important below: the lower 35% of the height is "
+           "open background — sand, water or road — kept clear for large text")
 # Шортс — это движение. Говорим про него прямо, иначе генератор рисует позу.
 MOTION = ("energetic action shot, caught mid-movement, dynamic diagonal "
           "composition, motion blur on the background, vivid saturated colours, "
