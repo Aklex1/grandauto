@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.35.0
+ * Version:     2.36.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,12 +19,13 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.35.0');
+define('GS_VERSION', '2.36.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 require_once GS_PLUGIN_DIR . 'includes/class-gs-storage.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-legacy.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-catalog.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sections.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rewrite.php';
@@ -177,6 +178,7 @@ class Genius_Sounds_Plugin {
         GS_Voice_Hub::init();
         GS_Voice_Rank::boot();
         GS_Wheel::boot();
+        GS_Legacy::boot();
         GS_Backup::boot();
         GS_Api::boot();
         GS_Openapi::boot();
