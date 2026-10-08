@@ -4380,8 +4380,62 @@ class GS_Rest {
         if (!file_exists($path)) {
             return new WP_Error('gs_none', 'Файла нет на диске', array('status' => 404));
         }
-        $max = max(320, min(2400, (int) ($p['width'] ?? 1600)));
+        $max = max(96, min(2400, (int) ($p['width'] ?? 1600)));
         $quality = max(40, min(92, (int) ($p['quality'] ?? 76)));
+
+        $base = preg_replace('~\\.[a-z0-9]+$~i', '', $path);
+        $keep = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+        $backup = $base . '.orig.' . $keep;
+
+        // Вернуть как было: иногда с первого раза не угадываешь размер.
+        if (!empty($p['restore'])) {
+            if (!file_exists($backup)) {
+                return new WP_Error('gs_none', 'Копии исходника нет', array('status' => 404));
+            }
+            @copy($backup, $path);
+            clearstatcache();
+            return array('ok' => true, 'стало' => (int) filesize($path), 'адрес' => $url);
+        }
+
+        /**
+         * PNG с прозрачностью: уменьшаем и кладём в палитру.
+         *
+         * Редактор WordPress пересохраняет такую картинку почти без
+         * сжатия — глянцевый значок после «уменьшения» стал тяжелее,
+         * чем был. Палитра из 128 цветов для логотипа незаметна, а вес
+         * режет в разы.
+         */
+        if (!empty($p['palette']) && $keep === 'png' && function_exists('imagecreatefrompng')) {
+            $im = @imagecreatefrompng($path);
+            if (!$im) {
+                return new WP_Error('gs_img', 'PNG не читается', array('status' => 500));
+            }
+            $was = (int) filesize($path);
+            if (imagesx($im) > $max) {
+                $scaled = imagescale($im, $max);
+                if ($scaled) {
+                    imagedestroy($im);
+                    $im = $scaled;
+                }
+            }
+            imagepalettetotruecolor($im);
+            imagealphablending($im, false);
+            imagesavealpha($im, true);
+            $colors = max(16, min(255, (int) ($p['colors'] ?? 128)));
+            @imagetruecolortopalette($im, true, $colors);
+            imagesavealpha($im, true);
+            if (!file_exists($backup)) {
+                @copy($path, $backup);
+            }
+            $out = empty($p['replace']) ? $base . '-sm.png' : $path;
+            imagepng($im, $out, 9);
+            imagedestroy($im);
+            clearstatcache();
+            return array(
+                'ok' => true, 'было' => $was, 'стало' => (int) filesize($out),
+                'адрес' => $dir['baseurl'] . substr($out, strlen((string) $dir['basedir'])),
+            );
+        }
 
         $editor = wp_get_image_editor($path);
         if (is_wp_error($editor)) {
@@ -4392,11 +4446,32 @@ class GS_Rest {
             $editor->resize($max, null, false);
         }
         $editor->set_quality($quality);
-        $dest = preg_replace('~\.[a-z0-9]+$~i', '', $path) . '-sm.jpg';
-        $saved = $editor->save($dest, 'image/jpeg');
+        // Картинку с прозрачностью в JPEG переводить нельзя — фон станет
+        // чёрным. Логотипы и значки остаются PNG, им хватает уменьшения.
+        $png  = !empty($p['keep_format']) && preg_match('~\.png$~i', $path);
+        $mime = $png ? 'image/png' : 'image/jpeg';
+        $ext  = $png ? 'png' : 'jpg';
+
+        $base = preg_replace('~\.[a-z0-9]+$~i', '', $path);
+        $saved = $editor->save($base . '-sm.' . $ext, $mime);
         if (is_wp_error($saved)) {
             return new WP_Error('gs_img', $saved->get_error_message(), array('status' => 500));
         }
+
+        // Замена на месте: адрес остаётся прежним, подставлять новый
+        // никуда не надо. Исходник кладём рядом — откат одним
+        // переименованием.
+        $was = (int) filesize($path);
+        if (!empty($p['replace']) && strtolower((string) pathinfo($path, PATHINFO_EXTENSION)) === $ext) {
+            $backup = $base . '.orig.' . $ext;
+            if (!file_exists($backup)) {
+                @copy($path, $backup);
+            }
+            if (@rename((string) $saved['path'], $path)) {
+                $saved['path'] = $path;
+            }
+        }
+        clearstatcache();
         $new_url = $dir['baseurl'] . substr((string) $saved['path'], strlen((string) $dir['basedir']));
 
         $art = sanitize_key((string) ($p['art'] ?? ''));
@@ -4405,7 +4480,7 @@ class GS_Rest {
         }
         return array(
             'ok'    => true,
-            'было'  => (int) filesize($path),
+            'было'  => $was,
             'стало' => (int) filesize($saved['path']),
             'адрес' => $new_url,
             'оформление' => $art,
