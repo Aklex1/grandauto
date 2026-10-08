@@ -177,6 +177,65 @@ class GS_Sitemap {
             }
         }
 
+        // Каталог промтов: страницы виртуальные, и про них не знает ни
+        // wp-sitemap, ни карта базового плагина. А это пять сотен страниц,
+        // у каждой свой кадр и свой текст — без карты робот дошёл бы до них
+        // через полгода.
+        if (class_exists('GS_Prompts') && class_exists('GS_Prompts_Page')) {
+            $pdate = self::file_date(GS_Prompts::dir() . '/index.json');
+            $items = GS_Prompts::load();
+            $counts = GS_Prompts::rubric_counts();
+
+            $urls[] = array(
+                'loc'        => GS_Prompts_Page::url(),
+                'lastmod'    => $pdate,
+                'priority'   => '0.9',
+                'changefreq' => 'daily',
+            );
+            $pages = (int) ceil(count($items) / GS_Prompts::PER_PAGE);
+            for ($page = 2; $page <= $pages; $page++) {
+                $urls[] = array(
+                    'loc'        => GS_Prompts_Page::page_url($page),
+                    'lastmod'    => $pdate,
+                    'priority'   => '0.5',
+                    'changefreq' => 'weekly',
+                );
+            }
+            foreach (GS_Prompts::rubrics() as $key => $rubric) {
+                $n = (int) ($counts[$key] ?? 0);
+                if ($n === 0) {
+                    // Пустая рубрика — пустая страница: в карту не зовём.
+                    continue;
+                }
+                $urls[] = array(
+                    'loc'        => GS_Prompts_Page::rubric_url($key),
+                    'lastmod'    => $pdate,
+                    'priority'   => '0.8',
+                    'changefreq' => 'weekly',
+                );
+                $rpages = (int) ceil($n / GS_Prompts::PER_PAGE);
+                for ($page = 2; $page <= $rpages; $page++) {
+                    $urls[] = array(
+                        'loc'        => GS_Prompts_Page::rubric_url($key, $page),
+                        'lastmod'    => $pdate,
+                        'priority'   => '0.5',
+                        'changefreq' => 'weekly',
+                    );
+                }
+            }
+            foreach ($items as $item) {
+                if (empty($item['slug'])) {
+                    continue;
+                }
+                $urls[] = array(
+                    'loc'        => GS_Prompts_Page::url((string) $item['slug']),
+                    'lastmod'    => $pdate,
+                    'priority'   => '0.7',
+                    'changefreq' => 'monthly',
+                );
+            }
+        }
+
         $extra = array(GS_Pages::get_studio_url(), GS_Pages::get_showcase_url(), GS_Api_Page::get_url(), GS_Course::get_url());
         // Примерка дисков не стоит в меню, и обойти её поисковику можно
         // только по ссылке из подвала и отсюда.
@@ -211,10 +270,16 @@ class GS_Sitemap {
         return gmdate('Y-m-d', $ts ? $ts : time());
     }
 
+    /**
+     * Сколько частей в карте.
+     *
+     * Считаем по тому же списку, который потом и печатается: прежняя
+     * прикидка по слагаемым разъезжалась с действительностью каждый раз,
+     * когда в карту добавлялся новый раздел, и хвост ссылок оставался
+     * необойдённым.
+     */
     public static function chunk_count() {
-        $total = count(GS_Catalog::load_index()) + count(GS_Sections::overview()) + 4
-            + count(GS_Lab::available_services()) + count(GS_Landing::all());
-        return max(1, (int) ceil($total / self::CHUNK));
+        return max(1, (int) ceil(count(self::collect_urls()) / self::CHUNK));
     }
 
     /* ---------------------------------------------------------------------
