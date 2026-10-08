@@ -6,6 +6,40 @@
  * не наследует снаружи — как и остальные наши посадочные.
  */
 
+/* --- Страница целиком ---------------------------------------------------
+ *
+ * Посадочная тёмная, а тема под ней светлая: сверху оставалась белая шапка,
+ * а между последней секцией и подвалом — белая полоса фона контейнера.
+ * Шапку и подвал перекрашивает chrome.css, здесь гасим фон самой страницы
+ * и отступы, которые тема добавляет вокруг содержимого.
+ */
+
+body.gs-wheel-landing {
+    background: #080c14 !important;
+}
+
+body.gs-wheel-landing .l-canvas,
+body.gs-wheel-landing .l-main,
+body.gs-wheel-landing #page-content,
+body.gs-wheel-landing .l-section,
+body.gs-wheel-landing .l-section__content,
+body.gs-wheel-landing .w-grid,
+body.gs-wheel-landing article,
+body.gs-wheel-landing .post_content {
+    background: transparent !important;
+}
+
+/* Отступы секции темы и дают ту самую белую полосу над подвалом. */
+body.gs-wheel-landing .l-main .l-section,
+body.gs-wheel-landing .l-main > .l-section > .l-section-h {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+body.gs-wheel-landing .l-main {
+    padding-bottom: 0 !important;
+}
+
 .gs-wl {
     --wl-bg: #080c14;
     --wl-surface: #131b2b;

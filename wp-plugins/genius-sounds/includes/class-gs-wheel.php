@@ -59,6 +59,12 @@ class GS_Wheel {
         // обычная, всю её перебирать незачем.
         add_action('wp_head', array(__CLASS__, 'head_start'), 0);
         add_action('wp_head', array(__CLASS__, 'head_flush'), PHP_INT_MAX);
+        // Во врезке панель администратора не нужна: это консоль сайта, а не
+        // часть инструмента, и у вошедшего она занимала верх рамки. Гасим
+        // её до отрисовки, а не прячем стилями, — заодно не грузятся её
+        // собственные стили и сценарий.
+        add_filter('show_admin_bar', array(__CLASS__, 'hide_admin_bar'), PHP_INT_MAX);
+        add_filter('body_class', array(__CLASS__, 'body_class'));
     }
 
     public static function landing_url() {
@@ -107,6 +113,11 @@ class GS_Wheel {
      *
      * Снимки сделаны этим же инструментом и лежат в ассетах плагина: чужие
      * машины без спроса показывать нельзя, поэтому и кузова сгенерированы.
+     *
+     * Четвёртой пары (купе) здесь нет намеренно: на исходном кадре уже
+     * стояли светлые литые диски, почти такие же, как получились после
+     * примерки, — разницы не было видно, и пример работал против страницы.
+     * Вернётся, когда будет снят с заметно другими дисками.
      */
     public static function examples() {
         $base = GS_PLUGIN_URL . 'assets/brand/wheel/';
@@ -114,7 +125,6 @@ class GS_Wheel {
             array('Седан', 'Многоспицевые 18 дюймов', $base . 'sedan-before.jpg', $base . 'sedan-after.jpg'),
             array('Кроссовер', 'Чёрные матовые 20 дюймов', $base . 'suv-before.jpg', $base . 'suv-after.jpg'),
             array('Хэтчбек', 'Двухцветные 17 дюймов', $base . 'hatch-before.jpg', $base . 'hatch-after.jpg'),
-            array('Купе', 'Полированные литые 19 дюймов', $base . 'coupe-before.jpg', $base . 'coupe-after.jpg'),
         );
     }
 
@@ -511,7 +521,7 @@ class GS_Wheel {
 
             <section class="gs-wl__sec" id="gs-wl-examples">
                 <div class="gs-wl__wrap">
-                    <h2 class="gs-wl__h2">До и после: четыре примерки</h2>
+                    <h2 class="gs-wl__h2">До и после: примерка на трёх машинах</h2>
                     <p class="gs-wl__sub">
                         Потяните ползунок — слева исходная фотография, справа тот же
                         кадр после примерки. Кузов, фон, свет и ракурс не меняются:
@@ -778,6 +788,25 @@ class GS_Wheel {
     }
 
     /**
+     * Метки страницы для темы.
+     *
+     * Без gs-chrome тема оставляет шапку и подвал белыми, а посадочная
+     * тёмная: сверху и перед подвалом оставались светлые полосы.
+     */
+    public static function body_class($classes) {
+        if (self::is_landing()) {
+            $classes[] = 'gs-wheel-landing';
+            $classes[] = 'gs-chrome';
+        }
+        return $classes;
+    }
+
+    /** Панель администратора во врезке. */
+    public static function hide_admin_bar($show) {
+        return self::is_embedded() ? false : $show;
+    }
+
+    /**
      * Стили голого режима.
      *
      * Прячем всё, что рисуется вокруг инструмента: шапку и подвал темы,
@@ -790,8 +819,11 @@ class GS_Wheel {
             . 'html,body{background:#0b111d!important;margin:0!important;padding:0!important}'
             . '#page-header,header.l-header,.l-header,.l-subheader,.l-titlebar,'
             . '#page-footer,footer#page-footer,.l-footer,'
-            . '.gs-wheel,.gs-footer-links,.gs-sticky,#gs-sticky,#cookie-notice'
+            . '.gs-wheel,.gs-footer-links,.gs-sticky,#gs-sticky,#cookie-notice,'
+            . '#wpadminbar'
             . '{display:none!important}'
+            . 'html{margin-top:0!important;padding-top:0!important}'
+            . '* html body{margin-top:0!important}'
             . '.l-main,.l-canvas,.l-section,.l-section__content{padding-top:0!important;'
             . 'padding-bottom:0!important;margin-top:0!important;margin-bottom:0!important}'
             . '</style>' . "\n";

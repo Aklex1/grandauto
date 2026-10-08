@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.32.0
+ * Version:     2.33.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.32.0');
+define('GS_VERSION', '2.33.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -343,7 +343,8 @@ class Genius_Sounds_Plugin {
         $dashboard = GS_Dashboard::enabled() && GS_Dashboard::is_page();
         $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
             || GS_Pages::is_studio_request() || GS_Lab::current_service() || GS_Landing::current()
-            || GS_Songs::is_page() || GS_Course::is_page() || GS_404::is_page() || GS_Slides_Page::is_any() || $blog || $api || $dashboard || $partner || $voicehub;
+            || GS_Songs::is_page() || GS_Course::is_page() || GS_404::is_page() || GS_Slides_Page::is_any() || $blog || $api || $dashboard || $partner || $voicehub
+            || (class_exists('GS_Wheel') && GS_Wheel::is_landing());
         if ($ours) {
             // Перекрашиваем шапку и подвал темы под тёмные страницы плагина.
             wp_enqueue_style('genius-sounds-chrome', GS_PLUGIN_URL . 'assets/css/chrome.css', array(), GS_VERSION);
