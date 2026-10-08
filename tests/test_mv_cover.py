@@ -274,13 +274,24 @@ rows = tags_mod.build(style_tags=style_row.tags, series="Aurora Drive",
                       genre=style_row.key, minutes=30, use=style_row.use)
 tags_line = tags_mod.hashtags(rows)
 assert tags_line[:3] == ["chillstep", "chillstepmix", "melodicdubstep"], tags_line
-assert all(" " not in word for word in tags_line), tags_line
-assert len(tags_line) <= 3, f"хештегов больше трёх: {tags_line}"
-assert "chillstepmix" in rows, "слитного близнеца нет среди ключевых слов"
-assert "chillstep mix" in rows, "фразу с пробелом убрали — обычный поиск её ищет"
-assert len(", ".join(rows)) <= tags_mod.TAGS_LIMIT, "вышли за 500 знаков"
-print("12. хештеги: " + " ".join("#" + w for w in tags_line) +
-      " — без пробелов, фразы остались отдельными ключевыми словами")
+# Ни в одном теге нет пробела, запятых в строке нет, разделитель — пробел.
+assert all(" " not in word for word in rows), rows
+stored = tags_mod.as_text(rows)
+assert "," not in stored and stored.startswith("#chillstep #chillstepmix"), stored
+assert len(stored) <= tags_mod.TAGS_LIMIT, f"вышли за 500 знаков: {len(stored)}"
+# Что бы ни ввёл человек, в базе остаётся один вид.
+assert tags_mod.parse("#Chillstep, chillstepmix  #MELODICDUBSTEP") == \
+    ["chillstep", "chillstepmix", "melodicdubstep"], tags_mod.parse("#Chillstep,")
+reply = client.post(f"/music/{mix_id}/meta", data={
+    "yt_title": "T", "description": "D",
+    "tags": "#Chillstep, chillstep mix,#studyMusic"}, follow_redirects=False)
+assert reply.status_code == 303
+with session_scope() as session:
+    saved = session.get(MusicVideo, mix_id).tags
+# «chillstep mix» человек ввёл с пробелом — по формату это два тега.
+assert saved == "#chillstep #mix #studymusic", saved
+print("12. теги: " + stored[:60] + "… — через пробел, без запятых, "
+      "внутри тега пробелов нет")
 
 # --- 12. сто сюжетов и ни одного повтора ------------------------------------------
 import app.covers as cov

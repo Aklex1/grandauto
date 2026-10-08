@@ -283,12 +283,14 @@
         <form method="post" action="/music/{{ mix.id }}/meta">
           <label>Заголовок<input name="yt_title" value="{{ mix.yt_title }}"></label>
           <label>Описание<textarea name="description" rows="10">{{ mix.description }}</textarea></label>
-          <label>Теги (ключевые слова, через запятую)<input name="tags"
+          <label>Теги (хештеги через пробел, без запятых)<input name="tags"
             value="{{ mix.tags }}"></label>
           {% if mix.tags %}
-          <p class="small muted">Хештеги в описании: <code>{{ mv_hashtags(mix.tags) }}</code>
-            — внутри хештега пробелов нет. Больше трёх не ставим: при пятнадцати
-            и более хештегах разом YouTube перестаёт учитывать их все.</p>
+          <p class="small muted">Над заголовком покажутся первые три:
+            <code>{{ mv_hashtags(mix.tags) }}</code>. Пробелов внутри хештега нет.
+            В поле тегов на YouTube они уйдут без решёток — там это ключевые
+            слова, а при пятнадцати хештегах разом площадка перестаёт учитывать
+            их все.</p>
           {% endif %}
           <button class="btn btn-sm" type="submit">Сохранить</button>
         </form>

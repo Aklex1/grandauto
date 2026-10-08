@@ -1737,7 +1737,11 @@ def music_meta(video_id: int, session: Session = Depends(get_session),
         raise HTTPException(status_code=404, detail="Микс не найден")
     video.yt_title = yt_title.strip()[:300]
     video.description = description
-    video.tags = tags.strip()
+    # Что бы человек ни ввёл — через пробел, через запятую, с решётками или
+    # без, — храним один вид: слитные хештеги через пробел.
+    from . import tags as tags_mod
+
+    video.tags = tags_mod.as_text(tags_mod.parse(tags))
     session.commit()
     return RedirectResponse(f"/music?tab=library&saved={video_id}", status_code=303)
 

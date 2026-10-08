@@ -41,9 +41,35 @@ HONEST = ("ai music", "ai generated music", "royalty free music",
           "no copyright music")
 
 
-def _clean(value: str) -> str:
-    value = re.sub(r"[#\s]+", " ", str(value or "")).strip().lower()
-    return value[:TAG_MAX]
+def glue(value: str) -> str:
+    """Тег в том виде, в каком он идёт в поле: слитно, без решётки и пробелов.
+
+    «chillstep mix» превращается в «chillstepmix». Пробел внутри тега площадка
+    не держит: хештег обрывается на первом же пробеле, и «#chillstep mix» стало
+    бы хештегом «#chillstep» и отдельным словом «mix» рядом.
+    """
+    plain = re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+    return plain[:TAG_MAX]
+
+
+def parse(text: str) -> list[str]:
+    """Разобрать строку тегов, как её ввёл человек.
+
+    Принимаем всё: через пробел, через запятую, с решётками и без. Наружу
+    отдаём один канонический вид, чтобы в базе не копились «chillstep mix» и
+    «#chillstep» одновременно.
+    """
+    out: list[str] = []
+    for part in re.split(r"[,\n]+|\s+", str(text or "")):
+        tag = glue(part)
+        if tag and tag not in out:
+            out.append(tag)
+    return out
+
+
+def as_text(tags: list[str]) -> str:
+    """Строка для поля и для описания: #chillstep #chillstepmix #melodicdubstep."""
+    return " ".join("#" + tag for tag in tags if tag)
 
 
 def build(*, style_tags: tuple | list = (), series: str = "", genre: str = "",
@@ -52,32 +78,18 @@ def build(*, style_tags: tuple | list = (), series: str = "", genre: str = "",
     rows: list[str] = []
 
     def push(value: str) -> None:
-        tag = _clean(value)
+        tag = glue(value)
         if tag and tag not in rows:
             rows.append(tag)
 
-    def push_pair(value: str) -> None:
-        """Фраза и её слитный близнец: «chillstep mix» плюс «chillstepmix».
-
-        Слитная форма — это то, во что превращается хештег, и ровно её ищут,
-        когда переходят по хештегу из описания. Фразу с пробелом тоже
-        оставляем: по ней работает обычный поиск, а слитная там совпадает хуже.
-        """
-        push(value)
-        glued = re.sub(r"[^a-z0-9]+", "", _clean(value))
-        if glued and glued != _clean(value):
-            push(glued)
-
-    # Слитные близнецы — только у жанровых и у фирменных тегов. Делать их всем
-    # подряд значит забить лимит в 500 знаков повторами вместо новых слов.
     for tag in style_tags:
-        push_pair(tag)
+        push(tag)
     if genre:
         push(genre)
     if series:
-        push_pair(series)
+        push(series)
         # «Aurora Drive mix» ищут чаще, чем просто «Aurora Drive».
-        push_pair(f"{series} mix")
+        push(f"{series} mix")
     for term in LENGTH_TERMS.get(int(minutes or 0), ()):
         push(term)
     if use:
@@ -93,11 +105,12 @@ def build(*, style_tags: tuple | list = (), series: str = "", genre: str = "",
     for term in extra:
         push(term)
 
-    # Лимит площадки считается по всей строке, а не по числу тегов.
+    # Лимит площадки считается по всей строке, а не по числу тегов. Считаем по
+    # той строке, которая реально уйдёт: с решёткой и пробелом у каждого тега.
     out: list[str] = []
     total = 0
     for tag in rows:
-        cost = len(tag) + (1 if out else 0)
+        cost = len(tag) + 1 + (1 if out else 0)
         if total + cost > TAGS_LIMIT:
             break
         out.append(tag)
@@ -118,7 +131,7 @@ def hashtags(tags: list[str], limit: int = HASHTAGS_SHOWN) -> list[str]:
     """
     out: list[str] = []
     for tag in tags:
-        word = re.sub(r"[^a-z0-9]+", "", tag)
+        word = glue(tag)
         if 3 <= len(word) <= 18 and word not in out:
             out.append(word)
         if len(out) >= limit:

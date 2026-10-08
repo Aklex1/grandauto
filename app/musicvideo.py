@@ -678,15 +678,18 @@ def timecode(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
-def hashtag_line(tags_csv: str) -> str:
-    """Строка хештегов из сохранённых тегов — чтобы её было видно и можно скопировать.
-
-    Пробелов внутри хештега нет: площадка обрывает его на первом пробеле.
-    """
+def tags_text(tags: list[str]) -> str:
+    """Теги в том виде, в каком они лежат в базе и стоят в поле панели."""
     from . import tags as tags_mod
 
-    rows = [tag.strip() for tag in (tags_csv or "").split(",") if tag.strip()]
-    return " ".join("#" + word for word in tags_mod.hashtags(rows))
+    return tags_mod.as_text(tags_mod.parse(" ".join(tags)))
+
+
+def hashtag_line(stored: str) -> str:
+    """Первые хештеги описания — те, что площадка покажет над заголовком."""
+    from . import tags as tags_mod
+
+    return tags_mod.as_text(tags_mod.hashtags(tags_mod.parse(stored)))
 
 
 def tracklist_text(tracks: list[MusicVideoTrack]) -> str:
@@ -1868,7 +1871,7 @@ def build(video_id: int, *, reuse_backdrop: bool = True, language: str = "",
                     title = title[:100]
             video.yt_title = title[:300]
             video.description = description
-            video.tags = ", ".join(tags)
+            video.tags = tags_text(tags)
             video.tracklist = video.chapters_src.strip() or tracklist_text(alive)
             if not video.title:
                 video.title = title[:300]
@@ -1986,7 +1989,14 @@ def publish(video_id: int, *, privacy: str = "private") -> None:
             poster = cover
         title = (video.yt_title or video.title or style_of(video.style).label)
         description = video.description or ""
-        tags = [tag.strip() for tag in (video.tags or "").split(",") if tag.strip()]
+        # В поле теги лежат хештегами, а в заявку на выгрузку идут без
+        # решётки: поле тегов у площадки — это ключевые слова, и помеченные
+        # решёткой записи там считаются хештегами. Если их вместе с описанием
+        # наберётся больше пятнадцати, YouTube перестанет учитывать все хештеги,
+        # включая три главных над заголовком.
+        from . import tags as tags_mod
+
+        tags = tags_mod.parse(video.tags or "")
         video.youtube_state = "running"
         video.youtube_error = ""
         session.commit()
