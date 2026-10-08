@@ -756,6 +756,9 @@ class GS_Payments {
             'src'  => (string) $source,
             'user' => $user,
             'at'   => current_time('mysql'),
+            // Что привело человека на сайт. Сервис-источник отвечает на
+            // вопрос «за что заплатили», а это — «кого мы за это купили».
+            'ad'   => class_exists('GS_Adsrc') ? GS_Adsrc::label(GS_Adsrc::for_payment($user)) : '',
             // Был ли у плательщика бесплатный звук: путь «попробовал —
             // вернулся — заплатил» иначе не виден ни в одном отчёте.
             'trial' => class_exists('GS_Rest') ? GS_Rest::trial_of_user($user) : '',
@@ -767,6 +770,55 @@ class GS_Payments {
     }
 
     /** Откуда пришёл платёж с этой меткой: ключ сервиса или пустая строка. */
+    /** Метка перехода у платежа: «Директ · группа … · «фраза»». */
+    public static function payment_ad_of($label) {
+        $log = get_option(self::OPT_SRC_LOG, array());
+        return is_array($log) && isset($log[$label]['ad']) ? (string) $log[$label]['ad'] : '';
+    }
+
+    /**
+     * Сводка по рекламным меткам.
+     *
+     * Считаем по журналу источников: там лежит и метка, и ярлык платежа,
+     * а суммы берём из таблицы платежей — в журнале их нет.
+     *
+     * @return array<string,array{count:int,sum:float}>
+     */
+    public static function ad_summary($days = 90) {
+        global $wpdb;
+        // Пустой журнал меток — не повод прятать сводку: платежи без
+        // метки тоже надо видеть, иначе непонятно, с чем сравнивать.
+        $log = get_option(self::OPT_SRC_LOG, array());
+        if (!is_array($log)) {
+            $log = array();
+        }
+        $table = $wpdb->prefix . 'kie_tts_payments';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return array();
+        }
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT label, amount FROM {$table}
+              WHERE status = 'completed' AND completed_at > DATE_SUB(NOW(), INTERVAL %d DAY)",
+            max(1, (int) $days)), ARRAY_A);
+        $out = array();
+        foreach ((array) $rows as $row) {
+            $label = (string) $row['label'];
+            $ad = isset($log[$label]['ad']) ? trim((string) $log[$label]['ad']) : '';
+            if ($ad === '') {
+                $ad = 'без метки — не с рекламы или метка потеряна';
+            }
+            if (empty($out[$ad])) {
+                $out[$ad] = array('count' => 0, 'sum' => 0.0);
+            }
+            $out[$ad]['count']++;
+            $out[$ad]['sum'] += (float) $row['amount'];
+        }
+        uasort($out, function ($a, $b) {
+            return $b['sum'] <=> $a['sum'];
+        });
+        return $out;
+    }
+
     public static function payment_source_of($label) {
         $log = get_option(self::OPT_SRC_LOG, array());
         return is_array($log) && isset($log[(string) $label]['src'])

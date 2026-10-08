@@ -4266,6 +4266,12 @@ class GS_Rest {
                 continue;
             }
             $was = (array) ($it['rubrics'] ?? array());
+            // Кадры, сделанные под рубрику намеренно, рубрику не теряют:
+            // их завели именно туда, где каталогу не хватало примеров, а
+            // по тексту они не всегда опознаются.
+            if ((string) ($it['source'] ?? '') === 'gen') {
+                $seen = array_values(array_unique(array_merge($was, $seen)));
+            }
             if ($was !== $seen) {
                 $items[$i]['rubrics'] = $seen;
                 $moved++;

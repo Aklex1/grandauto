@@ -1194,15 +1194,43 @@ class GS_Admin {
             <?php endif; ?>
         <?php endif; ?>
 
+        <?php $ads = class_exists('GS_Payments') ? GS_Payments::ad_summary(90) : array(); ?>
+        <?php if ($ads): ?>
+            <h3>Откуда пришли плательщики</h3>
+            <p class="description" style="max-width:660px">
+                Метка перехода за последние 90 дней: по ней видно, что принесла реклама,
+                вплоть до группы и фразы. Метка живёт в браузере три месяца, поэтому
+                оплата с другого устройства или через бота в неё не попадёт — цифры стоит
+                читать как «не меньше чем».
+            </p>
+            <table class="widefat striped" style="max-width:900px;margin-bottom:18px">
+                <thead><tr><th>Метка перехода</th><th>Платежей</th><th>Сумма</th></tr></thead>
+                <tbody>
+                    <?php foreach ($ads as $mark => $row): ?>
+                        <tr>
+                            <td><?php echo esc_html($mark); ?></td>
+                            <td><?php echo (int) $row['count']; ?></td>
+                            <td><?php echo esc_html(number_format_i18n((float) $row['sum'], 2)); ?> ₽</td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+
         <?php if (!empty($log)): ?>
             <h3>Последние уведомления</h3>
             <table class="widefat striped" style="max-width:900px">
-                <thead><tr><th>Когда</th><th>Метка</th><th>Сумма</th><th>Итог</th><th></th></tr></thead>
+                <thead><tr><th>Когда</th><th>Метка</th><th>Откуда пришёл</th><th>Сумма</th><th>Итог</th><th></th></tr></thead>
                 <tbody>
                     <?php foreach ($log as $row): ?>
                         <tr>
                             <td><?php echo esc_html(mysql2date('d.m.Y H:i', $row['at'])); ?></td>
                             <td><code><?php echo esc_html(mb_substr((string) $row['label'], 0, 46)); ?></code></td>
+                            <td><?php
+                                $ad = class_exists('GS_Payments')
+                                    ? GS_Payments::payment_ad_of((string) $row['label']) : '';
+                                echo $ad !== '' ? esc_html($ad) : '—';
+                            ?></td>
                             <td><?php echo esc_html(number_format_i18n((float) $row['amount'], 2)); ?> ₽</td>
                             <td><?php echo esc_html($row['status'] . ($row['message'] ? ' — ' . $row['message'] : '')); ?></td>
                             <td>

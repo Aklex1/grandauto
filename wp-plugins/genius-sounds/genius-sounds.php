@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.41.0
+ * Version:     2.42.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.41.0');
+define('GS_VERSION', '2.42.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -51,6 +51,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-legal.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-legal-doc.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sticky.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-seo.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-adsrc.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-noindex.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-index.php';
@@ -151,6 +152,7 @@ class Genius_Sounds_Plugin {
         GS_Legal::boot();
         GS_Sticky::boot();
         GS_Seo::boot();
+        GS_Adsrc::boot();
         GS_Sitemap::boot();
         GS_Noindex::boot();
         GS_Index::boot();
@@ -331,6 +333,10 @@ class Genius_Sounds_Plugin {
         // генерации фото, и в окнах входа, а весит сценарий считаные байты.
         wp_enqueue_script('genius-sounds-noprovider',
             GS_PLUGIN_URL . 'assets/js/noprovider.js', array(), GS_VERSION, false);
+        // Метку перехода ставим как можно раньше и на всех страницах:
+        // человек с рекламы заходит куда угодно, не только на посадочную.
+        wp_enqueue_script('genius-sounds-adsrc',
+            GS_PLUGIN_URL . 'assets/js/adsrc.js', array(), GS_VERSION, false);
 
         // Каталог промтов: своя вёрстка плюс липкая плашка и общий стиль
         // шапки с остальными тёмными страницами плагина.
