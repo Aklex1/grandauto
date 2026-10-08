@@ -292,12 +292,76 @@ class GS_Prompts {
         return self::url() . '/img';
     }
 
+    /* ---------------------------------------------------------------------
+     * Миниатюры
+     *
+     * В витрине кадр занимает плитку шириной от силы в треть экрана, а
+     * из канала приходят снимки по 80–150 КБ каждый. На странице их
+     * семь десятков — вместе с фоновой стеной выходило под шесть
+     * мегабайт на один заход. Человек с рекламы такую страницу на
+     * телефоне не дожидается.
+     *
+     * Поэтому рядом лежит уменьшенная копия, и в списках показываем её.
+     * Полный кадр остаётся на странице промта, где его и разглядывают.
+     * ------------------------------------------------------------------ */
+
+    /** Ширина миниатюры: с запасом на экраны с двойной плотностью. */
+    const THUMB_WIDTH = 460;
+
+    public static function thumb_dir() {
+        return self::img_dir() . '/sm';
+    }
+
+    public static function thumb_url() {
+        return self::img_url() . '/sm';
+    }
+
+    /** Адрес миниатюры, если она сделана, иначе полный кадр. */
+    public static function shot_url($file) {
+        $file = ltrim((string) $file, '/');
+        if ($file === '') {
+            return '';
+        }
+        if (file_exists(self::thumb_dir() . '/' . $file)) {
+            return self::thumb_url() . '/' . $file;
+        }
+        return self::img_url() . '/' . $file;
+    }
+
+    /**
+     * Сделать миниатюру.
+     *
+     * @return bool была ли она создана сейчас
+     */
+    public static function make_thumb($file) {
+        $file = ltrim((string) $file, '/');
+        $src = self::img_dir() . '/' . $file;
+        $dst = self::thumb_dir() . '/' . $file;
+        if ($file === '' || !file_exists($src) || file_exists($dst)) {
+            return false;
+        }
+        if (!is_dir(self::thumb_dir())) {
+            wp_mkdir_p(self::thumb_dir());
+        }
+        $editor = wp_get_image_editor($src);
+        if (is_wp_error($editor)) {
+            return false;
+        }
+        $size = $editor->get_size();
+        if (!empty($size['width']) && (int) $size['width'] > self::THUMB_WIDTH) {
+            $editor->resize(self::THUMB_WIDTH, null, false);
+        }
+        $editor->set_quality(72);
+        $saved = $editor->save($dst);
+        return !is_wp_error($saved);
+    }
+
     private static function index_path() {
         return self::dir() . '/index.json';
     }
 
     public static function ensure_dirs() {
-        foreach (array(self::dir(), self::img_dir()) as $d) {
+        foreach (array(self::dir(), self::img_dir(), self::thumb_dir()) as $d) {
             if (!is_dir($d)) {
                 wp_mkdir_p($d);
             }

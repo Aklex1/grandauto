@@ -216,3 +216,64 @@
     top: -90px;
     visibility: hidden;
 }
+
+/* --- Мостик в каталог промтов -------------------------------------------
+ *
+ * Узкая полоса в конце готовых подборок: тому, кому ни одна не подошла,
+ * идти со страницы больше некуда. Слева — настоящие кадры из каталога,
+ * они и зовут лучше любого текста.
+ */
+.gs-promts-band {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin: 26px 0 0;
+    padding: 14px 18px;
+    border: 1px solid rgba(167, 139, 250, .32);
+    border-radius: 18px;
+    background:
+        linear-gradient(120deg, rgba(124, 92, 255, .16), rgba(34, 211, 238, .10) 70%),
+        rgba(18, 14, 30, .55);
+}
+
+.gs-promts-band__shots {
+    display: flex;
+    flex: none;
+    gap: 6px;
+}
+
+.gs-promts-band__shots img {
+    width: 52px;
+    height: 68px;
+    border-radius: 9px;
+    object-fit: cover;
+    display: block;
+    box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .9);
+}
+
+.gs-promts-band__shots img:nth-child(4) { display: none; }
+
+.gs-promts-band__text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.gs-promts-band__text strong { font-size: 16px; color: #f3ecf7; }
+.gs-promts-band__text span { font-size: 14px; line-height: 1.45; color: rgba(243, 236, 247, .76); }
+
+.gs-promts-band__go { flex: none; white-space: nowrap; }
+
+@media (min-width: 900px) {
+    .gs-promts-band__shots img:nth-child(4) { display: block; }
+}
+
+@media (max-width: 680px) {
+    .gs-promts-band { flex-wrap: wrap; gap: 12px; padding: 14px; }
+    .gs-promts-band__shots img { width: 44px; height: 58px; }
+    .gs-promts-band__shots img:nth-child(3),
+    .gs-promts-band__shots img:nth-child(4) { display: none; }
+    .gs-promts-band__go { width: 100%; text-align: center; }
+}

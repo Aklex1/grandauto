@@ -51,6 +51,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_metrika_goal'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/prompts/thumbs', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_prompts_thumbs'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/prompts/stats', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_prompts_stats'),
@@ -3943,6 +3948,9 @@ class GS_Rest {
         if (file_put_contents($path, $bin) === false) {
             return new WP_Error('gs_io', 'Не удалось записать файл', array('status' => 500));
         }
+        // Уменьшенная копия нужна витрине: показывать там полный кадр —
+        // это мегабайты на страницу и ушедший с телефона посетитель.
+        GS_Prompts::make_thumb($name);
         return array('ok' => true, 'file' => $name,
                      'url' => GS_Prompts::img_url() . '/' . $name,
                      'w' => (int) $info[0], 'h' => (int) $info[1]);
@@ -4314,6 +4322,32 @@ class GS_Rest {
             $out['отправка'] = GS_Metrika::flush();
         }
         return $out;
+    }
+
+    /**
+     * Догнать миниатюры по уже заведённым карточкам.
+     *
+     * Пачками: тысяча снимков за один запрос не пережуётся, упрётся в
+     * время выполнения. Вызывать, пока «осталось» не станет нулём.
+     */
+    public static function handle_prompts_thumbs($request) {
+        $limit = max(1, min(200, (int) ($request->get_param('limit') ?: 60)));
+        $made = 0;
+        $left = 0;
+        foreach (GS_Prompts::load() as $item) {
+            $file = ltrim((string) ($item['image'] ?? ''), '/');
+            if ($file === '' || file_exists(GS_Prompts::thumb_dir() . '/' . $file)) {
+                continue;
+            }
+            if ($made >= $limit) {
+                $left++;
+                continue;
+            }
+            if (GS_Prompts::make_thumb($file)) {
+                $made++;
+            }
+        }
+        return array('ok' => true, 'сделано' => $made, 'осталось' => $left);
     }
 
     public static function handle_prompts_stats($request) {

@@ -295,12 +295,18 @@ class GS_Prompts_Page {
         return add_query_arg('p', rawurlencode((string) $prompt), $url);
     }
 
+    /** Полный кадр — для страницы промта. */
     private static function img($item) {
         $file = (string) ($item['image'] ?? '');
         if ($file === '') {
             return '';
         }
         return GS_Prompts::img_url() . '/' . ltrim($file, '/');
+    }
+
+    /** Уменьшенная копия — для витрины и фоновой стены. */
+    private static function thumb($item) {
+        return GS_Prompts::shot_url((string) ($item['image'] ?? ''));
     }
 
     /* ----------------------------------------------------------- Посадочная */
@@ -540,7 +546,7 @@ class GS_Prompts_Page {
         $items = GS_Prompts::load();
         $shots = array();
         foreach ($items as $it) {
-            $u = self::img($it);
+            $u = self::thumb($it);
             if ($u !== '') {
                 $shots[] = $u;
             }
@@ -551,8 +557,8 @@ class GS_Prompts_Page {
         // Берём вперемешку, но одинаково при каждой загрузке: случайный
         // порядок ломал бы кэш страницы.
         $pick = array();
-        $step = max(1, (int) floor(count($shots) / 24));
-        for ($i = 0; $i < count($shots) && count($pick) < 24; $i += $step) {
+        $step = max(1, (int) floor(count($shots) / 12));
+        for ($i = 0; $i < count($shots) && count($pick) < 12; $i += $step) {
             $pick[] = $shots[$i];
         }
         $cols = array(array(), array(), array(), array());
@@ -585,7 +591,7 @@ class GS_Prompts_Page {
      */
     private static function card($item, $size = '') {
         $url = self::url((string) $item['slug']);
-        $img = self::img($item);
+        $img = self::thumb($item);
         $cls = 'gs-pr__card' . ($size !== '' ? ' ' . $size : '');
         ?>
         <article class="<?php echo esc_attr($cls); ?>">
@@ -594,7 +600,7 @@ class GS_Prompts_Page {
                     <?php if ($img !== ''): ?>
                         <img src="<?php echo esc_url($img); ?>"
                              alt="<?php echo esc_attr((string) $item['title']); ?>"
-                             loading="lazy" decoding="async">
+                             loading="lazy" decoding="async" width="460" height="613">
                     <?php endif; ?>
                 </span>
                 <span class="gs-pr__card-veil" aria-hidden="true"></span>
