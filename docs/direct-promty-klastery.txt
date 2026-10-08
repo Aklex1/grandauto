@@ -1,144 +1,170 @@
-### Женские — zhenskie (6 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/zhenskie/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промпты для женщин nano banana
-  промты для ии фотосессии женские на русском
-  готовые промты для женщин
-  промпты для красивых женских фото
-  промты для ии фотосессии девушки
-  промты для ии фотосессии женские
+Рекламная кампания «Промты для фото»: разбивка по кластерам
+===========================================================
 
-### Мужские — muzhskie (6 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/muzhskie/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промт для мужской аватарки
-  промпт для nano banana мужские
-  промты для ии фотосессии для мужчин
-  готовые мужские промты для ии
-  промт для мужской фотографии
-  промты для ии фотосессии мужские
+Шаблон меток одинаков для всех групп, меняется только адрес посадочной.
+В Директе его удобно задать один раз на уровне кампании — «Параметры
+URL» в настройках, тогда он подставится ко всем объявлениям.
 
-### Парные — parnye (7 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/parnye/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промты для парной фотосессии ии
-  промты для ии фотосессии пар
-  промты для парочек
-  промт для фото влюбленных
-  промты готовые парные
-  промпты для нано банана для пары
-  промты для нано банана для пар
+Хвост ссылки:
+?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
 
-### Семейные — semejnye (3 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/semejnye/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промты для семейной новогодней фотосессии ии
-  промты для ии фотосессии семьи
-  промты для семейной фотосессии ии
+  utm_source / utm_medium  — постоянные, для Метрики
+  utm_campaign             — латиницей: кириллица в метках искажается
+  utm_content={gbid}       — номер группы, то есть кластера
+  utm_term={keyword}       — фраза, для отчётов Метрики
+  kw={keyword}             — фраза для подбора карточек на странице
+  mkw={matched_keyword}    — то же для автотаргетинга, где фразы нет
 
-### Детские — detskie (4 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/detskie/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промты для ии фотосессии детские
-  промты для ии фотосессии детские новогодние
-  промты для ии фотосессии детей
-  готовые промпты для генерации детских фото
+Зачем kw и mkw, если есть utm_term: utm-метки до сайта не доходят,
+хостинг вырезает их из запроса ещё до обработки. В браузере они
+остаются, Метрика их видит, а страница — нет. Поэтому фраза
+дублируется своими именами. {keyword} и {matched_keyword} вместе
+потому, что первый работает не во всех типах кампаний, а на
+автотаргетинге ключевой фразы нет вовсе.
 
-### Портрет и аватар — portret (7 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/portret/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промт для авы
-  промпты для nano banana портреты
-  промт для нано банана портрет
-  промт для красивой аватарки
-  готовые промты для портрета
-  промпт для nano banana portrait
-  промпты для нано банана лицо в воде
+Группы ниже — по убыванию числа фраз.
 
-### Новогодние и зимние — novogodnie (8 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/novogodnie/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промт в студии новогодняя
-  промты для ии фотосессии на русском новогодние
-  промты для ии фотосессии в новогоднем стиле
-  промт для зимней фотосессии ии
-  новогодние промпты для нейросети nano banana
-  промты для ии фотосессии новогодние открытки
-  новогодние промпты для нано банана
-  промты для новогодней фотосессии ии
+Общие и брендовые — 37 фраз
+https://genius-bot.ru/katalog-promtov/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промпты для нано банана фотосессии
+    сделать фото через промт
+    промпты для nano banana
+    готовые промты бесплатно
+    промпты фотосессий для nano banana
+    промты для создания фотосессии в ии
+    готовые промпты для генерации изображений
+    готовые промпты для нано банана
+    промты для создания фоток
+    готовые промты для картинок
+    промпты для нейросети nano banana
+    промпты для gemini nano banana
+    промты для нейросети nano banana
+    промт для ии на русском языке
+    лучшие промты для фотосессии
+    готовые промты для nano banana
+    промпты для nano banana для своих фото
+    промты для нейросети телеграм
+    промты для ии фотосессии на русском
+    промт для создания красивого фото
+    готовые промпты для nano banana
+    где брать промты для нейросети
+    промт для нейросети для создания фотосессии
+    готовые промты для нейро фотосессии
+    промпты для нано банана
+    готовые красивые промты
+    nano babana промты
+    промпты для нано банана реалистичные
+    готовые промпты для фото
+    пример промпта для nano banana
+    промты для ии фотосессии
+    промпты для nano banana pro
+    промпты для нейрофотосессии нано банана
+    промпты для нано банана про
+    промты для ии фотосессии готовые
+    промпты для нейросети для фото готовые
+    готовые промты для banana
 
-### Свадебные — svadebnye (1 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/svadebnye/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промт для свадебной фотографии
+Новогодние и зимние — 8 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/novogodnie/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промт в студии новогодняя
+    промты для ии фотосессии на русском новогодние
+    промты для ии фотосессии в новогоднем стиле
+    промт для зимней фотосессии ии
+    новогодние промпты для нейросети nano banana
+    промты для ии фотосессии новогодние открытки
+    новогодние промпты для нано банана
+    промты для новогодней фотосессии ии
 
-### Студийные — studiya (1 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/studiya/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промт на фото в студии
+Тренды — 8 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/trendy/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    популярные промты для chatgpt
+    крутые промты для нано банана
+    промты для нейросети тренды
+    классные промты для нейросети
+    промт фотосессия тренд
+    классные промты для фото
+    промт барби
+    промт с черной короной
 
-### Деловые — delovye (2 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/delovye/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промт для деловой фотографии
-  промпт для nano banana фото для блога
+Парные — 7 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/parnye/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промты для парной фотосессии ии
+    промты для ии фотосессии пар
+    промты для парочек
+    промт для фото влюбленных
+    промты готовые парные
+    промпты для нано банана для пары
+    промты для нано банана для пар
 
-### Чёрно-белые — cherno-beloe (1 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/cherno-beloe/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промты для ии фотосессии черно белое
+Портрет и аватар — 7 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/portret/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промт для авы
+    промпты для nano banana портреты
+    промт для нано банана портрет
+    промт для красивой аватарки
+    готовые промты для портрета
+    промпт для nano banana portrait
+    промпты для нано банана лицо в воде
 
-### С автомобилем — avto (1 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/avto/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промты для ии с машиной
+Женские — 6 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/zhenskie/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промпты для женщин nano banana
+    промты для ии фотосессии женские на русском
+    готовые промты для женщин
+    промпты для красивых женских фото
+    промты для ии фотосессии девушки
+    промты для ии фотосессии женские
 
-### Тренды — trendy (8 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/trendy/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  популярные промты для chatgpt
-  крутые промты для нано банана
-  промты для нейросети тренды
-  классные промты для нейросети
-  промт фотосессия тренд
-  классные промты для фото
-  промт барби
-  промт с черной короной
+Мужские — 6 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/muzhskie/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промт для мужской аватарки
+    промпт для nano banana мужские
+    промты для ии фотосессии для мужчин
+    готовые мужские промты для ии
+    промт для мужской фотографии
+    промты для ии фотосессии мужские
 
-### Ретушь и восстановление — retush (3 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/retush/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  готовые промпты для обработки фото
-  промпт для ретуши nano banana
-  нано банана промпты для восстановления людей
+Детские — 4 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/detskie/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промты для ии фотосессии детские
+    промты для ии фотосессии детские новогодние
+    промты для ии фотосессии детей
+    готовые промпты для генерации детских фото
 
-### Праздники и события — prazdniki (1 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/rubrika/prazdniki/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промты для ии фотосессии на день рождения
+Семейные — 3 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/semejnye/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промты для семейной новогодней фотосессии ии
+    промты для ии фотосессии семьи
+    промты для семейной фотосессии ии
 
-### Общие / брендовые — obshchie (37 фраз)
-Посадочная: https://genius-bot.ru/katalog-promtov/?utm_source=yandex&utm_medium=cpc&utm_campaign={campaign_name}&utm_content={ad_id}&utm_term={keyword}&kw={keyword}
-  промпты для нано банана фотосессии
-  сделать фото через промт
-  промпты для nano banana
-  готовые промты бесплатно
-  промпты фотосессий для nano banana
-  промты для создания фотосессии в ии
-  готовые промпты для генерации изображений
-  готовые промпты для нано банана
-  промты для создания фоток
-  готовые промты для картинок
-  промпты для нейросети nano banana
-  промпты для gemini nano banana
-  промты для нейросети nano banana
-  промт для ии на русском языке
-  лучшие промты для фотосессии
-  готовые промты для nano banana
-  промпты для nano banana для своих фото
-  промты для нейросети телеграм
-  промты для ии фотосессии на русском
-  промт для создания красивого фото
-  готовые промпты для nano banana
-  где брать промты для нейросети
-  промт для нейросети для создания фотосессии
-  готовые промты для нейро фотосессии
-  промпты для нано банана
-  готовые красивые промты
-  nano babana промты
-  промпты для нано банана реалистичные
-  готовые промпты для фото
-  пример промпта для nano banana
-  промты для ии фотосессии
-  промпты для nano banana pro
-  промпты для нейрофотосессии нано банана
-  промпты для нано банана про
-  промты для ии фотосессии готовые
-  промпты для нейросети для фото готовые
-  готовые промты для banana
+Ретушь и восстановление — 3 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/retush/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    готовые промпты для обработки фото
+    промпт для ретуши nano banana
+    нано банана промпты для восстановления людей
+
+Деловые — 2 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/delovye/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промт для деловой фотографии
+    промпт для nano banana фото для блога
+
+Свадебные — 1 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/svadebnye/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промт для свадебной фотографии
+
+Студийные — 1 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/studiya/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промт на фото в студии
+
+Чёрно-белые — 1 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/cherno-beloe/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промты для ии фотосессии черно белое
+
+С автомобилем — 1 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/avto/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промты для ии с машиной
+
+Праздники и события — 1 фраз
+https://genius-bot.ru/katalog-promtov/rubrika/prazdniki/?utm_source=yandex&utm_medium=cpc&utm_campaign=promty-foto&utm_content={gbid}&utm_term={keyword}&kw={keyword}&mkw={matched_keyword}
+    промты для ии фотосессии на день рождения
 
