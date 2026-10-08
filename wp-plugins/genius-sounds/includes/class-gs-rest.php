@@ -56,6 +56,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_prompts_thumbs'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/media/shrink', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_media_shrink'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/prompts/stats', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_prompts_stats'),
@@ -4348,6 +4353,63 @@ class GS_Rest {
             }
         }
         return array('ok' => true, 'сделано' => $made, 'осталось' => $left);
+    }
+
+    /**
+     * Ужать картинку в загрузках.
+     *
+     * Оформительские кадры заливались как есть, и на посадочной «Песня в
+     * подарок» фон первого экрана весил больше мегабайта в PNG. На
+     * телефоне страница из-за этого грузилась восемь секунд — человек с
+     * рекламы столько не ждёт, и клик оплачен впустую.
+     *
+     * Исходник не трогаем: рядом кладём лёгкую копию и, если попросили,
+     * переставляем на неё оформление. Так есть куда вернуться.
+     */
+    public static function handle_media_shrink($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        $url = esc_url_raw((string) ($p['url'] ?? ''));
+        $dir = wp_upload_dir();
+        if ($url === '' || strpos($url, (string) $dir['baseurl']) !== 0) {
+            return new WP_Error('gs_bad', 'Нужен адрес файла из загрузок сайта', array('status' => 400));
+        }
+        $path = $dir['basedir'] . substr($url, strlen((string) $dir['baseurl']));
+        if (!file_exists($path)) {
+            return new WP_Error('gs_none', 'Файла нет на диске', array('status' => 404));
+        }
+        $max = max(320, min(2400, (int) ($p['width'] ?? 1600)));
+        $quality = max(40, min(92, (int) ($p['quality'] ?? 76)));
+
+        $editor = wp_get_image_editor($path);
+        if (is_wp_error($editor)) {
+            return new WP_Error('gs_img', $editor->get_error_message(), array('status' => 500));
+        }
+        $size = $editor->get_size();
+        if (!empty($size['width']) && (int) $size['width'] > $max) {
+            $editor->resize($max, null, false);
+        }
+        $editor->set_quality($quality);
+        $dest = preg_replace('~\.[a-z0-9]+$~i', '', $path) . '-sm.jpg';
+        $saved = $editor->save($dest, 'image/jpeg');
+        if (is_wp_error($saved)) {
+            return new WP_Error('gs_img', $saved->get_error_message(), array('status' => 500));
+        }
+        $new_url = $dir['baseurl'] . substr((string) $saved['path'], strlen((string) $dir['basedir']));
+
+        $art = sanitize_key((string) ($p['art'] ?? ''));
+        if ($art !== '' && class_exists('GS_Gift')) {
+            GS_Gift::set_art(array($art => $new_url));
+        }
+        return array(
+            'ok'    => true,
+            'было'  => (int) filesize($path),
+            'стало' => (int) filesize($saved['path']),
+            'адрес' => $new_url,
+            'оформление' => $art,
+        );
     }
 
     public static function handle_prompts_stats($request) {
