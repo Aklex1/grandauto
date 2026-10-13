@@ -357,6 +357,31 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_logged_in'),
         ));
 
+        register_rest_route(self::NS, '/lab/news', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_lab_news'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/lab/seen', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_lab_seen'),
+            'permission_callback' => array(__CLASS__, 'perm_logged_in'),
+        ));
+        register_rest_route(self::NS, '/lab/journal', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_lab_journal'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/lab/renotify', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_lab_renotify'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/lab/sweep', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_lab_sweep'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/lab/callback', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_lab_callback'),
@@ -2690,14 +2715,23 @@ class GS_Rest {
             $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);
             KIE_TTS_DB::save_generation($user_id, $task_id, $service['menu'], 'lab:' . $service_id, $cost, $is_telegram);
         }
+        $note = GS_Lab::history_note($service_id, isset($payload['fields']) && is_array($payload['fields']) ? $payload['fields'] : array());
         update_option('gs_lab_task_' . $task_id, array(
             'user_id' => $user_id,
             'service' => $service_id,
             'cost'    => $cost,
+            // Когда заказали: по этой метке расписание понимает, что
+            // задачу пора закрывать, если поставщик о ней забыл.
+            'at'      => time(),
             // Подпись к кадру в истории: по готовому результату уже не
             // восстановить, какую сцену человек выбирал.
-            'note'    => GS_Lab::history_note($service_id, isset($payload['fields']) && is_array($payload['fields']) ? $payload['fields'] : array()),
+            'note'    => $note,
         ), false);
+
+        // Строка в истории появляется сразу, а не по готовности: человек
+        // закрыл вкладку — заказ всё равно виден, и его видно, что он в
+        // работе, а не потерян.
+        GS_Lab_Jobs::remember_order($user_id, $service_id, $task_id, $note, $cost);
 
         return rest_ensure_response(array(
             'success' => true,
@@ -2727,76 +2761,144 @@ class GS_Rest {
             return new WP_Error('gs_bad_service', 'Неизвестный сервис', array('status' => 400));
         }
 
-        $meta = get_option('gs_lab_task_' . $task_id, array());
-        $stored = self::get_stored_generation($task_id);
-        $owner = 0;
-        if (is_array($meta) && !empty($meta['user_id'])) {
-            $owner = (int) $meta['user_id'];
-        } elseif (is_array($stored) && isset($stored['user_id'])) {
-            $owner = (int) $stored['user_id'];
-        }
+        $owner = GS_Lab_Jobs::owner($task_id);
         if ($owner > 0 && $owner !== (int) $user_id && !current_user_can('manage_options')) {
             return new WP_Error('gs_forbidden', 'Задача принадлежит другому пользователю', array('status' => 403));
         }
 
-        $task = GS_Lab::fetch_task($service_id, $task_id);
-        if (empty($task['ok'])) {
-            return rest_ensure_response(array('success' => true, 'status' => 'pending', 'message' => $task['message']));
-        }
+        // Забирает результат, считает деньги и пишет историю один и тот же
+        // код — он же работает по расписанию. Иначе закрытая вкладка и
+        // открытая приводили бы к разным итогам.
+        $res = GS_Lab_Jobs::settle($service_id, $task_id);
 
-        if ($task['status'] === 'failed') {
-            if (class_exists('KIE_TTS_DB')) {
-                KIE_TTS_DB::update_generation_status($task_id, 'failed');
-            }
-            if (is_array($meta) && !empty($meta['user_id']) && !empty($meta['cost'])) {
-                GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
-            }
-            delete_option('gs_lab_task_' . $task_id);
+        if ($res['status'] === 'failed') {
             return rest_ensure_response(array(
                 'success' => false,
                 'status'  => 'failed',
-                'message' => $task['message'] ?: 'Обработка не удалась, средства возвращены',
+                'message' => $res['message'] ?: 'Обработка не удалась, средства возвращены',
                 'balance' => GS_SFX::get_balance($user_id),
             ));
         }
 
-        if ($task['status'] !== 'completed') {
-            return rest_ensure_response(array('success' => true, 'status' => 'pending'));
+        if ($res['status'] !== 'completed') {
+            return rest_ensure_response(array(
+                'success' => true,
+                'status'  => 'pending',
+                'message' => (string) $res['message'],
+            ));
         }
 
-        $files = array();
-        foreach ($task['files'] as $file) {
-            // Текстовые выгрузки уже лежат у нас — перекладывать их незачем.
-            $local = $file['kind'] === 'file' ? '' : GS_Lab::store_result($task_id, $file['url'], $file['kind']);
-            $files[] = array(
-                'label' => $file['label'],
-                'kind'  => $file['kind'],
-                'url'   => $local !== '' ? $local : $file['url'],
-            );
+        // Человек смотрит на результат прямо сейчас — значит, увидел, и
+        // уведомление ему больше не нужно.
+        if ($owner > 0 && $owner === (int) $user_id) {
+            GS_Lab_Jobs::mark_seen($user_id, $service_id, array($task_id));
         }
-        if (class_exists('KIE_TTS_DB') && !empty($files)) {
-            KIE_TTS_DB::update_generation_status($task_id, 'completed', $files[0]['url']);
-        }
-        // Подборка могла выйти не целиком: за каждый несостоявшийся кадр
-        // возвращаем его долю, иначе человек платит за то, чего не получил.
-        $missed = (int) ($task['failed_count'] ?? 0);
-        if ($missed > 0 && is_array($meta) && !empty($meta['user_id']) && !empty($meta['cost'])) {
-            $per = (float) $meta['cost'] / max(1, $missed + count($files));
-            GS_SFX::refund_charge((int) $meta['user_id'], round($per * $missed, 2));
-        }
-        if ($owner > 0 && GS_Lab::keeps_history($service_id)) {
-            GS_Lab::remember_result($owner, $service_id, $files,
-                is_array($meta) ? (string) ($meta['note'] ?? '') : '');
-        }
-        delete_option('gs_lab_task_' . $task_id);
 
         return rest_ensure_response(array(
             'success' => true,
             'status'  => 'completed',
-            'files'   => $files,
-            'text'    => isset($task['text']) ? (string) $task['text'] : '',
+            'files'   => $res['files'],
+            'text'    => (string) $res['text'],
             'balance' => GS_SFX::get_balance($user_id),
         ));
+    }
+
+    /** Что человек ещё не видел — по всем сервисам разом. */
+    public static function handle_lab_news($request) {
+        $user_id = get_current_user_id();
+        return rest_ensure_response(array(
+            'success' => true,
+            'items'   => GS_Lab_Jobs::news($user_id),
+        ));
+    }
+
+    /** Отметка о том, что результат человеку показан. */
+    public static function handle_lab_seen($request) {
+        $user_id = get_current_user_id();
+        if ($user_id <= 0) {
+            return new WP_Error('gs_login_required', 'Нужен вход', array('status' => 401));
+        }
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        $service_id = sanitize_key((string) ($p['service'] ?? ''));
+        $tasks = array();
+        foreach ((array) ($p['tasks'] ?? array()) as $task) {
+            $task = sanitize_text_field((string) $task);
+            if ($task !== '') {
+                $tasks[] = $task;
+            }
+        }
+        $hit = 0;
+        $services = $service_id !== '' ? array($service_id) : array_keys(GS_Lab::services());
+        foreach ($services as $id) {
+            $hit += GS_Lab_Jobs::mark_seen($user_id, $id, $tasks);
+        }
+        return rest_ensure_response(array('success' => true, 'отмечено' => $hit));
+    }
+
+    /**
+     * Чужая история — для разбора обращений.
+     *
+     * «Я заплатил, а ничего не пришло» разбирается по этой выдаче: видно,
+     * что заказывали, чем кончилось и видел ли человек результат.
+     */
+    public static function handle_lab_journal($request) {
+        $user_id = (int) $request->get_param('user');
+        if ($user_id <= 0) {
+            return new WP_Error('gs_bad', 'Нужен номер пользователя', array('status' => 400));
+        }
+        $out = array();
+        foreach (GS_Lab::services() as $id => $service) {
+            $rows = GS_Lab_Jobs::history($user_id, $id);
+            if (!$rows) {
+                continue;
+            }
+            $out[$service['menu']] = array_map(function ($row) {
+                return array(
+                    'задача'   => $row['task'],
+                    'когда'    => $row['at'],
+                    'состояние'=> $row['status'],
+                    'увидел'   => $row['seen'] !== '' ? $row['seen'] : 'нет',
+                    'файлов'   => count($row['files']),
+                    'ссылка'   => $row['files'] ? $row['files'][0]['url'] : '',
+                    'отказ'    => $row['message'],
+                );
+            }, $rows);
+        }
+        return rest_ensure_response(array(
+            'ok'             => true,
+            'непрочитанного' => GS_Lab_Jobs::unseen_count($user_id),
+            'сервисы'        => $out,
+        ));
+    }
+
+    /** Показать человеку результат заново: снимаем отметку о прочтении. */
+    public static function handle_lab_renotify($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        $user_id = (int) ($p['user'] ?? 0);
+        $task    = sanitize_text_field((string) ($p['task'] ?? ''));
+        $service = sanitize_key((string) ($p['service'] ?? ''));
+        if ($user_id <= 0) {
+            return new WP_Error('gs_bad', 'Нужен номер пользователя', array('status' => 400));
+        }
+        $hit = 0;
+        foreach ($service !== '' ? array($service) : array_keys(GS_Lab::services()) as $id) {
+            $hit += GS_Lab_Jobs::renotify($user_id, $id, $task);
+        }
+        return rest_ensure_response(array('ok' => true, 'снято_отметок' => $hit));
+    }
+
+    /** Разбор зависших заказов руками — тем же кодом, что и по расписанию. */
+    public static function handle_lab_sweep($request) {
+        $pending = GS_Lab_Jobs::pending_jobs();
+        $out = GS_Lab_Jobs::sweep();
+        $out['было_в_очереди'] = count($pending);
+        return rest_ensure_response($out);
     }
 
     /* ---------------------------------------------------------------------

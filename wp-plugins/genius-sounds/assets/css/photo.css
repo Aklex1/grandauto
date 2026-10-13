@@ -114,65 +114,11 @@
     color: #1a1020;
 }
 
-/* --- история кадров -------------------------------------------------- */
-
-.gs-lab-history {
-    margin: 36px 0 8px;
-}
-
-.gs-lab-history__lead {
-    margin: 0 0 16px;
-    color: rgba(243, 236, 247, .76);
-    font-size: 15px;
-}
+/* Историю оформляет studio.css — она есть у каждого сервиса. Здесь
+   только то, что отличает витрину кадров: карточки идут плиткой. */
 
 .gs-lab-history__grid {
-    display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 14px;
-}
-
-.gs-lab-shot {
-    margin: 0;
-    border-radius: 14px;
-    overflow: hidden;
-    background: rgba(255, 255, 255, .04);
-    border: 1px solid rgba(255, 255, 255, .09);
-}
-
-.gs-lab-shot img {
-    display: block;
-    width: 100%;
-    height: auto;
-    aspect-ratio: 3 / 4;
-    object-fit: cover;
-}
-
-.gs-lab-shot__cap {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 10px;
-    font-size: 12px;
-    color: rgba(243, 236, 247, .72);
-}
-
-.gs-lab-shot__cap span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.gs-lab-shot__get {
-    flex: 0 0 auto;
-    color: #ffd166;
-    text-decoration: none;
-    font-weight: 600;
-}
-
-.gs-lab-shot__get:hover {
-    text-decoration: underline;
 }
 
 /* На телефоне пара «было/стало» в две колонки съедает детали лица —

@@ -742,7 +742,6 @@ class GS_Lab {
                 'cost'        => 19,
                 'pricing'     => array('unit' => 'fixed', 'rate' => 0, 'min' => 19, 'max_seconds' => 0),
                 'available'   => true,
-                'history'     => true,
                 'inputs'      => array('image', 'image2', 'image3', 'image4'),
                 'input_optional' => array('image2', 'image3', 'image4'),
                 'input_labels'   => array(
@@ -1022,59 +1021,24 @@ class GS_Lab {
     /* ---------------------------------------------------------------------
      * История генераций
      *
-     * Сервису с картинкой на выходе она нужна иначе, чем звуковому: человек
-     * делает подряд несколько кадров в разных сценах и выбирает из них. Без
-     * истории предыдущий кадр исчезал при следующем запуске, и вернуть его
-     * было уже неоткуда.
+     * Она нужна каждому сервису, а не только тому, что отдаёт кадры.
+     * Человек платит за обработку и уходит: у звука и видео ожидание
+     * длиннее, чем у картинки, и шанс не дождаться на странице выше.
+     * Без истории такой заказ исчезал вместе с вкладкой.
      * ------------------------------------------------------------------ */
 
-    const HISTORY_KEEP = 24;
-
+    /**
+     * История у каждого сервиса, и ведёт её журнал заказов.
+     *
+     * Хранение, доводка и отметки о прочтении лежат в GS_Lab_Jobs: там
+     * же, где расписание, которое забирает готовое без участия страницы.
+     */
     public static function keeps_history($id) {
-        $service = self::get_service($id);
-        return $service && !empty($service['history']);
-    }
-
-    private static function history_key($id) {
-        return 'gs_lab_history_' . sanitize_key($id);
+        return (bool) self::get_service($id);
     }
 
     public static function history($user_id, $id) {
-        $user_id = (int) $user_id;
-        if ($user_id <= 0 || !self::keeps_history($id)) {
-            return array();
-        }
-        $rows = get_user_meta($user_id, self::history_key($id), true);
-        return is_array($rows) ? array_values($rows) : array();
-    }
-
-    public static function remember_result($user_id, $id, array $files, $note = '') {
-        $user_id = (int) $user_id;
-        if ($user_id <= 0 || !self::keeps_history($id) || empty($files)) {
-            return;
-        }
-        $rows = self::history($user_id, $id);
-        foreach ($files as $file) {
-            $url = (string) ($file['url'] ?? '');
-            if ($url === '') {
-                continue;
-            }
-            // Один и тот же результат мог прийти дважды: страница опрашивает
-            // статус, и ответ «готово» повторяется, пока её не закрыли.
-            foreach ($rows as $row) {
-                if (isset($row['url']) && $row['url'] === $url) {
-                    return;
-                }
-            }
-            array_unshift($rows, array(
-                'url'  => $url,
-                'kind' => (string) ($file['kind'] ?? 'image'),
-                'note' => mb_substr((string) $note, 0, 120),
-                'at'   => current_time('mysql'),
-            ));
-        }
-        $rows = array_slice($rows, 0, self::HISTORY_KEEP);
-        update_user_meta($user_id, self::history_key($id), $rows);
+        return class_exists('GS_Lab_Jobs') ? GS_Lab_Jobs::history($user_id, $id) : array();
     }
 
     /** Подпись к кадру в истории: сцена и пожелания человеческими словами. */

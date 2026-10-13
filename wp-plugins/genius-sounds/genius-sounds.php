@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.51.0
+ * Version:     2.52.3
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.51.0');
+define('GS_VERSION', '2.52.3');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -29,6 +29,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-legacy.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts-sync.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-lab-jobs.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-catalog.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sections.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rewrite.php';
@@ -174,6 +175,7 @@ class Genius_Sounds_Plugin {
         GS_Promt::boot();
         GS_Links::boot();
         GS_Lab::boot();
+        GS_Lab_Jobs::boot();
         GS_Manual::boot();
         GS_Neurohub::boot();
         GS_Dashboard::boot();
@@ -328,6 +330,28 @@ class Genius_Sounds_Plugin {
         // на сайте несколько, и грузятся они на разных страницах.
         wp_enqueue_script('genius-sounds-cookie-lift',
             GS_PLUGIN_URL . 'assets/js/cookie-lift.js', array(), GS_VERSION, true);
+
+        // Готовую работу человек должен увидеть на любой странице, а не
+        // только там, где её заказывал: обработка идёт минутами, и к её
+        // концу он обычно уже в другом разделе или вовсе ушёл с сайта.
+        //
+        // Проверять на стороне PHP, есть ли непрочитанное, нельзя: разметка
+        // страниц кешируется, и в кеш попадёт вчерашний ответ — ровно тогда,
+        // когда плашка и нужна, её бы в разметке не оказалось. Поэтому
+        // скрипт кладём всем вошедшим, а спрашивает он сам.
+        // На самой странице сервиса плашка не нужна: там заказ и так на
+        // виду в истории. Решаем это здесь, а не в скрипте: порядок
+        // выполнения скриптов на сайте перетасовывает сборщик, и браузеру
+        // в этот миг страницу опознать не по чему.
+        if (is_user_logged_in() && !GS_Lab::current_service()) {
+            wp_enqueue_style('genius-sounds-news', GS_PLUGIN_URL . 'assets/css/lab-news.css', array(), GS_VERSION);
+            wp_enqueue_script('genius-sounds-news',
+                GS_PLUGIN_URL . 'assets/js/lab-news.js', array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-news', 'GS_NEWS', array(
+                'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),
+                'nonce'   => wp_create_nonce('wp_rest'),
+            ));
+        }
 
         // Посадочная примерки дисков: страницу рисует чужой плагин, стили
         // ей нужны свои.
@@ -608,6 +632,9 @@ class Genius_Sounds_Plugin {
                 'inputs'      => array_values($lab['inputs']),
                 'inputsOptional' => array_values((array) (isset($lab['input_optional']) ? $lab['input_optional'] : array())),
                 'pollSeconds' => (int) $lab['poll_seconds'],
+                // Кадры показываем плиткой, ролик и дорожку — строками:
+                // проигрыватель в узкой колонке не читается.
+                'resultKind'  => (string) $lab['result_kind'],
                 'manual'      => GS_Lab::is_manual($lab['id']),
                 'textLabel'   => isset($lab['text_label']) ? $lab['text_label'] : 'Расшифровка',
             ));

@@ -289,13 +289,19 @@ class GS_Lab_Page {
             </div>
             <?php endif; ?>
 
-            <?php if (GS_Lab::keeps_history($service['id'])): ?>
-                <section class="gs-lab-history" id="gs-lab-history" hidden>
-                    <h2 class="gs-section-title">Ваши кадры</h2>
-                    <p class="gs-lab-history__lead">Последние результаты сохраняются здесь — можно вернуться и скачать позже.</p>
-                    <div class="gs-lab-history__grid" id="gs-lab-history-grid"></div>
-                </section>
-            <?php endif; ?>
+            <?php
+            // История у каждого сервиса: заказ попадает в неё в момент
+            // запуска, поэтому блок нужен и тем, кто ничего ещё не делал —
+            // скрипт покажет его, как только появится первая строка.
+            $is_shots = ($service['result_kind'] === 'image');
+            ?>
+            <section class="gs-lab-history" id="gs-lab-history" hidden>
+                <h2 class="gs-section-title"><?php echo $is_shots ? 'Ваши кадры' : 'Ваши работы'; ?></h2>
+                <p class="gs-lab-history__lead">Здесь всё, что вы здесь заказывали. Страницу можно закрыть:
+                    готовое мы заберём сами, и оно появится в этом списке.</p>
+                <div class="gs-lab-history__grid<?php echo $is_shots ? '' : ' gs-lab-history__grid--rows'; ?>"
+                     id="gs-lab-history-grid"></div>
+            </section>
 
             <?php if (empty($service['examples_first'])): ?>
                 <?php echo self::render_examples($service); // phpcs:ignore WordPress.Security.EscapeOutput ?>

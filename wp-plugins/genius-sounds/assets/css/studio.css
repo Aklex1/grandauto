@@ -1461,3 +1461,191 @@
     border-color: var(--gs-accent, #6c7cff);
     color: var(--gs-accent, #6c7cff);
 }
+
+/* --- история работ ---------------------------------------------------
+   Есть у каждого сервиса: заказ попадает сюда в момент запуска, а не по
+   готовности, поэтому список виден и пока идёт обработка. Результат у
+   сервисов разный — ролик, дорожка, кадр, текст, — и карточка подстраивается
+   под то, что в ней лежит. */
+
+.gs-lab-history {
+    margin: 36px 0 8px;
+}
+
+.gs-lab-history__lead {
+    margin: 0 0 16px;
+    color: rgba(243, 236, 247, .76);
+    font-size: 15px;
+}
+
+.gs-lab-history__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+}
+
+/* Ролик и дорожка в узкой плитке нечитаемы: проигрыватель сжимается, а
+   подпись обрезается. Таким сервисам даём строки во всю ширину. */
+.gs-lab-history__grid--rows {
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.gs-lab-shot {
+    margin: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, .04);
+    border: 1px solid rgba(255, 255, 255, .09);
+}
+
+.gs-lab-shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+}
+
+.gs-lab-shot__cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: rgba(243, 236, 247, .72);
+}
+
+.gs-lab-shot__cap span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gs-lab-shot__get {
+    flex: 0 0 auto;
+    color: #ffd166;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.gs-lab-shot__get:hover {
+    text-decoration: underline;
+}
+
+/* --- строка истории --------------------------------------------------- */
+
+.gs-lab-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .04);
+    border: 1px solid rgba(255, 255, 255, .09);
+}
+
+.gs-lab-row--new {
+    border-color: rgba(167, 139, 250, .55);
+    box-shadow: 0 0 0 1px rgba(167, 139, 250, .18);
+}
+
+.gs-lab-row__main {
+    flex: 1 1 260px;
+    min-width: 0;
+}
+
+.gs-lab-row__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: #f3ecf7;
+}
+
+.gs-lab-row__when {
+    margin-top: 2px;
+    font-size: 13px;
+    color: rgba(243, 236, 247, .6);
+}
+
+.gs-lab-row__note {
+    margin-top: 4px;
+    font-size: 14px;
+    color: rgba(243, 236, 247, .8);
+    overflow-wrap: anywhere;
+}
+
+.gs-lab-row__media {
+    flex: 1 1 320px;
+    min-width: 0;
+}
+
+.gs-lab-row__media audio,
+.gs-lab-row__media video {
+    display: block;
+    width: 100%;
+    border-radius: 10px;
+}
+
+.gs-lab-row__media video {
+    max-height: 260px;
+    background: #000;
+}
+
+.gs-lab-row__media img {
+    display: block;
+    width: 100%;
+    max-width: 220px;
+    height: auto;
+    border-radius: 10px;
+}
+
+.gs-lab-row__text {
+    margin: 0;
+    max-height: 120px;
+    overflow: auto;
+    font-size: 14px;
+    line-height: 1.5;
+    color: rgba(243, 236, 247, .86);
+    white-space: pre-wrap;
+}
+
+.gs-lab-row__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex: 0 0 auto;
+}
+
+/* Метка состояния: по ней видно, что заказ не потерян, а идёт. */
+.gs-lab-tag {
+    flex: 0 0 auto;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .01em;
+}
+
+.gs-lab-tag--work {
+    background: rgba(167, 139, 250, .18);
+    color: #c4b5fd;
+}
+
+.gs-lab-tag--ready {
+    background: rgba(74, 222, 128, .16);
+    color: #86efac;
+}
+
+.gs-lab-tag--fail {
+    background: rgba(248, 113, 113, .16);
+    color: #fca5a5;
+}
+
+.gs-lab-tag--new {
+    background: rgba(255, 209, 102, .2);
+    color: #ffd166;
+}

@@ -260,58 +260,167 @@
     }
 
     /**
-     * История кадров.
+     * История работ.
      *
-     * Человек делает подряд несколько сцен и выбирает из них: без истории
-     * предыдущий кадр исчезал при следующем запуске, и вернуть его было
-     * неоткуда. Гостю блок не показываем — хранить историю некуда.
+     * Строка появляется в момент заказа, а не по готовности: человек
+     * закрывает вкладку, и без этого заказ пропадал бы из виду вместе с
+     * ней. Отсюда три состояния — в работе, готово, не вышло, — и
+     * показывать их надо по-разному.
      */
+    var HISTORY_RELOAD = 30000;
+    var historyTimer = null;
+
+    function el(tag, cls, text) {
+        var node = document.createElement(tag);
+        if (cls) { node.className = cls; }
+        if (text) { node.textContent = text; }
+        return node;
+    }
+
+    function when(stamp) {
+        if (!stamp) { return ''; }
+        var m = String(stamp).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+        if (!m) { return String(stamp); }
+        return m[3] + '.' + m[2] + '.' + m[1] + ', ' + m[4] + ':' + m[5];
+    }
+
+    /** Проигрыватель или картинка — по тому, что лежит в файле. */
+    function mediaNode(file) {
+        var kind = file.kind || 'file';
+        if (kind === 'image') {
+            var img = el('img');
+            img.src = file.url;
+            img.loading = 'lazy';
+            img.alt = file.label || 'Результат';
+            return img;
+        }
+        if (kind === 'video') {
+            var video = el('video');
+            video.src = file.url;
+            video.controls = true;
+            video.preload = 'metadata';
+            video.playsInline = true;
+            return video;
+        }
+        if (kind === 'audio' || kind === 'stems') {
+            var audio = el('audio');
+            audio.src = file.url;
+            audio.controls = true;
+            audio.preload = 'none';
+            return audio;
+        }
+        return null;
+    }
+
+    function downloadLink(file, index) {
+        var a = el('a', 'gs-lab-shot__get', file.label || (index > 0 ? 'Скачать ещё' : 'Скачать'));
+        a.href = file.url;
+        a.setAttribute('download', '');
+        return a;
+    }
+
+    /** Карточка-плитка: нужна там, где на выходе кадр. */
+    function shotCard(item, file) {
+        var card = el('figure', 'gs-lab-shot');
+        var link = el('a');
+        link.href = file.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.appendChild(mediaNode(file) || el('span', '', 'Файл'));
+        card.appendChild(link);
+
+        var cap = el('figcaption', 'gs-lab-shot__cap');
+        cap.appendChild(el('span', '', item.note || 'Кадр'));
+        cap.appendChild(downloadLink(file, 0));
+        card.appendChild(cap);
+        return card;
+    }
+
+    /** Строка: для ролика, дорожки и текста — там плитка нечитаема. */
+    function rowCard(item) {
+        var isNew = item.status !== 'pending' && !item.seen;
+        var row = el('div', 'gs-lab-row' + (isNew ? ' gs-lab-row--new' : ''));
+
+        var main = el('div', 'gs-lab-row__main');
+        var title = el('div', 'gs-lab-row__title');
+        if (item.status === 'pending') {
+            title.appendChild(el('span', 'gs-lab-tag gs-lab-tag--work', 'В работе'));
+            title.appendChild(el('span', '', 'Заберём сами — страницу можно закрыть'));
+        } else if (item.status === 'failed') {
+            title.appendChild(el('span', 'gs-lab-tag gs-lab-tag--fail', 'Не вышло'));
+            title.appendChild(el('span', '', item.message || 'Средства возвращены на баланс'));
+        } else {
+            title.appendChild(el('span', 'gs-lab-tag gs-lab-tag--ready', 'Готово'));
+            if (isNew) {
+                title.appendChild(el('span', 'gs-lab-tag gs-lab-tag--new', 'новое'));
+            }
+        }
+        main.appendChild(title);
+        if (item.note) {
+            main.appendChild(el('div', 'gs-lab-row__note', item.note));
+        }
+        main.appendChild(el('div', 'gs-lab-row__when', when(item.at)));
+        row.appendChild(main);
+
+        var files = item.files || [];
+        if (files.length) {
+            var media = el('div', 'gs-lab-row__media');
+            var node = mediaNode(files[0]);
+            if (node) { media.appendChild(node); }
+            row.appendChild(media);
+
+            var links = el('div', 'gs-lab-row__links');
+            files.forEach(function (file, i) { links.appendChild(downloadLink(file, i)); });
+            row.appendChild(links);
+        } else if (item.text) {
+            var box = el('div', 'gs-lab-row__media');
+            box.appendChild(el('p', 'gs-lab-row__text', item.text));
+            row.appendChild(box);
+        }
+        return row;
+    }
+
     function loadHistory() {
         if (!els.history || !els.historyGrid || !cfg.loggedIn) { return; }
         api('lab/history/' + encodeURIComponent(cfg.service)).then(function (res) {
-            var items = (res && res.items) || [];
+            var items = (res.data && res.data.items) || [];
             if (!items.length) {
                 els.history.hidden = true;
                 return;
             }
+            var shots = cfg.resultKind === 'image';
+            var fresh = [];
             els.historyGrid.innerHTML = '';
             items.forEach(function (item) {
-                if (!item.url) { return; }
-                var card = document.createElement('figure');
-                card.className = 'gs-lab-shot';
-
-                var link = document.createElement('a');
-                link.href = item.url;
-                link.target = '_blank';
-                link.rel = 'noopener';
-
-                var img = document.createElement('img');
-                img.src = item.url;
-                img.loading = 'lazy';
-                img.alt = item.note || 'Кадр нейрофотосессии';
-                link.appendChild(img);
-                card.appendChild(link);
-
-                var cap = document.createElement('figcaption');
-                cap.className = 'gs-lab-shot__cap';
-                var who = document.createElement('span');
-                who.textContent = item.note || 'Кадр';
-                cap.appendChild(who);
-
-                var get = document.createElement('a');
-                get.className = 'gs-lab-shot__get';
-                get.href = item.url;
-                get.setAttribute('download', '');
-                get.textContent = 'Скачать';
-                cap.appendChild(get);
-
-                card.appendChild(cap);
-                els.historyGrid.appendChild(card);
+                var files = item.files || [];
+                if (item.status !== 'pending' && !item.seen && item.task) {
+                    fresh.push(item.task);
+                }
+                // Готовые кадры показываем плиткой, каждый своей карточкой:
+                // человек выбирает из них один.
+                if (shots && item.status === 'ready' && files.length) {
+                    files.forEach(function (file) { els.historyGrid.appendChild(shotCard(item, file)); });
+                    return;
+                }
+                els.historyGrid.appendChild(rowCard(item));
             });
             els.history.hidden = false;
+
+            // Человек результат увидел — записываем это. Отметка гасит
+            // уведомление и показывает, дошло ли оплаченное до адресата.
+            if (fresh.length) {
+                api('lab/seen', { method: 'POST', body: { service: cfg.service, tasks: fresh } }).catch(function () {});
+            }
+
+            // Пока есть незакрытые заказы, список перечитываем сам: их
+            // закрывает расписание, и страница должна это заметить.
+            if (historyTimer) { clearTimeout(historyTimer); historyTimer = null; }
+            var working = items.some(function (item) { return item.status === 'pending'; });
+            if (working) {
+                historyTimer = setTimeout(loadHistory, HISTORY_RELOAD);
+            }
         }).catch(function () {});
     }
-
     loadHistory();
 
     // «Повторить с моими фото»: подставляем подборку и уводим к форме.
