@@ -4471,25 +4471,55 @@ class GS_Rest {
         if ($dir === '' || !is_dir($dir)) {
             return array('ok' => true, 'удалено' => 0, 'освобождено' => 0, 'сообщение' => 'папки нет');
         }
+        $want = max(0, (int) ($p['bytes'] ?? 0));
         $edge = time() - $days * DAY_IN_SECONDS;
         $gone = 0;
         $bytes = 0;
+        $oldest = 0;
+        $newest = 0;
+
+        $list = array();
         $it = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST
         );
         foreach ($it as $file) {
-            if (!$file->isFile() || $file->getMTime() >= $edge) {
-                continue;
-            }
-            $bytes += (int) $file->getSize();
-            $gone++;
-            if (!$dry) {
-                @unlink($file->getPathname());
+            if ($file->isFile()) {
+                $list[] = array($file->getMTime(), (int) $file->getSize(), $file->getPathname());
             }
         }
-        return array('ok' => true, 'папка' => $what, 'старше_дней' => $days,
-                     'удалено' => $gone, 'освобождено' => $bytes, 'только_счёт' => $dry);
+        // Освободить столько-то — значит идти от самых старых и
+        // остановиться, как только набрали. Чистить «всё старше даты»
+        // здесь нельзя: работы свежие, и так можно снести у человека
+        // результат, за который он только что заплатил.
+        usort($list, function ($a, $b) { return $a[0] <=> $b[0]; });
+
+        foreach ($list as $row) {
+            list($mtime, $size, $path) = $row;
+            if ($want > 0) {
+                if ($bytes >= $want) {
+                    break;
+                }
+            } elseif ($mtime >= $edge) {
+                continue;
+            }
+            $bytes += $size;
+            $gone++;
+            $oldest = $oldest ? min($oldest, $mtime) : $mtime;
+            $newest = max($newest, $mtime);
+            if (!$dry) {
+                @unlink($path);
+            }
+        }
+        return array(
+            'ok' => true, 'папка' => $what,
+            'правило' => $want > 0 ? ('освободить ' . $want . ' байт, начиная со старых')
+                                   : ('старше ' . $days . ' дней'),
+            'удалено' => $gone, 'освобождено' => $bytes, 'только_счёт' => $dry,
+            'самый_старый' => $oldest ? gmdate('Y-m-d H:i', $oldest) : '',
+            'самый_свежий' => $newest ? gmdate('Y-m-d H:i', $newest) : '',
+            'всего_в_папке' => count($list),
+        );
     }
 
     /**
