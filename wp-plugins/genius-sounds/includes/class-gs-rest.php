@@ -56,6 +56,16 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_prompts_thumbs'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/media/space', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_media_space'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/media/sweep', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_media_sweep'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/media/shrink', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_media_shrink'),
@@ -4353,6 +4363,133 @@ class GS_Rest {
             }
         }
         return array('ok' => true, 'сделано' => $made, 'осталось' => $left);
+    }
+
+    /**
+     * Сколько места осталось и кто его занимает.
+     *
+     * Диск на хостинге кончился молча: сервер перестал сохранять файлы,
+     * и микросервисы с загрузкой — говорящий аватар, дубляж, озвучка —
+     * просто падали на «не удалось сохранить файл». Понять это снаружи
+     * было нельзя, поэтому здесь — цифры.
+     */
+    public static function handle_media_space($request) {
+        $uploads = wp_get_upload_dir();
+        $base = (string) $uploads['basedir'];
+
+        $size = function ($dir) {
+            if (!is_dir($dir)) {
+                return array('байт' => 0, 'файлов' => 0);
+            }
+            $bytes = 0;
+            $count = 0;
+            $it = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::SELF_FIRST
+            );
+            foreach ($it as $file) {
+                if ($file->isFile()) {
+                    $bytes += (int) $file->getSize();
+                    $count++;
+                }
+            }
+            return array('байт' => $bytes, 'файлов' => $count);
+        };
+
+        $parts = array(
+            'загрузки сайта'   => $base,
+            'кэш страниц'      => WP_CONTENT_DIR . '/cache',
+            'наше хранилище'   => GS_Storage::base_dir(),
+            'файлы посетителей'=> class_exists('GS_Lab') ? GS_Lab::uploads_dir() : '',
+            'каталог промтов'  => class_exists('GS_Prompts') ? GS_Prompts::dir() : '',
+        );
+        $out = array('ok' => true);
+        foreach ($parts as $name => $dir) {
+            if ($dir === '') {
+                continue;
+            }
+            $out[$name] = $size($dir);
+        }
+        // Разбор по вложенным папкам: без него видно только, что места
+        // нет, а не кто его занял.
+        $probe = (string) $request->get_param('dir');
+        if ($probe !== '') {
+            $root = realpath($base . '/' . ltrim($probe, '/'));
+            if ($root === false || strpos($root, realpath($base)) !== 0 || !is_dir($root)) {
+                return new WP_Error('gs_bad', 'Папка вне загрузок', array('status' => 400));
+            }
+            $kids = array();
+            foreach ((array) scandir($root) as $kid) {
+                if ($kid === '.' || $kid === '..') {
+                    continue;
+                }
+                $path = $root . '/' . $kid;
+                if (is_dir($path)) {
+                    $kids[$kid] = $size($path);
+                } else {
+                    $kids['(файлы)'] = isset($kids['(файлы)'])
+                        ? array('байт' => $kids['(файлы)']['байт'] + filesize($path),
+                                'файлов' => $kids['(файлы)']['файлов'] + 1)
+                        : array('байт' => (int) filesize($path), 'файлов' => 1);
+                }
+            }
+            uasort($kids, function ($a, $b) { return $b['байт'] <=> $a['байт']; });
+            return array('ok' => true, 'папка' => $probe, 'внутри' => $kids);
+        }
+
+        $free = @disk_free_space($base);
+        $total = @disk_total_space($base);
+        $out['свободно'] = $free === false ? 'не узнать' : (int) $free;
+        $out['всего на диске'] = $total === false ? 'не узнать' : (int) $total;
+        return $out;
+    }
+
+    /**
+     * Убрать старые файлы посетителей.
+     *
+     * Снимок и запись, которые человек прислал для говорящего аватара или
+     * дубляжа, нужны ровно на время работы поставщика. Дальше они лежат
+     * мёртвым грузом: за месяц это сотни мегабайт, а когда диск
+     * кончается, перестают работать все загрузки сразу.
+     */
+    public static function handle_media_sweep($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        $days = max(1, min(400, (int) ($p['days'] ?? 7)));
+        $dry = !empty($p['dry']);
+        $what = sanitize_key((string) ($p['what'] ?? 'uploads'));
+        // Присланное посетителем и готовый результат живут в разных
+        // папках и стареют по-разному: вход нужен на минуты, результат —
+        // пока человек его не забрал.
+        $dirs = array(
+            'uploads'   => class_exists('GS_Lab') ? GS_Lab::uploads_dir() : '',
+            'generated' => GS_Storage::base_dir() . '/generated',
+        );
+        $dir = (string) ($dirs[$what] ?? '');
+        if ($dir === '' || !is_dir($dir)) {
+            return array('ok' => true, 'удалено' => 0, 'освобождено' => 0, 'сообщение' => 'папки нет');
+        }
+        $edge = time() - $days * DAY_IN_SECONDS;
+        $gone = 0;
+        $bytes = 0;
+        $it = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($it as $file) {
+            if (!$file->isFile() || $file->getMTime() >= $edge) {
+                continue;
+            }
+            $bytes += (int) $file->getSize();
+            $gone++;
+            if (!$dry) {
+                @unlink($file->getPathname());
+            }
+        }
+        return array('ok' => true, 'папка' => $what, 'старше_дней' => $days,
+                     'удалено' => $gone, 'освобождено' => $bytes, 'только_счёт' => $dry);
     }
 
     /**

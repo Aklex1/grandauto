@@ -1404,6 +1404,43 @@ class GS_Lab {
      * Загрузка файлов
      * ------------------------------------------------------------------ */
 
+    /**
+     * Ежедневная уборка присланных файлов.
+     *
+     * Снимок и запись нужны поставщику на время работы, дальше лежат
+     * мёртвым грузом. Диск на хостинге не резиновый, а когда он
+     * кончается, перестают работать все загрузки сразу — и сервис
+     * выглядит сломанным, хотя сломано только место.
+     */
+    const SWEEP_CRON = 'gs_lab_sweep_uploads';
+    const KEEP_DAYS  = 7;
+
+    public static function boot_sweep() {
+        add_action(self::SWEEP_CRON, array(__CLASS__, 'sweep_uploads'));
+        if (!wp_next_scheduled(self::SWEEP_CRON)) {
+            wp_schedule_event(time() + 1800, 'daily', self::SWEEP_CRON);
+        }
+    }
+
+    public static function sweep_uploads() {
+        $dir = self::uploads_dir();
+        if (!is_dir($dir)) {
+            return 0;
+        }
+        $edge = time() - self::KEEP_DAYS * DAY_IN_SECONDS;
+        $gone = 0;
+        $it = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($it as $file) {
+            if ($file->isFile() && $file->getMTime() < $edge && @unlink($file->getPathname())) {
+                $gone++;
+            }
+        }
+        return $gone;
+    }
+
     public static function uploads_dir() {
         return GS_Storage::base_dir() . '/' . self::UPLOAD_DIR;
     }
