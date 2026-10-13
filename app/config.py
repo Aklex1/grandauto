@@ -34,6 +34,14 @@ PUBLIC_URL = os.environ.get("CF_PUBLIC_URL", "").rstrip("/")
 
 WORKERS = int(os.environ.get("CF_WORKERS", "2"))
 
+# Сторож зависших задач. Признак жизни — записи на диск в рабочем каталоге
+# задачи. Предел взят с запасом: получасовой микс кодируется до полутора часов,
+# но между кадрами файл растёт постоянно, поэтому сорок пять минут полной
+# тишины — это уже не «долго», а «встало». Ноль выключает сторожа.
+STUCK_MINUTES = int(os.environ.get("CF_STUCK_MINUTES", "45"))
+WATCHDOG_EVERY = int(os.environ.get("CF_WATCHDOG_EVERY", "300"))
+STUCK_RESTART = os.environ.get("CF_STUCK_RESTART", "1") not in ("0", "false", "no")
+
 WHISPER_MODEL = os.environ.get("CF_WHISPER_MODEL", "small")
 WHISPER_DEVICE = os.environ.get("CF_WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE = os.environ.get("CF_WHISPER_COMPUTE", "int8")

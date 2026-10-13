@@ -82,6 +82,9 @@ def on_startup() -> None:
     queue.recover_stuck_jobs()
     queue.start_workers()
     scheduler.start()
+    from . import watchdog
+
+    watchdog.start()
     with session_scope() as session:
         if sync.prices_are_stale(session):
             queue.enqueue(session, "sync_prices")
@@ -90,6 +93,9 @@ def on_startup() -> None:
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
+    from . import watchdog
+
+    watchdog.stop()
     scheduler.shutdown()
     queue.stop_workers()
 
