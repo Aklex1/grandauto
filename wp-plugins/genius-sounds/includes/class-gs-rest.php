@@ -71,6 +71,16 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_media_shrink'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/prompts/sync', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_prompts_sync'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/provider/models', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_provider_models'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/prompts/stats', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_prompts_stats'),
@@ -3979,17 +3989,38 @@ class GS_Rest {
      * страницу каталога как есть.
      */
     public static function handle_prompts_describe($request) {
-        $url = esc_url_raw((string) $request->get_param('image_url'));
+        // Кадр можно отдать вложением, а не ссылкой. Так надёжнее:
+        // поставщик скачивает картинку по адресу сам, и когда с его
+        // стороны до нашего домена не достучаться, модель отвечает так,
+        // будто кадра не было, — то есть сочиняет описание на пустом
+        // месте. Вложение этот шаг убирает вовсе.
+        $b64 = preg_replace('~\s+~', '', (string) $request->get_param('image_b64'));
+        if ($b64 !== '') {
+            $raw  = base64_decode($b64, true);
+            $size = $raw !== false ? @getimagesizefromstring($raw) : false;
+            if (!$size) {
+                return new WP_Error('gs_bad', 'Кадр не разобрать', array('status' => 400));
+            }
+            $url = 'data:' . $size['mime'] . ';base64,' . $b64;
+        } else {
+            $url = esc_url_raw((string) $request->get_param('image_url'));
+        }
         if ($url === '') {
             return new WP_Error('gs_bad', 'Нужен адрес картинки', array('status' => 400));
         }
         $hint = sanitize_text_field((string) $request->get_param('hint'));
-        // Кадр видит не всякая модель: соседние по списку отвечают так,
-        // будто картинки не было, и сочиняют описание на пустом месте.
-        // Поэтому здесь модель названа прямо, а не подбирается.
+        // Модель названа прямо, а не подбирается: ответ на кадр, которого
+        // модель не видела, выглядит как обычное описание, и в каталог
+        // такая выдумка попадёт незамеченной.
+        //
+        // Раньше здесь стоял gemini: казалось, что gpt кадра не видит.
+        // На деле картинку мы отдавали ссылкой, а поставщик до нашего
+        // домена не дотягивался — «не видели» обе модели. С вложением
+        // gpt-5-2 описывает кадр точно, а канал gemini поставщик к тому
+        // же снял: на запрос отвечает «Network error, please try again».
         $model = sanitize_text_field((string) $request->get_param('model'));
         if ($model === '') {
-            $model = apply_filters('gs_prompts_vision_model', 'gemini-3-5-flash-openai');
+            $model = apply_filters('gs_prompts_vision_model', 'gpt-5-2');
         }
 
         $system = 'Ты пишешь промты для генерации фотографий на русском языке. '
@@ -4013,13 +4044,17 @@ class GS_Rest {
         // Идём через общий подбор маршрутов, а не через жёстко названную
         // модель: у поставщика они приходят и уходят, и один снятый канал
         // не должен останавливать наполнение каталога.
+        $opts = array('timeout' => 180, 'model' => $model);
+        if ($request->get_param('channel') !== null) {
+            $opts['channel'] = sanitize_text_field((string) $request->get_param('channel'));
+        }
         $out = GS_Provider::chat_messages(array(
             array('role' => 'system', 'content' => $system),
             array('role' => 'user', 'content' => array(
                 array('type' => 'text', 'text' => $user),
                 array('type' => 'image_url', 'image_url' => array('url' => $url)),
             )),
-        ), array('timeout' => 180, 'model' => $model));
+        ), $opts);
         if (empty($out['ok'])) {
             return new WP_Error('gs_vision',
                 (string) ($out['detail'] ?? $out['message'] ?? 'Не удалось описать кадр'),
@@ -4116,37 +4151,65 @@ class GS_Rest {
         if (!is_array($p)) {
             $p = $request->get_params();
         }
+        $bin = base64_decode((string) ($p['data'] ?? ''), true);
+        if ($bin === false) {
+            return new WP_Error('gs_bad', 'Содержимое не разобрать', array('status' => 400));
+        }
+        $out = self::prompts_ingest_bytes(
+            $bin,
+            (string) ($p['name'] ?? ''),
+            (string) ($p['hint'] ?? ''),
+            (array) ($p['rubrics'] ?? array()),
+            (int) ($p['msg'] ?? 0),
+            (string) ($p['model'] ?? '')
+        );
+        if (empty($out['ok'])) {
+            return new WP_Error('gs_ingest', (string) ($out['message'] ?? 'не вышло'),
+                array('status' => (int) ($out['status'] ?? 502)));
+        }
+        return $out;
+    }
 
+    /**
+     * Кадр -> промт -> карточка, одной точкой входа.
+     *
+     * Так зовут и маршрут наполнения, и ночной разбор новых постов
+     * канала: правила отбраковки и раскладки по рубрикам должны быть
+     * одни и те же, иначе каталог со временем расползётся.
+     *
+     * @return array{ok:bool,...}
+     */
+    public static function prompts_ingest_bytes($bin, $name, $hint = '', $rubrics = array(), $msg = 0, $model = '') {
         $up = new WP_REST_Request('POST');
-        $up->set_param('name', (string) ($p['name'] ?? ''));
-        $up->set_param('data', (string) ($p['data'] ?? ''));
+        $up->set_param('name', $name);
+        $up->set_param('data', base64_encode($bin));
         $stored = self::handle_prompts_upload($up);
         if (is_wp_error($stored)) {
-            return $stored;
+            return array('ok' => false, 'message' => $stored->get_error_message(), 'status' => 400);
         }
 
         $ask = new WP_REST_Request('POST');
+        $ask->set_param('image_b64', base64_encode($bin));
         $ask->set_param('image_url', (string) $stored['url']);
-        $ask->set_param('hint', (string) ($p['hint'] ?? ''));
-        $ask->set_param('model', (string) ($p['model'] ?? ''));
+        $ask->set_param('hint', (string) $hint);
+        $ask->set_param('model', (string) $model);
         $said = self::handle_prompts_describe($ask);
         if (is_wp_error($said)) {
-            return $said;
+            @unlink(GS_Prompts::img_dir() . '/' . (string) $stored['file']);
+            return array('ok' => false, 'message' => $said->get_error_message(), 'status' => 502);
         }
 
         $card = self::prompts_parse_card((string) $said['raw']);
-        if (!$card) {
-            return new WP_Error('gs_parse', 'Ответ модели не разобрать', array('status' => 502));
-        }
-        if (!empty($card['skip'])) {
+        if (!$card || !empty($card['skip'])) {
             // Кадр не годится в витрину — убираем и файл, чтобы в папке не
             // оставалось того, на что никто не ссылается.
             @unlink(GS_Prompts::img_dir() . '/' . (string) $stored['file']);
+            @unlink(GS_Prompts::thumb_dir() . '/' . (string) $stored['file']);
             return array('ok' => true, 'skipped' => true,
                          'credits' => (float) ($said['credits'] ?? 0));
         }
 
-        $msg  = (int) ($p['msg'] ?? 0);
+        $msg  = (int) $msg;
         $slug = GS_Prompts::slugify($card['title']);
         if ($slug === '') {
             $slug = 'promt-' . $msg;
@@ -4160,12 +4223,12 @@ class GS_Rest {
         $save->set_param('image', (string) $stored['file']);
         $save->set_param('msg', $msg);
         $save->set_param('source', 'tg');
-        if (!empty($p['rubrics'])) {
-            $save->set_param('rubrics', (array) $p['rubrics']);
+        if ($rubrics) {
+            $save->set_param('rubrics', (array) $rubrics);
         }
         $added = self::handle_prompts_add($save);
         if (is_wp_error($added)) {
-            return $added;
+            return array('ok' => false, 'message' => $added->get_error_message(), 'status' => 500);
         }
 
         return array(
@@ -4652,6 +4715,42 @@ class GS_Rest {
             'адрес' => $new_url,
             'оформление' => $art,
         );
+    }
+
+    /**
+     * Разобрать новые посты канала прямо сейчас.
+     *
+     * То же, что делает ночной разбор, но руками и с ответом: удобно,
+     * когда надо проверить, что канал читается и карточки заводятся.
+     */
+    public static function handle_prompts_sync($request) {
+        if (!class_exists('GS_Prompts_Sync')) {
+            return new WP_Error('gs_none', 'Разбор канала не подключён', array('status' => 404));
+        }
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        if (!empty($p['peek'])) {
+            $read = GS_Prompts_Sync::read_channel();
+            $last = GS_Prompts_Sync::last_seen();
+            $nums = array_keys($read['posts']);
+            $read['последний_в_каталоге'] = $last;
+            $read['постов_на_странице'] = count($nums);
+            $read['на_странице_с_по'] = $nums ? array(min($nums), max($nums)) : array();
+            $read['новых'] = count(array_filter($nums, function ($n) use ($last) { return $n > $last; }));
+            $next = wp_next_scheduled(GS_Prompts_Sync::CRON);
+            $read['следующий_заход'] = $next
+                ? get_date_from_gmt(gmdate('Y-m-d H:i:s', $next), 'Y-m-d H:i')
+                : 'не запланирован';
+            unset($read['posts']);
+            return $read;
+        }
+        return GS_Prompts_Sync::run((int) ($p['limit'] ?? 0));
+    }
+
+    public static function handle_provider_models($request) {
+        return GS_Provider::models((string) $request->get_param('channel'));
     }
 
     public static function handle_prompts_stats($request) {

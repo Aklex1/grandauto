@@ -432,6 +432,11 @@ class GS_Provider {
         $routes = $pinned !== ''
             ? array(array('id' => 'chat:' . $pinned, 'kind' => 'chat', 'model' => $pinned))
             : self::pick('chat');
+        // Канал — это кусок пути до шлюза, и он не всегда совпадает с
+        // именем модели: часть моделей живёт в общем канале, у него пути
+        // перед /v1 нет вовсе. Пустая строка здесь — осмысленное
+        // значение, поэтому проверяем наличие ключа, а не его содержимое.
+        $pin_channel = array_key_exists('channel', $opts);
 
         foreach ($routes as $route) {
             $payload = array(
@@ -444,7 +449,13 @@ class GS_Provider {
                     $payload[$extra] = $opts[$extra];
                 }
             }
-            $res = self::send(sprintf(self::CHAT_URL, $route['model']), $payload, (int) ($opts['timeout'] ?? 180));
+            $channel = $pin_channel
+                ? trim((string) $opts['channel'])
+                : (string) ($route['channel'] ?? $route['model']);
+            $url = $channel !== ''
+                ? sprintf(self::CHAT_URL, rawurlencode($channel))
+                : 'https://api.kie.ai/v1/chat/completions';
+            $res = self::send($url, $payload, (int) ($opts['timeout'] ?? 180));
 
             if ($res['ok']) {
                 $content = (string) ($res['body']['choices'][0]['message']['content'] ?? '');
@@ -587,6 +598,36 @@ class GS_Provider {
 
     private static function key() {
         return trim((string) get_option('kie_tts_api_key', ''));
+    }
+
+    /**
+     * Какие модели шлюз сейчас отдаёт.
+     *
+     * Поставщик снимает каналы без предупреждения: вчера модель
+     * отвечала, сегодня — «Network error» или «The channel is not
+     * supported». Гадать имя замены вслепую дорого, поэтому спрашиваем
+     * список у самого шлюза.
+     *
+     * @return array{ok:bool,models:string[],message:string}
+     */
+    public static function models($channel = '') {
+        $channel = trim((string) $channel);
+        $url = $channel !== ''
+            ? 'https://api.kie.ai/' . rawurlencode($channel) . '/v1/models'
+            : 'https://api.kie.ai/v1/models';
+        $res = self::send($url, null, 30);
+        if (empty($res['ok'])) {
+            return array('ok' => false, 'models' => array(), 'message' => (string) $res['message']);
+        }
+        $list = array();
+        foreach ((array) ($res['body']['data'] ?? array()) as $row) {
+            $id = is_array($row) ? (string) ($row['id'] ?? '') : (string) $row;
+            if ($id !== '') {
+                $list[] = $id;
+            }
+        }
+        sort($list);
+        return array('ok' => true, 'models' => $list, 'message' => '');
     }
 
     private static function send($url, $payload, $timeout) {
