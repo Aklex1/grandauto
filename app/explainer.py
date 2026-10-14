@@ -578,24 +578,33 @@ def build(scenes: list[Scene], dst: Path, *, size: tuple[int, int], workdir: Pat
         raise RuntimeError("нечего собирать: все сцены пустые")
 
     # Дорожка: реплики подряд, с паузой после каждой.
-    listing = workdir / "voice.txt"
-    pieces: list[str] = []
-    spoken = 0
-    for index, scene in enumerate(scenes):
-        if not scene.voice.strip():
-            continue
-        gap = workdir / f"gap_{index:02d}.wav"
-        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
-                        "-i", "anullsrc=r=48000:cl=stereo", "-t", f"{scene.hold:.3f}",
-                        str(gap)], check=True)
-        pieces.append(voices[spoken].as_posix())
-        pieces.append(gap.as_posix())
-        spoken += 1
-    listing.write_text("".join(f"file '{p}'\n" for p in pieces), encoding="utf-8")
+    # Склейку делаем фильтром, а не демультиплексором concat. Демультиплексор
+    # требует одинаковых параметров у всех кусков и берёт их у первого: реплики
+    # приходят 24 кГц моно, тишина строилась 48 кГц стерео, и дорожка речи
+    # выходила вдвое длиннее — голос звучал замедленным, а конец обрезало по
+    # длине видео. Здесь каждый кусок приводится к 48 кГц стерео и получает свою
+    # паузу через apad.
     speech = workdir / "speech.m4a"
-    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat",
-                    "-safe", "0", "-i", str(listing), "-c:a", "aac", "-b:a", "192k",
-                    "-ar", "48000", "-ac", "2", str(speech)], check=True)
+    holds = [scene.hold for scene in scenes if scene.voice.strip()]
+    inputs: list[str] = []
+    chain: list[str] = []
+    for index, part in enumerate(voices):
+        inputs += ["-i", str(part)]
+        chain.append(f"[{index}:a]aresample=48000,"
+                     f"aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                     f"apad=pad_dur={holds[index]:.3f}[a{index}]")
+    graph = ";".join(chain) + ";" + "".join(f"[a{i}]" for i in range(len(voices))) \
+        + f"concat=n={len(voices)}:v=0:a=1[out]"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *inputs,
+                    "-filter_complex", graph, "-map", "[out]", "-c:a", "aac",
+                    "-b:a", "192k", "-ar", "48000", "-ac", "2", str(speech)], check=True)
+
+    # Сверяем длины: расхождение значит, что звук и картинка разъедутся, а
+    # поймать это на слух можно и через неделю после публикации.
+    made = _duration(speech)
+    if abs(made - total) > 0.5:
+        raise RuntimeError(f"дорожка речи {made:.1f} с, а ролик {total:.1f} с — "
+                           f"звук разъедется с картинкой")
 
     if music is not None and music.is_file():
         mixed = workdir / "mixed.m4a"
