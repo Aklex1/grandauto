@@ -377,6 +377,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_lab_renotify'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/lab/economy', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_lab_economy'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/lab/sweep', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_lab_sweep'),
@@ -2891,6 +2896,116 @@ class GS_Rest {
             $hit += GS_Lab_Jobs::renotify($user_id, $id, $task);
         }
         return rest_ensure_response(array('ok' => true, 'снято_отметок' => $hit));
+    }
+
+    /**
+     * Сходится ли экономика сервисов.
+     *
+     * Цену мы назначаем сами, а счёт выставляет поставщик — и выставляет
+     * его в кредитах, которые зависят от длины ролика, числа кадров и
+     * модели. Прикидка на глаз тут не годится: сервис может месяцами
+     * работать в убыток, и по выручке это будет незаметно. Поэтому берём
+     * уже выполненные задачи и спрашиваем поставщика, во сколько каждая
+     * обошлась на самом деле.
+     *
+     * Цену кредита передаём параметром: она меняется вместе с условиями
+     * пополнения, и зашивать её в код — значит однажды считать по старой.
+     */
+    public static function handle_lab_economy($request) {
+        global $wpdb;
+        $rub = (float) $request->get_param('rub');
+        if ($rub <= 0) {
+            $rub = 0.5; // 1000 кредитов за 500 ₽
+        }
+        $limit = (int) $request->get_param('limit');
+        $limit = $limit > 0 ? min(300, $limit) : 120;
+
+        $table = $wpdb->prefix . 'kie_tts_generations';
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT task_id, voice, cost
+               FROM {$table}
+              WHERE status = 'completed' AND cost > 0
+           ORDER BY id DESC
+              LIMIT %d",
+            $limit
+        ), ARRAY_A);
+        if (!is_array($rows)) {
+            $rows = array();
+        }
+
+        $by = array();
+        $silent = array();
+        foreach ($rows as $row) {
+            list($key, $name) = self::economy_name((string) $row['voice']);
+            $credits = GS_Lab::task_credits((string) $row['task_id']);
+            $spent = !empty($credits['ok']) ? (float) $credits['credits'] : 0.0;
+            if ($spent <= 0) {
+                // Поставщик не вернул расход: часть задач идёт по другому
+                // API, и посчитать их здесь нечем — но и молчать об этом
+                // нельзя, иначе список выглядит полным.
+                $silent[$key] = $name;
+                continue;
+            }
+            if (!isset($by[$key])) {
+                $by[$key] = array('название' => $name, 'задач' => 0, 'кредитов' => 0.0, 'выручка' => 0.0);
+            }
+            $by[$key]['задач']++;
+            $by[$key]['кредитов'] += $spent;
+            $by[$key]['выручка']  += (float) $row['cost'];
+        }
+
+        $out = array();
+        foreach ($by as $service_id => $d) {
+            $cost_rub = $d['кредитов'] * $rub;
+            $out[$service_id] = array(
+                'название'        => $d['название'],
+                'задач'           => $d['задач'],
+                'кредитов_за_раз' => round($d['кредитов'] / $d['задач'], 1),
+                'себестоимость'   => round($cost_rub / $d['задач'], 2),
+                'цена'            => round($d['выручка'] / $d['задач'], 2),
+                'наценка'         => round(($d['выручка'] - $cost_rub) / $d['задач'], 2),
+                'наценка_проц'    => $cost_rub > 0 ? (int) round(($d['выручка'] - $cost_rub) / $cost_rub * 100) : 0,
+            );
+        }
+        uasort($out, function ($a, $b) {
+            return $a['наценка_проц'] <=> $b['наценка_проц'];
+        });
+        return rest_ensure_response(array(
+            'ok' => true,
+            'цена_кредита' => $rub,
+            'сервисы' => $out,
+            'без_данных' => $silent,
+        ));
+    }
+
+    /**
+     * Человеческое имя строки журнала генераций.
+     *
+     * Вид услуги там записан в поле голоса: у микросервисов это «lab:имя»,
+     * у остального — то, чем сервис помечает свои задачи. Голоса озвучки
+     * собираем в одну строку: цена у них общая, а различать их в сводке
+     * по экономике незачем.
+     */
+    private static function economy_name($voice) {
+        $voice = (string) $voice;
+        if (strpos($voice, 'lab:') === 0) {
+            $id = substr($voice, 4);
+            $service = GS_Lab::get_service($id);
+            return array($id, $service ? (string) $service['menu'] : $voice);
+        }
+        if (strpos($voice, 'sfx:') === 0) {
+            return array('sfx', 'Генератор звуков');
+        }
+        if (strpos($voice, 'api:') === 0) {
+            return array($voice, 'API: ' . substr($voice, 4));
+        }
+        if (strpos($voice, 'gemini') !== false) {
+            return array('tts-gemini', 'Озвучка запасным голосом');
+        }
+        if (strpos($voice, 'free-') === 0) {
+            return array('free', 'Бесплатная проба озвучки');
+        }
+        return array('tts', 'Озвучка текста');
     }
 
     /** Разбор зависших заказов руками — тем же кодом, что и по расписанию. */
