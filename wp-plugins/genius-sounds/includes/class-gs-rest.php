@@ -2872,10 +2872,23 @@ class GS_Rest {
                 );
             }, $rows);
         }
+        // Звук и озвучка своей истории у нас не держат — показываем хотя
+        // бы то, что человек по ним ещё не видел: при разборе обращения
+        // это ровно тот вопрос, который задают.
+        $outside = array();
+        foreach (GS_Lab_Jobs::outside_news($user_id) as $row) {
+            $outside[] = array(
+                'сервис' => $row['name'],
+                'когда'  => $row['at'],
+                'что'    => $row['note'],
+                'ссылка' => $row['file'],
+            );
+        }
         return rest_ensure_response(array(
             'ok'             => true,
             'непрочитанного' => GS_Lab_Jobs::unseen_count($user_id),
             'сервисы'        => $out,
+            'не_видел_вне_лаборатории' => $outside,
         ));
     }
 
@@ -3010,9 +3023,9 @@ class GS_Rest {
 
     /** Разбор зависших заказов руками — тем же кодом, что и по расписанию. */
     public static function handle_lab_sweep($request) {
-        $pending = GS_Lab_Jobs::pending_jobs();
+        $pending = count(GS_Lab_Jobs::pending_jobs()) + count(GS_Lab_Jobs::pending_sfx());
         $out = GS_Lab_Jobs::sweep();
-        $out['было_в_очереди'] = count($pending);
+        $out['было_в_очереди'] = $pending;
         return rest_ensure_response($out);
     }
 

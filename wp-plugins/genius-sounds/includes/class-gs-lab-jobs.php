@@ -26,6 +26,21 @@ class GS_Lab_Jobs {
 
     const CRON = 'gs_lab_jobs';
 
+    /**
+     * Отметки о прочтении для сервисов вне лаборатории.
+     *
+     * У звука и озвучки своя история — в общем журнале генераций, и
+     * заводить им вторую копию незачем. Нужно лишь помнить, что человек
+     * уже видел, иначе плашка «готово» всплывала бы на каждой странице.
+     */
+    const SEEN_META = 'gs_seen_tasks';
+
+    /** Сколько отметок храним: дальше в прошлое плашка всё равно не смотрит. */
+    const SEEN_KEEP = 300;
+
+    /** Как далеко назад ищем непрочитанное у сервисов вне лаборатории. */
+    const OUTSIDE_DAYS = 14;
+
     /** Сколько заказов разбираем за один заход расписания. */
     const SWEEP = 25;
 
@@ -514,6 +529,76 @@ class GS_Lab_Jobs {
         return is_array($rows) ? $rows : array();
     }
 
+    /**
+     * Звук: забрать готовое без участия страницы.
+     *
+     * У генератора звуков есть колбэк поставщика, но полагаться на него
+     * одного нельзя: он теряется при недоступности сайта, и тогда заказ
+     * висит «в работе», хотя давно готов. Проверка та же, что делает
+     * страница, — только приходит к ней расписание.
+     *
+     * @return string «готово», «отказ» или «ждём»
+     */
+    public static function settle_sfx($task_id) {
+        $task_id = (string) $task_id;
+        if ($task_id === '' || !class_exists('GS_SFX')) {
+            return 'ждём';
+        }
+        $meta = get_option('gs_sfx_task_' . $task_id, array());
+        $task = GS_SFX::fetch_task($task_id);
+        if (empty($task['ok'])) {
+            return 'ждём';
+        }
+
+        if (GS_SFX::is_failed_status($task['status'])) {
+            if (class_exists('KIE_TTS_DB')) {
+                KIE_TTS_DB::update_generation_status($task_id, 'failed');
+            }
+            // Возврат делает тот, кому удалось забрать служебную запись:
+            // страница опрашивает статус в те же секунды.
+            if (delete_option('gs_sfx_task_' . $task_id)
+                && is_array($meta) && !empty($meta['user_id']) && !empty($meta['cost'])) {
+                GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
+            }
+            return 'отказ';
+        }
+
+        if ((string) $task['audio_url'] === '') {
+            return 'ждём';
+        }
+
+        $local = GS_SFX::store_result($task_id, (string) $task['audio_url']);
+        $url = $local !== '' ? $local : (string) $task['audio_url'];
+        if (class_exists('KIE_TTS_DB')) {
+            KIE_TTS_DB::update_generation_status($task_id, 'completed', $url);
+        }
+        delete_option('gs_sfx_task_' . $task_id);
+        return 'готово';
+    }
+
+    /** Незакрытые заказы звука. */
+    public static function pending_sfx($limit = 0) {
+        global $wpdb;
+        if (!class_exists('KIE_TTS_DB')) {
+            return array();
+        }
+        $limit = $limit > 0 ? (int) $limit : self::SWEEP;
+        $table = $wpdb->prefix . 'kie_tts_generations';
+        $rows = $wpdb->get_col($wpdb->prepare(
+            "SELECT task_id
+               FROM {$table}
+              WHERE voice LIKE %s
+                AND status NOT IN ('completed', 'failed')
+                AND created_at > DATE_SUB(NOW(), INTERVAL %d HOUR)
+           ORDER BY id DESC
+              LIMIT %d",
+            'sfx:%',
+            self::GIVE_UP_HOURS + 12,
+            $limit
+        ));
+        return is_array($rows) ? $rows : array();
+    }
+
     public static function sweep() {
         $done = 0;
         $failed = 0;
@@ -532,12 +617,173 @@ class GS_Lab_Jobs {
                 $waiting++;
             }
         }
+
+        // Звук идёт тем же заходом: порядок доводки должен быть один на
+        // все сервисы, иначе «забирает само» окажется правдой не везде.
+        foreach (self::pending_sfx() as $task_id) {
+            $res = self::settle_sfx((string) $task_id);
+            if ($res === 'готово') {
+                $done++;
+            } elseif ($res === 'отказ') {
+                $failed++;
+            } else {
+                $waiting++;
+            }
+        }
+
         return array('забрано' => $done, 'отказов' => $failed, 'ещё_в_работе' => $waiting);
     }
 
     /* ---------------------------------------------------------------------
      * Уведомление и отметка о прочтении
      * ------------------------------------------------------------------ */
+
+    /* ---------------------------------------------------------------------
+     * Сервисы вне лаборатории
+     *
+     * У звука и озвучки результат приносит колбэк поставщика, а история
+     * лежит в общем журнале генераций — своё хранилище им не нужно.
+     * Недостаёт им другого: человек не узнаёт, что заказ готов, если
+     * ушёл со страницы. Это и добавляем — по той же записи в журнале.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Кому в журнале генераций соответствует какой сервис.
+     *
+     * @return array{0:string,1:string,2:string}|null ключ, название, адрес
+     */
+    public static function outside($voice) {
+        $voice = (string) $voice;
+        if (strpos($voice, 'lab:') === 0) {
+            return null; // ведёт собственный журнал
+        }
+        if (strpos($voice, 'api:') === 0) {
+            // Канал для разработчиков: там за результатом приходит
+            // программа, а не человек, и плашка ей ни к чему.
+            return null;
+        }
+        if (strpos($voice, 'free-') === 0) {
+            return null; // гостевая проба, аккаунта нет
+        }
+        if (strpos($voice, 'sfx:') === 0) {
+            return array('sfx', 'Генератор звуков',
+                         class_exists('GS_Pages') ? GS_Pages::get_studio_url() : home_url('/'));
+        }
+        return array('tts', 'Озвучка текста',
+                     class_exists('GS_Pages') ? GS_Pages::get_dashboard_url() : home_url('/'));
+    }
+
+    private static function seen_map($user_id) {
+        $map = get_user_meta((int) $user_id, self::SEEN_META, true);
+        return is_array($map) ? $map : array();
+    }
+
+    /** Отметить задачу вне лаборатории прочитанной. */
+    public static function mark_seen_outside($user_id, array $tasks) {
+        $user_id = (int) $user_id;
+        if ($user_id <= 0 || !$tasks) {
+            return 0;
+        }
+        $map = self::seen_map($user_id);
+        $now = current_time('mysql');
+        $hit = 0;
+        foreach ($tasks as $task) {
+            $task = (string) $task;
+            if ($task !== '' && !isset($map[$task])) {
+                $map[$task] = $now;
+                $hit++;
+            }
+        }
+        if (!$hit) {
+            return 0;
+        }
+        if (count($map) > self::SEEN_KEEP) {
+            // Старые отметки не нужны: плашка смотрит всего на две недели
+            // назад, а метка пользователя не должна расти без предела.
+            $map = array_slice($map, -self::SEEN_KEEP, null, true);
+        }
+        update_user_meta($user_id, self::SEEN_META, $map);
+        return $hit;
+    }
+
+    /**
+     * Первая встреча: давнее считаем виденным.
+     *
+     * Отметки о прочтении мы завели сегодня, а работы у человека
+     * накопились за недели. Без этого шага он при первом же заходе
+     * получил бы плашку о десятке звуков, сделанных и забранных давно.
+     * Непрочитанным оставляем только свежее — то, что он действительно
+     * мог не увидеть.
+     */
+    private static function outside_init($user_id, array $rows) {
+        if (get_user_meta($user_id, 'gs_seen_outside', true)) {
+            return;
+        }
+        update_user_meta($user_id, 'gs_seen_outside', current_time('mysql'));
+        $edge = time() - 3 * DAY_IN_SECONDS;
+        $old = array();
+        foreach ($rows as $row) {
+            if (strtotime((string) $row['created_at']) <= $edge) {
+                $old[] = (string) $row['task_id'];
+            }
+        }
+        if ($old) {
+            self::mark_seen_outside($user_id, $old);
+        }
+    }
+
+    /** Готовое у сервисов вне лаборатории, чего человек ещё не видел. */
+    public static function outside_news($user_id) {
+        global $wpdb;
+        $user_id = (int) $user_id;
+        if ($user_id <= 0 || !class_exists('KIE_TTS_DB')) {
+            return array();
+        }
+        $table = $wpdb->prefix . 'kie_tts_generations';
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT task_id, voice, text, audio_url, created_at
+               FROM {$table}
+              WHERE user_id = %d
+                AND status = 'completed'
+                AND audio_url <> ''
+                AND created_at > DATE_SUB(NOW(), INTERVAL %d DAY)
+           ORDER BY id DESC
+              LIMIT 50",
+            $user_id,
+            self::OUTSIDE_DAYS
+        ), ARRAY_A);
+        if (!is_array($rows)) {
+            return array();
+        }
+
+        self::outside_init($user_id, $rows);
+
+        $seen = self::seen_map($user_id);
+        $out = array();
+        foreach ($rows as $row) {
+            $task = (string) $row['task_id'];
+            if ($task === '' || isset($seen[$task])) {
+                continue;
+            }
+            $who = self::outside((string) $row['voice']);
+            if (!$who) {
+                continue;
+            }
+            $out[] = array(
+                'task'    => $task,
+                'service' => $who[0],
+                'name'    => $who[1],
+                'url'     => $who[2],
+                'status'  => 'ready',
+                'note'    => mb_substr((string) $row['text'], 0, 80),
+                'at'      => (string) $row['created_at'],
+                'message' => '',
+                'kind'    => 'audio',
+                'file'    => (string) $row['audio_url'],
+            );
+        }
+        return $out;
+    }
 
     /**
      * Что человек ещё не видел.
@@ -570,6 +816,11 @@ class GS_Lab_Jobs {
                 );
             }
         }
+        // Звук и озвучка идут тем же списком: человеку всё равно, какой
+        // сервис каким кодом сделан, ему важно, что работа готова.
+        foreach (self::outside_news($user_id) as $row) {
+            $out[] = $row;
+        }
         usort($out, function ($a, $b) {
             return strcmp((string) $b['at'], (string) $a['at']);
         });
@@ -597,7 +848,7 @@ class GS_Lab_Jobs {
                 }
             }
         }
-        return $n;
+        return $n + count(self::outside_news($user_id));
     }
 
     /**
@@ -609,8 +860,25 @@ class GS_Lab_Jobs {
      */
     public static function renotify($user_id, $service_id, $task_id) {
         $user_id = (int) $user_id;
-        if ($user_id <= 0 || !GS_Lab::get_service($service_id)) {
+        if ($user_id <= 0) {
             return 0;
+        }
+        if (!GS_Lab::get_service($service_id)) {
+            // Звук и озвучка: у них отметка одна на задачу, снять её —
+            // значит просто забыть, что человек это видел.
+            $map = self::seen_map($user_id);
+            $hit = 0;
+            foreach (array_keys($map) as $task) {
+                if ($task_id !== '' && $task !== $task_id) {
+                    continue;
+                }
+                unset($map[$task]);
+                $hit++;
+            }
+            if ($hit) {
+                update_user_meta($user_id, self::SEEN_META, $map);
+            }
+            return $hit;
         }
         $rows = self::history($user_id, $service_id);
         $hit = 0;
@@ -638,8 +906,13 @@ class GS_Lab_Jobs {
      */
     public static function mark_seen($user_id, $service_id, array $tasks) {
         $user_id = (int) $user_id;
-        if ($user_id <= 0 || !GS_Lab::get_service($service_id)) {
+        if ($user_id <= 0) {
             return 0;
+        }
+        if (!GS_Lab::get_service($service_id)) {
+            // Не лаборатория — значит звук или озвучка: у них своя
+            // история, и помнить нужно только сам факт прочтения.
+            return self::mark_seen_outside($user_id, $tasks);
         }
         $rows = self::history($user_id, $service_id);
         $now = current_time('mysql');

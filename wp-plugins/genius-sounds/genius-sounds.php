@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.53.1
+ * Version:     2.54.4
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.53.1');
+define('GS_VERSION', '2.54.4');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -343,7 +343,10 @@ class Genius_Sounds_Plugin {
         // виду в истории. Решаем это здесь, а не в скрипте: порядок
         // выполнения скриптов на сайте перетасовывает сборщик, и браузеру
         // в этот миг страницу опознать не по чему.
-        if (is_user_logged_in() && !GS_Lab::current_service()) {
+        $own_history = GS_Lab::current_service()
+            || (class_exists('GS_Pages') && GS_Pages::is_studio_request())
+            || (class_exists('GS_Dashboard') && GS_Dashboard::is_page());
+        if (is_user_logged_in() && !$own_history) {
             wp_enqueue_style('genius-sounds-news', GS_PLUGIN_URL . 'assets/css/lab-news.css', array(), GS_VERSION);
             wp_enqueue_script('genius-sounds-news',
                 GS_PLUGIN_URL . 'assets/js/lab-news.js', array(), GS_VERSION, true);

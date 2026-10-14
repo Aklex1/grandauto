@@ -542,49 +542,76 @@
 
     /* ------------------------------------------------------------------ история */
 
+    /**
+     * История звуков.
+     *
+     * Показываем не только готовое: заказ, который ещё делается или не
+     * вышел, человеку важнее готового — именно его он не находит и идёт
+     * спрашивать. Пока в списке есть незакрытое, перечитываем сами:
+     * закрывает такие заказы расписание, и страница должна это увидеть.
+     */
+    var historyTimer = null;
+
+    function historyWhen(stamp) {
+        var m = String(stamp || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+        return m ? m[3] + '.' + m[2] + ', ' + m[4] + ':' + m[5] : '';
+    }
+
     function loadHistory() {
         if (!cfg.loggedIn || !els.historyList) {
             return;
         }
         api('sfx/history').then(function (res) {
-            var items = (res.data && res.data.items) || [];
-            var done = items.filter(function (item) {
-                return item.audio_url && item.status === 'completed';
-            });
-
-            if (!done.length) {
+            var items = ((res.data && res.data.items) || []).slice(0, 10);
+            if (!items.length) {
                 els.history.hidden = true;
                 return;
             }
 
             els.historyList.innerHTML = '';
-            done.slice(0, 10).forEach(function (item) {
+            var working = false;
+            items.forEach(function (item) {
+                var done = item.status === 'completed' && item.audio_url;
+                var failed = item.status === 'failed';
+                if (!done && !failed) { working = true; }
+
                 var li = document.createElement('li');
                 li.className = 'gs-history__item';
 
                 var span = document.createElement('span');
                 span.className = 'gs-history__prompt';
                 span.textContent = item.prompt || 'Звук';
-                span.title = item.prompt || '';
-
-                var button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'gs-history__play';
-                button.textContent = 'Слушать';
-                button.addEventListener('click', function () {
-                    renderResult({ audio_url: item.audio_url, title: 'Звук из истории' }, item.prompt || '');
-                });
-
+                span.title = (item.prompt || '') + ' · ' + historyWhen(item.created_at);
                 li.appendChild(span);
-                li.appendChild(button);
+
+                if (done) {
+                    var button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'gs-history__play';
+                    button.textContent = 'Слушать';
+                    button.addEventListener('click', function () {
+                        renderResult({ audio_url: item.audio_url, title: 'Звук из истории' }, item.prompt || '');
+                    });
+                    li.appendChild(button);
+                } else {
+                    var tag = document.createElement('span');
+                    tag.className = 'gs-history__state' + (failed ? ' is-fail' : '');
+                    tag.textContent = failed ? 'не вышло, деньги вернули' : 'в работе';
+                    li.appendChild(tag);
+                }
+
                 els.historyList.appendChild(li);
             });
 
             els.history.hidden = false;
+
+            if (historyTimer) { clearTimeout(historyTimer); historyTimer = null; }
+            if (working) {
+                historyTimer = setTimeout(loadHistory, 30000);
+            }
         }).catch(function () {
             /* история не критична */
         });
     }
-
     loadHistory();
 })();
