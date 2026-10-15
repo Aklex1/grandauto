@@ -75,6 +75,44 @@ class GS_Gemini {
     /**
      * @return array{ok:bool,text:string,segments:array,language:string,credits:float,error:string}
      */
+    /**
+     * Сколько записи кладём прямо в запрос.
+     *
+     * Вложение надёжнее ссылки, но запрос с ним раздувается на треть, а
+     * двухчасовая запись в него просто не влезет. Для таких оставляем
+     * ссылку: пусть лучше поставщик попробует скачать сам, чем мы
+     * заведомо упрёмся в размер.
+     */
+    const INLINE_LIMIT = 18874368; // 18 МБ
+
+    /**
+     * Запись как вложение, если это наш файл и он не слишком велик.
+     *
+     * @return string адрес вида data:… либо исходная ссылка
+     */
+    private static function inline($audio_url) {
+        $path = class_exists('GS_Lab') ? GS_Lab::local_path($audio_url) : '';
+        if ($path === '' || !is_readable($path)) {
+            return $audio_url;
+        }
+        $size = (int) @filesize($path);
+        if ($size <= 0 || $size > self::INLINE_LIMIT) {
+            return $audio_url;
+        }
+        $bytes = @file_get_contents($path);
+        if ($bytes === false) {
+            return $audio_url;
+        }
+        $type = 'audio/mpeg';
+        if (function_exists('wp_check_filetype')) {
+            $guess = wp_check_filetype($path);
+            if (!empty($guess['type'])) {
+                $type = (string) $guess['type'];
+            }
+        }
+        return 'data:' . $type . ';base64,' . base64_encode($bytes);
+    }
+
     public static function transcribe($audio_url, $params = array()) {
         $key = trim((string) get_option('kie_tts_api_key', ''));
         if ($key === '') {
@@ -84,6 +122,13 @@ class GS_Gemini {
         $diarize  = !empty($params['diarize']);
         $events   = !empty($params['tag_audio_events']);
 
+        // Запись отдаём вложением, а не ссылкой. Поставщик до нашего
+        // домена не дотягивается: на ссылку он отвечает то «не удалось
+        // скачать файл», то, что хуже, «в записи не нашлось речи» — то
+        // есть молча расшифровывает пустоту. Проверено на записи с
+        // заведомой речью: по ссылке ни одна модель её не услышала.
+        $source = self::inline($audio_url);
+
         $payload = array(
             'model'    => self::MODEL,
             'stream'   => false,
@@ -91,7 +136,7 @@ class GS_Gemini {
                 array('role' => 'system', 'content' => self::system_prompt($diarize, $events)),
                 array('role' => 'user', 'content' => array(
                     array('type' => 'text', 'text' => self::user_prompt($language)),
-                    array('type' => 'image_url', 'image_url' => array('url' => $audio_url)),
+                    array('type' => 'image_url', 'image_url' => array('url' => $source)),
                 )),
             ),
         );

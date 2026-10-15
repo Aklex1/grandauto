@@ -57,6 +57,26 @@ class GS_Provider {
                 array('id' => 'chat:gemini-3-5-flash', 'kind' => 'chat', 'model' => 'gemini-3-5-flash-openai'),
             ),
 
+            // Расшифровка речи. Чат-модели звук больше не принимают: у
+            // поставщика эти каналы сняты, а соседние молча отвечают «речи
+            // не нашлось». Это отдельная модель и отдельная очередь.
+            'stt' => array(
+                array(
+                    'id' => 'stt:scribe', 'kind' => 'job', 'model' => 'elevenlabs/speech-to-text',
+                    'shape' => function ($in) {
+                        $out = array(
+                            'audio_url'        => (string) $in['audio_url'],
+                            'tag_audio_events' => !empty($in['tag_audio_events']),
+                            'diarize'          => !empty($in['diarize']),
+                        );
+                        if (!empty($in['language_code'])) {
+                            $out['language_code'] = (string) $in['language_code'];
+                        }
+                        return $out;
+                    },
+                ),
+            ),
+
             'image' => array(
                 array(
                     'id' => 'image:nano-banana', 'kind' => 'job', 'model' => 'google/nano-banana',
@@ -567,6 +587,34 @@ class GS_Provider {
             'ok'      => true,
             'state'   => (string) ($data['state'] ?? ''),
             'urls'    => self::result_urls($data),
+            'message' => (string) ($data['failMsg'] ?? ''),
+        );
+    }
+
+    /**
+     * Результат задачи целиком, а не только ссылки.
+     *
+     * Расшифровка возвращает текст, а не файл: по одним ссылкам её не
+     * забрать.
+     *
+     * @return array{ok:bool,state:string,result:array,message:string}
+     */
+    public static function job_result($task) {
+        $res = self::send(add_query_arg(array('taskId' => (string) $task), self::API_INFO), null, 45);
+        if (!$res['ok']) {
+            return array('ok' => false, 'state' => '', 'result' => array(),
+                         'message' => self::human($res['message']));
+        }
+        $data = (array) ($res['body']['data'] ?? array());
+        $raw = $data['resultJson'] ?? ($data['result'] ?? '');
+        if (is_string($raw)) {
+            $raw = json_decode($raw, true);
+        }
+        return array(
+            'ok'      => true,
+            'state'   => (string) ($data['state'] ?? ''),
+            'result'  => is_array($raw) ? $raw : array(),
+            'credits' => (float) ($data['creditsConsumed'] ?? $data['credits_consumed'] ?? 0),
             'message' => (string) ($data['failMsg'] ?? ''),
         );
     }

@@ -296,8 +296,49 @@ class GS_Transcribe {
             return $out;
         }
 
+        // Задача уже у поставщика — спрашиваем его и закрываем, если готово.
+        if ($task['status'] === 'pending' && !empty($task['provider_task'])) {
+            $got = self::poll_scribe((string) $task['provider_task']);
+            if (!empty($got['готово'])) {
+                $task['status']   = 'completed';
+                $task['text']     = $got['text'];
+                $task['segments'] = $got['segments'];
+                $task['language'] = $got['language'];
+                $task['credits']  = $got['credits'];
+                $task['finished'] = time();
+                self::save($task);
+            } elseif (!empty($got['отказ'])) {
+                // Поставщик нередко отвечает «внешний сервис не ответил».
+                // Это не отказ по сути записи, а его собственная беда:
+                // та же задача со второй попытки обычно проходит.
+                $tries = (int) ($task['tries'] ?? 0);
+                if ($tries < self::SCRIBE_TRIES && self::is_provider_timeout($got['message'])) {
+                    $again = self::start_scribe($task['audio_url'], $task['params']);
+                    if (!empty($again['ok'])) {
+                        $task['provider_task'] = (string) $again['task'];
+                        $task['tries']   = $tries + 1;
+                        $task['started'] = time();
+                        self::save($task);
+                        self::log('расшифровка повторена после сбоя поставщика: ' . $id
+                            . ' (попытка ' . ($tries + 2) . ')');
+                        return $out;
+                    }
+                }
+                $task['status']   = 'failed';
+                $task['error']    = $got['message'];
+                $task['finished'] = time();
+                self::save($task);
+                self::log('расшифровка не удалась (' . $id . '): ' . $got['message']);
+            } elseif ((time() - (int) $task['created']) > self::SCRIBE_WAIT) {
+                $task['status']   = 'failed';
+                $task['error']    = 'Расшифровка не уложилась в отведённое время';
+                $task['finished'] = time();
+                self::save($task);
+            }
+        }
+
         // Фоновый заход мог не состояться или заглохнуть — тогда считаем здесь.
-        if ($task['status'] === 'pending' && self::worth_running($task)) {
+        if ($task['status'] === 'pending' && empty($task['provider_task']) && self::worth_running($task)) {
             self::run($id);
             $task = self::load($id);
             if (!$task) {
@@ -507,6 +548,125 @@ class GS_Transcribe {
     }
 
     /** Собственно работа: спрашиваем Gemini и сохраняем ответ. */
+    /**
+     * Расшифровка отдельной моделью.
+     *
+     * Раньше запись уходила чат-модели в поле картинки — приём рабочий,
+     * пока семейство моделей его понимало. Поставщик эти каналы снял:
+     * одни отвечают «канал не поддерживается», другие, что опаснее, молча
+     * возвращают «речи не нашлось». Проверено на записи с заведомой речью
+     * — ни одна чат-модель её не услышала.
+     *
+     * Здесь работает модель, созданная для расшифровки, и своя очередь
+     * задач. Ждём в этом же заходе: разбор всё равно идёт в фоне, а
+     * городить вторую очередь поверх чужой незачем.
+     *
+     * @return array{ok:bool,text:string,segments:array,language:string,credits:float,error:string,retry_chat:bool}
+     */
+    private static function start_scribe($audio_url, $params) {
+        if (!class_exists('GS_Provider')) {
+            return array('ok' => false, 'task' => '', 'message' => 'Поставщик недоступен');
+        }
+        $started = GS_Provider::job('stt', array(
+            'audio_url'        => (string) $audio_url,
+            'language_code'    => (string) ($params['language_code'] ?? ''),
+            'tag_audio_events' => !empty($params['tag_audio_events']),
+            'diarize'          => !empty($params['diarize']),
+        ), array('timeout' => 60));
+        return array(
+            'ok'      => !empty($started['ok']),
+            'task'    => (string) ($started['task'] ?? ''),
+            'message' => (string) ($started['message'] ?? ''),
+        );
+    }
+
+    /**
+     * Спросить поставщика о поставленной задаче.
+     *
+     * Ждать результат внутри запроса нельзя: расшифровка идёт минутами, а
+     * хостинг обрывает долгие запросы — задача помечалась неудачной, хотя
+     * честно считалась. Поэтому только спрашиваем и сразу отвечаем.
+     *
+     * @return array{готово:bool,отказ:bool,text:string,segments:array,language:string,credits:float,message:string}
+     */
+    private static function poll_scribe($provider_task) {
+        $out = array('готово' => false, 'отказ' => false, 'text' => '', 'segments' => array(),
+                     'language' => '', 'credits' => 0.0, 'message' => '');
+        if (!class_exists('GS_Provider') || (string) $provider_task === '') {
+            return $out;
+        }
+        $state = GS_Provider::job_result((string) $provider_task);
+        if (empty($state['ok'])) {
+            return $out;
+        }
+        $kind = strtolower((string) $state['state']);
+        if ($kind === 'success') {
+            $text = self::scribe_text($state['result']);
+            if (trim($text) === '') {
+                $out['отказ'] = true;
+                $out['message'] = 'В записи не нашлось речи';
+                return $out;
+            }
+            $out['готово']   = true;
+            $out['text']     = $text;
+            $out['segments'] = self::scribe_segments($state['result']);
+            $out['language'] = (string) ($state['result']['language_code'] ?? '');
+            $out['credits']  = (float) $state['credits'];
+            return $out;
+        }
+        if ($kind === 'fail' || $kind === 'failed') {
+            $out['отказ'] = true;
+            $out['message'] = $state['message'] !== '' ? $state['message'] : 'Расшифровка не удалась';
+        }
+        return $out;
+    }
+
+    /** Текст из ответа модели: поля у разных версий называются по-разному. */
+    private static function scribe_text($result) {
+        foreach (array('text', 'transcript', 'transcription') as $field) {
+            if (!empty($result[$field]) && is_string($result[$field])) {
+                return trim($result[$field]);
+            }
+        }
+        // Бывает, что текст лежит во вложенном ответе.
+        foreach (array('data', 'result', 'output') as $nest) {
+            if (!empty($result[$nest]) && is_array($result[$nest])) {
+                $inner = self::scribe_text($result[$nest]);
+                if ($inner !== '') {
+                    return $inner;
+                }
+            }
+        }
+        return '';
+    }
+
+    /** Разбивка по говорящим, если модель её вернула. */
+    private static function scribe_segments($result) {
+        $rows = array();
+        $words = $result['words'] ?? ($result['segments'] ?? array());
+        if (!is_array($words)) {
+            return $rows;
+        }
+        foreach ($words as $w) {
+            if (!is_array($w) || empty($w['text'])) {
+                continue;
+            }
+            $rows[] = array(
+                'text'    => (string) $w['text'],
+                'start'   => (float) ($w['start'] ?? 0),
+                'end'     => (float) ($w['end'] ?? 0),
+                'speaker' => (string) ($w['speaker_id'] ?? $w['speaker'] ?? ''),
+            );
+        }
+        return $rows;
+    }
+
+    /** Сколько всего ждём расшифровку, прежде чем признать её несостоявшейся. */
+    const SCRIBE_WAIT = 1800;
+
+    /** Сколько раз пробуем заново, если у поставщика не ответил его внешний сервис. */
+    const SCRIBE_TRIES = 2;
+
     public static function run($id) {
         $task = self::load($id);
         if (!$task || $task['status'] !== 'pending') {
@@ -527,6 +687,22 @@ class GS_Transcribe {
             @set_time_limit(self::RUN_LIMIT);
         }
 
+        // Ставим задачу отдельной модели расшифровки и уходим: ждать её
+        // здесь нельзя, хостинг обрывает долгие запросы. Дальше о ней
+        // спрашивает чтение состояния — страницей или расписанием.
+        $started = self::start_scribe($task['audio_url'], $task['params']);
+        if (!empty($started['ok'])) {
+            $task = self::load($id);
+            if ($task) {
+                $task['provider_task'] = (string) $started['task'];
+                $task['started'] = time();
+                self::save($task);
+            }
+            return;
+        }
+
+        // Поставщик не принял задачу — пробуем прежний путь через чат:
+        // звук он сейчас не берёт, но пусть решает он, а не мы.
         $result = GS_Gemini::transcribe($task['audio_url'], $task['params']);
 
         $task = self::load($id);
@@ -564,7 +740,7 @@ class GS_Transcribe {
         set_transient(self::TASK_PREFIX . $task['id'], $task, self::TASK_TTL);
     }
 
-    private static function load($id) {
+    public static function load($id) {
         $task = get_transient(self::TASK_PREFIX . $id);
         return is_array($task) && !empty($task['id']) ? $task : null;
     }

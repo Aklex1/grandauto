@@ -382,6 +382,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_diag_task'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/diag/stt', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_diag_stt'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/diag/once', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_diag_once'),
@@ -3052,6 +3057,57 @@ class GS_Rest {
     }
 
     /**
+     * Какой моделью расшифровка ещё работает.
+     *
+     * Поставщик снимает каналы без предупреждения, и расшифровка встала
+     * вся: три модели из списка отвечают «канал не поддерживается».
+     * Перебирать их по одной через живые заказы — долго и за деньги,
+     * поэтому спрашиваем напрямую, одним заходом по списку.
+     */
+    public static function handle_diag_stt($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        $audio = esc_url_raw((string) ($p['audio'] ?? ''));
+        if ($audio === '' && empty($p['job_state'])) {
+            return new WP_Error('gs_bad', 'Нужна ссылка на запись', array('status' => 400));
+        }
+        // С ключом job проверяем не чат, а отдельную модель расшифровки:
+        // ставим задачу и возвращаем её номер, чтобы следить отдельно.
+        if (!empty($p['job'])) {
+            $started = GS_Provider::job('stt', array(
+                'audio_url' => $audio, 'language_code' => 'ru',
+                'tag_audio_events' => false, 'diarize' => false,
+            ), array('timeout' => 60));
+            return rest_ensure_response(array('ok' => !empty($started['ok']),
+                'задача' => (string) ($started['task'] ?? ''),
+                'сообщение' => (string) ($started['message'] ?? '')));
+        }
+        if (!empty($p['job_state'])) {
+            return rest_ensure_response(GS_Provider::job_result((string) $p['job_state']));
+        }
+
+        $models = array_filter(array_map('trim', explode(',', (string) ($p['models'] ?? ''))));
+        if (!$models) {
+            return new WP_Error('gs_bad', 'Нужен список моделей через запятую', array('status' => 400));
+        }
+
+        $out = array();
+        foreach ($models as $model) {
+            $pick = $model;
+            add_filter('gs_transcribe_models', function () use ($pick) { return array($pick); }, 99);
+            $res = GS_Gemini::transcribe($audio, array('language_code' => 'ru'));
+            remove_all_filters('gs_transcribe_models', 99);
+            $out[$model] = !empty($res['ok'])
+                ? array('ответ' => 'расшифровала', 'знаков' => mb_strlen((string) $res['text']),
+                        'кредитов' => (float) $res['credits'])
+                : array('ответ' => 'отказ', 'почему' => (string) ($res['error'] ?? $res['message'] ?? ''));
+        }
+        return rest_ensure_response(array('ok' => true, 'модели' => $out));
+    }
+
+    /**
      * Что мы знаем о задаче по её номеру.
      *
      * Обычный вопрос разбора: «у поставщика такая-то генерация — сколько
@@ -3067,6 +3123,29 @@ class GS_Rest {
         }
 
         $out = array('задача' => $task_id);
+
+        // Расшифровка держит своё состояние отдельно: в журнале генераций
+        // по ней только списание, а что с задачей у поставщика — здесь.
+        if (strpos($task_id, 'gst-') === 0 && class_exists('GS_Transcribe')) {
+            $row = GS_Transcribe::load($task_id);
+            if (is_array($row)) {
+                $out['расшифровка'] = array(
+                    'статус'           => (string) $row['status'],
+                    'задача_поставщика'=> (string) ($row['provider_task'] ?? 'не ставилась'),
+                    'заведена'         => $row['created'] ? gmdate('H:i:s', (int) $row['created']) : '',
+                    'знаков'           => mb_strlen((string) $row['text']),
+                    'отказ'            => (string) $row['error'],
+                );
+                if (!empty($row['provider_task']) && class_exists('GS_Provider')) {
+                    $st = GS_Provider::job_result((string) $row['provider_task']);
+                    $out['расшифровка']['у_поставщика'] = array(
+                        'состояние' => (string) ($st['state'] ?? ''),
+                        'отказ'     => (string) ($st['message'] ?? ''),
+                        'ключи'     => array_keys((array) ($st['result'] ?? array())),
+                    );
+                }
+            }
+        }
 
         $table = $wpdb->prefix . 'kie_tts_generations';
         $row = $wpdb->get_row($wpdb->prepare(
