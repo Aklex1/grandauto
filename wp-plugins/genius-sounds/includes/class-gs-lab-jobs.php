@@ -77,6 +77,45 @@ class GS_Lab_Jobs {
      * нужны только своему хозяину, и отдельная таблица тут не окупается.
      * ------------------------------------------------------------------ */
 
+    /**
+     * Сервисы с историей, но не из лаборатории.
+     *
+     * Презентации живут своей страницей и своим маршрутом, а журнал
+     * заказов им нужен ровно тот же: заказ виден с момента запуска,
+     * готовое ищет человека плашкой. Песня своим голосом сюда не входит
+     * — её страница и так лабораторная, и история у неё ведётся под
+     * ключом сервиса.
+     *
+     * @return array<string,array{0:string,1:string}> ключ => название, адрес
+     */
+    public static function extra() {
+        return array(
+            'slides' => array('Презентации',
+                class_exists('GS_Slides_Page') ? GS_Slides_Page::get_url() : home_url('/')),
+        );
+    }
+
+    /** Все сервисы, у которых журнал ведём мы. */
+    public static function journal_services() {
+        return array_merge(array_keys(GS_Lab::services()), array_keys(self::extra()));
+    }
+
+    /** Знаем ли мы такой сервис — хоть лабораторный, хоть соседний. */
+    private static function known($service_id) {
+        $extra = self::extra();
+        return (bool) GS_Lab::get_service($service_id) || isset($extra[(string) $service_id]);
+    }
+
+    /** Название и адрес сервиса для плашки. */
+    private static function label($service_id) {
+        $service = GS_Lab::get_service($service_id);
+        if ($service) {
+            return array((string) $service['menu'], GS_Lab::get_url($service_id));
+        }
+        $extra = self::extra();
+        return isset($extra[$service_id]) ? $extra[$service_id] : array((string) $service_id, home_url('/'));
+    }
+
     private static function key($service_id) {
         return 'gs_lab_history_' . sanitize_key($service_id);
     }
@@ -128,7 +167,7 @@ class GS_Lab_Jobs {
 
     public static function history($user_id, $service_id) {
         $user_id = (int) $user_id;
-        if ($user_id <= 0 || !GS_Lab::get_service($service_id)) {
+        if ($user_id <= 0 || !self::known($service_id)) {
             return array();
         }
         self::backfill($user_id);
@@ -259,7 +298,7 @@ class GS_Lab_Jobs {
     public static function remember_order($user_id, $service_id, $task_id, $note = '', $cost = 0) {
         $user_id = (int) $user_id;
         $task_id = (string) $task_id;
-        if ($user_id <= 0 || $task_id === '' || !GS_Lab::get_service($service_id)) {
+        if ($user_id <= 0 || $task_id === '' || !self::known($service_id)) {
             return;
         }
         $rows = self::history($user_id, $service_id);
@@ -286,7 +325,7 @@ class GS_Lab_Jobs {
     public static function finish_order($user_id, $service_id, $task_id, $status, array $files, $text = '', $message = '', $note = '') {
         $user_id = (int) $user_id;
         $task_id = (string) $task_id;
-        if ($user_id <= 0 || !GS_Lab::get_service($service_id)) {
+        if ($user_id <= 0 || !self::known($service_id)) {
             return;
         }
         $clean = array();
@@ -599,6 +638,162 @@ class GS_Lab_Jobs {
         return is_array($rows) ? $rows : array();
     }
 
+    /**
+     * Заказы, о которых помнит только служебная запись.
+     *
+     * У песни и презентации нет строки в общем журнале генераций: они
+     * идут своими маршрутами, а след оставляют настройкой вида
+     * gs_voice_song_<задача>. По ней их и находим.
+     */
+    public static function pending_by_option($prefix, $limit = 25) {
+        global $wpdb;
+        $names = $wpdb->get_col($wpdb->prepare(
+            "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s LIMIT %d",
+            $wpdb->esc_like($prefix) . '%',
+            (int) $limit
+        ));
+        if (!is_array($names)) {
+            return array();
+        }
+        $out = array();
+        foreach ($names as $name) {
+            // Под тот же префикс попадают обычные настройки: у слайдов
+            // рядом живёт gs_slides_alt_pages. Заказ узнаём по тому, что
+            // внутри — чей он и когда заведён.
+            $meta = get_option($name);
+            if (!is_array($meta) || empty($meta['user_id']) || empty($meta['at'])) {
+                continue;
+            }
+            $out[] = substr((string) $name, strlen($prefix));
+        }
+        return $out;
+    }
+
+    /**
+     * Песня своим голосом: забрать готовое без участия страницы.
+     *
+     * Песня делается минутами, и человек за это время обычно уходит.
+     * Раньше её забирал только опрос со страницы: ушёл — и песня
+     * осталась у поставщика, а при отказе деньги не вернулись.
+     *
+     * @return string «готово», «отказ» или «ждём»
+     */
+    public static function settle_song($task_id) {
+        $task_id = (string) $task_id;
+        $key = 'gs_voice_song_' . $task_id;
+        $meta = get_option($key, array());
+        if (!is_array($meta) || empty($meta['user_id']) || !class_exists('GS_Voice')) {
+            return 'ждём';
+        }
+        $user_id = (int) $meta['user_id'];
+        $state = GS_Voice::song_state($task_id);
+        $status = (string) ($state['status'] ?? '');
+
+        if ($status === 'completed') {
+            // Ссылки поставщика живут недолго — копии кладём в архив сразу.
+            GS_Voice::remember_songs($user_id, (array) $state['files'],
+                (string) ($meta['title'] ?? ''), (string) ($meta['style'] ?? ''));
+            $files = array();
+            foreach ((array) $state['files'] as $file) {
+                $url = is_array($file) ? (string) ($file['url'] ?? '') : (string) $file;
+                if ($url !== '') {
+                    $files[] = array('url' => $url, 'kind' => 'audio', 'label' => '');
+                }
+            }
+            delete_option($key);
+            self::finish_order($user_id, 'voicesong', $task_id, 'ready', $files, '', '',
+                (string) ($meta['title'] ?? ''));
+            return 'готово';
+        }
+
+        if ($status === 'failed') {
+            // Возврат достаётся тому, кто первым забрал служебную запись.
+            if (delete_option($key) && (float) ($meta['cost'] ?? 0) > 0) {
+                GS_SFX::refund_charge($user_id, (float) $meta['cost']);
+            }
+            self::finish_order($user_id, 'voicesong', $task_id, 'failed', array(), '',
+                (string) ($state['message'] ?: 'Средства возвращены на баланс'));
+            return 'отказ';
+        }
+
+        // Поставщик о задаче суточной давности уже не помнит: держать её
+        // «в работе» вечно — значит никогда не вернуть человеку деньги.
+        if (time() - (int) ($meta['at'] ?? time()) > self::GIVE_UP_HOURS * HOUR_IN_SECONDS) {
+            if (delete_option($key) && (float) ($meta['cost'] ?? 0) > 0) {
+                GS_SFX::refund_charge($user_id, (float) $meta['cost']);
+            }
+            self::finish_order($user_id, 'voicesong', $task_id, 'failed', array(), '',
+                'Песня не состоялась, средства возвращены');
+            return 'отказ';
+        }
+
+        return 'ждём';
+    }
+
+    /**
+     * Презентация: собрать и отдать, даже если страницу закрыли.
+     *
+     * Картинки рисуются поставщиком порознь, и готовую колоду собирает
+     * тот, кто первым спросил о состоянии. Раньше спросить мог только
+     * браузер.
+     *
+     * @return string «готово», «отказ» или «ждём»
+     */
+    public static function settle_slides($task_id) {
+        $task_id = (string) $task_id;
+        $key = 'gs_slides_' . $task_id;
+        $meta = get_option($key, array());
+        if (!is_array($meta) || empty($meta['user_id']) || !class_exists('GS_Slides')) {
+            return 'ждём';
+        }
+        $user_id = (int) $meta['user_id'];
+        if (!empty($meta['url'])) {
+            return 'готово';
+        }
+
+        $got = GS_Slides::collect_images((array) $meta['tasks']);
+        $overdue = (time() - (int) $meta['at']) > GS_Slides::TIMEOUT;
+        if (!$got['done'] && !$overdue) {
+            return 'ждём';
+        }
+
+        // Свои картинки не проходили через поставщика — ставим их туда же,
+        // куда встала бы нарисованная иллюстрация.
+        $images = $got['images'];
+        foreach ((array) ($meta['own'] ?? array()) as $index => $url) {
+            $images['il:' . (int) $index] = (string) $url;
+        }
+
+        $built = GS_Slides::build($meta['deck'], $images, $user_id);
+        if (empty($built['ok'])) {
+            if (delete_option($key) && !empty($meta['cost'])) {
+                GS_SFX::refund_charge($user_id, (float) $meta['cost']);
+            }
+            self::finish_order($user_id, 'slides', $task_id, 'failed', array(), '',
+                (string) $built['message'] . ' Деньги вернулись на баланс.');
+            return 'отказ';
+        }
+
+        if ($overdue && !$got['done'] && !empty($meta['cost'])) {
+            // Часть фонов не дождались — честнее вернуть деньги, файл отдать.
+            GS_SFX::refund_charge($user_id, (float) $meta['cost']);
+        }
+
+        $meta['url'] = $built['url'];
+        update_option($key, $meta, false);
+        GS_Slides::remember($user_id, array(
+            'at'     => current_time('mysql'),
+            'title'  => $meta['deck']['title'],
+            'slides' => count($meta['deck']['slides']) + 1,
+            'url'    => $built['url'],
+        ));
+        self::finish_order($user_id, 'slides', $task_id, 'ready',
+            array(array('url' => (string) $built['url'], 'kind' => 'file',
+                        'label' => 'Скачать презентацию')),
+            '', '', (string) $meta['deck']['title']);
+        return 'готово';
+    }
+
     public static function sweep() {
         $done = 0;
         $failed = 0;
@@ -618,8 +813,31 @@ class GS_Lab_Jobs {
             }
         }
 
-        // Звук идёт тем же заходом: порядок доводки должен быть один на
-        // все сервисы, иначе «забирает само» окажется правдой не везде.
+        // Песня и презентация — тем же заходом: порядок доводки должен
+        // быть один на все сервисы, иначе «забирает само» окажется
+        // правдой не везде.
+        foreach (self::pending_by_option('gs_voice_song_') as $task_id) {
+            $res = self::settle_song($task_id);
+            if ($res === 'готово') { $done++; } elseif ($res === 'отказ') { $failed++; } else { $waiting++; }
+        }
+        foreach (self::pending_by_option('gs_slides_') as $task_id) {
+            // Собранную колоду служебная запись переживает: по ней
+            // страница отдаёт готовый файл. Пересобирать её не нужно.
+            $meta = get_option('gs_slides_' . $task_id, array());
+            if (is_array($meta) && !empty($meta['url'])) {
+                continue;
+            }
+            $res = self::settle_slides($task_id);
+            if ($res === 'готово') { $done++; } elseif ($res === 'отказ') { $failed++; } else { $waiting++; }
+        }
+
+        // Заготовки голоса, брошенные на полпути: там возвращать деньги
+        // больше некому — шаг с проверочной фразой делает человек.
+        if (class_exists('GS_Rest')) {
+            $failed += GS_Rest::sweep_voice_tasks();
+        }
+
+        // Звук идёт тем же заходом.
         foreach (self::pending_sfx() as $task_id) {
             $res = self::settle_sfx((string) $task_id);
             if ($res === 'готово') {
@@ -800,7 +1018,8 @@ class GS_Lab_Jobs {
         if ($user_id <= 0) {
             return $out;
         }
-        foreach (GS_Lab::services() as $id => $service) {
+        foreach (self::journal_services() as $id) {
+            list($name, $url) = self::label($id);
             foreach (self::history($user_id, $id) as $row) {
                 if ($row['status'] === 'pending' || $row['seen'] !== '') {
                     continue;
@@ -808,8 +1027,8 @@ class GS_Lab_Jobs {
                 $out[] = array(
                     'task'    => $row['task'],
                     'service' => $id,
-                    'name'    => (string) $service['menu'],
-                    'url'     => GS_Lab::get_url($id),
+                    'name'    => $name,
+                    'url'     => $url,
                     'status'  => $row['status'],
                     'note'    => $row['note'],
                     'at'      => $row['at'],
@@ -844,7 +1063,7 @@ class GS_Lab_Jobs {
             return 0;
         }
         $n = 0;
-        foreach (GS_Lab::services() as $id => $service) {
+        foreach (self::journal_services() as $id) {
             foreach (self::history($user_id, $id) as $row) {
                 if ($row['status'] !== 'pending' && $row['seen'] === '') {
                     $n++;
@@ -866,7 +1085,7 @@ class GS_Lab_Jobs {
         if ($user_id <= 0) {
             return 0;
         }
-        if (!GS_Lab::get_service($service_id)) {
+        if (!self::known($service_id)) {
             // Звук и озвучка: у них отметка одна на задачу, снять её —
             // значит просто забыть, что человек это видел.
             $map = self::seen_map($user_id);
@@ -912,8 +1131,8 @@ class GS_Lab_Jobs {
         if ($user_id <= 0) {
             return 0;
         }
-        if (!GS_Lab::get_service($service_id)) {
-            // Не лаборатория — значит звук или озвучка: у них своя
+        if (!self::known($service_id)) {
+            // Не наш журнал — значит звук или озвучка: у них своя
             // история, и помнить нужно только сам факт прочтения.
             return self::mark_seen_outside($user_id, $tasks);
         }

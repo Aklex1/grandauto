@@ -316,6 +316,12 @@
             history.hidden = false;
             history.innerHTML = '<h2 class="gs-section-title">Ваши презентации</h2>' +
                 '<ul class="gs-slides__list">' + items.map(function (it) {
+                    // Незакрытый заказ скачивать нечего — вместо ссылки
+                    // показываем, что с ним: иначе он просто невидим.
+                    if (it.state) {
+                        return '<li><strong>' + esc(it.title) + '</strong>' +
+                            '<span>' + esc(it.state) + ' · ' + esc(it.at) + '</span></li>';
+                    }
                     return '<li><a href="' + esc(it.url) + '" download>' + esc(it.title) + '</a>' +
                         '<span>' + esc(it.slides) + ' слайдов · ' + esc(it.at) + '</span></li>';
                 }).join('') + '</ul>';

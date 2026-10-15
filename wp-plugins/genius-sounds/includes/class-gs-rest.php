@@ -2771,7 +2771,9 @@ class GS_Rest {
 
     public static function handle_lab_history($request) {
         $service_id = sanitize_key((string) $request['service']);
-        if (!GS_Lab::get_service($service_id)) {
+        // Журнал ведём не только лаборатории: у презентаций своя страница,
+        // а история нужна такая же.
+        if (!in_array($service_id, GS_Lab_Jobs::journal_services(), true)) {
             return new WP_Error('gs_bad_service', 'Неизвестный сервис', array('status' => 400));
         }
         return rest_ensure_response(array(
@@ -3088,9 +3090,31 @@ class GS_Rest {
 
     /** Разбор зависших заказов руками — тем же кодом, что и по расписанию. */
     public static function handle_lab_sweep($request) {
-        $pending = count(GS_Lab_Jobs::pending_jobs()) + count(GS_Lab_Jobs::pending_sfx());
+        $pending = count(GS_Lab_Jobs::pending_jobs()) + count(GS_Lab_Jobs::pending_sfx())
+            + count(GS_Lab_Jobs::pending_by_option('gs_voice_song_'))
+            + count(GS_Lab_Jobs::pending_by_option('gs_slides_'));
         $out = GS_Lab_Jobs::sweep();
         $out['было_в_очереди'] = $pending;
+
+        // Что осталось висеть — с возрастом: по одному числу «ещё в
+        // работе» непонятно, идёт работа или заказ застрял навсегда.
+        $left = array();
+        foreach (array('gs_voice_song_' => 'песня', 'gs_slides_' => 'презентация') as $prefix => $what) {
+            foreach (GS_Lab_Jobs::pending_by_option($prefix) as $task_id) {
+                $meta = get_option($prefix . $task_id, array());
+                if (!is_array($meta) || !empty($meta['url'])) {
+                    continue;
+                }
+                $left[] = array(
+                    'что'     => $what,
+                    'задача'  => $task_id,
+                    'часов'   => round((time() - (int) ($meta['at'] ?? time())) / HOUR_IN_SECONDS, 1),
+                    'кому'    => (int) ($meta['user_id'] ?? 0),
+                    'списано' => (float) ($meta['cost'] ?? 0),
+                );
+            }
+        }
+        $out['висит'] = $left;
         return rest_ensure_response($out);
     }
 
@@ -3257,15 +3281,45 @@ class GS_Rest {
     }
 
     /** Возврат платы за несостоявшийся голос — ровно один раз. */
-    private static function refund_voice_task($task_id) {
+    public static function refund_voice_task($task_id) {
         $meta = get_option('gs_voice_task_' . $task_id);
         if (!is_array($meta)) {
             return;
         }
-        if ((float) ($meta['cost'] ?? 0) > 0) {
+        // Возврат достаётся тому, кто первым забрал служебную запись: по
+        // этой задаче ходят и страница, и расписание.
+        if (delete_option('gs_voice_task_' . $task_id) && (float) ($meta['cost'] ?? 0) > 0) {
             GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
         }
-        delete_option('gs_voice_task_' . $task_id);
+    }
+
+    /** Брошенные на полпути заготовки голоса: вернуть деньги. */
+    public static function sweep_voice_tasks() {
+        global $wpdb;
+        $names = $wpdb->get_col($wpdb->prepare(
+            "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s LIMIT 50",
+            $wpdb->esc_like('gs_voice_task_') . '%'
+        ));
+        if (!is_array($names)) {
+            return 0;
+        }
+        $hit = 0;
+        foreach ($names as $name) {
+            $meta = get_option($name);
+            if (!is_array($meta) || empty($meta['at'])) {
+                continue;
+            }
+            // Создание голоса идёт по шагам, и без человека оно не
+            // закончится: он записывает проверочную фразу сам. Ушёл на
+            // полпути — задача висит вечно, а деньги списаны. Через срок
+            // ожидания закрываем её и возвращаем плату.
+            if (time() - (int) $meta['at'] <= self::VOICE_TIMEOUT * 2) {
+                continue;
+            }
+            self::refund_voice_task(substr((string) $name, strlen('gs_voice_task_')));
+            $hit++;
+        }
+        return $hit;
     }
 
     public static function handle_voice_list($request) {
@@ -3370,13 +3424,20 @@ class GS_Rest {
             return new WP_Error('gs_song_failed', $res['message'] !== '' ? $res['message'] : 'Не удалось запустить генерацию', array('status' => 502));
         }
 
+        $title = $fields['title'] !== ''
+            ? $fields['title']
+            : GS_Lab::music_title($fields['prompt'] !== '' ? $fields['prompt'] : $fields['lyrics']);
         update_option('gs_voice_song_' . $res['task_id'], array(
             'user_id' => $user_id,
             'cost'    => $cost,
             'at'      => time(),
-            'title'   => $fields['title'] !== '' ? $fields['title'] : GS_Lab::music_title($fields['prompt'] !== '' ? $fields['prompt'] : $fields['lyrics']),
+            'title'   => $title,
             'style'   => $fields['style'],
         ), false);
+
+        // Строка в истории появляется сразу: песня делается минутами, и
+        // человек за это время обычно уходит со страницы.
+        GS_Lab_Jobs::remember_order($user_id, 'voicesong', (string) $res['task_id'], $title, $cost);
 
         return rest_ensure_response(array(
             'task_id' => $res['task_id'],
@@ -3398,7 +3459,9 @@ class GS_Rest {
         $archive = array();
         if ($state['status'] === 'completed') {
             // Ссылки поставщика живут недолго, поэтому кладём копии в архив
-            // сразу — иначе скачать песню завтра уже не выйдет.
+            // сразу — иначе скачать песню завтра уже не выйдет. Архив и
+            // журнал заполняет тот же код, что и расписание: закрытая
+            // вкладка не должна менять итог.
             $archive = GS_Voice::remember_songs(
                 $user_id,
                 $state['files'],
@@ -3406,11 +3469,23 @@ class GS_Rest {
                 (string) ($meta['style'] ?? '')
             );
             delete_option('gs_voice_song_' . $task_id);
+            $files = array();
+            foreach ((array) $state['files'] as $file) {
+                $url = is_array($file) ? (string) ($file['url'] ?? '') : (string) $file;
+                if ($url !== '') {
+                    $files[] = array('url' => $url, 'kind' => 'audio', 'label' => '');
+                }
+            }
+            GS_Lab_Jobs::finish_order($user_id, 'voicesong', $task_id, 'ready', $files, '', '',
+                (string) ($meta['title'] ?? ''));
+            GS_Lab_Jobs::mark_seen($user_id, 'voicesong', array($task_id));
         } elseif ($state['status'] === 'failed') {
-            if ((float) ($meta['cost'] ?? 0) > 0) {
+            if (delete_option('gs_voice_song_' . $task_id) && (float) ($meta['cost'] ?? 0) > 0) {
                 GS_SFX::refund_charge($user_id, (float) $meta['cost']);
             }
-            delete_option('gs_voice_song_' . $task_id);
+            GS_Lab_Jobs::finish_order($user_id, 'voicesong', $task_id, 'failed', array(), '',
+                (string) ($state['message'] ?: 'Средства возвращены на баланс'));
+            GS_Lab_Jobs::mark_seen($user_id, 'voicesong', array($task_id));
         }
 
         return rest_ensure_response(array(
@@ -3885,6 +3960,11 @@ class GS_Rest {
         ), false);
         delete_transient('gs_slides_draft_' . $draft_id);
 
+        // Колода собирается из нескольких картинок и может занять минуты —
+        // заказ виден в истории с этой секунды, а не по готовности.
+        GS_Lab_Jobs::remember_order($user_id, 'slides', $task_id,
+            (string) ($deck['title'] ?? 'Презентация'), $cost);
+
         return rest_ensure_response(array(
             'task_id' => $task_id,
             'status'  => 'pending',
@@ -3897,71 +3977,68 @@ class GS_Rest {
 
     public static function handle_slides_status(WP_REST_Request $request) {
         $task_id = sanitize_text_field((string) $request['task_id']);
-        $key = 'gs_slides_' . $task_id;
-        $meta = get_option($key, array());
+        $meta = get_option('gs_slides_' . $task_id, array());
         if (!is_array($meta) || empty($meta['user_id'])) {
             return new WP_Error('gs_slides_unknown', 'Задача не найдена', array('status' => 404));
         }
-        if ((int) $meta['user_id'] !== get_current_user_id()) {
+        $user_id = (int) $meta['user_id'];
+        if ($user_id !== get_current_user_id()) {
             return new WP_Error('gs_slides_foreign', 'Это чужая задача', array('status' => 403));
         }
-        if (!empty($meta['url'])) {
-            return rest_ensure_response(array('status' => 'completed', 'url' => $meta['url'], 'title' => $meta['deck']['title']));
+
+        // Собирает колоду и считает деньги один и тот же код — он же
+        // работает по расписанию. Иначе закрытая вкладка и открытая
+        // приводили бы к разным итогам.
+        $res = GS_Lab_Jobs::settle_slides($task_id);
+        $meta = get_option('gs_slides_' . $task_id, array());
+
+        if ($res === 'отказ') {
+            return new WP_Error('gs_slides_build',
+                'Собрать презентацию не вышло. Деньги вернулись на баланс.', array('status' => 500));
         }
 
-        $got = GS_Slides::collect_images((array) $meta['tasks']);
-
-        // Фоны иногда зависают у поставщика. Ждать бесконечно нельзя:
-        // по истечении срока собираем что есть, а деньги возвращаем.
-        $overdue = (time() - (int) $meta['at']) > GS_Slides::TIMEOUT;
-        if (!$got['done'] && !$overdue) {
+        if ($res === 'готово' && is_array($meta) && !empty($meta['url'])) {
+            GS_Lab_Jobs::mark_seen($user_id, 'slides', array($task_id));
             return rest_ensure_response(array(
-                'status' => 'pending',
-                'ready'  => count($got['images']),
-                'total'  => count((array) $meta['tasks']),
+                'status'  => 'completed',
+                'url'     => (string) $meta['url'],
+                'title'   => (string) $meta['deck']['title'],
+                'balance' => GS_SFX::get_balance($user_id),
             ));
         }
 
-        // Свои картинки не проходили через поставщика — подставляем их
-        // на те же места, куда встала бы сгенерированная иллюстрация.
-        $images = $got['images'];
-        foreach ((array) ($meta['own'] ?? array()) as $index => $url) {
-            $images['il:' . (int) $index] = (string) $url;
-        }
-
-        $built = GS_Slides::build($meta['deck'], $images, (int) $meta['user_id']);
-        if (empty($built['ok'])) {
-            if (!empty($meta['cost'])) {
-                GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
-            }
-            delete_option($key);
-            return new WP_Error('gs_slides_build', $built['message'] . ' Деньги вернулись на баланс.', array('status' => 500));
-        }
-
-        if ($overdue && !$got['done'] && !empty($meta['cost'])) {
-            // Часть фонов не дождались — честнее вернуть деньги, файл отдать.
-            GS_SFX::refund_charge((int) $meta['user_id'], (float) $meta['cost']);
-        }
-
-        $meta['url'] = $built['url'];
-        update_option($key, $meta, false);
-        GS_Slides::remember((int) $meta['user_id'], array(
-            'at'     => current_time('mysql'),
-            'title'  => $meta['deck']['title'],
-            'slides' => count($meta['deck']['slides']) + 1,
-            'url'    => $built['url'],
-        ));
-
+        $got = GS_Slides::collect_images((array) ($meta['tasks'] ?? array()));
         return rest_ensure_response(array(
-            'status'  => 'completed',
-            'url'     => $built['url'],
-            'title'   => $meta['deck']['title'],
-            'balance' => GS_SFX::get_balance((int) $meta['user_id']),
+            'status' => 'pending',
+            'ready'  => count($got['images']),
+            'total'  => count((array) ($meta['tasks'] ?? array())),
         ));
     }
 
     public static function handle_slides_history() {
-        return rest_ensure_response(array('items' => GS_Slides::own_decks(get_current_user_id())));
+        $user_id = get_current_user_id();
+        $items = array();
+
+        // Сначала незакрытые заказы: именно их человек не находит и идёт
+        // спрашивать. Готовые колоды лежат ниже, своим списком.
+        foreach (GS_Lab_Jobs::history($user_id, 'slides') as $row) {
+            if ($row['status'] === 'ready') {
+                continue; // такая колода уже есть в списке готовых
+            }
+            $items[] = array(
+                'url'    => '',
+                'title'  => $row['note'] !== '' ? $row['note'] : 'Презентация',
+                'slides' => '',
+                'at'     => $row['at'],
+                'state'  => $row['status'] === 'failed' ? 'не вышло, деньги вернули' : 'в работе',
+            );
+        }
+        foreach (GS_Slides::own_decks($user_id) as $deck) {
+            $deck = (array) $deck;
+            $deck['state'] = '';
+            $items[] = $deck;
+        }
+        return rest_ensure_response(array('items' => $items));
     }
 
     public static function handle_course_images(WP_REST_Request $request) {
