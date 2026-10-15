@@ -1561,6 +1561,20 @@ class GS_Lab {
             return $out;
         }
 
+        // Служба расшифровки у поставщика могла лечь. Брать за заказ деньги,
+        // чтобы через полчаса вернуть их с отказом, — обман ожиданий: лучше
+        // сказать сразу и ничего не списывать.
+        if (class_exists('GS_Transcribe') && GS_Transcribe::down()) {
+            return array(
+                'ok' => false,
+                'message' => 'Расшифровка сейчас не работает: служба у поставщика не отвечает. '
+                           . 'Это наша беда, не ваша — попробуйте через четверть часа, '
+                           . 'деньги за заказ не списаны.',
+                'payload' => $payload,
+                'seconds' => 0.0,
+            );
+        }
+
         $fields = isset($payload['fields']) && is_array($payload['fields']) ? $payload['fields'] : array();
         $link = trim((string) ($fields['source_url'] ?? ''));
         $audio = (string) ($payload['audio_url'] ?? '');

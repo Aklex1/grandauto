@@ -307,6 +307,7 @@ class GS_Transcribe {
                 $task['credits']  = $got['credits'];
                 $task['finished'] = time();
                 self::save($task);
+                delete_transient(self::DOWN_KEY);
             } elseif (!empty($got['отказ'])) {
                 // Поставщик нередко отвечает «внешний сервис не ответил».
                 // Это не отказ по сути записи, а его собственная беда:
@@ -327,13 +328,20 @@ class GS_Transcribe {
                 $task['status']   = 'failed';
                 $task['error']    = $got['message'];
                 $task['finished'] = time();
+                if (self::is_provider_timeout($got['message'])) {
+                    set_transient(self::DOWN_KEY, 1, self::DOWN_TTL);
+                    $task['error'] = self::down_message();
+                }
                 self::save($task);
                 self::log('расшифровка не удалась (' . $id . '): ' . $got['message']);
             } elseif ((time() - (int) $task['created']) > self::SCRIBE_WAIT) {
+                // Задача принята, но за полчаса не сдвинулась — служба молчит.
+                set_transient(self::DOWN_KEY, 1, self::DOWN_TTL);
                 $task['status']   = 'failed';
-                $task['error']    = 'Расшифровка не уложилась в отведённое время';
+                $task['error']    = self::down_message();
                 $task['finished'] = time();
                 self::save($task);
+                self::log('расшифровка не дождалась ответа службы (' . $id . ')');
             }
         }
 
@@ -666,6 +674,30 @@ class GS_Transcribe {
 
     /** Сколько раз пробуем заново, если у поставщика не ответил его внешний сервис. */
     const SCRIBE_TRIES = 2;
+
+    /** Сколько помним о том, что служба расшифровки у поставщика не отвечает. */
+    const DOWN_KEY = 'gs_stt_down';
+    const DOWN_TTL = 900;
+
+    /**
+     * Не отвечает ли служба расшифровки прямо сейчас.
+     *
+     * Когда внешняя служба поставщика молчит, задача всё равно принимается,
+     * висит отведённые полчаса и заканчивается возвратом. Для человека это
+     * худший из возможных ответов: деньги списаны, страница занята, результата
+     * нет. Поэтому первый такой отказ запоминаем и следующие заказы не берём
+     * вовсе — пока не пройдёт расшифровка и память не очистится.
+     */
+    public static function down() {
+        return (bool) get_transient(self::DOWN_KEY);
+    }
+
+    /** Отказ службы расшифровки — на языке пользователя. */
+    private static function down_message() {
+        return 'Служба расшифровки у поставщика сейчас не отвечает. Это не ваша запись и не ваш файл — '
+             . 'беда на их стороне, мы её видим. Деньги за заказ вернулись на баланс, '
+             . 'попробуйте через четверть часа.';
+    }
 
     public static function run($id) {
         $task = self::load($id);
