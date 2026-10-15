@@ -270,7 +270,7 @@ class GS_SFX {
         $out['status'] = isset($data['status']) ? (string) $data['status'] : '';
 
         if (!empty($data['errorMessage'])) {
-            $out['message'] = (string) $data['errorMessage'];
+            $out['message'] = self::human_error((string) $data['errorMessage']);
         }
 
         $items = array();
@@ -290,6 +290,50 @@ class GS_SFX {
         }
 
         return $out;
+    }
+
+    /**
+     * Отказ поставщика — человеческими словами.
+     *
+     * Он отвечает по-английски и о своём: «в тегах имя артиста»,
+     * «канал не поддерживается». Человеку это ничего не объясняет, а
+     * главное — не подсказывает, что делать. Хуже того, имя артиста он
+     * ищет простым вхождением подстроки, и ловится на обычных русских
+     * словах: «колокольчика» в латинице — kolokol-chika, и этого ему
+     * достаточно. Человек при этом видит отказ на ровном месте.
+     */
+    public static function human_error($message) {
+        $raw = trim((string) $message);
+        $low = mb_strtolower($raw);
+
+        if (strpos($low, 'artist name') !== false) {
+            // Имя из сообщения оставляем: по нему видно, какое слово
+            // переписать, — иначе совет «измените описание» бесполезен.
+            $name = '';
+            if (preg_match('~artist name\s+([^\s,.-]+)~i', $raw, $m)) {
+                $name = ' (он увидел в нём «' . $m[1] . '»)';
+            }
+            return 'Поставщик принял часть описания за имя музыканта' . $name
+                 . ' и отказался генерировать. Перепишите описание другими словами — '
+                 . 'деньги за эту попытку вернулись на баланс.';
+        }
+        if (strpos($low, 'channel is not supported') !== false) {
+            return 'Эта модель у поставщика сейчас недоступна. Мы уже знаем о проблеме; '
+                 . 'деньги за попытку вернулись на баланс.';
+        }
+        foreach (array('sensitive', 'policy', 'violat') as $needle) {
+            if (strpos($low, $needle) !== false) {
+                return 'Поставщик счёл описание недопустимым. Попробуйте переформулировать — '
+                     . 'деньги за попытку вернулись на баланс.';
+            }
+        }
+        foreach (array('timeout', 'network', 'try again', 'internal', 'unavailable') as $needle) {
+            if (strpos($low, $needle) !== false) {
+                return 'Сервис генерации не ответил. Попробуйте ещё раз через минуту — '
+                     . 'деньги за неудачную попытку не списываются.';
+            }
+        }
+        return $raw;
     }
 
     public static function is_failed_status($status) {
