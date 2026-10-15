@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.54.4
+ * Version:     2.56.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.54.4');
+define('GS_VERSION', '2.56.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -30,6 +30,7 @@ require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts-page.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts-sync.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-lab-jobs.php';
+require_once GS_PLUGIN_DIR . 'includes/class-gs-once.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-catalog.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-sections.php';
 require_once GS_PLUGIN_DIR . 'includes/class-gs-rewrite.php';
@@ -176,6 +177,7 @@ class Genius_Sounds_Plugin {
         GS_Links::boot();
         GS_Lab::boot();
         GS_Lab_Jobs::boot();
+        GS_Once::boot();
         GS_Manual::boot();
         GS_Neurohub::boot();
         GS_Dashboard::boot();

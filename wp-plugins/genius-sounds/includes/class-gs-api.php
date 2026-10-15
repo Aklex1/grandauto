@@ -553,6 +553,23 @@ class GS_Api {
             );
         }
 
+        // Повтор того же запроса — почти всегда вторая кнопка или
+        // повторная отправка: через этот же маршрут работает «Нейросети»
+        // на сайте, и двойное нажатие там списывало дважды. Клиенту,
+        // которому нужны именно два одинаковых запуска, достаточно
+        // прислать allow_duplicate — отказ об этом и сообщает.
+        $once = $input;
+        unset($once['allow_duplicate']);
+        if (empty($input['allow_duplicate'])
+            && !GS_Once::claim($user_id, 'api:' . $service_id, $once)) {
+            return new WP_Error(
+                'gs_api_duplicate',
+                'Такой же запрос уже выполняется. Дождитесь результата или пришлите '
+                    . 'allow_duplicate: true, если нужен второй запуск того же.',
+                array('status' => 429)
+            );
+        }
+
         // Ручной очереди нужны владелец заказа и списанная сумма.
         $input['user_id'] = $user_id;
         $input['cost']    = $cost;
@@ -574,6 +591,7 @@ class GS_Api {
         if ($cost > 0 && $service['engine'] !== 'tts' && !GS_SFX::charge($user_id, $cost, 'api')) {
             return new WP_Error('gs_api_charge', 'Не удалось списать средства с баланса', array('status' => 500));
         }
+        GS_Once::done($user_id, 'api:' . $service_id, $once);
         if (class_exists('KIE_TTS_DB')) {
             $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);
             KIE_TTS_DB::save_generation($user_id, $task_id, 'API: ' . $service['title'], 'api:' . $service_id, $cost, $is_telegram);

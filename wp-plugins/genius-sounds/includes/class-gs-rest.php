@@ -377,6 +377,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_lab_renotify'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/diag/once', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_diag_once'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/lab/economy', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_lab_economy'),
@@ -1806,6 +1811,13 @@ class GS_Rest {
             );
         }
 
+        // Один заказ — одно списание: до постановки задачи у поставщика,
+        // иначе вторая вкладка успеет завести вторую задачу.
+        $once = array($raw_prompt, $model, $mode, $seconds, $loop, $tempo, $key);
+        if (!GS_Once::claim($user_id, 'sfx', $once)) {
+            return GS_Once::refusal();
+        }
+
         $prompt = GS_SFX::build_prompt($raw_prompt, $mode, $seconds);
 
         $created = GS_SFX::create_task($prompt, array(
@@ -1827,6 +1839,7 @@ class GS_Rest {
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_charge_failed', 'Не удалось списать средства с баланса', array('status' => 500));
         }
+        GS_Once::done($user_id, 'sfx', $once);
 
         if (class_exists('KIE_TTS_DB')) {
             $is_telegram = class_exists('KIE_TTS_Auth') && KIE_TTS_Auth::is_telegram_user($user_id);
@@ -2660,6 +2673,15 @@ class GS_Rest {
         // Источник может быть ссылкой: приводим его к звуку и узнаём
         // длительность до оплаты — иначе двухчасовая запись по ссылке
         // считалась бы по минимальной цене.
+        // Защёлка до разбора источника: он сам по себе может занять
+        // минуту, и за это время вторая вкладка успевает всё повторить.
+        // Отпечаток снимаем до разбора: дальше prepare перепишет payload,
+        // и по изменённому мы бы искали повтор не того заказа.
+        $once = $payload;
+        if (!GS_Once::claim($user_id, 'lab:' . $service_id, $once)) {
+            return GS_Once::refusal();
+        }
+
         $prepared = GS_Lab::prepare($service_id, $payload);
         if (empty($prepared['ok'])) {
             return new WP_Error('gs_bad_source', $prepared['message'] ?: 'Не удалось разобрать источник', array('status' => 400));
@@ -2710,6 +2732,7 @@ class GS_Rest {
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_charge_failed', 'Не удалось списать средства с баланса', array('status' => 500));
         }
+        GS_Once::done($user_id, 'lab:' . $service_id, $once);
 
         if ($user_id <= 0) {
             self::guest_count($service_id);
@@ -3021,6 +3044,48 @@ class GS_Rest {
         return array('tts', 'Озвучка текста');
     }
 
+    /**
+     * Работает ли защита от повторного заказа.
+     *
+     * Она держится на блокировке самой базы, а та есть не на всяком
+     * хостинге: если её нет, защита молча вырождается в проверку
+     * отпечатка, и знать об этом надо заранее, а не по двойному списанию.
+     */
+    public static function handle_diag_once($request) {
+        global $wpdb;
+        $probe = $wpdb->get_var("SELECT GET_LOCK('gs_once_probe', 0)");
+        if ($probe !== null) {
+            $wpdb->get_var("SELECT RELEASE_LOCK('gs_once_probe')");
+        }
+        $user_id = get_current_user_id();
+
+        // С параметром hold держим заказ занятым заданное число секунд и
+        // ничего больше не делаем: так проверяется именно одновременность
+        // — пока один запрос держит защёлку, второй обязан получить отказ.
+        $hold = (int) $request->get_param('hold');
+        if ($hold > 0) {
+            $ok = GS_Once::claim($user_id, 'diag-hold', array('держим'));
+            if (!$ok) {
+                return rest_ensure_response(array('занято' => true, 'держал' => 0));
+            }
+            sleep(min(15, $hold));
+            return rest_ensure_response(array('занято' => false, 'держал' => min(15, $hold)));
+        }
+
+        $payload = array('проверка', microtime(true));
+
+        $first  = GS_Once::claim($user_id, 'diag', $payload);
+        GS_Once::done($user_id, 'diag', $payload);
+        $second = GS_Once::claim($user_id, 'diag', $payload);
+
+        return rest_ensure_response(array(
+            'блокировка_базы' => $probe === null ? 'не поддерживается' : (int) $probe,
+            'первый_заказ'    => $first ? 'пропущен' : 'отклонён',
+            'повтор'          => $second ? 'ПРОПУЩЕН — защита не работает' : 'отклонён',
+            'итог'            => ($first && !$second) ? 'защита работает' : 'разобраться',
+        ));
+    }
+
     /** Разбор зависших заказов руками — тем же кодом, что и по расписанию. */
     public static function handle_lab_sweep($request) {
         $pending = count(GS_Lab_Jobs::pending_jobs()) + count(GS_Lab_Jobs::pending_sfx());
@@ -3058,11 +3123,16 @@ class GS_Rest {
             return new WP_Error('gs_no_audio', 'Сначала запишите или загрузите свой голос', array('status' => 400));
         }
 
+        if (!GS_Once::claim($user_id, 'voice', array($url))) {
+            return GS_Once::refusal();
+        }
+
         $cost = GS_Voice::voice_cost();
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_charge_failed',
                 'На балансе не хватает средств.' . GS_SFX::trial_note($user_id), array('status' => 402));
         }
+        GS_Once::done($user_id, 'voice', array($url));
 
         try {
             $seconds = GS_Lab::media_duration(GS_Lab::local_path($url));
@@ -3270,11 +3340,16 @@ class GS_Rest {
             'prompt' => sanitize_textarea_field((string) ($params['prompt'] ?? '')),
         );
 
+        if (!GS_Once::claim($user_id, 'song', array($voice_id, $fields))) {
+            return GS_Once::refusal();
+        }
+
         $cost = GS_Voice::song_cost();
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_charge_failed',
                 'На балансе не хватает средств.' . GS_SFX::trial_note($user_id), array('status' => 402));
         }
+        GS_Once::done($user_id, 'song', array($voice_id, $fields));
 
         // Плата снята до запуска, поэтому любая неожиданность здесь — включая
         // ошибку в самом коде — обязана вернуть деньги, а не оставить человека
@@ -3765,11 +3840,19 @@ class GS_Rest {
         // За свою картинку денег не берём: рисовать нечего.
         $illustrations = array_values(array_diff($illustrations, array_keys($own)));
 
+        // Отпечаток по черновику и выбранным картинкам: повторная сборка
+        // той же презентации — это вторая кнопка, а не второй замысел.
+        $once = array($draft_id, $style, $illustrations, array_keys($own));
+        if (!GS_Once::claim($user_id, 'slides', $once)) {
+            return GS_Once::refusal();
+        }
+
         $cost = GS_Slides_Page::cost() + count($illustrations) * GS_Slides_Page::pic_cost();
         if ($cost > 0 && !GS_SFX::charge($user_id, $cost)) {
             return new WP_Error('gs_charge_failed',
                 'На балансе не хватает средств.' . GS_SFX::trial_note($user_id), array('status' => 402));
         }
+        GS_Once::done($user_id, 'slides', $once);
 
         // Деньги сняты до запуска, поэтому любая неожиданность ниже —
         // включая ошибку в самом коде — обязана вернуть их на баланс.
