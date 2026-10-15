@@ -377,6 +377,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_lab_renotify'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/diag/task', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_diag_task'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/diag/once', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_diag_once'),
@@ -3044,6 +3049,82 @@ class GS_Rest {
             return array('free', 'Бесплатная проба озвучки');
         }
         return array('tts', 'Озвучка текста');
+    }
+
+    /**
+     * Что мы знаем о задаче по её номеру.
+     *
+     * Обычный вопрос разбора: «у поставщика такая-то генерация — сколько
+     * за неё взяли с человека». Ответ собирается из трёх мест: строка в
+     * журнале генераций, расход у поставщика и наша история заказов.
+     * Складывать их руками каждый раз — потерянное время.
+     */
+    public static function handle_diag_task($request) {
+        global $wpdb;
+        $task_id = sanitize_text_field((string) $request->get_param('id'));
+        if ($task_id === '') {
+            return new WP_Error('gs_bad', 'Нужен номер задачи', array('status' => 400));
+        }
+
+        $out = array('задача' => $task_id);
+
+        $table = $wpdb->prefix . 'kie_tts_generations';
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$table} WHERE task_id = %s LIMIT 1", $task_id
+        ), ARRAY_A);
+
+        if (is_array($row)) {
+            $uid = (int) ($row['user_id'] ?? 0);
+            $user = $uid > 0 ? get_user_by('id', $uid) : null;
+            $out['в_журнале'] = array(
+                'когда'    => (string) ($row['created_at'] ?? ''),
+                'кто'      => $user ? $user->user_login : ($uid > 0 ? 'пользователь ' . $uid : 'гость'),
+                'user_id'  => $uid,
+                'сервис'   => (string) ($row['voice'] ?? ''),
+                'описание' => mb_substr((string) ($row['text'] ?? ''), 0, 120),
+                'списано'  => (float) ($row['cost'] ?? 0),
+                'статус'   => (string) ($row['status'] ?? ''),
+                'файл'     => (string) ($row['audio_url'] ?? ''),
+            );
+            $out['баланс_сейчас'] = $uid > 0 ? GS_SFX::get_balance($uid) : 0.0;
+
+            // Отказ у нас всегда сопровождается возвратом — говорим об
+            // этом прямо, чтобы не гадать по сумме.
+            $out['деньги'] = (string) ($row['status'] ?? '') === 'failed'
+                ? 'списано ' . (float) $row['cost'] . ' ₽ и возвращено при отказе'
+                : 'списано ' . (float) $row['cost'] . ' ₽';
+        } else {
+            $out['в_журнале'] = 'строки нет — задача заведена не через сайт';
+        }
+
+        // Приложение и бот ведут свой список задач в той же базе: если
+        // на сайте строки нет, заказ мог прийти оттуда.
+        $app = $wpdb->prefix . 'app_generation_tasks';
+        foreach (array($app, 'app_generation_tasks') as $candidate) {
+            if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $candidate)) !== $candidate) {
+                continue;
+            }
+            $arow = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$candidate} WHERE task_id = %s LIMIT 1", $task_id
+            ), ARRAY_A);
+            if (is_array($arow)) {
+                $out['в_приложении'] = array(
+                    'когда'   => (string) ($arow['created_at'] ?? ''),
+                    'тип'     => (string) ($arow['task_type'] ?? ''),
+                    'списано' => (float) ($arow['cost'] ?? 0),
+                    'статус'  => (string) ($arow['status'] ?? ''),
+                    'кому'    => (string) ($arow['vk_user_id'] ?? $arow['user_id'] ?? ''),
+                );
+            }
+            break;
+        }
+
+        $credits = GS_Lab::task_credits($task_id);
+        $out['у_поставщика'] = !empty($credits['ok'])
+            ? array('кредитов' => (float) $credits['credits'], 'состояние' => (string) $credits['state'])
+            : 'не отвечает: ' . (string) $credits['message'];
+
+        return rest_ensure_response($out);
     }
 
     /**

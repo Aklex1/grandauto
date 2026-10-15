@@ -448,6 +448,65 @@
     var archive = document.getElementById('gs-voice-archive');
     var archiveList = document.getElementById('gs-voice-archive-list');
 
+    /**
+     * Незакрытые заказы песни.
+     *
+     * Песня делается минутами, и человек обычно уходит со страницы. Готовые
+     * лежат в архиве ниже, а идущий заказ раньше был не виден вовсе — и
+     * именно его человек не находит, когда возвращается. Берём такие заказы
+     * из журнала и ставим первыми: забирает их расписание, страница только
+     * показывает.
+     */
+    var orderTimer = null;
+
+    function renderOrders(items) {
+        if (!archiveList) { return; }
+        Array.prototype.forEach.call(archiveList.querySelectorAll('[data-order]'), function (el) {
+            el.parentNode.removeChild(el);
+        });
+        var working = false;
+        items.slice().reverse().forEach(function (row) {
+            if (row.status === 'ready') { return; }
+            if (row.status === 'pending') { working = true; }
+
+            var item = document.createElement('article');
+            item.className = 'gs-archive__item';
+            item.setAttribute('data-order', row.task || '1');
+
+            var head = document.createElement('div');
+            head.className = 'gs-archive__head';
+            var title = document.createElement('span');
+            title.className = 'gs-archive__title';
+            title.textContent = row.note || 'Песня';
+            head.appendChild(title);
+            var when = document.createElement('span');
+            when.className = 'gs-archive__date';
+            when.textContent = row.status === 'failed'
+                ? (row.message || 'не вышло, деньги вернули')
+                : 'в работе — заберём сами, страницу можно закрыть';
+            head.appendChild(when);
+            item.appendChild(head);
+
+            archiveList.insertBefore(item, archiveList.firstChild);
+        });
+        if (items.length && archive) { archive.hidden = false; }
+
+        if (orderTimer) { clearTimeout(orderTimer); orderTimer = null; }
+        if (working) { orderTimer = setTimeout(loadOrders, 30000); }
+    }
+
+    function loadOrders() {
+        if (!archiveList || !cfg.restUrl) { return; }
+        fetch(cfg.restUrl + 'lab/history/voicesong', {
+            credentials: 'same-origin',
+            headers: { 'X-WP-Nonce': cfg.nonce }
+        }).then(function (r) { return r.json(); }).then(function (res) {
+            renderOrders((res && res.items) || []);
+        }).catch(function () {});
+    }
+
+    loadOrders();
+
     function renderArchive(songs) {
         if (!archiveList || !songs) { return; }
         archiveList.innerHTML = '';
