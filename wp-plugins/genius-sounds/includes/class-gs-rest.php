@@ -3119,6 +3119,43 @@ class GS_Rest {
             break;
         }
 
+        // Телеграм-бот ведёт свой журнал в собственной базе: заказ,
+        // сделанный в боте, на сайте не оставляет следа вовсе, и без
+        // этого взгляда вопрос «сколько списали» остался бы без ответа.
+        $conn = class_exists('KIE_TTS_DB') ? KIE_TTS_DB::get_bot_connection() : null;
+        if ($conn) {
+            $safe = $conn->real_escape_string($task_id);
+            $res = $conn->query(
+                "SELECT user_telegram_id, user_username, request_type, model_name, cost,"
+                . " status, created_at, completed_at, error_message"
+                . " FROM user_requests_log WHERE task_id = '" . $safe . "' LIMIT 1"
+            );
+            $brow = $res ? $res->fetch_assoc() : null;
+            if (is_array($brow)) {
+                $out['в_боте'] = array(
+                    'когда'    => (string) $brow['created_at'],
+                    'кто'      => (string) ($brow['user_username'] ?: $brow['user_telegram_id']),
+                    'telegram' => (string) $brow['user_telegram_id'],
+                    'что'      => (string) $brow['request_type'] . ' / ' . (string) $brow['model_name'],
+                    'списано'  => (float) $brow['cost'],
+                    'статус'   => (string) $brow['status'],
+                    'отказ'    => (string) ($brow['error_message'] ?? ''),
+                );
+                // Баланс спрашиваем отдельно: по нему видно, вернулись ли
+                // деньги, если задача не удалась.
+                $uid = (int) $brow['user_telegram_id'];
+                $bres = $conn->query('SELECT balance FROM users WHERE telegram_id = ' . $uid . ' LIMIT 1');
+                $brow2 = $bres ? $bres->fetch_assoc() : null;
+                if (is_array($brow2)) {
+                    $out['в_боте']['баланс_сейчас'] = (float) $brow2['balance'];
+                }
+            } else {
+                $out['в_боте'] = 'в журнале бота строки нет';
+            }
+        } else {
+            $out['в_боте'] = 'до базы бота не достучались';
+        }
+
         $credits = GS_Lab::task_credits($task_id);
         $out['у_поставщика'] = !empty($credits['ok'])
             ? array('кредитов' => (float) $credits['credits'], 'состояние' => (string) $credits['state'])
