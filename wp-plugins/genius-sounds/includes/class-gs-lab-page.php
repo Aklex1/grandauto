@@ -107,11 +107,14 @@ class GS_Lab_Page {
                     && class_exists('GS_Transcribe') && GS_Transcribe::down();
                 ?>
                 <?php if ($stt_down): ?>
+                    <?php $stt_minutes = GS_Transcribe::down_minutes(); ?>
                     <p class="gs-hero__note">
                         Расшифровка сейчас не работает: служба, которая переводит речь в текст,
                         не отвечает. Это не ваша запись — беда на стороне службы, и мы её видим.
                         Заказы пока не принимаем, чтобы не списывать деньги впустую;
-                        попробуйте через четверть часа.
+                        <?php echo $stt_minutes > 0
+                            ? 'попробуйте через ' . (int) $stt_minutes . ' мин.'
+                            : 'попробуйте позже.'; ?>
                     </p>
                 <?php endif; ?>
             </section>
