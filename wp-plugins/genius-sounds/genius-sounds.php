@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.58.0
+ * Version:     2.59.3
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,97 +19,123 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.58.0');
+define('GS_VERSION', '2.59.3');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
 
-require_once GS_PLUGIN_DIR . 'includes/class-gs-storage.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-legacy.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts-page.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-prompts-sync.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-lab-jobs.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-once.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-catalog.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-sections.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-rewrite.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-md.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-longread.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-openapi.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-weight.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-importer.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-sfx.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-pages.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-intent.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-return.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-balance-home.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-pay.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-brand.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-article-style.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-media-proxy.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-redirects.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-gift.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-legal.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-legal-doc.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-sticky.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-seo.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-adsrc.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-promts-band.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-sitemap.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-noindex.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-index.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-webmaster.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-metrika.php';
-require_once GS_PLUGIN_DIR . 'includes/proekt-prompts.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-proekt.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-proekt-page.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-landing.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-voice.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-page.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-songs.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-course.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-cta.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-apicta.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-openai.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-404.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-provider.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-doctext.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-pptx.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-slides.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-slides-page.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-leads.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-support.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-referral.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-partner-page.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-hub.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-schedule.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-promt.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-links.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-musicai.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-payments.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-auth.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-yoomoney.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-dashboard.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-keywords.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-neurohub.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-manual.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-lab.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-suno.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-lab-page.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-blog.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-tts-fallback.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-gemini.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-transcribe.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-api-keys.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-api.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-voice-rank.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-wheel.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-backup.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-api-page.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-rest.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-admin.php';
-require_once GS_PLUGIN_DIR . 'includes/class-gs-cache.php';
+/**
+ * Части плагина подключаем только все разом.
+ *
+ * Обновление на несколько секунд оставляет каталог плагина неполным:
+ * WordPress сначала удаляет старую папку, потом распаковывает новую.
+ * Запрос, попавший в эту щель, падал насмерть — с белым экраном,
+ * письмом об ошибке и риском, что WordPress выключит плагин совсем.
+ *
+ * Поэтому сначала убеждаемся, что на месте всё, и только потом
+ * подключаем. Недостача на секунду означает, что в этот миг на сайте
+ * нет наших возможностей, — но сайт открывается, а это несравнимо
+ * лучше пустой страницы.
+ */
+$gs_parts = array(
+    'includes/class-gs-storage.php',
+    'includes/class-gs-legacy.php',
+    'includes/class-gs-prompts.php',
+    'includes/class-gs-prompts-page.php',
+    'includes/class-gs-prompts-sync.php',
+    'includes/class-gs-lab-jobs.php',
+    'includes/class-gs-once.php',
+    'includes/class-gs-deploy.php',
+    'includes/class-gs-catalog.php',
+    'includes/class-gs-sections.php',
+    'includes/class-gs-rewrite.php',
+    'includes/class-gs-md.php',
+    'includes/class-gs-longread.php',
+    'includes/class-gs-openapi.php',
+    'includes/class-gs-weight.php',
+    'includes/class-gs-importer.php',
+    'includes/class-gs-sfx.php',
+    'includes/class-gs-pages.php',
+    'includes/class-gs-intent.php',
+    'includes/class-gs-return.php',
+    'includes/class-gs-balance-home.php',
+    'includes/class-gs-pay.php',
+    'includes/class-gs-brand.php',
+    'includes/class-gs-article-style.php',
+    'includes/class-gs-media-proxy.php',
+    'includes/class-gs-redirects.php',
+    'includes/class-gs-gift.php',
+    'includes/class-gs-legal.php',
+    'includes/class-gs-legal-doc.php',
+    'includes/class-gs-sticky.php',
+    'includes/class-gs-seo.php',
+    'includes/class-gs-adsrc.php',
+    'includes/class-gs-promts-band.php',
+    'includes/class-gs-sitemap.php',
+    'includes/class-gs-noindex.php',
+    'includes/class-gs-index.php',
+    'includes/class-gs-webmaster.php',
+    'includes/class-gs-metrika.php',
+    'includes/proekt-prompts.php',
+    'includes/class-gs-proekt.php',
+    'includes/class-gs-proekt-page.php',
+    'includes/class-gs-landing.php',
+    'includes/class-gs-voice.php',
+    'includes/class-gs-voice-page.php',
+    'includes/class-gs-songs.php',
+    'includes/class-gs-course.php',
+    'includes/class-gs-cta.php',
+    'includes/class-gs-apicta.php',
+    'includes/class-gs-openai.php',
+    'includes/class-gs-404.php',
+    'includes/class-gs-provider.php',
+    'includes/class-gs-doctext.php',
+    'includes/class-gs-pptx.php',
+    'includes/class-gs-slides.php',
+    'includes/class-gs-slides-page.php',
+    'includes/class-gs-leads.php',
+    'includes/class-gs-support.php',
+    'includes/class-gs-referral.php',
+    'includes/class-gs-partner-page.php',
+    'includes/class-gs-voice-hub.php',
+    'includes/class-gs-schedule.php',
+    'includes/class-gs-promt.php',
+    'includes/class-gs-links.php',
+    'includes/class-gs-musicai.php',
+    'includes/class-gs-payments.php',
+    'includes/class-gs-auth.php',
+    'includes/class-gs-yoomoney.php',
+    'includes/class-gs-dashboard.php',
+    'includes/class-gs-keywords.php',
+    'includes/class-gs-neurohub.php',
+    'includes/class-gs-manual.php',
+    'includes/class-gs-lab.php',
+    'includes/class-gs-suno.php',
+    'includes/class-gs-lab-page.php',
+    'includes/class-gs-blog.php',
+    'includes/class-gs-tts-fallback.php',
+    'includes/class-gs-gemini.php',
+    'includes/class-gs-transcribe.php',
+    'includes/class-gs-api-keys.php',
+    'includes/class-gs-api.php',
+    'includes/class-gs-voice-rank.php',
+    'includes/class-gs-wheel.php',
+    'includes/class-gs-backup.php',
+    'includes/class-gs-api-page.php',
+    'includes/class-gs-rest.php',
+    'includes/class-gs-admin.php',
+    'includes/class-gs-cache.php',
+);
+
+foreach ($gs_parts as $gs_part) {
+    if (!is_readable(GS_PLUGIN_DIR . $gs_part)) {
+        return;
+    }
+}
+foreach ($gs_parts as $gs_part) {
+    require_once GS_PLUGIN_DIR . $gs_part;
+}
+unset($gs_parts, $gs_part);
 
 class Genius_Sounds_Plugin {
 
@@ -178,6 +204,7 @@ class Genius_Sounds_Plugin {
         GS_Lab::boot();
         GS_Lab_Jobs::boot();
         GS_Once::boot();
+        GS_Deploy::boot();
         GS_Manual::boot();
         GS_Neurohub::boot();
         GS_Dashboard::boot();
