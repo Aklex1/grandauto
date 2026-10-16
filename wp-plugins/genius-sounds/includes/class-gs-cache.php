@@ -69,14 +69,11 @@ class GS_Cache {
         if (class_exists('GS_Api_Page')) {
             $paths[] = GS_Api_Page::SLUG;
         }
-        if (class_exists('GS_Pages')) {
-            $paths[] = GS_Pages::STUDIO_SLUG;
-        }
         /**
          * Чужие плагины со своими кабинетами: их страницы тоже личные, а
          * их адреса нам взять негде.
          */
-        $paths = array_merge($paths, array('neurohub', 'pdf-online', 'showwheel'));
+        $paths = array_merge($paths, array('pdf-online', 'showwheel'));
 
         return array_values(array_unique(array_filter(array_map('strtolower', $paths))));
     }
@@ -103,6 +100,23 @@ class GS_Cache {
         // словами «войдите», баланс и история появляются только у вошедшего.
         if (class_exists('GS_Slides_Page')) {
             $paths[] = strtolower((string) GS_Slides_Page::SLUG);
+        }
+        // Генератор звуков и нейрохаб раньше лежали среди личных страниц и
+        // не кэшировались никому — отсюда 1,5–2,4 секунды на сборку у
+        // гостя, то есть у того, кто пришёл из поиска.
+        //
+        // Проверено на живой странице: гостю обе отдают один и тот же
+        // HTML — два запроса подряд различаются только числом счётчика
+        // Метрики. Баланс в нейрохабе стоит в разметке нулём и скрыт
+        // стилем, настоящее значение подставляет скрипт из своего API;
+        // остаток бесплатных попыток генератора тоже приходит скриптом.
+        // Личного в ответе сервера нет.
+        //
+        // Вошедшему страницы по-прежнему собираются заново, а гостя с
+        // начатой пробой наш кэш пропускает мимо себя по его же cookie.
+        $paths[] = 'neurohub';
+        if (class_exists('GS_Pages')) {
+            $paths[] = strtolower((string) GS_Pages::STUDIO_SLUG);
         }
         return array_values(array_unique(array_filter($paths)));
     }

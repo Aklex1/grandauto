@@ -41,6 +41,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_prompts_delete'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/prompts/untwin', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_prompts_untwin'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/prompts/retag', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_prompts_retag'),
@@ -4967,6 +4972,166 @@ class GS_Rest {
      * После правки списка раскладку надо пересчитать, иначе рубрикатор
      * врёт на тысяче уже заведённых карточек.
      */
+    /**
+     * Повторяет ли метка то, что уже сказано в названии.
+     *
+     * Сверяем по основам слов, а не по точному вхождению: метка «букет
+     * сирени» и название «Портрет девушки с букетом сирени» — об одном и
+     * том же, а строкой одно в другом не находится из-за падежа. Без этой
+     * проверки получалось «Портрет девушки с букетом сирени — букет сирени».
+     */
+    private static function tag_echoes_title($tag, $title) {
+        $words = static function ($text) {
+            return (array) preg_split('~[^\p{L}\p{N}]+~u', mb_strtolower((string) $text), -1, PREG_SPLIT_NO_EMPTY);
+        };
+        $same = static function ($a, $b) {
+            $la = mb_strlen($a);
+            $lb = mb_strlen($b);
+            $min = min($la, $lb);
+            if ($min < 4) {
+                return $a === $b;
+            }
+            $common = 0;
+            while ($common < $min && mb_substr($a, $common, 1) === mb_substr($b, $common, 1)) {
+                $common++;
+            }
+            return $common >= max(3, $min - 2);
+        };
+        $need = array();
+        foreach ($words($tag) as $word) {
+            if (mb_strlen($word) >= 4) {
+                $need[] = $word;
+            }
+        }
+        if (!$need) {
+            return mb_stripos($title, $tag) !== false;
+        }
+        $have = $words($title);
+        foreach ($need as $word) {
+            $hit = false;
+            foreach ($have as $other) {
+                if ($same($word, $other)) {
+                    $hit = true;
+                    break;
+                }
+            }
+            if (!$hit) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Развести промты с одинаковыми названиями.
+     *
+     * При загрузке из канала кадры с похожим сюжетом получали одно и то же
+     * название: «Зимняя прогулка в заснеженном лесу» — три разных промта,
+     * «Элегантный вечерний портрет в ресторане» — тоже три. Адреса у них
+     * разные, промты разные, а в выдаче это группа дублей: шестьдесят одна
+     * страница на двадцать восемь названий.
+     *
+     * Различаем по меткам самого кадра: у одного «белый пуховик», у
+     * другого «шапка-ушанка», у третьего «розовый комбинезон». Берём ту
+     * метку, которой нет у соседей по группе и которая реже всего
+     * встречается во всём каталоге — она и есть примета этого кадра.
+     * Первый в группе название сохраняет: ему хватает того, что остальные
+     * стали другими.
+     */
+    public static function handle_prompts_untwin($request) {
+        $dry = (bool) $request->get_param('dry');
+        GS_Prompts::lock();
+        $items = GS_Prompts::load(true);
+
+        $freq = array();
+        foreach ($items as $it) {
+            foreach (array_unique(array_map('mb_strtolower', array_map('trim', (array) ($it['tags'] ?? array())))) as $tag) {
+                if ($tag !== '') {
+                    $freq[$tag] = (isset($freq[$tag]) ? $freq[$tag] : 0) + 1;
+                }
+            }
+        }
+
+        $groups = array();
+        foreach ($items as $i => $it) {
+            $key = mb_strtolower(trim((string) ($it['title'] ?? '')));
+            if ($key !== '') {
+                $groups[$key][] = $i;
+            }
+        }
+
+        $changed = array();
+        foreach ($groups as $idx) {
+            if (count($idx) < 2) {
+                continue;
+            }
+            $in_group = array();
+            foreach ($idx as $i) {
+                foreach (array_unique(array_map('mb_strtolower', array_map('trim', (array) ($items[$i]['tags'] ?? array())))) as $tag) {
+                    if ($tag !== '') {
+                        $in_group[$tag] = (isset($in_group[$tag]) ? $in_group[$tag] : 0) + 1;
+                    }
+                }
+            }
+            foreach (array_slice($idx, 1) as $i) {
+                $title = trim((string) ($items[$i]['title'] ?? ''));
+                $mark = '';
+                $rare = PHP_INT_MAX;
+                foreach ((array) ($items[$i]['tags'] ?? array()) as $tag) {
+                    $tag = trim((string) $tag);
+                    $low = mb_strtolower($tag);
+                    if ($tag === '' || (isset($in_group[$low]) && $in_group[$low] > 1)) {
+                        continue;
+                    }
+                    if (self::tag_echoes_title($tag, $title)) {
+                        continue;
+                    }
+                    $f = isset($freq[$low]) ? $freq[$low] : 0;
+                    if ($f < $rare) {
+                        $rare = $f;
+                        $mark = $tag;
+                    }
+                }
+                if ($mark === '') {
+                    // Приметы не нашлось — различаем номером кадра из адреса.
+                    if (preg_match('~-(\d+)$~', (string) ($items[$i]['slug'] ?? ''), $m)) {
+                        $mark = 'кадр ' . $m[1];
+                    }
+                }
+                if ($mark === '') {
+                    continue;
+                }
+                $items[$i]['title'] = $title . ' — ' . $mark;
+                $changed[] = array(
+                    'slug'  => (string) ($items[$i]['slug'] ?? ''),
+                    'было'  => $title,
+                    'стало' => $items[$i]['title'],
+                );
+            }
+        }
+
+        if ($dry) {
+            GS_Prompts::unlock();
+            return rest_ensure_response(array('ok' => true, 'правок' => count($changed), 'список' => $changed));
+        }
+        $saved = $changed ? GS_Prompts::save($items) : true;
+        GS_Prompts::unlock();
+        if (!$saved) {
+            return new WP_Error('gs_io', 'Не удалось сохранить каталог', array('status' => 500));
+        }
+        if ($changed && class_exists('GS_Index')) {
+            $urls = array();
+            foreach ($changed as $row) {
+                $urls[] = GS_Prompts_Page::url($row['slug']);
+            }
+            GS_Index::enqueue($urls);
+        }
+        if ($changed && class_exists('GS_Page_Cache')) {
+            GS_Page_Cache::flush();
+        }
+        return rest_ensure_response(array('ok' => true, 'правок' => count($changed), 'список' => $changed));
+    }
+
     public static function handle_prompts_retag($request) {
         GS_Prompts::lock();
         $items = GS_Prompts::load(true);

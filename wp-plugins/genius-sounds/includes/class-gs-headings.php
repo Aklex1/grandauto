@@ -28,13 +28,18 @@ class GS_Headings {
      * теге, поэтому H1 с названием записи ничего не дублирует.
      */
     const ADD_H1 = array(
-        '/solutions/',
-        '/poryadok-okazaniya-uslug/',
-        '/nastrojka-vless/',
-        '/gemini-v-rossii-podrobnyj-manual-po-podklyucheniyu-i-rabote-s-servisom/',
-        '/hosting-dlya-telegram-bota-kak-vybrat-i-na-chto-obratit-vnimanie/',
-        '/kak-ispolzovat-chatgpt-v-rossii-zapusk-cherez-vpn-s-lokacziej-niderlandy/',
-        '/kak-zapustit-claude-v-rossii-dostup-cherez-vpn-niderlandy/',
+        // Пустая строка — взять название записи. Там, где название
+        // английское или служебное, пишем заголовок текстом: «Solutions»
+        // и «Contact» в заголовке первого уровня объясняют поиску ровно
+        // ничего, а страница при этом русская.
+        '/solutions/' => 'Профессия разработчика чат-ботов: взгляд в будущее коммуникаций',
+        '/contact/'   => 'Контакты',
+        '/nastrojka-vless/' => '',
+        '/gemini-v-rossii-podrobnyj-manual-po-podklyucheniyu-i-rabote-s-servisom/' => '',
+        '/hosting-dlya-telegram-bota-kak-vybrat-i-na-chto-obratit-vnimanie/' => '',
+        '/kak-ispolzovat-chatgpt-v-rossii-zapusk-cherez-vpn-s-lokacziej-niderlandy/' => '',
+        '/kak-zapustit-claude-v-rossii-dostup-cherez-vpn-niderlandy/' => '',
+        '/🤖-umnyj-chat-bot-dlya-biznesa-kak-tehnologii-pomogayut-zarabatyvat-bolshe/' => 'Умный чат-бот для бизнеса: как технологии помогают зарабатывать больше',
     );
 
     /**
@@ -76,12 +81,15 @@ class GS_Headings {
         if (in_array($path, self::DEMOTE_REST, true)) {
             return self::demote($html, true);
         }
-        if (in_array($path, self::ADD_H1, true) && !preg_match('~<h1[\s>]~i', $html)) {
-            $title = trim(wp_strip_all_tags((string) get_the_title()));
-            if ($title === '') {
+        if (isset(self::ADD_H1[$path]) && !preg_match('~<h1[\s>]~i', $html)) {
+            $heading = trim((string) self::ADD_H1[$path]);
+            if ($heading === '') {
+                $heading = trim(wp_strip_all_tags((string) get_the_title()));
+            }
+            if ($heading === '') {
                 return $html;
             }
-            return '<h1 class="gs-h1">' . esc_html($title) . '</h1>' . $html;
+            return '<h1 class="gs-h1">' . esc_html($heading) . '</h1>' . $html;
         }
         return $html;
     }
@@ -108,8 +116,9 @@ class GS_Headings {
         );
     }
 
+    /** Адрес без параметров, в читаемом виде: в слаге статьи стоит эмодзи. */
     private static function path() {
         $path = (string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
-        return '/' . trim($path, '/') . '/';
+        return '/' . trim(rawurldecode($path), '/') . '/';
     }
 }

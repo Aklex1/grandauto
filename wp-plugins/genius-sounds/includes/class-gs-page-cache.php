@@ -96,6 +96,18 @@ class GS_Page_Cache {
         if (class_exists('GS_Slides_Page') && method_exists('GS_Slides_Page', 'is_page') && GS_Slides_Page::is_page()) {
             return true;
         }
+        // Остальные страницы сервисов берём из того же списка, по которому
+        // решается запрет кэша для вошедшего: один список — одно правило.
+        // Так сюда попали нейрохаб и генератор звуков, которые раньше не
+        // кэшировались никому и собирались гостю полторы-две секунды.
+        if (class_exists('GS_Cache')) {
+            $uri  = isset($_SERVER['REQUEST_URI']) ? (string) wp_unslash($_SERVER['REQUEST_URI']) : '';
+            $path = trim((string) wp_parse_url($uri, PHP_URL_PATH), '/');
+            $head = $path === '' ? '' : strtolower(explode('/', $path)[0]);
+            if ($head !== '' && in_array($head, GS_Cache::service_paths(), true)) {
+                return true;
+            }
+        }
         return false;
     }
 

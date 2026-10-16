@@ -262,7 +262,85 @@ class GS_Seo {
      * Наши документные страницы: что на них за документ и как его назвать
      * в выдаче.
      */
+    /**
+     * Страницы озвучки: заголовок и описание у всех восьми были одни.
+     *
+     * Их рисует соседний плагин, и описание он ставит одно на весь свой
+     * раздел — «AI озвучка текста: голоса, диалоги, API интеграции…».
+     * В выдаче это восемь страниц с одинаковым описанием, включая цены и
+     * документацию API. Текст ниже собран по тому, что на самих страницах
+     * написано: цифры тарифов — оттуда же.
+     */
+    const SERVICE_PAGES = array(
+        '/tts-pricing/' => array(
+            'title' => 'Цены на озвучку текста — 18 ₽ за 1000 символов',
+            'desc'  => 'Сколько стоит озвучка текста: 18 ₽ за каждые 1000 символов, минимум 18 ₽, '
+                     . 'диалоговая модель — плюс 30%. Бесплатные голоса — 0 ₽. Форматы MP3, Opus и WAV.',
+        ),
+        '/tts-cases/' => array(
+            'title' => 'Кейсы озвучки: маркетплейсы, курсы, подкасты',
+            'desc'  => 'Где применяют синтез речи: карточки товаров на маркетплейсах одним голосом, '
+                     . 'уроки онлайн-курсов с разными персонажами, аудиоверсии статей и вставки в подкасты.',
+        ),
+        '/tts-integrations/' => array(
+            'title' => 'Интеграции озвучки: n8n, Make и Telegram-боты',
+            'desc'  => 'Подключение API озвучки к автоматизациям: HTTP-запрос в n8n, сценарий в Make '
+                     . 'и голосовые ответы в Telegram-боте. Запуск генерации, опрос статуса, скачивание файла.',
+        ),
+        '/api-docs/' => array(
+            'title' => 'API озвучки: ключ, эндпоинты и примеры запросов',
+            'desc'  => 'Документация API озвучки: авторизация по ключу, список эндпоинтов, примеры JSON '
+                     . 'и cURL, пошаговый сценарий интеграции для внешних сервисов и ботов.',
+        ),
+        '/profit/' => array(
+            'title' => 'Франшиза AI-озвучки под ключ за 7–14 дней',
+            'desc'  => 'Готовый сервис озвучки и расшифровки под вашим брендом: сайт, API, приём платежей, '
+                     . 'Telegram-бот и автоворонки. Запуск за 7–14 дней, white-label на вашем домене.',
+        ),
+        '/solutions/' => array(
+            'title' => 'Профессия разработчика чат-ботов — что это за работа',
+            'desc'  => 'Чем занимается разработчик чат-ботов, какие задачи закрывает бот в бизнесе '
+                     . 'и почему спрос на эту работу растёт. Разбор профессии от тех, кто делает ботов.',
+        ),
+        '/contact/' => array(
+            'title' => 'Контакты: связь, почта и реквизиты',
+            'desc'  => 'Как с нами связаться: Telegram, электронная почта и реквизиты исполнителя — '
+                     . 'имя и ИНН. Вопросы по услугам и предложения о сотрудничестве.',
+        ),
+        '/tts-login/' => array(
+            'title' => 'Вход в кабинет озвучки текста',
+            'desc'  => 'Вход в кабинет озвучки: больше двадцати голосов, настройка скорости, стиля и '
+                     . 'эмоций, история генераций и выгрузка в MP3, Opus или WAV.',
+        ),
+        '/tts-register/' => array(
+            'title' => 'Регистрация в сервисе озвучки текста',
+            'desc'  => 'Регистрация в сервисе озвучки: доступ к голосам, настройкам стиля и скорости, '
+                     . 'истории генераций и ключу API. Нужны только почта и пароль.',
+        ),
+    );
+
+    private static function service_page() {
+        if (is_admin()) {
+            return null;
+        }
+        $path = (string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+        $path = '/' . trim($path, '/') . '/';
+        if (!isset(self::SERVICE_PAGES[$path])) {
+            return null;
+        }
+        $row = self::SERVICE_PAGES[$path];
+        return array(
+            'url'   => home_url($path),
+            'title' => (string) $row['title'],
+            'desc'  => (string) $row['desc'],
+        );
+    }
+
     private static function doc_page() {
+        $service = self::service_page();
+        if ($service) {
+            return $service;
+        }
         if (!class_exists('GS_Requisites') || !is_page()) {
             return null;
         }
@@ -557,20 +635,20 @@ class GS_Seo {
             return (string) $ctx['service']['seo_desc'];
         }
         if ($ctx['type'] === 'section') {
-            return sprintf(
+            return self::with_page_note(sprintf(
                 '%s %s в %s. Слушайте онлайн и скачивайте бесплатно в MP3 — для монтажа, роликов, игр и стримов.',
                 (string) $ctx['section']['lead'],
                 GS_Catalog::plural_sounds((int) $ctx['sounds']),
                 GS_Catalog::plural_categories_text((int) $ctx['cats'])
-            );
+            ), $ctx);
         }
         if ($ctx['type'] === 'index') {
             $stats = GS_Catalog::stats();
-            return sprintf(
+            return self::with_page_note(sprintf(
                 'Бесплатный каталог звуков и звуковых эффектов: %s звуков в %s категориях. Слушайте онлайн и скачивайте в MP3 для монтажа, игр и роликов. Нужного звука нет — создайте его нейросетью.',
                 number_format_i18n($stats['sounds']),
                 number_format_i18n($stats['categories'])
-            );
+            ), $ctx);
         }
 
         $category = $ctx['category'];
@@ -586,7 +664,24 @@ class GS_Seo {
         }
         $text = GS_Catalog::sync_description_count($text, GS_Catalog::count_sounds($category));
         $text = preg_replace('~\s+~u', ' ', $text);
-        return mb_strlen($text) > 300 ? mb_substr($text, 0, 297) . '…' : $text;
+        $text = mb_strlen($text) > 300 ? mb_substr($text, 0, 297) . '…' : $text;
+        return self::with_page_note($text, $ctx);
+    }
+
+    /**
+     * Приписать к описанию номер страницы списка.
+     *
+     * Заголовок у второй страницы подборки отличался, а описание — нет:
+     * в Вебмастере это группа дублей, и из неё в индексе остаётся одна
+     * страница вместе со всеми ссылками, которые только на ней и стоят.
+     */
+    private static function with_page_note($text, $ctx) {
+        $page  = (int) $ctx['page'];
+        $pages = (int) $ctx['pages'];
+        if ($page < 2 || $pages < 2) {
+            return $text;
+        }
+        return rtrim($text) . ' Страница ' . $page . ' из ' . $pages . '.';
     }
 
     /**
