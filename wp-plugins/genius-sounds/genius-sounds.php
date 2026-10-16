@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.94.1
+ * Version:     2.94.2
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.94.1');
+define('GS_VERSION', '2.94.2');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -375,6 +375,19 @@ class Genius_Sounds_Plugin {
             wp_dequeue_style($handle);
             wp_dequeue_script($handle);
         }
+        // Соседний плагин печатает в разметке входа две пустые карусели и
+        // тут же вызывает Swiper. Слайдов в них нет ни одного, показывать
+        // нечего — но без библиотеки вызов падает ошибкой в консоли и
+        // обрывает остаток своего же скрипта. Поэтому вместо библиотеки на
+        // 155 КБ оставляем заглушку в несколько строк. Настоящая
+        // библиотека, если её кто-то подключит, перезапишет её собой.
+        wp_register_script('genius-sounds-swiper-stub', false, array(), GS_VERSION, false);
+        wp_enqueue_script('genius-sounds-swiper-stub');
+        wp_add_inline_script(
+            'genius-sounds-swiper-stub',
+            'window.Swiper = window.Swiper || function () {'
+            . ' return { destroy: function () {}, update: function () {}, slideTo: function () {} }; };'
+        );
         wp_enqueue_style('genius-sounds-speed', GS_PLUGIN_URL . 'assets/css/speed.css', array(), GS_VERSION);
     }
 
