@@ -218,8 +218,51 @@ class GS_Prompts_Page {
         return $parts;
     }
 
+    /**
+     * Заголовок окна для страницы каталога промтов.
+     *
+     * Выносим наружу: этими страницами распоряжается GS_Seo — он один
+     * умеет убрать чужой тег и не оставить двух описаний на странице.
+     */
+    public static function seo_title() {
+        $parts = self::title_parts(array('title' => ''));
+        return (string) ($parts['title'] ?? '');
+    }
+
+    /** Описание страницы: из самого промта, рубрики или всего каталога. */
+    public static function seo_desc() {
+        $item = self::current_item();
+        if ($item) {
+            return 'Готовый промт: ' . mb_substr((string) $item['prompt'], 0, 150, 'UTF-8');
+        }
+        $rubric = self::current_rubric();
+        if ($rubric !== '') {
+            return GS_Prompts::rubric_lead($rubric) . '. Готовые промты с примерами кадров: '
+                . 'смотрите снимок, копируйте текст или нажмите «Повторить фото».';
+        }
+        return 'Каталог готовых промтов для фото: ' . GS_Prompts::count() . ' примеров с кадрами. '
+            . 'Поиск по словам, рубрики, кнопка «Повторить фото» — результат сразу на сайте.';
+    }
+
+    /** Собственный адрес страницы. */
+    public static function seo_canonical() {
+        $item = self::current_item();
+        if ($item) {
+            return self::url((string) $item['slug']);
+        }
+        $rubric = self::current_rubric();
+        $page = (int) get_query_var('gs_prompt_page');
+        $page = $page > 1 ? $page : 1;
+        return $rubric !== '' ? self::rubric_url($rubric, $page) : self::page_url($page);
+    }
+
     public static function head() {
         if (!self::is_page()) {
+            return;
+        }
+        // Теги печатает GS_Seo: он заменяет чужие, а не добавляет свои
+        // поверх. Здесь оставлено пусто намеренно.
+        if (class_exists('GS_Seo')) {
             return;
         }
         $item = self::current_item();

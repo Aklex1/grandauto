@@ -72,6 +72,24 @@ class GS_Seo {
             return self::$ctx;
         }
 
+        // Каталог промтов — полторы тысячи страниц, и до сих пор ими
+        // распоряжался чужой плагин: в описании у всех стояло «[genius_prompts]»
+        // (текст шорткода), а к заголовку приклеивался хвост про разработку
+        // чат-ботов. Свои заголовок и описание у этих страниц есть давно —
+        // не хватало только того, кто уберёт чужие теги.
+        if (class_exists('GS_Prompts_Page') && GS_Prompts_Page::is_page()) {
+            self::$ctx = array(
+                'type'     => 'prompt',
+                'service'  => null,
+                'url'      => GS_Prompts_Page::seo_canonical(),
+                'category' => null,
+                'page'     => 1,
+                'pages'    => 1,
+                'query'    => '',
+            );
+            return self::$ctx;
+        }
+
         // Оферта и реквизиты — обычные страницы, и заголовок окна им
         // достаётся от темы вместе с длинным хвостом про разработку ботов.
         $doc = self::doc_page();
@@ -377,6 +395,9 @@ class GS_Seo {
             // страница — про разработку ботов, сервисы идут ниже.
             return 'Разработка чат-ботов для Telegram и ВК под ключ';
         }
+        if ($ctx['type'] === 'prompt') {
+            return GS_Prompts_Page::seo_title();
+        }
         if ($ctx['type'] === 'docpage') {
             return (string) $ctx['doc']['title'];
         }
@@ -450,6 +471,9 @@ class GS_Seo {
         if ($ctx['type'] === 'home') {
             return 'Разработка чат-ботов для Telegram и ВКонтакте под задачи бизнеса: продажи, поддержка, интеграция с CRM. А ещё нейросети для звука и видео: озвучка текста, генерация музыки, расшифровка записей.';
         }
+        if ($ctx['type'] === 'prompt') {
+            return GS_Prompts_Page::seo_desc();
+        }
         if ($ctx['type'] === 'docpage') {
             return (string) $ctx['doc']['desc'];
         }
@@ -503,6 +527,9 @@ class GS_Seo {
     private static function page_url($ctx, $page = null) {
         if ($ctx['type'] === 'home') {
             return home_url('/');
+        }
+        if ($ctx['type'] === 'prompt') {
+            return (string) $ctx['url'];
         }
         if ($ctx['type'] === 'docpage') {
             return (string) $ctx['url'];
@@ -658,6 +685,28 @@ class GS_Seo {
         }
         if ($ctx['page'] < $ctx['pages']) {
             $out .= '<link rel="next" href="' . esc_url(self::page_url($ctx, $ctx['page'] + 1)) . '">' . "\n";
+        }
+
+        if ($ctx['type'] === 'prompt') {
+            $nodes = array(
+                array(
+                    '@context'    => 'https://schema.org',
+                    '@type'       => 'WebPage',
+                    'name'        => self::build_title($ctx),
+                    'description' => self::build_description($ctx),
+                    'url'         => (string) $ctx['url'],
+                    'inLanguage'  => 'ru-RU',
+                    'isPartOf'    => array('@id' => home_url('/#site')),
+                    'publisher'   => array('@id' => home_url('/#org')),
+                ),
+                self::org_node(),
+            );
+            foreach ($nodes as $node) {
+                $out .= '<script type="application/ld+json">'
+                    . wp_json_encode($node, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    . '</script>' . "\n";
+            }
+            return $out;
         }
 
         if ($ctx['type'] === 'docpage') {
