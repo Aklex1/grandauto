@@ -124,3 +124,42 @@ input[type=checkbox]::before {
     -webkit-mask-image: var(--gs-times);
             mask-image: var(--gs-times);
 }
+
+/*
+ * Стрелки «предыдущая/следующая» в листалке блога.
+ *
+ * Последний, кто держал иконочный шрифт на ленте статей: ради одной
+ * стрелки внизу страницы браузер качал 165 КБ. Рисуем так же, как
+ * остальные значки, — картинкой в самом правиле.
+ */
+
+:root {
+    --gs-chev-left: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8 2.1-2.1L11.2 12l5.9-5.9z"/></svg>');
+}
+
+.page-numbers.next::after,
+.page-numbers.prev::before {
+    content: '' !important;
+    font-family: inherit !important;
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.125em;
+    background-color: currentColor;
+    -webkit-mask-position: center;
+            mask-position: center;
+    -webkit-mask-size: contain;
+            mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+}
+
+.page-numbers.next::after {
+    -webkit-mask-image: var(--gs-chev-right);
+            mask-image: var(--gs-chev-right);
+}
+
+.page-numbers.prev::before {
+    -webkit-mask-image: var(--gs-chev-left);
+            mask-image: var(--gs-chev-left);
+}
