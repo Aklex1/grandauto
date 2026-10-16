@@ -93,6 +93,9 @@ class GS_Page_Cache {
         if (class_exists('GS_Landing') && method_exists('GS_Landing', 'current') && GS_Landing::current()) {
             return true;
         }
+        if (class_exists('GS_Slides_Page') && method_exists('GS_Slides_Page', 'is_page') && GS_Slides_Page::is_page()) {
+            return true;
+        }
         return false;
     }
 

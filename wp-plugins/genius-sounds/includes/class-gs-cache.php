@@ -72,10 +72,6 @@ class GS_Cache {
         if (class_exists('GS_Pages')) {
             $paths[] = GS_Pages::STUDIO_SLUG;
         }
-        if (class_exists('GS_Slides_Page')) {
-            $paths[] = GS_Slides_Page::SLUG;
-        }
-
         /**
          * Чужие плагины со своими кабинетами: их страницы тоже личные, а
          * их адреса нам взять негде.
@@ -102,6 +98,11 @@ class GS_Cache {
                     $paths[] = strtolower((string) $service['slug']);
                 }
             }
+        }
+        // Презентации устроены так же: гостю показывают цену и форму со
+        // словами «войдите», баланс и история появляются только у вошедшего.
+        if (class_exists('GS_Slides_Page')) {
+            $paths[] = strtolower((string) GS_Slides_Page::SLUG);
         }
         return array_values(array_unique(array_filter($paths)));
     }
