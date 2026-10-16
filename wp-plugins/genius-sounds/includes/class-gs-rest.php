@@ -76,6 +76,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_media_shrink'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/media/to-jpeg', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_media_to_jpeg'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/prompts/sync', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_prompts_sync'),
@@ -5227,6 +5232,115 @@ class GS_Rest {
      * просто падали на «не удалось сохранить файл». Понять это снаружи
      * было нельзя, поэтому здесь — цифры.
      */
+    /**
+     * Фотография, сохранённая в PNG, переводится в JPEG.
+     *
+     * Иллюстрации к статьям про промты лежат в PNG по полтора-два
+     * мегабайта: это снимки, а не значки, и PNG для них — худший формат,
+     * какой можно выбрать. Лента блога из-за этого весит четыре с лишним
+     * мегабайта, и столько же тянет каждая статья на телефоне.
+     *
+     * Меняем файл у самой записи медиатеки: обложки статей подставляются
+     * по номеру вложения, поэтому после замены они сами начинают отдавать
+     * JPEG вместе с пересобранными размерами. Старый PNG остаётся на
+     * диске — и как запасная копия, и ради ссылок, вписанных прямо в текст
+     * статей.
+     *
+     * Картинку с прозрачностью не трогаем: в JPEG прозрачный фон станет
+     * чёрным. Для значков и логотипов это важно, для фотографий — нет.
+     */
+    public static function handle_media_to_jpeg($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        $id = (int) ($p['id'] ?? 0);
+        if ($id <= 0 || get_post_type($id) !== 'attachment') {
+            return new WP_Error('gs_bad', 'Нужен номер вложения', array('status' => 400));
+        }
+        $path = get_attached_file($id);
+        if (!$path || !file_exists($path)) {
+            return new WP_Error('gs_none', 'Файла нет на диске', array('status' => 404));
+        }
+        if (strtolower((string) pathinfo($path, PATHINFO_EXTENSION)) !== 'png') {
+            return array('ok' => false, 'пропущено' => 'не PNG', 'id' => $id);
+        }
+
+        $was = (int) filesize($path);
+        $quality = max(50, min(92, (int) ($p['quality'] ?? 82)));
+        $max = max(320, min(2400, (int) ($p['width'] ?? 1200)));
+
+        if (!function_exists('imagecreatefrompng')) {
+            return new WP_Error('gs_img', 'На сервере нет GD', array('status' => 500));
+        }
+        $im = @imagecreatefrompng($path);
+        if (!$im) {
+            return new WP_Error('gs_img', 'PNG не читается', array('status' => 500));
+        }
+
+        // Прозрачность ищем по самой картинке, а не по заголовку файла:
+        // альфа-канал бывает объявлен и не использован.
+        $w = imagesx($im);
+        $h = imagesy($im);
+        $transparent = false;
+        $step = max(1, (int) floor(min($w, $h) / 60));
+        for ($x = 0; $x < $w && !$transparent; $x += $step) {
+            for ($y = 0; $y < $h; $y += $step) {
+                if (((imagecolorat($im, $x, $y) >> 24) & 0x7F) > 8) {
+                    $transparent = true;
+                    break;
+                }
+            }
+        }
+        if ($transparent) {
+            imagedestroy($im);
+            return array('ok' => false, 'пропущено' => 'есть прозрачность', 'id' => $id);
+        }
+
+        if ($w > $max) {
+            $scaled = imagescale($im, $max);
+            if ($scaled) {
+                imagedestroy($im);
+                $im = $scaled;
+            }
+        }
+
+        $jpeg = preg_replace('~\.png$~i', '.jpg', $path);
+        if (file_exists($jpeg)) {
+            $jpeg = preg_replace('~\.png$~i', '-jpg.jpg', $path);
+        }
+        $ok = imagejpeg($im, $jpeg, $quality);
+        imagedestroy($im);
+        if (!$ok || !file_exists($jpeg)) {
+            return new WP_Error('gs_img', 'JPEG не сохранился', array('status' => 500));
+        }
+
+        if (!empty($p['dry'])) {
+            $size = (int) filesize($jpeg);
+            @unlink($jpeg);
+            return array('ok' => true, 'проба' => true, 'id' => $id, 'было' => $was, 'стало' => $size);
+        }
+
+        update_attached_file($id, $jpeg);
+        wp_update_post(array('ID' => $id, 'post_mime_type' => 'image/jpeg'));
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+        $meta = wp_generate_attachment_metadata($id, $jpeg);
+        if (is_array($meta)) {
+            wp_update_attachment_metadata($id, $meta);
+        }
+        if (class_exists('GS_Page_Cache')) {
+            GS_Page_Cache::bump();
+        }
+
+        return array(
+            'ok'    => true,
+            'id'    => $id,
+            'было'  => $was,
+            'стало' => (int) filesize($jpeg),
+            'адрес' => wp_get_attachment_url($id),
+        );
+    }
+
     public static function handle_media_space($request) {
         $uploads = wp_get_upload_dir();
         $base = (string) $uploads['basedir'];
