@@ -25,3 +25,12 @@
 .gs-consult__contacts{list-style:none;padding-left:0}
 .gs-consult__who{margin:10px 0 0;font-size:13px;line-height:1.55;color:#64748b}
 @media (max-width:860px){.gs-consult__grid{grid-template-columns:1fr}}
+
+/* Частые вопросы на странице заявки. */
+.gs-consult__faq { margin: 34px 0 0 }
+.gs-consult__faq h2 { margin: 0 0 14px }
+.gs-consult__faq .gs-faq__item {
+    border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; margin: 0 0 10px; background: #fff;
+}
+.gs-consult__faq .gs-faq__q { cursor: pointer; font-weight: 600; font-size: 15px; color: #0f172a }
+.gs-consult__faq .gs-faq__a { margin: 10px 0 0; font-size: 15px; line-height: 1.6; color: #334155 }

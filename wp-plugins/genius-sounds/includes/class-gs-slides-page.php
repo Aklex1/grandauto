@@ -327,7 +327,7 @@ class GS_Slides_Page {
             );
         }
         if ($faq) {
-            echo '<script type="application/ld+json">' . wp_json_encode(array(
+            echo '<script type="application/ld+json" data-gs="faq">' . wp_json_encode(array(
                 '@context'   => 'https://schema.org',
                 '@type'      => 'FAQPage',
                 'mainEntity' => $faq,

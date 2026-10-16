@@ -785,6 +785,12 @@ class GS_Wheel {
                 </div>
             </section>
 
+            <?php if (class_exists('GS_Terms')): ?>
+                <div class="gs-wl__wrap">
+                    <?php echo GS_Terms::render('lab'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                </div>
+            <?php endif; ?>
+
         </div>
         <?php
         return (string) ob_get_clean();

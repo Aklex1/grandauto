@@ -24,6 +24,35 @@ class GS_Pages {
         add_filter('body_class', array(__CLASS__, 'body_class'));
         add_action('template_redirect', array(__CLASS__, 'handle_return_after_login'), 5);
         add_filter('login_redirect', array(__CLASS__, 'filter_login_redirect'), 20, 3);
+        add_action('wp_head', array(__CLASS__, 'print_sfx_faq_schema'), 20);
+    }
+
+    /**
+     * Разметка вопросов генератора звуков.
+     *
+     * Те же шесть пар, что видны на странице: выдумывать вопросы, которых
+     * на странице нет, нельзя — за это поиск наказывает, и правильно.
+     */
+    public static function print_sfx_faq_schema() {
+        if (is_admin() || !self::is_studio_request()) {
+            return;
+        }
+        $faq = array();
+        foreach (self::sfx_faq() as $pair) {
+            $faq[] = array(
+                '@type' => 'Question',
+                'name'  => $pair[0],
+                'acceptedAnswer' => array('@type' => 'Answer', 'text' => $pair[1]),
+            );
+        }
+        if (!$faq) {
+            return;
+        }
+        echo '<script type="application/ld+json" data-gs="faq">' . wp_json_encode(array(
+            '@context'   => 'https://schema.org',
+            '@type'      => 'FAQPage',
+            'mainEntity' => $faq,
+        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . '</script>' . "\n";
     }
 
     /* ---------------------------------------------------------------------
@@ -269,6 +298,69 @@ class GS_Pages {
      * Студия
      * ------------------------------------------------------------------ */
 
+    /**
+     * Частые вопросы генератора звуков.
+     *
+     * Всё, что здесь написано, видно на самой странице или задано
+     * настройками: цена за звук, бесплатная проба, границы длительности,
+     * формат файла, права на результат. Цену читаем из настроек, а не
+     * вписываем числом.
+     */
+    public static function sfx_faq() {
+        $cost = class_exists('GS_SFX') ? (float) GS_SFX::get_cost() : 0.0;
+        $price = $cost > 0 ? number_format_i18n($cost, 0) . ' ₽' : 'бесплатно';
+        return array(
+            array(
+                'Сколько стоит один звук?',
+                $cost > 0
+                    ? 'Запуск стоит ' . $price . ' — списывается с баланса за каждый созданный звук, абонентской платы нет.'
+                    : 'Сейчас генерация бесплатна.',
+            ),
+            array(
+                'Можно попробовать без регистрации?',
+                'Да: первый звук на пять секунд делается бесплатно и без аккаунта — по одному на человека. '
+                . 'Дальше нужен вход, чтобы история и баланс были привязаны к вам.',
+            ),
+            array(
+                'Какой длины бывает звук?',
+                'От одной до тридцати секунд — ползунком в форме. '
+                . 'Для фона и бесшовных лупов берите длиннее, для удара или щелчка хватит одной-двух секунд.',
+            ),
+            array(
+                'В каком формате приходит файл?',
+                'MP3. Его можно скачать и вставить в монтаж, игру или стрим без переконвертации.',
+            ),
+            array(
+                'Можно ли использовать звук в коммерческом проекте?',
+                'Да. Звук создаётся по вашему описанию и не содержит чужих записей, '
+                . 'лицензионных отчислений за него платить не нужно.',
+            ),
+            array(
+                'Что будет, если звук не получится?',
+                'Если генерация сорвалась, списанное возвращается на баланс автоматически. '
+                . 'Если вышло не то, что хотелось, — опишите звук подробнее и запустите ещё раз: '
+                . 'слова вроде «глухой», «металлический», «с эхом» меняют результат сильнее всего.',
+            ),
+        );
+    }
+
+    /** Блок вопросов на странице генератора. */
+    public static function sfx_faq_block() {
+        ob_start();
+        ?>
+        <section class="gs-faq">
+            <h2 class="gs-section-title">Частые вопросы</h2>
+            <?php foreach (self::sfx_faq() as $pair): ?>
+                <details class="gs-faq__item">
+                    <summary class="gs-faq__q"><?php echo esc_html($pair[0]); ?></summary>
+                    <p class="gs-faq__a"><?php echo esc_html($pair[1]); ?></p>
+                </details>
+            <?php endforeach; ?>
+        </section>
+        <?php
+        return (string) ob_get_clean();
+    }
+
     public static function render_studio($atts = array()) {
         $prefill = isset($_GET['prompt']) ? sanitize_text_field(wp_unslash((string) $_GET['prompt'])) : '';
         $logged  = is_user_logged_in();
@@ -472,6 +564,8 @@ class GS_Pages {
             </section>
 
             <?php echo GS_Keywords::render('sfx'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::sfx_faq_block(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo GS_Support::render('Генератор звуков'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 

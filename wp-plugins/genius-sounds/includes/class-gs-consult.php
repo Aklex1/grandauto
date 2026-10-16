@@ -28,6 +28,26 @@ class GS_Consult {
         add_shortcode('genius_consult', array(__CLASS__, 'render'));
         add_filter('body_class', array(__CLASS__, 'body_class'));
         add_action('wp_enqueue_scripts', array(__CLASS__, 'assets'), 20);
+        add_action('wp_head', array(__CLASS__, 'print_faq_schema'), 20);
+    }
+
+    public static function print_faq_schema() {
+        if (is_admin() || !self::is_page()) {
+            return;
+        }
+        $faq = array();
+        foreach (self::faq() as $pair) {
+            $faq[] = array(
+                '@type' => 'Question',
+                'name'  => $pair[0],
+                'acceptedAnswer' => array('@type' => 'Answer', 'text' => $pair[1]),
+            );
+        }
+        echo '<script type="application/ld+json" data-gs="faq">' . wp_json_encode(array(
+            '@context'   => 'https://schema.org',
+            '@type'      => 'FAQPage',
+            'mainEntity' => $faq,
+        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . '</script>' . "\n";
     }
 
     public static function page_id() {
@@ -98,6 +118,66 @@ class GS_Consult {
         );
     }
 
+    /**
+     * Частые вопросы о консультации.
+     *
+     * Отвечаем только тем, что знаем наверняка: как устроена заявка, что
+     * с ней происходит дальше, какие документы есть. Сроков, которых никто
+     * не обещал, здесь нет — обещание, за которым не стоит механизм, хуже
+     * молчания.
+     */
+    public static function faq() {
+        return array(
+            array(
+                'Сколько стоит консультация?',
+                'Разбор задачи бесплатный: мы смотрим, что нужно сделать, и говорим, из каких частей это собирается. '
+                . 'Деньги появляются только там, где вы согласились на работу и знаете её стоимость.',
+            ),
+            array(
+                'Что произойдёт после отправки заявки?',
+                'Заявка сразу попадает в журнал сайта и уходит нам в Telegram. Дальше мы пишем вам на тот контакт, '
+                . 'который вы оставили: телефон, почту или ник.',
+            ),
+            array(
+                'Что написать в заявке?',
+                'Коротко: что должен делать бот, где он нужен — в Telegram или ВКонтакте — и к чему его подключить: '
+                . 'оплате, таблице, CRM, рассылке. Этого хватает, чтобы ответить по делу.',
+            ),
+            array(
+                'С чем вы работаете?',
+                'Боты в Telegram и ВК: продажи, запись, поддержка, оплата внутри бота, подписка на канал, '
+                . 'связки с таблицами и CRM, нейросети для звука, фото и видео внутри бота.',
+            ),
+            array(
+                'На каких условиях работаете?',
+                'Условия описаны в публичной оферте, порядок — в «Порядке оказания услуг», данные исполнителя — '
+                . 'на странице реквизитов. Ссылки на них есть внизу любой страницы сайта.',
+            ),
+            array(
+                'Что с моими данными?',
+                'Телефон, почта и описание задачи нужны только для ответа на заявку. '
+                . 'Как мы с ними обращаемся, написано в политике обработки персональных данных.',
+            ),
+        );
+    }
+
+    /** Блок вопросов и разметка к ним. */
+    public static function faq_block() {
+        ob_start();
+        ?>
+        <section class="gs-faq gs-consult__faq">
+            <h2>Частые вопросы</h2>
+            <?php foreach (self::faq() as $pair): ?>
+                <details class="gs-faq__item">
+                    <summary class="gs-faq__q"><?php echo esc_html($pair[0]); ?></summary>
+                    <p class="gs-faq__a"><?php echo esc_html($pair[1]); ?></p>
+                </details>
+            <?php endforeach; ?>
+        </section>
+        <?php
+        return (string) ob_get_clean();
+    }
+
     public static function render($atts = array()) {
         $d = class_exists('GS_Seo') ? GS_Seo::org_details() : array();
         $privacy = class_exists('GS_Requisites') ? GS_Requisites::privacy_url() : '';
@@ -116,7 +196,7 @@ class GS_Consult {
             <p class="gs-consult__lead">
                 Расскажите, что должен делать бот, — разберём задачу и скажем, как её собрать:
                 какие части нужны, сколько это займёт и во что обойдётся. Разбор бесплатный,
-                ответ приходит в тот же день.
+                заявка приходит нам в Telegram, ответим на указанный вами контакт.
             </p>
 
             <div class="gs-consult__grid">
@@ -163,7 +243,7 @@ class GS_Consult {
                         <h2>Как это будет</h2>
                         <ol class="gs-consult__steps">
                             <li>Вы оставляете заявку — она сразу попадает к нам.</li>
-                            <li>Мы отвечаем в тот же день и задаём уточняющие вопросы.</li>
+                            <li>Читаем заявку и задаём уточняющие вопросы, если что-то неясно.</li>
                             <li>Обсуждаем задачу голосом или перепиской — как вам удобнее.</li>
                             <li>Присылаем состав работ, срок и стоимость. Решение за вами.</li>
                         </ol>
@@ -190,6 +270,8 @@ class GS_Consult {
                     </section>
                 </aside>
             </div>
+
+            <?php echo self::faq_block(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         </div>
         <?php
         return (string) ob_get_clean();

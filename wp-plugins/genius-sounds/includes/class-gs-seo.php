@@ -966,6 +966,11 @@ class GS_Seo {
         return (string) preg_replace_callback(
             '~<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>~is',
             function ($m) {
+                // Свою разметку помечаем data-gs и не трогаем: иначе вместе
+                // с чужим Article улетали наши вопросы и ответы.
+                if (strpos($m[0], 'data-gs=') !== false) {
+                    return $m[0];
+                }
                 $data = json_decode(trim($m[1]), true);
                 if (!is_array($data)) {
                     return $m[0];
