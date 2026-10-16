@@ -27,8 +27,65 @@ class GS_Leads {
     const LIMIT  = 5;
     const WINDOW = 3600;
 
+    /** Сколько раз пробуем дослать одну заявку, прежде чем сдаться. */
+    const RETRY_MAX = 12;
+    const CRON = 'gs_leads_retry';
+
     public static function boot() {
         add_action('admin_post_gs_leads_test', array(__CLASS__, 'handle_test'));
+        add_action('init', array(__CLASS__, 'ensure_cron'));
+        add_action(self::CRON, array(__CLASS__, 'retry_unsent'));
+    }
+
+    public static function ensure_cron() {
+        if (!wp_next_scheduled(self::CRON)) {
+            wp_schedule_event(time() + 180, 'gs_five_minutes', self::CRON);
+        }
+    }
+
+    /**
+     * Дослать заявки, которые не ушли с первого раза.
+     *
+     * С хостинга связь с Telegram рвётся с перебоями: из пяти пробных
+     * заявок одного дня три оборвались на соединении, две прошли. Заявка
+     * при этом не теряется — она лежит в журнале, — но человек ждёт ответа,
+     * а мы о ней не знаем, пока не откроем админку.
+     *
+     * Поэтому раз в пять минут пробуем ещё раз всё, что не ушло. Попыток
+     * дюжина: за час перебой обычно проходит сам, а долбиться сутками в
+     * закрытую дверь незачем — к тому времени заявку всё равно увидят в
+     * журнале.
+     */
+    public static function retry_unsent() {
+        $log = (array) get_option(self::OPT_LOG, array());
+        if (!$log || !self::ready()) {
+            return;
+        }
+        $changed = false;
+        $done = 0;
+        foreach ($log as $i => $entry) {
+            if (!is_array($entry) || !empty($entry['sent'])) {
+                continue;
+            }
+            $tries = (int) ($entry['tries'] ?? 0);
+            if ($tries >= self::RETRY_MAX) {
+                continue;
+            }
+            $sent = self::notify($entry);
+            $log[$i]['tries'] = $tries + 1;
+            $log[$i]['sent']  = !empty($sent['ok']);
+            $log[$i]['how']   = (string) ($sent['how'] ?? '');
+            $log[$i]['error'] = !empty($sent['ok']) ? '' : mb_substr((string) $sent['message'], 0, 200);
+            $changed = true;
+            // За один проход — по одной попытке на заявку и не больше трёх
+            // заявок: расписание вернётся через пять минут.
+            if (++$done >= 3) {
+                break;
+            }
+        }
+        if ($changed) {
+            update_option(self::OPT_LOG, $log, false);
+        }
     }
 
     public static function handle_test() {
