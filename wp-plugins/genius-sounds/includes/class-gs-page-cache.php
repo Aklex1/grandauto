@@ -172,8 +172,28 @@ class GS_Page_Cache {
             self::epoch(),
             isset($_COOKIE['cookie_notice_accepted']) ? 'c1' : 'c0',
             (function_exists('wp_is_mobile') && wp_is_mobile()) ? 'm1' : 'm0',
+            self::is_bot() ? 'b1' : 'b0',
         );
         return self::PREFIX . md5(implode('|', $parts));
+    }
+
+    /**
+     * Робот это или человек.
+     *
+     * Плагин согласия на печенье роботу баннер не показывает — и правильно
+     * делает. Но готовую страницу мы складывали в общий ящик: если первым
+     * после сброса кэша заходил робот, следующие пятнадцать минут люди
+     * получали его копию и баннера не видели. Поэтому у роботов свои копии.
+     */
+    private static function is_bot() {
+        $ua = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+        if ($ua === '') {
+            return true;
+        }
+        return (bool) preg_match(
+            '~bot|crawl|spider|slurp|yandex|google|bing|duckduck|baidu|mail\.ru|facebookexternalhit|telegram|whatsapp|preview|headless|python|curl|wget~i',
+            $ua
+        );
     }
 
     /**
