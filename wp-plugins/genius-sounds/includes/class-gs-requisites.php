@@ -30,6 +30,50 @@ class GS_Requisites {
         add_shortcode('genius_requisites', array(__CLASS__, 'render'));
         add_filter('body_class', array(__CLASS__, 'body_class'));
         add_action('wp_enqueue_scripts', array(__CLASS__, 'assets'), 20);
+        add_action('wp_footer', array(__CLASS__, 'render_footer_legal'), 30);
+    }
+
+    /**
+     * Строка с документами в подвале.
+     *
+     * Страницы оферты и реквизитов были сиротами: с главной на них не
+     * ссылалась ни одна ссылка, а в подвале стояли те же документы файлами
+     * .docx из загрузок 2024 года. Поиск такую страницу находит, но веса
+     * ей не даёт, а покупатель файл не открывает.
+     *
+     * Поэтому ссылки печатаем сами и на каждой странице — в том числе в
+     * каталоге, где блока перелинковки нет.
+     */
+    public static function render_footer_legal() {
+        if (is_admin() || is_feed()) {
+            return;
+        }
+        $docs = self::documents();
+        // Файл оферты из строки убираем: рядом есть та же оферта страницей.
+        unset($docs['Оферта файлом (.docx)']);
+        $links = array('Реквизиты' => self::get_url()) + $docs;
+        $links = array_filter($links, function ($url) {
+            return is_string($url) && $url !== '';
+        });
+        if (count($links) < 2) {
+            return;
+        }
+        ?>
+        <nav class="gs-legal" aria-label="Документы и реквизиты">
+            <p class="gs-legal__in">
+                <?php $i = 0; foreach ($links as $title => $url): $i++; ?>
+                    <?php if ($i > 1): ?> · <?php endif; ?>
+                    <a href="<?php echo esc_url($url); ?>"><?php echo esc_html($title); ?></a>
+                <?php endforeach; ?>
+            </p>
+        </nav>
+        <style>
+            .gs-legal{background:#070b14;color:#64748b;padding:14px 16px;font-size:13px;line-height:1.6}
+            .gs-legal__in{max-width:1200px;margin:0 auto;text-align:center}
+            .gs-legal a{color:#94a3b8;text-decoration:none}
+            .gs-legal a:hover{color:#22d3ee;text-decoration:underline}
+        </style>
+        <?php
     }
 
     /** Наши документные страницы: оферта и реквизиты. */

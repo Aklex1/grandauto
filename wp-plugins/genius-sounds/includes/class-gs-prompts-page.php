@@ -207,14 +207,34 @@ class GS_Prompts_Page {
         $item = self::current_item();
         if ($item) {
             $parts['title'] = (string) $item['title'] . ' — промт для фото';
-        } else {
-            $rubric = self::current_rubric();
-            if ($rubric !== '') {
-                $parts['title'] = GS_Prompts::rubric_title($rubric) . ' промты для фото — готовые примеры с кадрами';
-            } else {
-                $parts['title'] = 'Готовые промты для фото: ' . GS_Prompts::count() . ' примеров с кадрами';
-            }
+            return $parts;
         }
+
+        $rubric = self::current_rubric();
+        $page   = self::current_page();
+        $query  = self::search_query();
+
+        if ($query !== '') {
+            $parts['title'] = 'Поиск: ' . $query . ' — промты для фото';
+            return $parts;
+        }
+
+        // Страницы списка начиная со второй обязаны называться иначе, чем
+        // первая. Вебмастер показывал сто девяносто три таких адреса одной
+        // пачкой: сорок семь раз «Готовые промты для фото: 1156 примеров с
+        // кадрами», сорок один раз «Женские промты…». Для поиска это дубли,
+        // и в индексе из такой пачки остаётся одна страница — вместе с нею
+        // выпадают и ссылки на промты, которые только на ней и стоят.
+        if ($rubric !== '') {
+            $parts['title'] = $page > 1
+                ? GS_Prompts::rubric_title($rubric) . ' промты для фото — страница ' . $page
+                : GS_Prompts::rubric_title($rubric) . ' промты для фото — готовые примеры с кадрами';
+            return $parts;
+        }
+
+        $parts['title'] = $page > 1
+            ? 'Готовые промты для фото — страница ' . $page . ' из ' . self::page_count()
+            : 'Готовые промты для фото: ' . GS_Prompts::count() . ' примеров с кадрами';
         return $parts;
     }
 
@@ -235,13 +255,20 @@ class GS_Prompts_Page {
         if ($item) {
             return 'Готовый промт: ' . mb_substr((string) $item['prompt'], 0, 150, 'UTF-8');
         }
+
         $rubric = self::current_rubric();
+        $page   = self::current_page();
+        $pages  = self::page_count();
+        // Номер страницы в описании нужен по той же причине, что и в
+        // заголовке: описание у всех страниц списка было одно на всю пачку.
+        $tail = $pages > 1 && $page > 1 ? ' Страница ' . $page . ' из ' . $pages . '.' : '';
+
         if ($rubric !== '') {
             return GS_Prompts::rubric_lead($rubric) . '. Готовые промты с примерами кадров: '
-                . 'смотрите снимок, копируйте текст или нажмите «Повторить фото».';
+                . 'смотрите снимок, копируйте текст или нажмите «Повторить фото».' . $tail;
         }
         return 'Каталог готовых промтов для фото: ' . GS_Prompts::count() . ' примеров с кадрами. '
-            . 'Поиск по словам, рубрики, кнопка «Повторить фото» — результат сразу на сайте.';
+            . 'Поиск по словам, рубрики, кнопка «Повторить фото» — результат сразу на сайте.' . $tail;
     }
 
     /** Собственный адрес страницы. */
@@ -251,9 +278,43 @@ class GS_Prompts_Page {
             return self::url((string) $item['slug']);
         }
         $rubric = self::current_rubric();
-        $page = (int) get_query_var('gs_prompt_page');
-        $page = $page > 1 ? $page : 1;
+        $page   = self::current_page();
         return $rubric !== '' ? self::rubric_url($rubric, $page) : self::page_url($page);
+    }
+
+    /** Строка поиска по каталогу, если человек её ввёл. */
+    public static function search_query() {
+        if (empty($_GET['q'])) {
+            return '';
+        }
+        $q = sanitize_text_field(wp_unslash((string) $_GET['q']));
+        return trim(preg_replace('~\s+~u', ' ', $q));
+    }
+
+    /** Сколько промтов в текущей выборке — с рубрикой и поиском. */
+    public static function found_count() {
+        static $memo = array();
+        $key = self::search_query() . '|' . self::current_rubric();
+        if (!isset($memo[$key])) {
+            $memo[$key] = count(GS_Prompts::search(self::search_query(), self::current_rubric()));
+        }
+        return $memo[$key];
+    }
+
+    /** Сколько всего страниц в текущей выборке. */
+    public static function page_count() {
+        return max(1, (int) ceil(self::found_count() / GS_Prompts::PER_PAGE));
+    }
+
+    /**
+     * Какая страница списка открыта.
+     *
+     * Номер больше последней страницы не выдумываем: список всё равно
+     * покажет последнюю, и заголовок с адресом должны говорить то же самое.
+     */
+    public static function current_page() {
+        $n = max(1, (int) get_query_var('gs_prompt_page'));
+        return min($n, self::page_count());
     }
 
     public static function head() {
@@ -355,7 +416,7 @@ class GS_Prompts_Page {
     /* ----------------------------------------------------------- Посадочная */
 
     private static function render_landing() {
-        $q      = isset($_GET['q']) ? sanitize_text_field(wp_unslash((string) $_GET['q'])) : '';
+        $q      = self::search_query();
         $rubric = self::current_rubric();
         $page   = max(1, (int) get_query_var('gs_prompt_page'));
 

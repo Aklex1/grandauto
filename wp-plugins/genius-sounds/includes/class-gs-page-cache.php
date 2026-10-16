@@ -295,5 +295,39 @@ class GS_Page_Cache {
             delete_transient(str_replace('_transient_', '', (string) $name));
         }
         self::bump();
+        self::flush_foreign();
+    }
+
+    /**
+     * Сбросить статические копии чужого кэша.
+     *
+     * WP Super Cache складывает готовый HTML файлами и отдаёт их ещё до
+     * PHP — наш сброс его копий не касается. Из-за этого правка заголовка
+     * или описания доходила до посетителя только после истечения срока
+     * копии: через сутки после выпуска новых тегов полтора десятка страниц
+     * каталога промтов всё ещё отдавали в описании «[genius_prompts]», а в
+     * заголовке — старый хвост про разработку ботов. Вебмастер в это время
+     * считал их дублями.
+     *
+     * Поэтому при смене версии плагина просим Super Cache убрать свои
+     * файлы его же средствами. Функция живёт в главном файле плагина и
+     * доступна на любом запросе, пока он включён; если плагина нет —
+     * ничего не делаем.
+     */
+    public static function flush_foreign() {
+        if (function_exists('wp_cache_clear_cache')) {
+            wp_cache_clear_cache();
+            return true;
+        }
+        if (function_exists('prune_super_cache')) {
+            global $cache_path;
+            $dir = (string) $cache_path;
+            if ($dir !== '' && is_dir($dir)) {
+                prune_super_cache($dir . 'supercache/', true);
+                prune_super_cache($dir, true);
+                return true;
+            }
+        }
+        return false;
     }
 }

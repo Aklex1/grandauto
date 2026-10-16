@@ -88,9 +88,11 @@ class GS_Seo {
                 'service'  => null,
                 'url'      => GS_Prompts_Page::seo_canonical(),
                 'category' => null,
-                'page'     => 1,
-                'pages'    => 1,
-                'query'    => '',
+                // У отдельного промта страниц списка нет: иначе в голову
+                // попадает rel=next на самого себя.
+                'page'     => GS_Prompts_Page::current_item() ? 1 : GS_Prompts_Page::current_page(),
+                'pages'    => GS_Prompts_Page::current_item() ? 1 : GS_Prompts_Page::page_count(),
+                'query'    => GS_Prompts_Page::current_item() ? '' : GS_Prompts_Page::search_query(),
             );
             return self::$ctx;
         }
@@ -555,7 +557,15 @@ class GS_Seo {
             return home_url('/');
         }
         if ($ctx['type'] === 'prompt') {
-            return (string) $ctx['url'];
+            // Соседние страницы списка — только для самого списка:
+            // у отдельного промта номера страницы нет, у него свой адрес.
+            if ($page === null || GS_Prompts_Page::current_item()) {
+                return (string) $ctx['url'];
+            }
+            $rubric = GS_Prompts_Page::current_rubric();
+            return $rubric !== ''
+                ? GS_Prompts_Page::rubric_url($rubric, (int) $page)
+                : GS_Prompts_Page::page_url((int) $page);
         }
         if ($ctx['type'] === 'docpage') {
             return (string) $ctx['url'];
@@ -699,10 +709,12 @@ class GS_Seo {
             return $out . '<meta name="robots" content="noindex, follow">' . "\n";
         }
 
-        // Страницы поиска — служебные, в индексе им делать нечего,
-        // но ссылки с них пусть передают вес.
-        if ($ctx['type'] === 'index' && $ctx['query'] !== '') {
-            $out .= '<meta name="robots" content="noindex, follow">' . "\n";
+        // Страницы поиска — служебные, в индексе им делать нечего, но
+        // ссылки с них пусть передают вес. Сам тег robots ставит
+        // GS_Noindex через wp_robots — одним тегом, а не вторым подряд.
+        // Здесь обрываем остальное: соседние страницы и микроразметка
+        // служебной выдаче не нужны.
+        if (($ctx['type'] === 'index' || $ctx['type'] === 'prompt') && $ctx['query'] !== '') {
             return $out;
         }
 
