@@ -24,6 +24,11 @@ class GS_Seo {
 
     public static function boot() {
         add_filter('document_title_parts', array(__CLASS__, 'filter_title_parts'), PHP_INT_MAX);
+        // Часть страниц заголовок получает от стороннего оптимизатора,
+        // который обходит разбор по частям. Здесь подрезаем хвост у любого
+        // готового заголовка — «Genius-bot — Разработка чат ботов в телеграм
+        // и ВК для бизнеса» съедает сорок знаков выдачи на пустом месте.
+        add_filter('pre_get_document_title', array(__CLASS__, 'trim_site_tail'), 9999);
         add_filter('the_content', array(__CLASS__, 'promote_front_heading'), 9);
         add_action('wp_head', array(__CLASS__, 'start_buffer'), 0);
         add_action('wp_head', array(__CLASS__, 'flush_buffer'), PHP_INT_MAX);
@@ -331,7 +336,16 @@ class GS_Seo {
     public static function filter_title_parts($parts) {
         $ctx = self::context();
         if (!$ctx) {
-            return self::restore_full_title($parts);
+            $parts = self::restore_full_title($parts);
+            // Имя сайта в заголовке — целое предложение про разработку
+            // чат-ботов. На страницах, которыми мы не распоряжаемся, оно
+            // приклеивалось целиком и съедало до сорока знаков выдачи:
+            // «Кейсы озвучки — Genius-bot — Разработка чат ботов в телеграм
+            // и ВК для бизнеса». Оставляем только бренд.
+            if (!empty($parts['site'])) {
+                $parts['site'] = self::brand_name((string) $parts['site']);
+            }
+            return $parts;
         }
         $parts['title'] = self::build_title($ctx);
         unset($parts['tagline']);
@@ -342,6 +356,18 @@ class GS_Seo {
             $parts['site'] = self::brand_name((string) $parts['site']);
         }
         return $parts;
+    }
+
+    public static function trim_site_tail($title) {
+        if (!is_string($title) || $title === '') {
+            return $title;
+        }
+        $site = trim((string) get_bloginfo('name'));
+        $brand = self::brand_name($site);
+        if ($site !== '' && $brand !== '' && $brand !== $site && mb_strpos($title, $site) !== false) {
+            $title = str_replace($site, $brand, $title);
+        }
+        return $title;
     }
 
     private static function brand_name($site) {
