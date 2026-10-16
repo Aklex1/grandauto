@@ -250,6 +250,8 @@ class GS_Slides_Page {
         $url = $alt ? self::alt_url($alt['id']) : self::get_url();
 
         echo '<meta name="description" content="' . esc_attr($desc) . '">' . "\n";
+        // Свой canonical печатаем вместо ядерного, а не вдобавок к нему.
+        remove_action('wp_head', 'rel_canonical');
         echo '<link rel="canonical" href="' . esc_url($url) . '">' . "\n";
         echo '<meta property="og:type" content="website">' . "\n";
         echo '<meta property="og:title" content="' . esc_attr($title) . '">' . "\n";

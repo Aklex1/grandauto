@@ -41,7 +41,7 @@ class GS_Gift {
 
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
-        add_action('wp_head', array(__CLASS__, 'head'));
+        add_action('wp_head', array(__CLASS__, 'head'), 1);
         add_filter('document_title_parts', array(__CLASS__, 'title_parts'));
         // Врезка в статьях кластера идёт до блока инструментов в конце.
         add_filter('the_content', array(__CLASS__, 'insert_promo'), 9);
@@ -584,6 +584,8 @@ class GS_Gift {
             return;
         }
         echo '<meta name="description" content="' . esc_attr($page['seo_desc']) . '">' . "\n";
+        // Свой canonical печатаем вместо ядерного, а не вдобавок к нему.
+        remove_action('wp_head', 'rel_canonical');
         echo '<link rel="canonical" href="' . esc_url(self::get_url($page['id'])) . '">' . "\n";
 
         $faq = array();
