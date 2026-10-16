@@ -54,15 +54,18 @@ class GS_Cache {
      * @return string[]
      */
     public static function paths() {
+        return apply_filters('gs_no_cache_paths',
+            array_values(array_unique(array_merge(self::private_paths(), self::service_paths()))));
+    }
+
+    /**
+     * Кабинеты и вход: здесь личное видно и без разбора, кто смотрит, —
+     * ключи доступа, код входа, своя история. Эти адреса в кэш не попадают
+     * никогда.
+     */
+    public static function private_paths() {
         $paths = array('tts-login', 'tts-dashboard');
 
-        if (class_exists('GS_Lab')) {
-            foreach (GS_Lab::services() as $service) {
-                if (!empty($service['slug'])) {
-                    $paths[] = (string) $service['slug'];
-                }
-            }
-        }
         if (class_exists('GS_Api_Page')) {
             $paths[] = GS_Api_Page::SLUG;
         }
@@ -79,9 +82,28 @@ class GS_Cache {
          */
         $paths = array_merge($paths, array('neurohub', 'pdf-online', 'showwheel'));
 
-        $paths = array_values(array_unique(array_filter(array_map('strtolower', $paths))));
+        return array_values(array_unique(array_filter(array_map('strtolower', $paths))));
+    }
 
-        return apply_filters('gs_no_cache_paths', $paths);
+    /**
+     * Страницы сервисов. Вошедшему здесь показывают баланс, и такую сборку
+     * в общий кэш отдавать нельзя. Гостю же показывают «Нужен вход» и ни
+     * одной личной цифры — ему готовая страница и нужна больше всех:
+     * с поиска приходят именно гостем, и секунда сборки идёт в оценку
+     * сайта. Поэтому запрет здесь — только для вошедшего.
+     *
+     * @return string[]
+     */
+    public static function service_paths() {
+        $paths = array();
+        if (class_exists('GS_Lab')) {
+            foreach (GS_Lab::services() as $service) {
+                if (!empty($service['slug'])) {
+                    $paths[] = strtolower((string) $service['slug']);
+                }
+            }
+        }
+        return array_values(array_unique(array_filter($paths)));
     }
 
     public static function maybe_no_cache() {
@@ -89,12 +111,16 @@ class GS_Cache {
             return;
         }
         $head = self::path_head();
-        if ($head !== '' && in_array($head, self::paths(), true)) {
+        if ($head !== '' && in_array($head, self::private_paths(), true)) {
             self::no_cache();
             return;
         }
-        // Страницу сервиса могли собрать шорткодом на другом адресе.
-        if (class_exists('GS_Lab') && GS_Lab::current_service()) {
+        $service = $head !== '' && in_array($head, self::service_paths(), true);
+        if (!$service && class_exists('GS_Lab') && GS_Lab::current_service()) {
+            // Страницу сервиса могли собрать шорткодом на другом адресе.
+            $service = true;
+        }
+        if ($service && is_user_logged_in()) {
             self::no_cache();
         }
     }

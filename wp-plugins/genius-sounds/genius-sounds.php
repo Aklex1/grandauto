@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.65.0
+ * Version:     2.68.1
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.65.0');
+define('GS_VERSION', '2.68.1');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -125,12 +125,21 @@ $gs_parts = array(
     'includes/class-gs-rest.php',
     'includes/class-gs-admin.php',
     'includes/class-gs-cache.php',
+    'includes/class-gs-page-cache.php',
 );
 
 foreach ($gs_parts as $gs_part) {
     if (!is_readable(GS_PLUGIN_DIR . $gs_part)) {
         return;
     }
+}
+
+// Готовая страница для гостя уходит здесь — до темы и до остальных
+// плагинов: так отдача стоит десятые доли секунды, а не полсекунды на
+// загрузку всего WordPress.
+if (is_readable(GS_PLUGIN_DIR . 'includes/class-gs-page-cache.php')) {
+    require_once GS_PLUGIN_DIR . 'includes/class-gs-page-cache.php';
+    GS_Page_Cache::early();
 }
 foreach ($gs_parts as $gs_part) {
     require_once GS_PLUGIN_DIR . $gs_part;
@@ -162,6 +171,9 @@ class Genius_Sounds_Plugin {
         add_filter('query_vars', array('GS_Catalog', 'add_query_vars'));
         add_action('template_redirect', array('GS_Catalog', 'redirect_legacy_page'), 5);
         add_action('wp_enqueue_scripts', array($this, 'enqueue_front_assets'));
+        // Чужие наборы, которые на страницах сервисов не нужны, снимаем
+        // последними: к этому времени все, кто их ставит, уже отработали.
+        add_action('wp_enqueue_scripts', array($this, 'trim_front_assets'), 100);
         add_action('template_redirect', array($this, 'link_trial_to_user'), 5);
 
         GS_Importer::boot();
@@ -225,6 +237,7 @@ class Genius_Sounds_Plugin {
         GS_Openapi::boot();
         GS_Weight::boot();
         GS_Cache::boot();
+        GS_Page_Cache::boot();
     }
 
     public function activate() {
@@ -273,6 +286,9 @@ class Genius_Sounds_Plugin {
         if (get_option('gs_bootstrap_version') !== GS_VERSION) {
             update_option('gs_bootstrap_version', GS_VERSION);
             try {
+                // Готовые страницы собраны прежней версией — выбрасываем,
+                // иначе правка вёрстки доедет до гостя только через четверть часа.
+                GS_Page_Cache::flush();
                 GS_Storage::ensure_dirs();
                 GS_Catalog::ensure_seeded();
                 GS_Pages::ensure_pages();
@@ -315,6 +331,34 @@ class Genius_Sounds_Plugin {
             return;
         }
         GS_Rest::trial_bind_user();
+    }
+
+    /**
+     * Что убрать со страниц сервисов.
+     *
+     * Карусель swiper тема подключает всем страницам подряд, а на странице
+     * сервиса ни одной карусели нет: это 155 КБ, которые скачиваются, чтобы
+     * ничего не сделать. Снимаем только с наших страниц и только из очереди,
+     * не снимая регистрацию: если что-то объявит swiper своей зависимостью,
+     * WordPress подключит его сам, и мы не сломаем чужую вёрстку.
+     */
+    public function trim_front_assets() {
+        if (!class_exists('GS_Lab')) {
+            return;
+        }
+        $ours = (bool) GS_Lab::current_service()
+            || (class_exists('GS_Landing') && GS_Landing::current())
+            || (class_exists('GS_Pages') && GS_Pages::is_studio_request())
+            || (class_exists('GS_Slides_Page') && method_exists('GS_Slides_Page', 'is_page') && GS_Slides_Page::is_page())
+            || (class_exists('GS_Api_Page') && method_exists('GS_Api_Page', 'is_page') && GS_Api_Page::is_page());
+        if (!$ours) {
+            return;
+        }
+        foreach (array('swiper', 'swiper-css', 'swiper-js', 'swiper-bundle') as $handle) {
+            wp_dequeue_style($handle);
+            wp_dequeue_script($handle);
+        }
+        wp_enqueue_style('genius-sounds-speed', GS_PLUGIN_URL . 'assets/css/speed.css', array(), GS_VERSION);
     }
 
     public function enqueue_front_assets() {

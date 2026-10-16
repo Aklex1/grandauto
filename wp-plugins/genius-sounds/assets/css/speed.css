@@ -1,0 +1,126 @@
+/*
+ * Вес коммерческих страниц.
+ *
+ * На странице сервиса ровно две иконки нарисованы шрифтом: стрелка
+ * «наверх» и телеграм в подвале. Шрифт берётся из темы и тянет 240 КБ —
+ * по сто с лишним килобайт на иконку. Файл шрифта браузер качает только
+ * если им что-то нарисовано, поэтому здесь иконки заменены на картинку в
+ * самом правиле: шрифт перестаёт быть нужен и не запрашивается вовсе.
+ *
+ * Разметку темы не трогаем — она сама по себе остаётся как была; меняем
+ * только то, чем рисуется глиф.
+ */
+
+.w-toplink i.far.fa-angle-up::before,
+.w-socials-item-link i.fab.fa-telegram::before {
+    content: none !important;
+}
+
+.w-toplink i.far.fa-angle-up,
+.w-socials-item-link i.fab.fa-telegram {
+    font-family: inherit !important;
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.125em;
+    background-color: currentColor;
+    -webkit-mask: var(--gs-ico) center / contain no-repeat;
+            mask: var(--gs-ico) center / contain no-repeat;
+}
+
+.w-toplink i.far.fa-angle-up {
+    --gs-ico: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8l8 8-2.1 2.1L12 12.2 6.1 18.1 4 16z"/></svg>');
+}
+
+.w-socials-item-link i.fab.fa-telegram {
+    --gs-ico: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm4.64 6.07-1.73 8.16c-.13.58-.47.72-.95.45l-2.62-1.93-1.26 1.22c-.14.14-.26.26-.53.26l.19-2.68 4.88-4.41c.21-.19-.05-.3-.33-.11l-6.03 3.8-2.6-.81c-.56-.18-.57-.56.12-.83l10.16-3.92c.47-.17.88.11.73.83z"/></svg>');
+}
+
+/*
+ * Стрелки в меню. На телефоне они видны — и ради одного шеврона браузер
+ * качает ещё 165 КБ иконочного шрифта. Рисуем так же, как и остальные:
+ * картинкой в правиле. Повороты тема делает самому элементу, а не этой
+ * вставке, так что раскрытое подменю по-прежнему показывает стрелку вверх.
+ */
+
+:root {
+    --gs-chev-down: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 7l8 8 8-8-2.1-2.1L12 10.8 6.1 4.9z"/></svg>');
+    --gs-chev-right: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 4l8 8-8 8-2.1-2.1L12.8 12 6.9 6.1z"/></svg>');
+}
+
+.w-nav-arrow::before {
+    content: none !important;
+}
+
+.w-nav-arrow::after {
+    content: '';
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: top;
+    background-color: currentColor;
+    -webkit-mask: var(--gs-chev-down) center / contain no-repeat;
+            mask: var(--gs-chev-down) center / contain no-repeat;
+}
+
+.w-nav.type_mobile .w-nav-anchor:not(.w-btn) .w-nav-arrow::after {
+    font-size: 1.5em;
+}
+
+.w-nav.type_desktop .w-nav-anchor.level_1 .w-nav-arrow::after {
+    font-size: 1.3em;
+    margin-left: 0.4em;
+}
+
+.header_ver .w-nav.type_desktop .w-nav-anchor.level_1 .w-nav-arrow::after,
+.w-nav.type_desktop .w-nav-list.level_2 .w-nav-arrow::after {
+    -webkit-mask-image: var(--gs-chev-right);
+            mask-image: var(--gs-chev-right);
+}
+
+.w-nav.type_desktop .w-nav-list.level_2 .w-nav-arrow::after {
+    font-size: 1.3em;
+}
+
+/*
+ * Галочка в чекбоксе и крестик в мобильном меню — последние, кто держит
+ * иконочный шрифт. Галочка особенно обидна: тема рисует её всегда и просто
+ * прячет через visibility, поэтому 134 КБ сплошного набора качались на
+ * каждой странице с любой галочкой, даже не отмеченной. Крестик тянет ещё
+ * 165 КБ обычного набора на телефоне.
+ *
+ * Правило visibility оставляем теме: показывать галочку только у отмеченной
+ * ячейки — её забота, наша — чем она нарисована.
+ */
+
+:root {
+    --gs-check: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 7.1 9.6 17.5 4 11.9l2.1-2.1 3.5 3.5L17.9 5z"/></svg>');
+    --gs-times: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.4 4.3 12 9.9l5.6-5.6 2.1 2.1L14.1 12l5.6 5.6-2.1 2.1L12 14.1l-5.6 5.6-2.1-2.1L9.9 12 4.3 6.4z"/></svg>');
+}
+
+input[type=checkbox]::before,
+.w-nav-close::before {
+    content: '' !important;
+    font-family: inherit !important;
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: top;
+    background-color: currentColor;
+    -webkit-mask-position: center;
+            mask-position: center;
+    -webkit-mask-size: contain;
+            mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+}
+
+input[type=checkbox]::before {
+    -webkit-mask-image: var(--gs-check);
+            mask-image: var(--gs-check);
+}
+
+.w-nav-close::before {
+    -webkit-mask-image: var(--gs-times);
+            mask-image: var(--gs-times);
+}
