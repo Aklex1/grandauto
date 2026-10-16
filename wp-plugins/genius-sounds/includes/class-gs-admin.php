@@ -232,6 +232,21 @@ class GS_Admin {
             },
             'default'           => '',
         ));
+        foreach (array(GS_Leads::OPT_RELAY_URL, GS_Leads::OPT_RELAY_TOKEN) as $gs_relay_opt) {
+            register_setting('gs_settings_group', $gs_relay_opt, array(
+                'type'              => 'string',
+                'sanitize_callback' => function ($value) use ($gs_relay_opt) {
+                    if ($value === null) {
+                        return (string) get_option($gs_relay_opt, '');
+                    }
+                    $value = trim((string) $value);
+                    return $gs_relay_opt === GS_Leads::OPT_RELAY_URL
+                        ? esc_url_raw($value)
+                        : sanitize_text_field($value);
+                },
+                'default'           => '',
+            ));
+        }
         register_setting('gs_settings_group', GS_Leads::OPT_CHAT, array(
             'type'              => 'string',
             'sanitize_callback' => function ($value) {
@@ -768,8 +783,22 @@ class GS_Admin {
             </p>
         <?php endif; ?>
 
+        <p class="description" style="max-width:900px">
+            С хостинга сайта api.telegram.org недоступен, поэтому уведомления уходят через
+            службу-пересыльщик на вашем сервере: сайт отдаёт ей текст, она — боту.
+            Токен бота при этом остаётся на сервере. Поля ниже — в настройках плагина:
+            «Адрес пересыльщика» (например <code>http://89.169.38.152:8020/send</code>)
+            и «Ключ пересыльщика». Установка описана в <code>server/telegram-relay/README.md</code>.
+            Сайт сначала пробует отправить напрямую и только потом идёт через сервер.
+        </p>
+        <p class="description" style="max-width:900px">
+            Пересыльщик: <?php echo GS_Leads::relay_ready()
+                ? esc_html('настроен — ' . GS_Leads::relay_url())
+                : 'не настроен'; ?>.
+        </p>
+
         <?php if (!GS_Leads::ready()): ?>
-            <p class="description" style="max-width:900px">Бот не настроен — заявки будут копиться только здесь.</p>
+            <p class="description" style="max-width:900px">Ни бот, ни пересыльщик не настроены — заявки будут копиться только здесь.</p>
         <?php else: ?>
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
                 <?php wp_nonce_field('gs_leads_test'); ?>
@@ -780,7 +809,7 @@ class GS_Admin {
 
         <?php if ($rows): ?>
             <table class="widefat striped" style="max-width:1000px">
-                <thead><tr><th>Когда</th><th>Имя</th><th>Контакт</th><th>Комментарий</th><th>Откуда</th><th>В бот</th></tr></thead>
+                <thead><tr><th>Когда</th><th>Имя</th><th>Контакт</th><th>Комментарий</th><th>Откуда</th><th>В бот</th><th>Как</th></tr></thead>
                 <tbody>
                     <?php foreach (array_slice($rows, 0, 50) as $row): ?>
                         <tr>
@@ -790,6 +819,7 @@ class GS_Admin {
                             <td><?php echo esc_html($row['comment'] ?? ''); ?></td>
                             <td><?php echo esc_html($row['source'] ?? ''); ?></td>
                             <td><?php echo !empty($row['sent']) ? 'да' : esc_html('нет — ' . ($row['error'] ?? '')); ?></td>
+                            <td><?php echo esc_html((string) ($row['how'] ?? '')); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -1795,10 +1825,30 @@ class GS_Admin {
                                            value="<?php echo esc_attr(get_option(GS_Leads::OPT_CHAT, '')); ?>" class="regular-text">
                                 </label>
                             </p>
+                            <p>
+                                <label>Адрес пересыльщика<br>
+                                    <input name="<?php echo esc_attr(GS_Leads::OPT_RELAY_URL); ?>" type="url" autocomplete="off"
+                                           placeholder="http://89.169.38.152:8020/send"
+                                           value="<?php echo esc_attr(get_option(GS_Leads::OPT_RELAY_URL, '')); ?>" class="regular-text">
+                                </label>
+                            </p>
+                            <p>
+                                <label>Ключ пересыльщика<br>
+                                    <input name="<?php echo esc_attr(GS_Leads::OPT_RELAY_TOKEN); ?>" type="password" autocomplete="off"
+                                           value="<?php echo esc_attr(get_option(GS_Leads::OPT_RELAY_TOKEN, '')); ?>" class="regular-text">
+                                </label>
+                            </p>
                             <p class="description">
-                                Заявки с лендинга обучения уходят сообщением в этот чат. Копия каждой заявки
-                                остаётся в журнале ниже, поэтому недоступность Telegram заявку не теряет.
+                                Заявки с сайта уходят сообщением в этот чат. Копия каждой заявки остаётся
+                                в журнале ниже, поэтому недоступность Telegram заявку не теряет.
                                 Чтобы бот смог написать первым, ему нужно один раз отправить <code>/start</code>.
+                            </p>
+                            <p class="description">
+                                С этого хостинга <code>api.telegram.org</code> недоступен, поэтому сообщения идут
+                                через службу на вашем сервере: сайт отдаёт ей текст, она — боту, а токен бота
+                                остаётся на сервере. Установка описана в <code>server/telegram-relay/README.md</code>.
+                                Сначала сайт пробует отправить напрямую — если доступ откроют, пересыльщик
+                                перестанет использоваться сам собой.
                             </p>
                         </td>
                     </tr>

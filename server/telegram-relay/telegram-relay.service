@@ -1,0 +1,27 @@
+[Unit]
+Description=Пересыльщик сообщений в Telegram для сайта
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/telegram-relay/relay.py --port 8020
+Restart=always
+RestartSec=5
+
+# Ключи лежат отдельным файлом с правами 600 — не в репозитории и не в
+# этом файле: systemd читает его сам.
+EnvironmentFile=/etc/telegram-relay.env
+
+StandardOutput=journal
+StandardError=journal
+
+# Служба принимает запрос и отдаёт его телеграму. Писать на диск, читать
+# чужие каталоги и получать новые права ей не нужно.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

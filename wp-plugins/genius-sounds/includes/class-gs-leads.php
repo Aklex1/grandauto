@@ -19,6 +19,10 @@ class GS_Leads {
     const OPT_LOG   = 'gs_leads_log';
     const LOG_LIMIT = 200;
 
+    /** Пересыльщик на сервере, где телеграм доступен. */
+    const OPT_RELAY_URL   = 'gs_tg_relay_url';
+    const OPT_RELAY_TOKEN = 'gs_tg_relay_token';
+
     /** Не больше пяти заявок в час с одного адреса. */
     const LIMIT  = 5;
     const WINDOW = 3600;
@@ -46,7 +50,21 @@ class GS_Leads {
     }
 
     public static function ready() {
-        return self::token() !== '' && self::chat() !== '';
+        return (self::token() !== '' && self::chat() !== '') || self::relay_ready();
+    }
+
+    /** Адрес службы-пересыльщика на нашем сервере. */
+    public static function relay_url() {
+        return trim((string) get_option(self::OPT_RELAY_URL, ''));
+    }
+
+    /** Общий ключ, которым пересыльщик отличает нас от посторонних. */
+    public static function relay_token() {
+        return trim((string) get_option(self::OPT_RELAY_TOKEN, ''));
+    }
+
+    public static function relay_ready() {
+        return self::relay_url() !== '' && self::relay_token() !== '';
     }
 
     /* ---------------------------------------------------------------------
@@ -85,7 +103,8 @@ class GS_Leads {
 
         $sent = self::notify($entry);
         $entry['sent'] = !empty($sent['ok']);
-        $entry['error'] = $entry['sent'] ? '' : mb_substr((string) $sent['message'], 0, 160);
+        $entry['how']  = (string) ($sent['how'] ?? '');
+        $entry['error'] = $entry['sent'] ? '' : mb_substr((string) $sent['message'], 0, 200);
         self::remember($entry);
         self::count();
 
@@ -127,6 +146,15 @@ class GS_Leads {
      * Telegram
      * ------------------------------------------------------------------ */
 
+    /**
+     * Отправка уведомления.
+     *
+     * С хостинга сайта api.telegram.org недоступен: соединение обрывается
+     * за несколько миллисекунд — это закрытый доступ, а не медленная сеть.
+     * Поэтому путей два: напрямую и через пересыльщик на сервере, где
+     * телеграм отвечает. Сначала пробуем напрямую — если доступ когда-нибудь
+     * откроют, лишнего звена в цепочке не останется.
+     */
     public static function notify($entry) {
         if (!self::ready()) {
             return array('ok' => false, 'message' => 'Бот не настроен');
@@ -143,18 +171,45 @@ class GS_Leads {
         $lines[] = 'Откуда: ' . $entry['source'];
         $lines[] = 'Когда: ' . $entry['at'];
 
+        $text = implode("\n", $lines);
+
+        $direct = array('ok' => false, 'message' => 'бот не настроен');
+        if (self::token() !== '' && self::chat() !== '') {
+            $direct = self::send_direct($text);
+            if (!empty($direct['ok'])) {
+                return array('ok' => true, 'message' => '', 'how' => 'напрямую');
+            }
+        }
+
+        if (!self::relay_ready()) {
+            return array('ok' => false, 'how' => '', 'message' => (string) $direct['message']);
+        }
+
+        $relay = self::send_via_relay($text);
+        if (!empty($relay['ok'])) {
+            return array('ok' => true, 'message' => '', 'how' => 'через сервер');
+        }
+
+        return array(
+            'ok'      => false,
+            'how'     => '',
+            'message' => 'напрямую: ' . $direct['message'] . '; через сервер: ' . $relay['message'],
+        );
+    }
+
+    /** Напрямую в телеграм — путь, закрытый у нынешнего хостинга. */
+    private static function send_direct($text) {
         $response = wp_remote_post(
             'https://api.telegram.org/bot' . self::token() . '/sendMessage',
             array(
-                'timeout' => 20,
+                'timeout' => 15,
                 'body'    => array(
                     'chat_id'                  => self::chat(),
-                    'text'                     => implode("\n", $lines),
+                    'text'                     => $text,
                     'disable_web_page_preview' => 'true',
                 ),
             )
         );
-
         if (is_wp_error($response)) {
             return array('ok' => false, 'message' => $response->get_error_message());
         }
@@ -162,10 +217,40 @@ class GS_Leads {
         if (!is_array($body) || empty($body['ok'])) {
             return array(
                 'ok'      => false,
-                'message' => is_array($body) ? (string) ($body['description'] ?? 'Telegram отклонил сообщение') : 'Некорректный ответ Telegram',
+                'message' => is_array($body)
+                    ? (string) ($body['description'] ?? 'Telegram отклонил сообщение')
+                    : 'Некорректный ответ Telegram',
             );
         }
         return array('ok' => true, 'message' => '');
+    }
+
+    /**
+     * Через пересыльщик: сайт отдаёт только текст. Токен бота остаётся на
+     * сервере, получателя выбирает сама служба — чужой chat_id она не
+     * примет, даже если его прислать.
+     */
+    private static function send_via_relay($text) {
+        $response = wp_remote_post(self::relay_url(), array(
+            'timeout' => 20,
+            'headers' => array(
+                'Content-Type'  => 'application/json; charset=utf-8',
+                'X-Relay-Token' => self::relay_token(),
+            ),
+            'body'    => wp_json_encode(array('text' => $text)),
+        ));
+        if (is_wp_error($response)) {
+            return array('ok' => false, 'message' => $response->get_error_message());
+        }
+        $code = (int) wp_remote_retrieve_response_code($response);
+        $body = json_decode((string) wp_remote_retrieve_body($response), true);
+        if ($code === 200 && is_array($body) && !empty($body['ok'])) {
+            return array('ok' => true, 'message' => '');
+        }
+        return array(
+            'ok'      => false,
+            'message' => is_array($body) && !empty($body['error']) ? (string) $body['error'] : 'ответ ' . $code,
+        );
     }
 
     /** Проверка настройки: отправляем себе пробное сообщение. */
