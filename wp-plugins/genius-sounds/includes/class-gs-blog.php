@@ -18,10 +18,59 @@ class GS_Blog {
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
         add_filter('the_content', array(__CLASS__, 'append_tools_block'), 20);
+        add_filter('the_content', array(__CLASS__, 'promt_links_catalog'), 21);
         // Самым последним: вставки дописывает чужой плагин, и приоритет у
         // него больше нашего — на тридцатке их в тексте ещё нет.
         add_filter('the_content', array(__CLASS__, 'drop_inline_related'), PHP_INT_MAX);
         add_action('wp_head', array(__CLASS__, 'print_faq_schema'), 20);
+    }
+
+    /**
+     * В блоке «Где брать ещё промты» первым идёт наш каталог.
+     *
+     * Блок записан в тексте шестидесяти пяти статей и ведёт в три места:
+     * канал в Telegram, бот и канал в MAX. Все три — наружу и с nofollow.
+     * Собственного каталога на 1156 кадров в этом списке не было: статья
+     * про промты отправляла читателя куда угодно, только не на страницу,
+     * которую мы же и продвигаем.
+     *
+     * Правим на выводе, а не в тексте статей: так же само встанет в
+     * статьях, которые появятся позже.
+     */
+    public static function promt_links_catalog($html) {
+        if (is_admin() || !is_singular() || !in_the_loop() || !is_main_query()) {
+            return $html;
+        }
+        if (strpos($html, 'gs-promt__links') === false || !class_exists('GS_Prompts_Page')) {
+            return $html;
+        }
+        $url = GS_Prompts_Page::url();
+        if ($url === '' || strpos($html, (string) $url) !== false) {
+            return $html;
+        }
+        $count = class_exists('GS_Prompts') ? (int) GS_Prompts::count() : 0;
+        $line = '<p><strong>Каталог промтов на сайте</strong>'
+              . ($count > 0 ? ' — ' . $count . ' готовых кадров с примерами' : '')
+              . ': <a href="' . esc_url($url) . '">открыть каталог</a>';
+
+        // Рубрику подбираем по названию статьи теми же словами, по которым
+        // раскладываются сами промты: статья про фото девушки ведёт в
+        // «Женские», про машину — в «Авто». Так ссылка попадает ближе к
+        // тому, зачем человек читал.
+        $rubrics = class_exists('GS_Prompts') ? GS_Prompts::detect_rubrics((string) get_the_title()) : array();
+        if ($rubrics) {
+            $key = (string) $rubrics[0];
+            $line .= '. Ближе к теме статьи — рубрика <a href="' . esc_url(GS_Prompts_Page::rubric_url($key)) . '">«'
+                   . esc_html(GS_Prompts::rubric_title($key)) . '»</a>';
+        }
+        $line .= '</p>';
+
+        return (string) preg_replace(
+            '~(<div class="gs-promt__links"[^>]*>)~i',
+            '$1' . "\n    " . $line,
+            $html,
+            1
+        );
     }
 
     /**
