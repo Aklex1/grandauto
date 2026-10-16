@@ -460,6 +460,32 @@ class GS_Links {
                         <a href="<?php echo esc_url(GS_Wheel::landing_url()); ?>">Примерка дисков</a> ·
                     <?php endif; ?>
                     <a href="<?php echo esc_url(GS_Pages::get_showcase_url()); ?>">Звуки, созданные нейросетью</a>
+                    <?php
+                    // Страницы, на которые с главной не вело ни одной ссылки:
+                    // каталог промтов на полторы тысячи кадров, песня в
+                    // подарок и страница заявки. Внутренняя ссылка с подвала
+                    // стоит на каждой странице сайта — для них это
+                    // единственный способ получить вес.
+                    $extra = array();
+                    if (class_exists('GS_Prompts_Page')) {
+                        $extra['Каталог промтов'] = GS_Prompts_Page::url();
+                    }
+                    if (class_exists('GS_Gift') && method_exists('GS_Gift', 'get_url')) {
+                        $url = GS_Gift::get_url('pesnya-v-podarok');
+                        if ($url) {
+                            $extra['Песня в подарок'] = $url;
+                        }
+                    }
+                    if (class_exists('GS_Consult')) {
+                        $extra['Заказать консультацию'] = GS_Consult::get_url();
+                    }
+                    foreach ($extra as $name => $url):
+                        if (!$url) {
+                            continue;
+                        }
+                        ?> · <a href="<?php echo esc_url($url); ?>"><?php echo esc_html($name); ?></a><?php
+                    endforeach;
+                    ?>
                 </p>
                 <ul class="gs-footer-links__list">
                     <?php foreach ($cats as $cat): ?>
