@@ -23,6 +23,9 @@ class GS_Requisites {
     const OFERTA_SLUG = 'oferta';
     const OPT_OFERTA  = 'gs_oferta_page';
 
+    const PRIVACY_SLUG = 'politika-konfidencialnosti';
+    const OPT_PRIVACY  = 'gs_privacy_page';
+
     /** Исходный файл оферты — оставляем ссылкой: он подписан и выложен давно. */
     const OFERTA_FILE = 'https://genius-bot.ru/wp-content/uploads/2024/05/oferta_241901583600.docx';
 
@@ -85,7 +88,9 @@ class GS_Requisites {
         if ($id <= 0) {
             return false;
         }
-        return $id === (int) get_option(self::OPT_OFERTA) || $id === (int) get_option(self::OPT_PAGE);
+        return $id === (int) get_option(self::OPT_OFERTA)
+            || $id === (int) get_option(self::OPT_PAGE)
+            || $id === (int) get_option(self::OPT_PRIVACY);
     }
 
     public static function body_class($classes) {
@@ -116,6 +121,53 @@ class GS_Requisites {
         }
         $page = get_page_by_path(self::OFERTA_SLUG);
         return $page ? get_permalink($page) : '';
+    }
+
+    public static function privacy_url() {
+        $id = (int) get_option(self::OPT_PRIVACY);
+        if ($id > 0) {
+            $post = get_post($id);
+            if ($post instanceof WP_Post && $post->post_status === 'publish') {
+                return get_permalink($id);
+            }
+        }
+        $page = get_page_by_path(self::PRIVACY_SLUG);
+        return ($page && $page->post_status === 'publish') ? get_permalink($page) : '';
+    }
+
+    /**
+     * Политика обработки данных страницей, а не файлом .docx.
+     *
+     * В подвале стояла ссылка на файл из загрузок 2024 года, а страница
+     * политики в WordPress так и осталась заготовкой-черновиком: по её
+     * адресу (?page_id=3) посетитель видел бы «страница не найдена».
+     * Текст берём из того же файла, без правок формулировок.
+     */
+    public static function ensure_privacy_page() {
+        $id = (int) get_option(self::OPT_PRIVACY);
+        if ($id > 0 && get_post($id)) {
+            return $id;
+        }
+        $existing = get_page_by_path(self::PRIVACY_SLUG);
+        if ($existing) {
+            $id = (int) $existing->ID;
+        } else {
+            $html = include GS_PLUGIN_DIR . 'includes/privacy-content.php';
+            if (!is_string($html) || $html === '') {
+                return 0;
+            }
+            $id = (int) wp_insert_post(array(
+                'post_title'   => 'Политика обработки персональных данных',
+                'post_content' => $html,
+                'post_status'  => 'publish',
+                'post_type'    => 'page',
+                'post_name'    => self::PRIVACY_SLUG,
+            ));
+        }
+        if ($id > 0) {
+            update_option(self::OPT_PRIVACY, $id, false);
+        }
+        return $id;
     }
 
     /**
@@ -286,14 +338,20 @@ class GS_Requisites {
         }
         $out['Оферта файлом (.docx)'] = (string) apply_filters('gs_oferta_file', self::OFERTA_FILE);
 
+        $privacy = self::privacy_url();
+        if ($privacy !== '') {
+            $out['Политика обработки персональных данных'] = $privacy;
+        }
+
+        // Только опубликованные: у заготовки политики в WordPress статус
+        // «черновик», и ссылка на неё вела в «страница не найдена».
         $wanted = array(
-            'Политика обработки персональных данных' => array('politika-konfidencialnosti', 'privacy-policy', 'personal-data'),
-            'Порядок оказания услуг'               => array('poryadok-okazaniya-uslug'),
+            'Порядок оказания услуг' => array('poryadok-okazaniya-uslug'),
         );
         foreach ($wanted as $title => $slugs) {
             foreach ($slugs as $slug) {
                 $page = get_page_by_path($slug);
-                if ($page) {
+                if ($page && $page->post_status === 'publish') {
                     $out[$title] = get_permalink($page);
                     break;
                 }

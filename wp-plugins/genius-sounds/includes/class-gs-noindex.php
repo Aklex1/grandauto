@@ -38,6 +38,7 @@ class GS_Noindex {
         add_action('template_redirect', array(__CLASS__, 'retire_author'), 1);
         add_action('template_redirect', array(__CLASS__, 'retire_gone'), 1);
         add_action('template_redirect', array(__CLASS__, 'retire_twins'), 1);
+        add_action('template_redirect', array(__CLASS__, 'canon_case'), 1);
         // Через wp_robots, а не своим тегом в wp_head: иначе на странице
         // окажется два <meta name="robots"> подряд, и какой из них считать —
         // решает робот.
@@ -70,7 +71,11 @@ class GS_Noindex {
         '/kartinka-neyrosetyu/'     => '/neurohub/',
         '/video-neyrosetyu/'        => '/video-iz-teksta-neiroset/',
         '/web-app/'                 => '/neurohub/',
-        '/product/konsultacziya-po-razrabotke-chat-bota/' => '/solutions/',
+        // Кнопка «Заказать консультацию» в шапке ведёт на этот адрес —
+        // товар магазина, которого больше нет. Раньше мы уводили её на
+        // /solutions/, но там лежит статья про профессию разработчика: ни
+        // формы, ни цены, ни способа написать. Теперь — на страницу заявки.
+        '/product/konsultacziya-po-razrabotke-chat-bota/' => '/zakazat-konsultaciyu/',
     );
 
     /**
@@ -137,6 +142,39 @@ class GS_Noindex {
             wp_safe_redirect(home_url(self::TWINS[$path]), 301);
             exit;
         }
+    }
+
+    /**
+     * Адрес, отличающийся от настоящего только регистром, уводим на него.
+     *
+     * /Rasshifrovka-Audio/ открывался как обычная страница и отвечал 200:
+     * canonical указывал на строчный вариант, но лишний адрес существовал,
+     * и по ссылке с чужого сайта в индекс попадала его копия.
+     *
+     * Сверяем с постоянной ссылкой самой записи и уводим только тогда,
+     * когда различие именно в регистре: у страниц каталога в адресе есть
+     * свои хвосты, и подменять их нельзя.
+     */
+    public static function canon_case() {
+        if (is_admin() || !is_singular()) {
+            return;
+        }
+        $id = (int) get_queried_object_id();
+        if ($id <= 0) {
+            return;
+        }
+        $want = (string) wp_parse_url((string) get_permalink($id), PHP_URL_PATH);
+        $have = (string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+        if ($want === '' || $have === '' || $want === $have) {
+            return;
+        }
+        if (strtolower(rawurldecode($have)) !== strtolower(rawurldecode($want))) {
+            return;
+        }
+        $to = home_url($want);
+        $query = (string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_QUERY);
+        wp_safe_redirect($query !== '' ? $to . '?' . $query : $to, 301);
+        exit;
     }
 
     public static function retire_gone() {

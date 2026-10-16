@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.83.1
+ * Version:     2.85.0
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.83.1');
+define('GS_VERSION', '2.85.0');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -74,6 +74,7 @@ $gs_parts = array(
     'includes/class-gs-sitemap.php',
     'includes/class-gs-noindex.php',
     'includes/class-gs-headings.php',
+    'includes/class-gs-consult.php',
     'includes/class-gs-index.php',
     'includes/class-gs-webmaster.php',
     'includes/class-gs-metrika.php',
@@ -203,6 +204,7 @@ class Genius_Sounds_Plugin {
         GS_Sitemap::boot();
         GS_Noindex::boot();
         GS_Headings::boot();
+        GS_Consult::boot();
         GS_Index::boot();
         GS_Webmaster::boot();
         GS_Landing::boot();
@@ -303,6 +305,8 @@ class Genius_Sounds_Plugin {
                 GS_Pages::ensure_pages();
                 GS_Requisites::ensure_page();
                 GS_Requisites::ensure_oferta_page();
+                GS_Requisites::ensure_privacy_page();
+                GS_Consult::ensure_page();
                 GS_Lab::ensure_pages();
                 GS_Landing::ensure_pages();
                 GS_Songs::ensure_page();

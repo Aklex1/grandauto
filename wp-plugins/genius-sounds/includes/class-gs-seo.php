@@ -97,6 +97,23 @@ class GS_Seo {
             return self::$ctx;
         }
 
+        // Блог: описание ему собирал конструктор страницы, и в выдаче
+        // стоял текст шорткода — «[vc_row css="%7B%22default%22…». Своего
+        // описания у главной страницы блога не было вовсе.
+        $blog = get_page_by_path('blog');
+        if ($blog instanceof WP_Post && is_page($blog->ID)) {
+            self::$ctx = array(
+                'type'     => 'blog',
+                'service'  => null,
+                'url'      => get_permalink($blog),
+                'category' => null,
+                'page'     => 1,
+                'pages'    => 1,
+                'query'    => '',
+            );
+            return self::$ctx;
+        }
+
         // Оферта и реквизиты — обычные страницы, и заголовок окна им
         // достаётся от темы вместе с длинным хвостом про разработку ботов.
         $doc = self::doc_page();
@@ -260,6 +277,23 @@ class GS_Seo {
                 'title' => 'Публичная оферта — договор об оказании услуг',
                 'desc'  => 'Публичная оферта Genius-bot: предмет договора, права и обязанности сторон, '
                          . 'цена и порядок расчётов, возврат средств и реквизиты исполнителя.',
+            );
+        }
+        if (class_exists('GS_Consult') && GS_Consult::is_page()) {
+            return array(
+                'url'   => GS_Consult::get_url(),
+                'title' => 'Заказать консультацию по чат-боту для Telegram и ВК',
+                'desc'  => 'Разберём задачу бесплатно: что должен делать бот, из каких частей его собрать, '
+                         . 'сколько это займёт и во что обойдётся. Ответ в тот же день — опишите задачу в форме.',
+            );
+        }
+        $privacy = (int) get_option(GS_Requisites::OPT_PRIVACY);
+        if ($privacy > 0 && $id === $privacy) {
+            return array(
+                'url'   => get_permalink($id),
+                'title' => 'Политика обработки персональных данных',
+                'desc'  => 'Какие данные собирает genius-bot.ru, зачем, на каком основании и '
+                         . 'как их удалить: оператор, перечень данных, цели обработки и связь с оператором.',
             );
         }
         $req = (int) get_option(GS_Requisites::OPT_PAGE);
@@ -429,6 +463,9 @@ class GS_Seo {
         if ($ctx['type'] === 'docpage') {
             return (string) $ctx['doc']['title'];
         }
+        if ($ctx['type'] === 'blog') {
+            return 'Блог про нейросети: инструкции, разборы и промты';
+        }
         if ($ctx['type'] === 'neurohub') {
             return GS_Neurohub::seo_title();
         }
@@ -505,6 +542,11 @@ class GS_Seo {
         if ($ctx['type'] === 'docpage') {
             return (string) $ctx['doc']['desc'];
         }
+        if ($ctx['type'] === 'blog') {
+            return 'Разборы нейросетей и пошаговые инструкции: как собрать телеграм-бота, '
+                 . 'оживить фото, озвучить текст, составить промт для фотосессии. '
+                 . 'Примеры и цифры из наших же сервисов.';
+        }
         if ($ctx['type'] === 'neurohub') {
             return GS_Neurohub::seo_desc();
         }
@@ -567,7 +609,7 @@ class GS_Seo {
                 ? GS_Prompts_Page::rubric_url($rubric, (int) $page)
                 : GS_Prompts_Page::page_url((int) $page);
         }
-        if ($ctx['type'] === 'docpage') {
+        if ($ctx['type'] === 'docpage' || $ctx['type'] === 'blog') {
             return (string) $ctx['url'];
         }
         if ($ctx['type'] === 'neurohub') {
@@ -593,19 +635,26 @@ class GS_Seo {
      * Переписывание head
      * ------------------------------------------------------------------ */
 
+    /**
+     * Буфер головы нужен и там, где своего контекста у нас нет: теги для
+     * соцсетей печатают несколько источников на любой странице сайта, и
+     * прибрать их можно только здесь.
+     */
     public static function start_buffer() {
-        if (self::context()) {
-            ob_start();
+        if (is_admin() || is_feed()) {
+            return;
         }
+        ob_start();
     }
 
     public static function flush_buffer() {
         $ctx = self::context();
-        if (!$ctx) {
-            return;
-        }
         $html = ob_get_clean();
         if ($html === false) {
+            return;
+        }
+        if (!$ctx) {
+            echo self::tidy_social($html); // phpcs:ignore WordPress.Security.EscapeOutput
             return;
         }
 
@@ -632,16 +681,7 @@ class GS_Seo {
             '~<meta[^>]+name=["\']description["\'][^>]*>~i',
             '<meta name="description" content="' . esc_attr($desc) . '">'
         );
-        $html = self::replace_tag(
-            $html,
-            '~<meta[^>]+property=["\']og:description["\'][^>]*>~i',
-            '<meta property="og:description" content="' . esc_attr($desc) . '">'
-        );
-        $html = self::replace_tag(
-            $html,
-            '~<meta[^>]+property=["\']og:url["\'][^>]*>~i',
-            '<meta property="og:url" content="' . esc_url($url) . '">'
-        );
+        $html = self::rebuild_social($html, $ctx, $title, $desc, $url);
 
         // Заменять нечего, если тега нет вовсе: на странице нейрохаба
         // canonical не печатал никто, и страница оставалась без него.
@@ -659,6 +699,152 @@ class GS_Seo {
 
         echo $html; // phpcs:ignore WordPress.Security.EscapeOutput
         echo self::extra_tags($ctx); // phpcs:ignore WordPress.Security.EscapeOutput
+    }
+
+    /**
+     * Описание и canonical — по одному на страницу.
+     *
+     * На странице песни описание печаталось трижды, у входа в озвучку —
+     * дважды с разным текстом и два canonical подряд. А у страниц, которые
+     * собраны конструктором, в описании стоял его же код: на /blog/ — «[vc_row
+     * css="%7B%22default%22…», у презентаций — «[genius_slides]». Такое
+     * описание в выдаче хуже отсутствующего: поиск сам соберёт сниппет из
+     * текста, если описания нет.
+     */
+    private static function dedupe_head($html) {
+        $seen = 0;
+        $html = (string) preg_replace_callback(
+            '~[ \t]*<meta[^>]+name=["\']description["\'][^>]*>\n?~i',
+            function ($m) use (&$seen) {
+                $seen++;
+                if ($seen > 1) {
+                    return '';
+                }
+                return preg_match('~content=["\']([^"\']*)~i', $m[0], $c) && self::junk_text($c[1])
+                    ? ''
+                    : $m[0];
+            },
+            $html
+        );
+        $seen = 0;
+        return (string) preg_replace_callback(
+            '~[ \t]*<link[^>]+rel=["\']canonical["\'][^>]*>\n?~i',
+            function ($m) use (&$seen) {
+                $seen++;
+                return $seen > 1 ? '' : $m[0];
+            },
+            $html
+        );
+    }
+
+    /** Похоже ли это на код конструктора или шорткод, а не на текст. */
+    private static function junk_text($text) {
+        $text = trim((string) $text);
+        if ($text === '') {
+            return false;
+        }
+        return strpos($text, '[') === 0
+            || strpos($text, 'vc_row') !== false
+            || strpos($text, '%7B%22') !== false
+            || strpos($text, '[/') !== false;
+    }
+
+    /**
+     * Страница не наша, но теги для соцсетей всё равно убираем в порядок.
+     *
+     * Заголовок и описание берём из самой головы — их печатает тема или
+     * соседний плагин, и спорить с ними незачем. Наша работа здесь —
+     * оставить один набор вместо нескольких и добавить картинку, чтобы
+     * ссылка в мессенджере приходила с превью.
+     */
+    private static function tidy_social($html) {
+        $html = self::dedupe_head($html);
+        if (!preg_match('~(?:og|twitter):~i', $html)) {
+            return $html;
+        }
+        $title = '';
+        if (preg_match('~<title[^>]*>(.*?)</title>~is', $html, $m)) {
+            $title = trim(html_entity_decode(wp_strip_all_tags($m[1]), ENT_QUOTES, 'UTF-8'));
+        }
+        if ($title === '') {
+            $title = wp_get_document_title();
+        }
+        $desc = '';
+        if (preg_match('~<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']*)~i', $html, $m)) {
+            $desc = trim(html_entity_decode($m[1], ENT_QUOTES, 'UTF-8'));
+        }
+        $url = '';
+        if (preg_match('~<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']*)~i', $html, $m)) {
+            $url = $m[1];
+        }
+        if ($url === '') {
+            $url = home_url(add_query_arg(array()));
+        }
+        if (self::junk_text($desc)) {
+            $desc = '';
+        }
+        return self::rebuild_social($html, array('type' => 'other'), $title, $desc, $url);
+    }
+
+    /**
+     * Теги для соцсетей: один набор вместо трёх.
+     *
+     * og:title печатался трижды, og:type — дважды и с разными значениями
+     * («article» и «website»), og:locale и og:site_name по три раза, а в
+     * twitter:description у страниц каталога стоял текст чужого шорткода
+     * «[kie_tts_sounds_catalog]». Картинки og:image у страниц сервисов не
+     * было вовсе: ссылка в мессенджере приходила без превью.
+     *
+     * Поэтому все чужие теги og: и twitter: из головы убираем и печатаем
+     * свой набор — с тем же заголовком и описанием, что и в выдаче.
+     */
+    private static function rebuild_social($html, $ctx, $title, $desc, $url) {
+        $html = (string) preg_replace(
+            '~[ \t]*<meta[^>]+(?:property|name)=["\'](?:og|twitter):[^"\']*["\'][^>]*>\s*~i',
+            '',
+            $html
+        );
+
+        $image = self::social_image($ctx);
+        $tags = array(
+            '<meta property="og:type" content="website">',
+            '<meta property="og:site_name" content="' . esc_attr(self::brand_name(get_bloginfo('name'))) . '">',
+            '<meta property="og:locale" content="ru_RU">',
+            '<meta property="og:title" content="' . esc_attr($title) . '">',
+            '<meta property="og:url" content="' . esc_url($url) . '">',
+            '<meta name="twitter:card" content="summary_large_image">',
+            '<meta name="twitter:title" content="' . esc_attr($title) . '">',
+        );
+        if ($desc !== '') {
+            $tags[] = '<meta property="og:description" content="' . esc_attr($desc) . '">';
+            $tags[] = '<meta name="twitter:description" content="' . esc_attr($desc) . '">';
+        }
+        if (!empty($image['url'])) {
+            $tags[] = '<meta property="og:image" content="' . esc_url($image['url']) . '">';
+            if (!empty($image['w'])) {
+                $tags[] = '<meta property="og:image:width" content="' . (int) $image['w'] . '">';
+                $tags[] = '<meta property="og:image:height" content="' . (int) $image['h'] . '">';
+            }
+            $tags[] = '<meta name="twitter:image" content="' . esc_url($image['url']) . '">';
+        }
+        return $html . implode("\n", $tags) . "\n";
+    }
+
+    /**
+     * Картинка для превью ссылки.
+     *
+     * У отдельного промта это сам кадр — им и делятся. Остальным отдаём
+     * общую картинку сайта 1200×630: она лежит в плагине и до сих пор не
+     * использовалась.
+     */
+    private static function social_image($ctx) {
+        if ($ctx['type'] === 'prompt' && class_exists('GS_Prompts_Page')) {
+            $item = GS_Prompts_Page::current_item();
+            if ($item && !empty($item['image'])) {
+                return array('url' => GS_Prompts::img_url() . '/' . ltrim((string) $item['image'], '/'), 'w' => 0, 'h' => 0);
+            }
+        }
+        return array('url' => GS_PLUGIN_URL . 'assets/brand/public/og-image.png', 'w' => 1200, 'h' => 630);
     }
 
     /**
