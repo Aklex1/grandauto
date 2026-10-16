@@ -19,6 +19,64 @@ class GS_Neurohub {
     public static function boot() {
         add_action('wp_body_open', array(__CLASS__, 'render_hero'), 5);
         add_action('wp_head', array(__CLASS__, 'render_meta'), 3);
+        add_action('template_redirect', array(__CLASS__, 'start_body_buffer'), 20);
+    }
+
+    /**
+     * На странице два заголовка первого уровня: наш — с запросом, по
+     * которому сюда приходят, и родной «Нейросети» от соседнего плагина.
+     * Второй и так спрятан от глаз, но для поиска он остаётся вторым H1,
+     * а страница с двумя H1 выглядит как страница без единой темы.
+     *
+     * Разметку соседнего плагина не трогаем — переписываем только тег на
+     * выходе, и то один раз.
+     */
+    public static function start_body_buffer() {
+        if (self::is_page()) {
+            ob_start(array(__CLASS__, 'demote_heading'));
+        }
+    }
+
+    public static function demote_heading($html) {
+        if (!is_string($html)) {
+            return $html;
+        }
+        if (strpos($html, 'kn-header') !== false) {
+            $html = (string) preg_replace(
+                '~(<header[^>]*class="[^"]*kn-header[^"]*"[^>]*>\s*)<h1([^>]*)>(.*?)</h1>~is',
+                '$1<p class="kn-title"$2>$3</p>',
+                $html,
+                1
+            );
+        }
+        return self::one_title($html);
+    }
+
+    /**
+     * Один заголовок окна на страницу.
+     *
+     * Здесь их два: первый печатается раньше, чем мы успеваем вмешаться, и
+     * достаётся от темы — «Нейросети — разработка чат ботов в телеграм и ВК».
+     * Второй, наш, идёт следом и в выдаче не участвует: и браузер, и робот
+     * берут первый. Поэтому на выходе оставляем последний, свой.
+     */
+    private static function one_title($html) {
+        $end = stripos($html, '</head>');
+        if ($end === false) {
+            return $html;
+        }
+        $head = substr($html, 0, $end);
+        if (preg_match_all('~<title[^>]*>.*?</title>~is', $head, $m) < 2) {
+            return $html;
+        }
+        $keep = end($m[0]);
+        $count = 0;
+        $total = count($m[0]);
+        $head = preg_replace_callback('~<title[^>]*>.*?</title>~is', function ($hit) use (&$count, $total, $keep) {
+            $count++;
+            return $count === $total ? $keep : '';
+        }, $head);
+        return $head . substr($html, $end);
     }
 
     public static function is_page() {
@@ -168,21 +226,13 @@ class GS_Neurohub {
         }
         $url = self::url();
         echo "\n";
-        echo '<meta name="description" content="' . esc_attr(self::seo_desc()) . '">' . "\n";
-        echo '<link rel="canonical" href="' . esc_url($url) . '">' . "\n";
+        // Описание и canonical печатает GS_Seo: он же убирает чужие теги,
+        // иначе на странице остаётся описание темы «разработка чат-ботов».
         echo '<meta property="og:title" content="' . esc_attr(self::seo_title()) . '">' . "\n";
         echo '<meta property="og:description" content="' . esc_attr(self::seo_desc()) . '">' . "\n";
         echo '<meta property="og:url" content="' . esc_url($url) . '">' . "\n";
         echo '<meta property="og:type" content="website">' . "\n";
 
-        $questions = array();
-        foreach (self::faq() as $pair) {
-            $questions[] = array(
-                '@type'          => 'Question',
-                'name'           => $pair[0],
-                'acceptedAnswer' => array('@type' => 'Answer', 'text' => $pair[1]),
-            );
-        }
         $schema = array(
             array(
                 '@context'            => 'https://schema.org',
@@ -193,11 +243,6 @@ class GS_Neurohub {
                 'applicationCategory' => 'MultimediaApplication',
                 'operatingSystem'     => 'Any',
                 'inLanguage'          => 'ru-RU',
-            ),
-            array(
-                '@context'   => 'https://schema.org',
-                '@type'      => 'FAQPage',
-                'mainEntity' => $questions,
             ),
         );
         foreach ($schema as $item) {

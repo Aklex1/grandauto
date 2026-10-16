@@ -72,6 +72,19 @@ class GS_Seo {
             return self::$ctx;
         }
 
+        if (class_exists('GS_Neurohub') && GS_Neurohub::is_page()) {
+            self::$ctx = array(
+                'type'     => 'neurohub',
+                'service'  => null,
+                'url'      => GS_Neurohub::url(),
+                'category' => null,
+                'page'     => 1,
+                'pages'    => 1,
+                'query'    => '',
+            );
+            return self::$ctx;
+        }
+
         if (GS_Api_Page::is_page()) {
             self::$ctx = array(
                 'type'     => 'api',
@@ -314,6 +327,9 @@ class GS_Seo {
             // страница — про разработку ботов, сервисы идут ниже.
             return 'Разработка чат-ботов для Telegram и ВК под ключ';
         }
+        if ($ctx['type'] === 'neurohub') {
+            return GS_Neurohub::seo_title();
+        }
         if ($ctx['type'] === 'api') {
             return 'API для разработчиков — нейросети для фото, видео и звука';
         }
@@ -381,6 +397,9 @@ class GS_Seo {
         if ($ctx['type'] === 'home') {
             return 'Разработка чат-ботов для Telegram и ВКонтакте под задачи бизнеса: продажи, поддержка, интеграция с CRM. А ещё нейросети для звука и видео: озвучка текста, генерация музыки, расшифровка записей.';
         }
+        if ($ctx['type'] === 'neurohub') {
+            return GS_Neurohub::seo_desc();
+        }
         if ($ctx['type'] === 'api') {
             return 'HTTP API нейросетей: оживление фото, говорящий аватар, редактирование картинок, генерация звуков и озвучка текста. REST и JSON, ключ доступа, вебхук о готовности, оплата за запуск без абонплаты.';
         }
@@ -428,6 +447,9 @@ class GS_Seo {
     private static function page_url($ctx, $page = null) {
         if ($ctx['type'] === 'home') {
             return home_url('/');
+        }
+        if ($ctx['type'] === 'neurohub') {
+            return !empty($ctx['url']) ? $ctx['url'] : GS_Neurohub::url();
         }
         if ($ctx['type'] === 'api') {
             return GS_Api_Page::get_url();
@@ -499,6 +521,12 @@ class GS_Seo {
             '<meta property="og:url" content="' . esc_url($url) . '">'
         );
 
+        // Заменять нечего, если тега нет вовсе: на странице нейрохаба
+        // canonical не печатал никто, и страница оставалась без него.
+        if (!preg_match('~rel=["\']canonical["\']~i', $html)) {
+            $html .= '<link rel="canonical" href="' . esc_url($url) . '">' . "\n";
+        }
+
         if ($ctx['type'] !== 'home') {
             $html = self::strip_foreign_schema($html);
         }
@@ -569,6 +597,33 @@ class GS_Seo {
             $out .= '<link rel="next" href="' . esc_url(self::page_url($ctx, $ctx['page'] + 1)) . '">' . "\n";
         }
 
+        if ($ctx['type'] === 'neurohub') {
+            // Вопросы печатаем здесь, а не в самом GS_Neurohub: его разметка
+            // попадала под общую чистку чужого FAQ и пропадала со страницы.
+            $questions = array();
+            foreach (GS_Neurohub::faq() as $pair) {
+                $questions[] = array(
+                    '@type'          => 'Question',
+                    'name'           => $pair[0],
+                    'acceptedAnswer' => array('@type' => 'Answer', 'text' => $pair[1]),
+                );
+            }
+            $nodes = array(self::org_node());
+            if ($questions) {
+                $nodes[] = array(
+                    '@context'   => 'https://schema.org',
+                    '@type'      => 'FAQPage',
+                    'mainEntity' => $questions,
+                );
+            }
+            foreach ($nodes as $node) {
+                $out .= '<script type="application/ld+json">'
+                    . wp_json_encode($node, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    . '</script>' . "\n";
+            }
+            return $out;
+        }
+
         if ($ctx['type'] === 'api') {
             foreach (self::schema_api() as $schema) {
                 $out .= '<script type="application/ld+json">'
@@ -580,6 +635,15 @@ class GS_Seo {
 
         if ($ctx['type'] === 'lab') {
             foreach (self::schema_lab($ctx) as $schema) {
+                $out .= '<script type="application/ld+json">'
+                    . wp_json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    . '</script>' . "\n";
+            }
+            return $out;
+        }
+
+        if ($ctx['type'] === 'home') {
+            foreach (self::schema_home($ctx) as $schema) {
                 $out .= '<script type="application/ld+json">'
                     . wp_json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                     . '</script>' . "\n";
@@ -604,6 +668,118 @@ class GS_Seo {
     /* ---------------------------------------------------------------------
      * Микроразметка
      * ------------------------------------------------------------------ */
+
+    /**
+     * Кто оказывает услуги.
+     *
+     * По коммерческим запросам поиск сравнивает не только страницы, но и
+     * того, кто за ними стоит: есть ли имя, реквизиты, способы связи.
+     * Узел печатается на всех страницах, которыми распоряжаемся мы, и
+     * остальные ссылаются на него по @id — одно описание на весь сайт.
+     *
+     * Данные берём те же, что опубликованы в подвале: расхождение между
+     * разметкой и видимой страницей хуже, чем отсутствие разметки.
+     */
+    public static function org_node() {
+        $details = apply_filters('gs_org_details', array(
+            'name'      => self::brand_name(get_bloginfo('name')),
+            'legalName' => 'ИП Миллер Александр Александрович',
+            'taxID'     => '241901583600',
+            'email'     => 'akklex9@gmail.com',
+            'telegram'  => 'https://t.me/Genius_Boot_bot',
+        ));
+
+        $node = array(
+            '@context'   => 'https://schema.org',
+            '@type'      => 'Organization',
+            '@id'        => home_url('/#org'),
+            'name'       => (string) $details['name'],
+            'url'        => home_url('/'),
+            'inLanguage' => 'ru-RU',
+            'areaServed' => array('@type' => 'Country', 'name' => 'Россия'),
+        );
+        if (!empty($details['legalName'])) {
+            $node['legalName'] = (string) $details['legalName'];
+        }
+        if (!empty($details['taxID'])) {
+            $node['taxID'] = (string) $details['taxID'];
+        }
+        if (!empty($details['email'])) {
+            $node['email'] = (string) $details['email'];
+            $node['contactPoint'] = array(
+                '@type'             => 'ContactPoint',
+                'contactType'       => 'customer support',
+                'email'             => (string) $details['email'],
+                'availableLanguage' => 'Russian',
+            );
+        }
+        if (!empty($details['telegram'])) {
+            $node['sameAs'] = array((string) $details['telegram']);
+        }
+        $logo = self::logo_url();
+        if ($logo !== '') {
+            $node['logo'] = array('@type' => 'ImageObject', 'url' => $logo);
+        }
+        return $node;
+    }
+
+    /** Картинка для разметки — берём ту же, что стоит в шапке сайта. */
+    private static function logo_url() {
+        $id = (int) get_theme_mod('custom_logo');
+        if ($id > 0) {
+            $src = wp_get_attachment_image_src($id, 'full');
+            if (is_array($src) && !empty($src[0])) {
+                return (string) $src[0];
+            }
+        }
+        $icon = get_site_icon_url(512);
+        return is_string($icon) ? $icon : '';
+    }
+
+    /**
+     * Главная. Прежде здесь печаталась разметка каталога звуков — с его
+     * названием, описанием и списком подборок, — хотя главная не каталог,
+     * а вход во все сервисы сразу. Теперь это сайт, его владелец и список
+     * самих сервисов.
+     */
+    private static function schema_home($ctx) {
+        $site = array(
+            '@context'   => 'https://schema.org',
+            '@type'      => 'WebSite',
+            '@id'        => home_url('/#site'),
+            'name'       => self::brand_name(get_bloginfo('name')),
+            'url'        => home_url('/'),
+            'inLanguage' => 'ru-RU',
+            'description' => self::build_description($ctx),
+            'publisher'  => array('@id' => home_url('/#org')),
+        );
+
+        $items = array();
+        $position = 1;
+        foreach (GS_Lab::services() as $service) {
+            if (empty($service['available']) || empty($service['id'])) {
+                continue;
+            }
+            $items[] = array(
+                '@type'    => 'ListItem',
+                'position' => $position++,
+                'name'     => (string) $service['menu'],
+                'url'      => GS_Lab::get_url($service['id']),
+            );
+        }
+
+        $out = array($site, self::org_node());
+        if ($items) {
+            $out[] = array(
+                '@context'        => 'https://schema.org',
+                '@type'           => 'ItemList',
+                'name'            => 'Сервисы Genius',
+                'numberOfItems'   => count($items),
+                'itemListElement' => $items,
+            );
+        }
+        return $out;
+    }
 
     private static function breadcrumbs($items) {
         $list = array();
@@ -641,12 +817,11 @@ class GS_Seo {
                 '@type'         => 'Offer',
                 'price'         => (string) GS_Lab::get_cost($service['id']),
                 'priceCurrency' => 'RUB',
+                'url'           => $url,
+                'availability'  => 'https://schema.org/InStock',
+                'seller'        => array('@id' => home_url('/#org')),
             ),
-            'publisher'       => array(
-                '@type' => 'Organization',
-                'name'  => self::brand_name(get_bloginfo('name')),
-                'url'   => home_url('/'),
-            ),
+            'publisher'       => array('@id' => home_url('/#org')),
             'breadcrumb'      => self::breadcrumbs(array(
                 'Главная'          => home_url('/'),
                 $service['menu']   => $url,
@@ -667,7 +842,7 @@ class GS_Seo {
             'mainEntity' => $questions,
         );
 
-        return array($app, $faq);
+        return array($app, $faq, self::org_node());
     }
 
     /**

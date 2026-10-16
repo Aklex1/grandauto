@@ -23,6 +23,12 @@ class GS_Sitemap {
         add_filter('query_vars', array(__CLASS__, 'add_query_vars'));
         add_action('template_redirect', array(__CLASS__, 'maybe_render'), 0);
         add_filter('robots_txt', array(__CLASS__, 'filter_robots_txt'), 20, 2);
+
+        // Своя карта у WordPress тоже есть, и в robots.txt она объявлена
+        // наравне с остальными — но в ней четыре адреса, и все они уже
+        // перечислены в других картах. Лишняя карта ничего не добавляет,
+        // зато распыляет обход: отключаем.
+        add_filter('wp_sitemaps_enabled', '__return_false');
     }
 
     public static function add_rewrite_rules() {

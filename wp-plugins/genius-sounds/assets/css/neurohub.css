@@ -30,7 +30,8 @@ body.kie-neurohub-body .kn-wrap {
 }
 
 /* Свой заголовок с запросом ставим выше — родной оставляем только для доступности. */
-body.kie-neurohub-body .kn-header h1 {
+body.kie-neurohub-body .kn-header h1,
+body.kie-neurohub-body .kn-header .kn-title {
     position: absolute;
     width: 1px;
     height: 1px;

@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.68.1
+ * Version:     2.70.2
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.68.1');
+define('GS_VERSION', '2.70.2');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -126,6 +126,7 @@ $gs_parts = array(
     'includes/class-gs-admin.php',
     'includes/class-gs-cache.php',
     'includes/class-gs-page-cache.php',
+    'includes/class-gs-indexnow.php',
 );
 
 foreach ($gs_parts as $gs_part) {
@@ -238,6 +239,7 @@ class Genius_Sounds_Plugin {
         GS_Weight::boot();
         GS_Cache::boot();
         GS_Page_Cache::boot();
+        GS_IndexNow::boot();
     }
 
     public function activate() {
