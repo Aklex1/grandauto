@@ -20,8 +20,41 @@ class GS_Requisites {
     const SLUG = 'rekvizity';
     const OPT_PAGE = 'gs_requisites_page';
 
+    const OFERTA_SLUG = 'oferta';
+    const OPT_OFERTA  = 'gs_oferta_page';
+
+    /** Исходный файл оферты — оставляем ссылкой: он подписан и выложен давно. */
+    const OFERTA_FILE = 'https://genius-bot.ru/wp-content/uploads/2024/05/oferta_241901583600.docx';
+
     public static function boot() {
         add_shortcode('genius_requisites', array(__CLASS__, 'render'));
+        add_filter('body_class', array(__CLASS__, 'body_class'));
+        add_action('wp_enqueue_scripts', array(__CLASS__, 'assets'), 20);
+    }
+
+    /** Наши документные страницы: оферта и реквизиты. */
+    public static function is_doc_page() {
+        if (!is_page()) {
+            return false;
+        }
+        $id = (int) get_queried_object_id();
+        if ($id <= 0) {
+            return false;
+        }
+        return $id === (int) get_option(self::OPT_OFERTA) || $id === (int) get_option(self::OPT_PAGE);
+    }
+
+    public static function body_class($classes) {
+        if (self::is_doc_page()) {
+            $classes[] = 'gs-doc-page';
+        }
+        return $classes;
+    }
+
+    public static function assets() {
+        if (self::is_doc_page()) {
+            wp_enqueue_style('genius-sounds-doc', GS_PLUGIN_URL . 'assets/css/doc.css', array(), GS_VERSION);
+        }
     }
 
     public static function get_url() {
@@ -30,6 +63,74 @@ class GS_Requisites {
             return get_permalink($id);
         }
         return home_url('/' . self::SLUG . '/');
+    }
+
+    public static function oferta_url() {
+        $id = (int) get_option(self::OPT_OFERTA);
+        if ($id > 0 && get_post($id)) {
+            return get_permalink($id);
+        }
+        $page = get_page_by_path(self::OFERTA_SLUG);
+        return $page ? get_permalink($page) : '';
+    }
+
+    /**
+     * Оферта страницей, а не файлом.
+     *
+     * Создаём один раз: дальше текст правят в редакторе WordPress, и
+     * перезаписывать его отсюда нельзя — иначе правка исчезнет при
+     * следующем обновлении плагина.
+     */
+    public static function ensure_oferta_page() {
+        $id = (int) get_option(self::OPT_OFERTA);
+        if ($id > 0 && get_post($id)) {
+            self::fix_oferta_heading($id);
+            return $id;
+        }
+        $existing = get_page_by_path(self::OFERTA_SLUG);
+        if ($existing) {
+            $id = (int) $existing->ID;
+        } else {
+            $html = include GS_PLUGIN_DIR . 'includes/oferta-content.php';
+            if (!is_string($html) || $html === '') {
+                return 0;
+            }
+            $id = (int) wp_insert_post(array(
+                'post_title'   => 'Публичная оферта',
+                'post_content' => $html,
+                'post_status'  => 'publish',
+                'post_type'    => 'page',
+                'post_name'    => self::OFERTA_SLUG,
+            ));
+        }
+        if ($id > 0) {
+            update_option(self::OPT_OFERTA, $id, false);
+            self::fix_oferta_heading($id);
+        }
+        return $id;
+    }
+
+    /**
+     * Разовая правка: страница создавалась без заголовка первого уровня —
+     * тема его для этого шаблона не печатает, и страница оставалась без
+     * единственного тега, который объясняет поиску, о чём она.
+     *
+     * Трогаем только нетронутый текст: если страницу уже правили руками,
+     * ничего не делаем.
+     */
+    private static function fix_oferta_heading($id) {
+        $post = get_post($id);
+        if (!$post instanceof WP_Post) {
+            return;
+        }
+        $content = (string) $post->post_content;
+        if (stripos($content, '<h1') !== false || strpos($content, 'Общие положения') === false) {
+            return;
+        }
+        $lead = '<h1>Публичная оферта</h1>' . "\n"
+              . '<p>Договор об оказании услуг. Тот же текст можно скачать файлом: '
+              . '<a href="' . esc_url(self::OFERTA_FILE) . '">оферта в .docx</a>.</p>' . "\n";
+        wp_update_post(array('ID' => $id, 'post_content' => $lead . $content));
     }
 
     public static function ensure_page() {
@@ -68,6 +169,10 @@ class GS_Requisites {
         }
         if (!empty($d['taxID'])) {
             $rows['ИНН'] = esc_html((string) $d['taxID']);
+        }
+        if (!empty($d['phone'])) {
+            $rows['Телефон'] = '<a href="tel:' . esc_attr(preg_replace('~[^0-9+]~', '', (string) $d['phone'])) . '">'
+                . esc_html((string) $d['phone']) . '</a>';
         }
         if (!empty($d['email'])) {
             $rows['Почта'] = '<a href="mailto:' . esc_attr((string) $d['email']) . '">' . esc_html((string) $d['email']) . '</a>';
@@ -130,14 +235,12 @@ class GS_Requisites {
 
     /** Документы сайта — берём те страницы, что действительно есть. */
     private static function documents() {
-        // Оферта на сайте выложена файлом, а не страницей — ссылаемся на
-        // тот же файл, что стоит в подвале.
         $out = array();
-        $oferta = (string) apply_filters('gs_oferta_url',
-            'https://genius-bot.ru/wp-content/uploads/2024/05/oferta_241901583600.docx');
-        if ($oferta !== '') {
-            $out['Публичная оферта'] = $oferta;
+        $page = self::oferta_url();
+        if ($page !== '') {
+            $out['Публичная оферта'] = $page;
         }
+        $out['Оферта файлом (.docx)'] = (string) apply_filters('gs_oferta_file', self::OFERTA_FILE);
 
         $wanted = array(
             'Политика обработки персональных данных' => array('politika-konfidencialnosti', 'privacy-policy', 'personal-data'),

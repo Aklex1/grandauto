@@ -72,6 +72,23 @@ class GS_Seo {
             return self::$ctx;
         }
 
+        // Оферта и реквизиты — обычные страницы, и заголовок окна им
+        // достаётся от темы вместе с длинным хвостом про разработку ботов.
+        $doc = self::doc_page();
+        if ($doc) {
+            self::$ctx = array(
+                'type'     => 'docpage',
+                'service'  => null,
+                'doc'      => $doc,
+                'url'      => $doc['url'],
+                'category' => null,
+                'page'     => 1,
+                'pages'    => 1,
+                'query'    => '',
+            );
+            return self::$ctx;
+        }
+
         if (class_exists('GS_Neurohub') && GS_Neurohub::is_page()) {
             self::$ctx = array(
                 'type'     => 'neurohub',
@@ -199,6 +216,39 @@ class GS_Seo {
      * Трогаем только тот случай, когда показанный заголовок — действительно
      * обрезок настоящего: чужие осмысленные правки остаются как есть.
      */
+    /**
+     * Наши документные страницы: что на них за документ и как его назвать
+     * в выдаче.
+     */
+    private static function doc_page() {
+        if (!class_exists('GS_Requisites') || !is_page()) {
+            return null;
+        }
+        $id = (int) get_queried_object_id();
+        if ($id <= 0) {
+            return null;
+        }
+        $oferta = (int) get_option(GS_Requisites::OPT_OFERTA);
+        if ($oferta > 0 && $id === $oferta) {
+            return array(
+                'url'   => get_permalink($id),
+                'title' => 'Публичная оферта — договор об оказании услуг',
+                'desc'  => 'Публичная оферта Genius-bot: предмет договора, права и обязанности сторон, '
+                         . 'цена и порядок расчётов, возврат средств и реквизиты исполнителя.',
+            );
+        }
+        $req = (int) get_option(GS_Requisites::OPT_PAGE);
+        if ($req > 0 && $id === $req) {
+            return array(
+                'url'   => get_permalink($id),
+                'title' => 'Реквизиты и документы',
+                'desc'  => 'Кто оказывает услуги на genius-bot.ru: исполнитель, ИНН, связь, '
+                         . 'публичная оферта, политика обработки данных и правила возврата.',
+            );
+        }
+        return null;
+    }
+
     private static function restore_full_title($parts) {
         if (is_admin() || !is_singular() || empty($parts['title'])) {
             return $parts;
@@ -327,6 +377,9 @@ class GS_Seo {
             // страница — про разработку ботов, сервисы идут ниже.
             return 'Разработка чат-ботов для Telegram и ВК под ключ';
         }
+        if ($ctx['type'] === 'docpage') {
+            return (string) $ctx['doc']['title'];
+        }
         if ($ctx['type'] === 'neurohub') {
             return GS_Neurohub::seo_title();
         }
@@ -397,6 +450,9 @@ class GS_Seo {
         if ($ctx['type'] === 'home') {
             return 'Разработка чат-ботов для Telegram и ВКонтакте под задачи бизнеса: продажи, поддержка, интеграция с CRM. А ещё нейросети для звука и видео: озвучка текста, генерация музыки, расшифровка записей.';
         }
+        if ($ctx['type'] === 'docpage') {
+            return (string) $ctx['doc']['desc'];
+        }
         if ($ctx['type'] === 'neurohub') {
             return GS_Neurohub::seo_desc();
         }
@@ -447,6 +503,9 @@ class GS_Seo {
     private static function page_url($ctx, $page = null) {
         if ($ctx['type'] === 'home') {
             return home_url('/');
+        }
+        if ($ctx['type'] === 'docpage') {
+            return (string) $ctx['url'];
         }
         if ($ctx['type'] === 'neurohub') {
             return !empty($ctx['url']) ? $ctx['url'] : GS_Neurohub::url();
@@ -601,6 +660,31 @@ class GS_Seo {
             $out .= '<link rel="next" href="' . esc_url(self::page_url($ctx, $ctx['page'] + 1)) . '">' . "\n";
         }
 
+        if ($ctx['type'] === 'docpage') {
+            $nodes = array(
+                array(
+                    '@context'    => 'https://schema.org',
+                    '@type'       => 'WebPage',
+                    'name'        => (string) $ctx['doc']['title'],
+                    'description' => (string) $ctx['doc']['desc'],
+                    'url'         => (string) $ctx['url'],
+                    'inLanguage'  => 'ru-RU',
+                    'publisher'   => array('@id' => home_url('/#org')),
+                    'breadcrumb'  => self::breadcrumbs(array(
+                        'Главная' => home_url('/'),
+                        (string) $ctx['doc']['title'] => (string) $ctx['url'],
+                    )),
+                ),
+                self::org_node(),
+            );
+            foreach ($nodes as $node) {
+                $out .= '<script type="application/ld+json">'
+                    . wp_json_encode($node, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    . '</script>' . "\n";
+            }
+            return $out;
+        }
+
         if ($ctx['type'] === 'neurohub') {
             // Вопросы печатаем здесь, а не в самом GS_Neurohub: его разметка
             // попадала под общую чистку чужого FAQ и пропадала со страницы.
@@ -687,9 +771,12 @@ class GS_Seo {
     public static function org_details() {
         return (array) apply_filters('gs_org_details', array(
             'name'      => self::brand_name(get_bloginfo('name')),
-            'legalName' => 'ИП Миллер Александр Александрович',
+            // В самой оферте сказано: исполнитель — самозанятый на НПД.
+            // «ИП» здесь было бы выдумкой.
+            'legalName' => 'Миллер Александр Александрович',
             'taxID'     => '241901583600',
             'email'     => 'akklex9@gmail.com',
+            'phone'     => '+7 902 467-77-24',
             'telegram'  => 'https://t.me/Genius_Boot_bot',
         ));
     }
@@ -720,6 +807,12 @@ class GS_Seo {
                 'email'             => (string) $details['email'],
                 'availableLanguage' => 'Russian',
             );
+        }
+        if (!empty($details['phone'])) {
+            $node['telephone'] = (string) $details['phone'];
+            if (isset($node['contactPoint'])) {
+                $node['contactPoint']['telephone'] = (string) $details['phone'];
+            }
         }
         if (!empty($details['telegram'])) {
             $node['sameAs'] = array((string) $details['telegram']);

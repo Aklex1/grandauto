@@ -1,0 +1,46 @@
+/*
+ * Документные страницы: оферта и реквизиты.
+ *
+ * Тема печатает их обычным шаблоном записи, и получается наоборот:
+ * заголовок документа мельче названий разделов, а строка тянется во всю
+ * ширину экрана. Здесь только размеры и ширина — ни цветов темы, ни
+ * разметки не трогаем.
+ */
+
+body.gs-doc-page .l-main .l-section-h {
+    max-width: 860px !important;
+}
+
+body.gs-doc-page .l-main h1 {
+    margin: 0 0 8px !important;
+    font-size: 34px !important;
+    line-height: 1.2 !important;
+    text-align: left !important;
+}
+
+body.gs-doc-page .l-main h2 {
+    margin: 32px 0 10px !important;
+    font-size: 22px !important;
+    line-height: 1.3 !important;
+    text-align: left !important;
+}
+
+body.gs-doc-page .l-main p,
+body.gs-doc-page .l-main li {
+    font-size: 16px;
+    line-height: 1.7;
+}
+
+body.gs-doc-page .l-main ul {
+    margin: 0 0 16px 20px;
+}
+
+@media (max-width: 640px) {
+    body.gs-doc-page .l-main h1 {
+        font-size: 26px !important;
+    }
+
+    body.gs-doc-page .l-main h2 {
+        font-size: 19px !important;
+    }
+}
