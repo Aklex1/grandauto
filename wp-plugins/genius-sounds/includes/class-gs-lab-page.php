@@ -370,11 +370,8 @@ class GS_Lab_Page {
 
             <?php echo GS_Support::render($service['nav']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
-            <?php if (class_exists('GS_Requisites')): ?>
-                <p class="gs-lab-legal">
-                    Услуги оказывает <a href="<?php echo esc_url(GS_Requisites::get_url()); ?>">ИП с реквизитами на отдельной странице</a>:
-                    там же оферта, политика обработки данных и порядок оказания услуг.
-                </p>
+            <?php if (class_exists('GS_Terms')): ?>
+                <?php echo GS_Terms::render((GS_Lab::get_cost($service['id']) > 0 || GS_Lab::rate($service['id']) > 0) ? 'lab' : 'free'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
             <?php endif; ?>
         </div>
         <?php

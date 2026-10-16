@@ -1153,6 +1153,9 @@ class GS_Gift {
         self::render_body($page);
         self::render_faq($page);
         self::render_cross($page);
+        if (class_exists('GS_Terms')) {
+            echo GS_Terms::render('lab'); // phpcs:ignore WordPress.Security.EscapeOutput
+        }
         return (string) ob_get_clean();
     }
 

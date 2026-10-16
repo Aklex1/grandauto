@@ -240,6 +240,66 @@ class GS_Slides_Page {
         return $parts;
     }
 
+    /**
+     * Частые вопросы о презентациях.
+     *
+     * Вопросы не выдуманы: это то, что видно на самой странице и в коде
+     * сервиса — цена, границы числа слайдов, формат файла, что бывает при
+     * неудаче. Цифры берём из настроек, а не вписываем текстом: админ
+     * меняет цену в панели, и ответ не должен от этого устареть.
+     */
+    public static function faq() {
+        $pic = self::pic_cost();
+        return array(
+            array(
+                'Сколько стоит презентация?',
+                'Сборка стоит ' . self::price_hint() . ' — деньги списываются с баланса за запуск, абонентской платы нет.'
+                . ($pic > 0 ? ' Иллюстрация рядом с текстом слайда — ещё ' . number_format_i18n($pic, 0) . ' ₽ за картинку.' : ''),
+            ),
+            array(
+                'Сколько слайдов можно заказать?',
+                'От ' . (int) GS_Slides::MIN_SLIDES . ' до ' . (int) GS_Slides::MAX_SLIDES . ' слайдов за раз. '
+                . 'Число задаётся прямо в форме, по умолчанию — восемь.',
+            ),
+            array(
+                'В каком виде приходит файл?',
+                'Готовый PPTX: он открывается в PowerPoint, Google Slides и бесплатных редакторах, '
+                . 'текст и картинки правятся дальше руками.',
+            ),
+            array(
+                'Можно ли потом переделать слайды?',
+                'Да. Файл обычный, никакой привязки к сервису в нём нет — меняйте текст, порядок и оформление в своём редакторе. '
+                . 'Собрать заново с другим описанием тоже можно, прошлые презентации остаются в истории кабинета.',
+            ),
+            array(
+                'Что будет, если презентация не соберётся?',
+                'Списанное вернётся на баланс автоматически — заявление писать не нужно.',
+            ),
+            array(
+                'Нужен ли вход?',
+                'Да: файл сохраняется в вашей истории, чтобы его можно было скачать повторно. '
+                . 'Регистрация по почте, пароль придумывать не обязательно.',
+            ),
+        );
+    }
+
+    /** Блок вопросов на странице. */
+    public static function faq_block() {
+        ob_start();
+        ?>
+        <section class="gs-faq">
+            <h2 class="gs-section-title">Частые вопросы</h2>
+            <?php foreach (self::faq() as $pair): ?>
+                <details class="gs-faq__item">
+                    <summary class="gs-faq__q"><?php echo esc_html($pair[0]); ?></summary>
+                    <p class="gs-faq__a"><?php echo esc_html($pair[1]); ?></p>
+                </details>
+            <?php endforeach; ?>
+        </section>
+        <?php
+        return (string) ob_get_clean();
+    }
+
     public static function head() {
         $alt = self::current_alt();
         if (!self::is_page() && !$alt) {
@@ -257,6 +317,22 @@ class GS_Slides_Page {
         echo '<meta property="og:title" content="' . esc_attr($title) . '">' . "\n";
         echo '<meta property="og:description" content="' . esc_attr($desc) . '">' . "\n";
         echo '<meta property="og:url" content="' . esc_url($url) . '">' . "\n";
+
+        $faq = array();
+        foreach (self::faq() as $pair) {
+            $faq[] = array(
+                '@type' => 'Question',
+                'name'  => $pair[0],
+                'acceptedAnswer' => array('@type' => 'Answer', 'text' => $pair[1]),
+            );
+        }
+        if ($faq) {
+            echo '<script type="application/ld+json">' . wp_json_encode(array(
+                '@context'   => 'https://schema.org',
+                '@type'      => 'FAQPage',
+                'mainEntity' => $faq,
+            ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . '</script>' . "\n";
+        }
     }
 
     /* ---------------------------------------------------------------------
@@ -402,7 +478,13 @@ class GS_Slides_Page {
 
             <?php echo self::links_block(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
+            <?php echo self::faq_block(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <?php echo GS_Support::render('Презентации'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php if (class_exists('GS_Terms')): ?>
+                <?php echo GS_Terms::render('lab'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php endif; ?>
         </div>
         <?php
         return ob_get_clean();

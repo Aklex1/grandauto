@@ -1,0 +1,25 @@
+/* Оплата и возврат: коммерческий блок на страницах сервисов. */
+.gs-terms {
+    margin: 32px 0 8px;
+}
+.gs-terms__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 10px;
+}
+.gs-terms__list li {
+    position: relative;
+    padding: 12px 16px 12px 16px;
+    border: 1px solid rgba(148, 163, 184, .28);
+    border-radius: 12px;
+    font-size: 15px;
+    line-height: 1.55;
+}
+.gs-terms__list b {
+    font-weight: 600;
+}
+@media (min-width: 760px) {
+    .gs-terms__list { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+}

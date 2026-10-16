@@ -474,6 +474,10 @@ class GS_Pages {
             <?php echo GS_Keywords::render('sfx'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo GS_Support::render('Генератор звуков'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php if (class_exists('GS_Terms')): ?>
+                <?php echo GS_Terms::render('lab'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php endif; ?>
         </div>
         <?php
         return ob_get_clean();
