@@ -5267,6 +5267,40 @@ class GS_Rest {
         }
 
         $was = (int) filesize($path);
+
+        /**
+         * Файл .png, внутри которого лежит JPEG.
+         *
+         * Часть картинок уже пережимали раньше, и готовый JPEG записали
+         * под прежним именем с расширением .png. Сам файл при этом лёгкий,
+         * а производные размеры остались старыми PNG по два мегабайта —
+         * именно они и стоят в тексте статей. Такому файлу перекодировка
+         * не нужна: достаточно назвать его по содержимому и пересобрать
+         * размеры.
+         */
+        $probe = @getimagesize($path);
+        if (is_array($probe) && isset($probe[2]) && (int) $probe[2] === IMAGETYPE_JPEG) {
+            $jpeg = preg_replace('~\.png$~i', '.jpg', $path);
+            if (!file_exists($jpeg) && !@copy($path, $jpeg)) {
+                return new WP_Error('gs_img', 'Не удалось положить рядом .jpg', array('status' => 500));
+            }
+            if (!empty($p['dry'])) {
+                return array('ok' => true, 'проба' => true, 'id' => $id, 'было' => $was,
+                             'стало' => (int) filesize($jpeg), 'внутри' => 'уже JPEG');
+            }
+            update_attached_file($id, $jpeg);
+            wp_update_post(array('ID' => $id, 'post_mime_type' => 'image/jpeg'));
+            require_once ABSPATH . 'wp-admin/includes/image.php';
+            $meta = wp_generate_attachment_metadata($id, $jpeg);
+            if (is_array($meta)) {
+                wp_update_attachment_metadata($id, $meta);
+            }
+            if (class_exists('GS_Page_Cache')) {
+                GS_Page_Cache::bump();
+            }
+            return array('ok' => true, 'id' => $id, 'было' => $was, 'стало' => (int) filesize($jpeg),
+                         'внутри' => 'уже JPEG', 'адрес' => wp_get_attachment_url($id));
+        }
         $quality = max(50, min(92, (int) ($p['quality'] ?? 82)));
         $max = max(320, min(2400, (int) ($p['width'] ?? 1200)));
 
