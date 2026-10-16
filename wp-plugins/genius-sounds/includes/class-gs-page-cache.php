@@ -34,6 +34,8 @@ class GS_Page_Cache {
     const EPOCH = 'gs_html_epoch';
 
     const PREFIX = 'gs_html_';
+    /** Разовое расписание прогрева после сброса. */
+    const WARMUP = 'gs_cache_warmup';
 
     /** Признаки личного: встретили в готовой странице — не сохраняем. */
     private static $personal = array(
@@ -52,6 +54,7 @@ class GS_Page_Cache {
             add_action($hook, array(__CLASS__, 'bump'));
         }
         add_action('updated_option', array(__CLASS__, 'option_changed'), 10, 1);
+        add_action(self::WARMUP, array(__CLASS__, 'warmup'));
     }
 
     /**
@@ -328,6 +331,59 @@ class GS_Page_Cache {
         }
         self::bump();
         self::flush_foreign();
+        self::schedule_warmup();
+    }
+
+    /**
+     * Прогреть главные страницы после сброса кэша.
+     *
+     * Сброс оставляет сайт холодным: первый же посетитель ждёт, пока
+     * соберётся страница, а тема заодно пересобирает свои файлы стилей.
+     * Замер после выкладки: первый запрос главной — двадцать четыре
+     * секунды, следующие — доли секунды. Прийти в эту минуту может и
+     * робот, и покупатель.
+     *
+     * Поэтому через полминуты после обновления сами обходим десяток
+     * главных адресов: к приходу людей страницы уже готовы. Запросы
+     * неблокирующие — расписание не ждёт ответа.
+     */
+    public static function schedule_warmup() {
+        if (!wp_next_scheduled(self::WARMUP)) {
+            wp_schedule_single_event(time() + 30, self::WARMUP);
+        }
+    }
+
+    public static function warmup() {
+        $urls = array(home_url('/'));
+        if (class_exists('GS_Catalog')) {
+            $urls[] = GS_Catalog::base_url();
+        }
+        if (class_exists('GS_Prompts_Page')) {
+            $urls[] = GS_Prompts_Page::url();
+        }
+        if (class_exists('GS_Pages')) {
+            $urls[] = GS_Pages::get_studio_url();
+        }
+        if (class_exists('GS_Lab')) {
+            foreach (array_slice((array) GS_Lab::available_services(), 0, 3) as $svc) {
+                if (!empty($svc['id'])) {
+                    $urls[] = GS_Lab::get_url($svc['id']);
+                }
+            }
+        }
+
+        // Запрос обязан дождаться ответа. Брошенный на полпути (blocking
+        // false) сервер нередко обрывает вместе со сборкой страницы: в
+        // проверке так прогрелся один адрес из трёх. Поэтому ждём, но
+        // недолго и всего несколько адресов — расписание разовое.
+        @set_time_limit(120);
+        foreach (array_slice(array_unique(array_filter($urls)), 0, 7) as $url) {
+            wp_remote_get($url, array(
+                'timeout'   => 12,
+                'headers'   => array('User-Agent' => 'genius-sounds warmup'),
+                'sslverify' => false,
+            ));
+        }
     }
 
     /**
