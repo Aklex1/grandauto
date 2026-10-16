@@ -918,3 +918,30 @@ body.gs-prompts-page .l-main > .l-section > .l-section-h {
     .gs-pr__card-txt { bottom: 62px; }
     .gs-pr__card-p { max-height: 4em; opacity: 1; }
 }
+
+/* Разбор кадра: план, свет, место — вытащены из текста самого промта. */
+.gs-pr__facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 18px;
+    margin: 0 0 22px;
+    padding: 16px 18px;
+    border: 1px solid rgba(148, 163, 184, .28);
+    border-radius: 14px;
+}
+.gs-pr__facts dt {
+    margin: 0;
+    font-size: 13px;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    opacity: .66;
+}
+.gs-pr__facts dd {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.45;
+}
+@media (max-width: 560px) {
+    .gs-pr__facts { grid-template-columns: 1fr; gap: 2px 0; padding: 14px 15px }
+    .gs-pr__facts dd { margin: 0 0 10px }
+}

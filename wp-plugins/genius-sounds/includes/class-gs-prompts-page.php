@@ -753,15 +753,27 @@ class GS_Prompts_Page {
         $rubrics = (array) ($item['rubrics'] ?? array());
         $related = array();
         if ($rubrics) {
-            foreach (GS_Prompts::search('', $rubrics[0]) as $r) {
-                if ((string) $r['slug'] !== (string) $item['slug']) {
-                    $related[] = $r;
-                }
-                if (count($related) >= 6) {
+            // Соседей отсчитываем от самого кадра, а не от начала рубрики:
+            // раньше все страницы одной рубрики ссылались на одну и ту же
+            // шестёрку. Для человека это тупик, для обхода — потерянные
+            // ссылки: до дальних промтов робот так и не доходил.
+            $list = GS_Prompts::search('', $rubrics[0]);
+            $count = count($list);
+            $start = 0;
+            foreach ($list as $n => $r) {
+                if ((string) $r['slug'] === (string) $item['slug']) {
+                    $start = $n;
                     break;
                 }
             }
+            for ($i = 1; $i <= $count && count($related) < 6; $i++) {
+                $r = $list[($start + $i) % $count];
+                if ((string) $r['slug'] !== (string) $item['slug']) {
+                    $related[] = $r;
+                }
+            }
         }
+        $facets = GS_Prompts::facets($item);
         ?>
         <div class="gs-pr gs-pr--one">
             <div class="gs-pr__wrap">
@@ -800,6 +812,16 @@ class GS_Prompts_Page {
                         <?php endif; ?>
                     </div>
                 </div>
+
+                <?php if ($facets): ?>
+                    <h2 class="gs-pr__h2">Что в кадре</h2>
+                    <dl class="gs-pr__facts">
+                        <?php foreach ($facets as $row => $value): ?>
+                            <dt><?php echo esc_html($row); ?></dt>
+                            <dd><?php echo esc_html($value); ?></dd>
+                        <?php endforeach; ?>
+                    </dl>
+                <?php endif; ?>
 
                 <h2 class="gs-pr__h2">Промт целиком</h2>
                 <div class="gs-pr__prompt">
