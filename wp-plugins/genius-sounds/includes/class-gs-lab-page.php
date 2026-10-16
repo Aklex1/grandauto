@@ -352,6 +352,8 @@ class GS_Lab_Page {
                 </ol>
             </section>
 
+            <?php echo GS_Reviews::render($service['id']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <?php echo GS_Keywords::render(GS_Keywords::group_for_lab($service['id'])); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_cross_links($service['id'], $extra['cross_title'], $extra['landing_id']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
@@ -367,6 +369,13 @@ class GS_Lab_Page {
             </section>
 
             <?php echo GS_Support::render($service['nav']); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php if (class_exists('GS_Requisites')): ?>
+                <p class="gs-lab-legal">
+                    Услуги оказывает <a href="<?php echo esc_url(GS_Requisites::get_url()); ?>">ИП с реквизитами на отдельной странице</a>:
+                    там же оферта, политика обработки данных и порядок оказания услуг.
+                </p>
+            <?php endif; ?>
         </div>
         <?php
         return ob_get_clean();

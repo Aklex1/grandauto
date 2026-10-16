@@ -1052,3 +1052,22 @@ body.gs-post-page .w-post-elm.post_content code {
     font-size: 0.94em;
     word-break: break-word;
 }
+
+/* Строка с профильными сервисами: читателю — короткий ответ «куда идти
+   по теме статьи», поиску — ссылка с темой, а не тринадцать одинаковых. */
+.gs-post-tools__lead {
+    margin: -4px 22px 14px !important;
+    font-size: 15px;
+    line-height: 1.5;
+    color: #94a3b8;
+}
+
+.gs-post-tools__lead a {
+    color: #c7d2fe;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.gs-post-tools__lead a:hover {
+    color: #e0e7ff;
+}

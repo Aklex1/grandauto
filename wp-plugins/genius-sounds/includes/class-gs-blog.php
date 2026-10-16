@@ -186,7 +186,102 @@ class GS_Blog {
         if (is_admin() || !self::enabled() || !self::is_single_post() || !in_the_loop() || !is_main_query()) {
             return $content;
         }
-        return $content . self::tools_block();
+        $post = get_queried_object();
+        return $content . self::tools_block($post instanceof WP_Post ? $post : null);
+    }
+
+    /**
+     * Насколько инструмент близок статье.
+     *
+     * Раньше под каждой статьёй лежала одна и та же лента из тринадцати
+     * карточек в одном и том же порядке. Для читателя это стена одинаковых
+     * плашек, для поиска — ссылка без темы: про расшифровку записи человек
+     * читает статью про расшифровку, а первой карточкой ему показывают
+     * генератор звуков.
+     *
+     * Считаем просто: сколько значимых слов из названия инструмента
+     * встретилось в заголовке, адресе и тексте статьи. Заголовок весит
+     * больше текста — он и есть тема.
+     */
+    private static function tool_score($tool, $haystack) {
+        $words = self::tool_words($tool);
+        $score = 0;
+        $strong = false;
+        foreach ($words as $word) {
+            $stem = mb_substr($word, 0, max(4, mb_strlen($word) - 2));
+            if ($stem === '' || mb_strlen($stem) < 4) {
+                continue;
+            }
+            if (mb_strpos($haystack['title'], $stem) !== false) {
+                $score += 5;
+                $strong = true;
+            }
+            if (mb_strpos($haystack['slug'], $stem) !== false) {
+                $score += 3;
+                $strong = true;
+            }
+            if (mb_strpos($haystack['text'], $stem) !== false) {
+                $score += 1;
+            }
+        }
+        return array('score' => $score, 'strong' => $strong);
+    }
+
+    /**
+     * Слова, по которым узнаём тему инструмента.
+     *
+     * Одного названия мало и оно же подводит: в «убрать вокал» слово
+     * «убрать» встречается в любой статье про обработку, и статья про
+     * промты для фото получала ссылку на снятие вокала. Поэтому к названию
+     * добавлены слова, которыми тему называют в текстах, а общие глаголы
+     * из названий выброшены.
+     */
+    private static function tool_words($tool) {
+        $title = function_exists('mb_strtolower') ? mb_strtolower((string) $tool['title']) : strtolower((string) $tool['title']);
+        $skip = array('убрать', 'создать', 'сделать', 'улучшить', 'оживить', 'для', 'своим');
+        $words = array();
+        foreach ((array) preg_split('~[^а-яёa-z0-9]+~u', $title, -1, PREG_SPLIT_NO_EMPTY) as $word) {
+            if (mb_strlen($word) >= 4 && !in_array($word, $skip, true)) {
+                $words[] = $word;
+            }
+        }
+
+        $extra = array(
+            'вокал'       => array('минусовка', 'караоке', 'минус'),
+            'шум'         => array('шумоподавление', 'очистка', 'помехи'),
+            'расшифровка' => array('транскрибация', 'субтитры', 'стенограмма'),
+            'аватар'      => array('липсинк', 'говорящий'),
+            'музык'       => array('трек', 'мелодия', 'бит'),
+            'песн'        => array('вокал', 'куплет', 'припев'),
+            'фотосесс'    => array('портрет', 'снимок', 'фотография', 'фото'),
+            'обложк'      => array('ковер', 'артворк'),
+            'дубляж'      => array('озвучка', 'перевод'),
+            'презентац'   => array('слайды', 'питч'),
+            'качеств'     => array('апскейл', 'разрешение'),
+            // «Эффект» сюда не годится: статья «как убрать эффект нейросети»
+            // — про фотографии, а не про звук.
+            'звук'        => array('спецэффект'),
+        );
+        foreach ($extra as $needle => $more) {
+            if (mb_strpos($title, $needle) !== false) {
+                $words = array_merge($words, $more);
+            }
+        }
+        return array_values(array_unique($words));
+    }
+
+    /** Текст статьи в удобном для сравнения виде. */
+    private static function haystack($post) {
+        $lower = function_exists('mb_strtolower') ? 'mb_strtolower' : 'strtolower';
+        if (!$post instanceof WP_Post) {
+            return array('title' => '', 'slug' => '', 'text' => '');
+        }
+        $text = wp_strip_all_tags((string) $post->post_content);
+        return array(
+            'title' => call_user_func($lower, (string) $post->post_title),
+            'slug'  => call_user_func($lower, (string) $post->post_name),
+            'text'  => call_user_func($lower, mb_substr($text, 0, 4000)),
+        );
     }
 
     /**
@@ -232,7 +327,7 @@ class GS_Blog {
      * Прокрутка своя, браузерная: стрелки только подталкивают её, поэтому
      * без скриптов блок остаётся рабочим, просто без кнопок.
      */
-    public static function tools_block() {
+    public static function tools_block($post = null) {
         $tools = array(
             array(
                 'url'   => GS_Pages::get_studio_url(),
@@ -257,6 +352,31 @@ class GS_Blog {
             );
         }
 
+        // Ближайшие теме статьи — вперёд; остальные остаются в ленте
+        // в прежнем порядке.
+        $top = array();
+        if ($post instanceof WP_Post) {
+            $hay = self::haystack($post);
+            $scored = array();
+            foreach ($tools as $i => $tool) {
+                $scored[$i] = self::tool_score($tool, $hay);
+            }
+            uasort($scored, function ($a, $b) {
+                return (int) $b['score'] <=> (int) $a['score'];
+            });
+            $order = array();
+            foreach ($scored as $i => $hit) {
+                $order[] = $tools[$i];
+                // В строку «по теме статьи» попадают только те, чью тему
+                // видно в заголовке или адресе: совпадения по тексту
+                // набирают любые статьи про обработку чего угодно.
+                if (!empty($hit['strong']) && $hit['score'] >= 5 && count($top) < 3) {
+                    $top[] = $tools[$i];
+                }
+            }
+            $tools = $order;
+        }
+
         $brand = class_exists('GS_Brand');
 
         ob_start();
@@ -271,6 +391,9 @@ class GS_Blog {
                             aria-label="Следующие инструменты">&#8250;</button>
                 </div>
             </div>
+            <?php if ($top): ?>
+                <p class="gs-post-tools__lead">По теме статьи:<?php foreach ($top as $i => $tool): ?><?php echo $i ? ',' : ''; ?> <a href="<?php echo esc_url($tool['url']); ?>"><?php echo esc_html($tool['title']); ?></a><?php endforeach; ?>.</p>
+            <?php endif; ?>
             <div class="gs-post-tools__viewport" data-gs-track tabindex="0">
                 <div class="gs-post-tools__track">
                     <?php foreach ($tools as $tool): ?>

@@ -1667,3 +1667,128 @@
     background: rgba(248, 113, 113, .16);
     color: #fca5a5;
 }
+
+/* Отзывы на странице сервиса */
+.gs-reviews {
+    margin: 36px 0;
+}
+
+.gs-reviews__agg {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 16px;
+    color: #cbd5e1;
+    font-size: 15px;
+}
+
+.gs-reviews__stars {
+    color: #fbbf24;
+    font-size: 18px;
+    letter-spacing: 1px;
+}
+
+.gs-reviews__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
+}
+
+.gs-reviews__item {
+    padding: 16px 18px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.gs-reviews__head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.gs-reviews__name {
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.gs-reviews__rate {
+    color: #fbbf24;
+    font-size: 14px;
+}
+
+.gs-reviews__date {
+    margin-left: auto;
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+.gs-reviews__text {
+    margin: 0;
+    color: #cbd5e1;
+    line-height: 1.6;
+}
+
+.gs-reviews__src {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 13px;
+    color: #a5b4fc;
+}
+
+/* Страница реквизитов */
+.gs-req__block {
+    margin: 28px 0;
+}
+
+.gs-req__list {
+    margin: 0;
+    display: grid;
+    gap: 10px;
+}
+
+.gs-req__row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 12px;
+    padding: 12px 16px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.gs-req__row dt {
+    margin: 0;
+    color: #94a3b8;
+}
+
+.gs-req__row dd {
+    margin: 0;
+    color: #e2e8f0;
+}
+
+.gs-req__docs {
+    margin: 0;
+    padding-left: 18px;
+    line-height: 1.9;
+}
+
+@media (max-width: 640px) {
+    .gs-req__row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+}
+
+/* Строка с реквизитами внизу страницы сервиса */
+.gs-lab-legal {
+    margin: 26px 0 8px;
+    font-size: 14px;
+    color: #94a3b8;
+}
+
+.gs-lab-legal a {
+    color: #a5b4fc;
+}

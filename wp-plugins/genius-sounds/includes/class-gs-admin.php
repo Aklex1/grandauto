@@ -801,6 +801,100 @@ class GS_Admin {
         return ob_get_clean();
     }
 
+    /**
+     * Отзывы к сервисам.
+     *
+     * Вносит их владелец сайта: придумывать отзывы нельзя — ни показывать
+     * покупателю, ни размечать для поиска. Пока список пуст, на страницах
+     * сервисов ничего не появляется.
+     */
+    public static function render_reviews() {
+        $rows = GS_Reviews::all();
+        ob_start();
+        ?>
+        <h2 id="gs-reviews">Отзывы</h2>
+        <p class="description" style="max-width:900px">
+            Отзывы показываются на страницах сервисов и размечаются для поиска.
+            Вносите только настоящие: оценка в выдаче под выдуманными отзывами —
+            нарушение правил поисковиков и обман покупателя. Если отзыв оставлен
+            где-то ещё (карты, соцсети, канал), дайте ссылку на источник.
+        </p>
+
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:12px 0;max-width:900px">
+            <?php wp_nonce_field('gs_review_add'); ?>
+            <input type="hidden" name="action" value="gs_review_add">
+            <table class="form-table">
+                <tr>
+                    <th scope="row"><label for="gs-rev-name">Кто написал</label></th>
+                    <td><input id="gs-rev-name" name="name" type="text" class="regular-text" required></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-rev-service">О каком сервисе</label></th>
+                    <td>
+                        <select id="gs-rev-service" name="service">
+                            <option value="">обо всём сайте</option>
+                            <?php foreach (GS_Lab::services() as $service): ?>
+                                <option value="<?php echo esc_attr($service['id']); ?>"><?php echo esc_html($service['menu']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-rev-rating">Оценка</label></th>
+                    <td>
+                        <select id="gs-rev-rating" name="rating">
+                            <?php foreach (array(5, 4, 3, 2, 1) as $n): ?>
+                                <option value="<?php echo (int) $n; ?>"><?php echo (int) $n; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-rev-date">Когда</label></th>
+                    <td><input id="gs-rev-date" name="date" type="date" value="<?php echo esc_attr(current_time('Y-m-d')); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-rev-source">Ссылка на источник</label></th>
+                    <td><input id="gs-rev-source" name="source" type="url" class="regular-text" placeholder="необязательно"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-rev-text">Текст</label></th>
+                    <td><textarea id="gs-rev-text" name="text" rows="4" class="large-text" required></textarea></td>
+                </tr>
+            </table>
+            <?php submit_button('Добавить отзыв', 'secondary', 'submit', false); ?>
+        </form>
+
+        <?php if ($rows): ?>
+            <table class="widefat striped" style="max-width:1000px">
+                <thead><tr><th>Когда</th><th>Кто</th><th>Сервис</th><th>Оценка</th><th>Текст</th><th></th></tr></thead>
+                <tbody>
+                    <?php foreach (array_reverse($rows) as $row): ?>
+                        <tr>
+                            <td><?php echo esc_html((string) ($row['date'] ?? $row['at'] ?? '')); ?></td>
+                            <td><?php echo esc_html((string) ($row['name'] ?? '')); ?></td>
+                            <td><?php echo esc_html((string) ($row['service'] ?? '') !== '' ? (string) $row['service'] : 'сайт'); ?></td>
+                            <td><?php echo esc_html(str_repeat('★', (int) ($row['rating'] ?? 0))); ?></td>
+                            <td><?php echo esc_html(mb_substr((string) ($row['text'] ?? ''), 0, 160)); ?></td>
+                            <td>
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                    <?php wp_nonce_field('gs_review_del'); ?>
+                                    <input type="hidden" name="action" value="gs_review_del">
+                                    <input type="hidden" name="id" value="<?php echo esc_attr((string) ($row['id'] ?? '')); ?>">
+                                    <?php submit_button('Убрать', 'small', 'submit', false); ?>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php else: ?>
+            <p class="description">Отзывов пока нет — на страницах сервисов блок не показывается.</p>
+        <?php endif; ?>
+        <?php
+        return ob_get_clean();
+    }
+
     public static function render_webmaster() {
         ob_start();
         ?>
@@ -1768,6 +1862,8 @@ class GS_Admin {
             <?php echo self::render_stuck_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_leads(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_reviews(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_webmaster(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 

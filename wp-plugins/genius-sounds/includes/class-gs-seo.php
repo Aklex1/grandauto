@@ -680,14 +680,18 @@ class GS_Seo {
      * Данные берём те же, что опубликованы в подвале: расхождение между
      * разметкой и видимой страницей хуже, чем отсутствие разметки.
      */
-    public static function org_node() {
-        $details = apply_filters('gs_org_details', array(
+    public static function org_details() {
+        return (array) apply_filters('gs_org_details', array(
             'name'      => self::brand_name(get_bloginfo('name')),
             'legalName' => 'ИП Миллер Александр Александрович',
             'taxID'     => '241901583600',
             'email'     => 'akklex9@gmail.com',
             'telegram'  => 'https://t.me/Genius_Boot_bot',
         ));
+    }
+
+    public static function org_node() {
+        $details = self::org_details();
 
         $node = array(
             '@context'   => 'https://schema.org',
@@ -827,6 +831,13 @@ class GS_Seo {
                 $service['menu']   => $url,
             )),
         );
+
+        // Оценка и отзывы — только если они есть на самой странице.
+        if (class_exists('GS_Reviews')) {
+            foreach (GS_Reviews::schema($service['id']) as $key => $value) {
+                $app[$key] = $value;
+            }
+        }
 
         $questions = array();
         foreach ($service['faq'] as $pair) {

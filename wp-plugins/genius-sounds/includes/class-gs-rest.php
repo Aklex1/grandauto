@@ -387,6 +387,18 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_diag_stt'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        // IndexNow: ключ, очередь адресов и отправка вручную (только админ).
+        register_rest_route(self::NS, '/seo/indexnow', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_indexnow_state'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+        register_rest_route(self::NS, '/seo/indexnow', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_indexnow_push'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/diag/once', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_diag_once'),
@@ -3250,6 +3262,33 @@ class GS_Rest {
      * хостинге: если её нет, защита молча вырождается в проверку
      * отпечатка, и знать об этом надо заранее, а не по двойному списанию.
      */
+    public static function handle_indexnow_state($request) {
+        return rest_ensure_response(array(
+            'ключ'      => GS_Index::key_url(),
+            'включено'  => GS_Index::enabled(),
+            'в_очереди' => GS_Index::queue_size(),
+            'история'   => array_slice((array) GS_Index::log_rows(), 0, 5),
+        ));
+    }
+
+    /**
+     * Отправить адреса сейчас: с ключом «urls» — свои, без него — то, что
+     * накопилось в очереди.
+     */
+    public static function handle_indexnow_push($request) {
+        $p = $request->get_json_params();
+        $p = is_array($p) ? $p : array();
+        $urls = isset($p['urls']) && is_array($p['urls']) ? $p['urls'] : array();
+        if ($urls) {
+            GS_Index::enqueue($urls);
+        }
+        GS_Index::drain();
+        return rest_ensure_response(array(
+            'в_очереди' => GS_Index::queue_size(),
+            'история'   => array_slice((array) GS_Index::log_rows(), 0, 3),
+        ));
+    }
+
     public static function handle_diag_once($request) {
         global $wpdb;
         $probe = $wpdb->get_var("SELECT GET_LOCK('gs_once_probe', 0)");
