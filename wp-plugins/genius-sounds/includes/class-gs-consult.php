@@ -105,6 +105,11 @@ class GS_Consult {
         wp_enqueue_script('genius-sounds-consult', GS_PLUGIN_URL . 'assets/js/consult.js', array(), GS_VERSION, true);
         wp_localize_script('genius-sounds-consult', 'gsConsult', array(
             'url' => esc_url_raw(rest_url('genius-sounds/v1/lead')),
+            // Заявка уходит без перезагрузки страницы, поэтому автоцель
+            // Метрики её не видит: за 30 дней пять заявок в журнале и ноль
+            // достижений в отчёте. Цель зовём сами, по событию.
+            'counter' => class_exists('GS_Metrika') ? (int) GS_Metrika::counter() : 0,
+            'goal'    => 'lead_form',
         ));
     }
 

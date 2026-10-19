@@ -14,6 +14,23 @@
     var send = form.querySelector('.gs-consult__send');
     var busy = false;
 
+    /*
+     * Сказать Метрике, что заявка пришла.
+     *
+     * Автоцель «отправка формы заявки» ловит обычную отправку с
+     * перезагрузкой, а наша уходит запросом — поэтому в отчёте стояли
+     * нули при живых заявках в журнале. Зовём цель сами и молча: счётчик
+     * мог быть вырезан блокировщиком, и падать из-за этого форме нельзя.
+     */
+    function goal() {
+        try {
+            if (gsConsult.counter && typeof window.ym === 'function') {
+                window.ym(gsConsult.counter, 'reachGoal', gsConsult.goal || 'lead_form');
+            }
+        } catch (e) {
+        }
+    }
+
     function say(text, kind) {
         if (!note) {
             return;
@@ -51,6 +68,7 @@
             if (res.ok) {
                 form.reset();
                 say(res.body.message || 'Заявка принята — свяжемся с вами в ближайшее время', 'good');
+                goal();
                 return;
             }
             say(res.body.message || 'Не получилось отправить. Напишите нам в Telegram — так быстрее.', 'bad');
