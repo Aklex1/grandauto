@@ -1,0 +1,217 @@
+/*
+ * Оффер «сделайте свой звук».
+ *
+ * На телефоне это шторка снизу, а не окно по центру: центральное окно
+ * перекрывает плеер, по которому человек только что нажал, и закрывается
+ * не читая. Мобильных на страницах каталога почти половина.
+ */
+
+.gs-offer {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gs-offer[hidden] {
+    display: none;
+}
+
+.gs-offer__veil {
+    position: absolute;
+    inset: 0;
+    background: rgba(4, 7, 13, 0.74);
+    animation: gs-offer-veil 0.18s ease-out;
+}
+
+.gs-offer__card {
+    position: relative;
+    width: min(532px, calc(100vw - 32px));
+    box-sizing: border-box;
+    padding: 32px 34px 26px;
+    background: #0f1626;
+    border: 1px solid #2a3550;
+    border-radius: 20px;
+    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.6);
+    font-family: inherit;
+    animation: gs-offer-rise 0.22s ease-out;
+}
+
+.gs-offer__close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 10px;
+    color: #94a3b8;
+    cursor: pointer;
+}
+
+.gs-offer__close:hover,
+.gs-offer__close:focus-visible {
+    background: rgba(148, 163, 184, 0.14);
+    color: #e2e8f0;
+}
+
+.gs-offer__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 11px;
+    border-radius: 999px;
+    background: rgba(139, 92, 246, 0.16);
+    border: 1px solid rgba(139, 92, 246, 0.42);
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: #c4b5fd;
+}
+
+.gs-offer__title {
+    margin: 15px 0 0;
+    font-size: 29px;
+    line-height: 1.18;
+    font-weight: 800;
+    letter-spacing: -0.6px;
+    color: #f8fafc;
+    text-wrap: balance;
+}
+
+.gs-offer__lead {
+    margin: 11px 0 0;
+    font-size: 15px;
+    line-height: 1.55;
+    color: #b4c0d4;
+}
+
+.gs-offer__lead strong {
+    color: #f1f5f9;
+    font-weight: 700;
+}
+
+.gs-offer__list {
+    margin: 20px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+}
+
+.gs-offer__list li {
+    position: relative;
+    padding-left: 29px;
+    font-size: 14.5px;
+    line-height: 1.45;
+    color: #cbd5e1;
+}
+
+/* Галочка рисуется фоном: шесть одинаковых inline-svg в разметке лишние. */
+.gs-offer__list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 2px;
+    width: 18px;
+    height: 18px;
+    background: #22d3ee;
+    -webkit-mask: var(--gs-offer-tick) center / 18px 18px no-repeat;
+    mask: var(--gs-offer-tick) center / 18px 18px no-repeat;
+}
+
+.gs-offer {
+    --gs-offer-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3 8.4l3.2 3.1L13 4.8' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.gs-offer__go {
+    margin-top: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    height: 54px;
+    border-radius: 13px;
+    background: #8b5cf6;
+    color: #fff;
+    font-size: 16.5px;
+    font-weight: 700;
+    letter-spacing: -0.1px;
+    text-decoration: none;
+}
+
+.gs-offer__go:hover,
+.gs-offer__go:focus-visible {
+    background: #7c4df0;
+    color: #fff;
+}
+
+.gs-offer__fine {
+    margin: 13px 0 0;
+    text-align: center;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #8d9bb3;
+}
+
+@keyframes gs-offer-veil {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes gs-offer-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+    .gs-offer {
+        align-items: flex-end;
+    }
+
+    .gs-offer__card {
+        width: 100%;
+        padding: 22px 20px calc(22px + env(safe-area-inset-bottom, 0px));
+        border-radius: 22px 22px 0 0;
+        border-left: 0;
+        border-right: 0;
+        border-bottom: 0;
+        box-shadow: 0 -22px 60px rgba(0, 0, 0, 0.65);
+        animation-name: gs-offer-sheet;
+    }
+
+    .gs-offer__title {
+        font-size: 24px;
+        letter-spacing: -0.5px;
+    }
+
+    .gs-offer__lead {
+        font-size: 14px;
+    }
+
+    .gs-offer__list li {
+        font-size: 13.5px;
+    }
+}
+
+@keyframes gs-offer-sheet {
+    from { opacity: 0; transform: translateY(100%); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gs-offer__veil,
+    .gs-offer__card {
+        animation: none;
+    }
+}

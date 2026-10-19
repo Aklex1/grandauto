@@ -8,6 +8,18 @@
     var audio = null;
     var currentCard = null;
 
+    /** Сказать странице, что со звуком что-то произошло. */
+    function tell(name) {
+        try {
+            document.dispatchEvent(new CustomEvent(name));
+        } catch (e) {
+            // Старый браузер без конструктора CustomEvent.
+            var ev = document.createEvent('Event');
+            ev.initEvent(name, true, true);
+            document.dispatchEvent(ev);
+        }
+    }
+
     function getAudio() {
         if (!audio) {
             audio = new Audio();
@@ -27,8 +39,16 @@
                 }
             });
 
+            // Оффер «сделать свой звук» ждёт, когда человек получит то,
+            // за чем пришёл. Плеер тут один общий объект Audio, его события
+            // до документа сами не доходят — сообщаем о них явно.
+            audio.addEventListener('playing', function () {
+                tell('gs:sound-play');
+            });
+
             audio.addEventListener('ended', function () {
                 stop();
+                tell('gs:sound-end');
             });
 
             audio.addEventListener('error', function () {
