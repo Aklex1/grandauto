@@ -81,6 +81,11 @@ class GS_Rest {
             'callback'            => array(__CLASS__, 'handle_media_to_jpeg'),
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
+        register_rest_route(self::NS, '/wheel/cleanup', array(
+            'methods'             => array('GET', 'POST'),
+            'callback'            => array(__CLASS__, 'handle_wheel_cleanup'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
         register_rest_route(self::NS, '/prompts/sync', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_prompts_sync'),
@@ -5372,6 +5377,31 @@ class GS_Rest {
             'было'  => $was,
             'стало' => (int) filesize($jpeg),
             'адрес' => wp_get_attachment_url($id),
+        );
+    }
+
+    /**
+     * Недельная уборка рендеров подбора дисков — показать и запустить.
+     *
+     * Сама уборка ходит по расписанию; маршрут нужен, чтобы увидеть, когда
+     * она запланирована и сколько унесёт, не дожидаясь воскресенья.
+     */
+    public static function handle_wheel_cleanup($request) {
+        if (!class_exists('GS_Wheel_Cleanup')) {
+            return new WP_Error('gs_none', 'Уборка не подключена', array('status' => 404));
+        }
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = $request->get_params();
+        }
+        $dry = !isset($p['dry']) || !empty($p['dry']);
+        $next = wp_next_scheduled(GS_Wheel_Cleanup::CRON);
+        return array(
+            'ok'          => true,
+            'по расписанию' => $next ? gmdate('Y-m-d H:i', $next) . ' UTC' : 'не запланирована',
+            'держим дней' => GS_Wheel_Cleanup::KEEP_DAYS,
+            'за заход'    => GS_Wheel_Cleanup::BATCH,
+            'итог'        => GS_Wheel_Cleanup::run($dry),
         );
     }
 
