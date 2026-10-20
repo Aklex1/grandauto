@@ -826,8 +826,24 @@ class GC_Gpu {
         $item = $body[$job['remote_id']];
         $status = isset($item['status']['status_str']) ? (string) $item['status']['status_str'] : '';
         if ($status === 'error') {
-            $why = isset($item['status']['messages']) ? wp_json_encode($item['status']['messages']) : 'ошибка на машине';
-            self::fail((int) $job['id'], mb_substr((string) $why, 0, 300));
+            // В messages первым идёт служебное execution_start, и если
+            // писать их подряд, в карточку попадает заголовок, а не
+            // причина. Достаём именно execution_error.
+            $why = '';
+            foreach ((array) ($item['status']['messages'] ?? array()) as $msg) {
+                if (!is_array($msg) || ($msg[0] ?? '') !== 'execution_error') {
+                    continue;
+                }
+                $data = (array) ($msg[1] ?? array());
+                $why = trim((string) ($data['node_type'] ?? '') . ': '
+                          . (string) ($data['exception_type'] ?? '') . ' '
+                          . (string) ($data['exception_message'] ?? ''));
+                break;
+            }
+            if ($why === '') {
+                $why = (string) wp_json_encode($item['status']['messages'] ?? 'ошибка на машине');
+            }
+            self::fail((int) $job['id'], mb_substr($why, 0, 300));
             return;
         }
         $outputs = isset($item['outputs']) && is_array($item['outputs']) ? $item['outputs'] : array();
