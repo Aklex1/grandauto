@@ -29,6 +29,7 @@ class GC_Admin {
         add_action('admin_post_gc_fresh', array(__CLASS__, 'handle_fresh'));
         add_action('admin_post_gc_exec', array(__CLASS__, 'handle_exec'));
         add_action('admin_post_gc_state', array(__CLASS__, 'handle_state'));
+        add_action('admin_post_gc_probe', array(__CLASS__, 'handle_probe'));
     }
 
     public static function menu() {
@@ -360,6 +361,14 @@ class GC_Admin {
                                     </form>
                                 <?php endif; ?>
                                 <?php $live = strpos($i['status'], 'running') !== false; ?>
+                                <?php if ($live && !empty($i['ports'])) : ?>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                                        <?php wp_nonce_field('gc_probe'); ?>
+                                        <input type="hidden" name="action" value="gc_probe">
+                                        <input type="hidden" name="id" value="<?php echo (int) $i['id']; ?>">
+                                        <button class="button button-small">Опросить порты</button>
+                                    </form>
+                                <?php endif; ?>
                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
                                     <?php wp_nonce_field('gc_state'); ?>
                                     <input type="hidden" name="action" value="gc_state">
@@ -447,6 +456,13 @@ class GC_Admin {
                         ? '<code>' . implode('</code>, <code>', array_map('esc_html', $models['clip'])) . '</code>'
                         : '<span class="description">нет</span>'; ?></p>
                 <?php endif; ?>
+                <?php $probe = (array) get_option('gc_probe_rows', array()); ?>
+                <?php if ($probe) : ?>
+                    <h3>Опрос портов</h3>
+                    <ul class="ul-disc"><?php foreach ($probe as $line) : ?>
+                        <li><code><?php echo esc_html($line); ?></code></li>
+                    <?php endforeach; ?></ul>
+                <?php endif; ?>
                 <?php $exec = GC_Vast::exec_output(); ?>
                 <?php if ($exec['ok'] || $exec['message'] !== 'команд ещё не было') : ?>
                     <h3>Вывод последней команды</h3>
@@ -465,6 +481,27 @@ class GC_Admin {
             <?php endif; ?>
         <?php endif; ?>
         <?php
+    }
+
+    public static function handle_probe() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Нет доступа');
+        }
+        check_admin_referer('gc_probe');
+        $out = GC_Vast::probe((int) ($_POST['id'] ?? 0));
+        if (!$out['ok']) {
+            wp_safe_redirect(self::url('machine', array('gc_err' => $out['message'])));
+            exit;
+        }
+        $lines = array();
+        foreach ($out['rows'] as $row) {
+            $lines[] = $row['port'] . '→' . $row['outer'] . ': '
+                     . ($row['code'] > 0 ? ('ответ ' . $row['code']) : 'молчит')
+                     . ($row['note'] !== '' ? ' (' . mb_substr($row['note'], 0, 60) . ')' : '');
+        }
+        update_option('gc_probe_rows', $lines, false);
+        wp_safe_redirect(self::url('machine', array('gc_msg' => 'Порты опрошены.')));
+        exit;
     }
 
     public static function handle_state() {

@@ -208,6 +208,11 @@ class GC_Vast {
          * Три порта: ComfyUI, распознавание речи и озвучка. Две
          * последние службы поднимает скрипт запуска, и если их на образе
          * нет — машина всё равно встанет, просто порты будут молчать.
+         *
+         * Режим ssh_direct: Vast подменяет точку входа образа своей, и
+         * собственный запуск образа не выполняется вовсе. Поэтому ComfyUI
+         * запускает наш скрипт запуска — иначе порт проброшен, а слушать
+         * его некому.
          */
         $body = array(
             'image'   => $s['image'],
@@ -356,13 +361,22 @@ for p in /workspace/ComfyUI /opt/ComfyUI /opt/workspace-internal/ComfyUI /root/C
   [ -d "$p" ] && CF="$p" && break
 done
 [ -z "$CF" ] && CF=$(find / -maxdepth 6 -type d -name ComfyUI 2>/dev/null | head -1)
-[ -z "$CF" ] && exit 0
+[ -z "$CF" ] && echo "ComfyUI не найден" && exit 0
+PY=$(command -v python3 || command -v python)
 mkdir -p "$CF/models/checkpoints" "$CF/models/text_encoders"
-pip install --no-cache-dir av >/dev/null 2>&1
+cd "$CF"
+# ComfyUI поднимаем сами: в режиме ssh Vast подменяет точку входа образа,
+# и собственный запуск образа до нас не доходит. Порт 8188 наружу уже
+# проброшен, слушать надо на всех адресах.
+nohup "$PY" main.py --listen 0.0.0.0 --port 8188 --disable-auto-launch > /workspace/comfy.log 2>&1 &
+"$PY" -m pip install --no-cache-dir av >/dev/null 2>&1
 HF=https://huggingface.co
-wget -nc -q -P "$CF/models/checkpoints"   $HF/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
-wget -nc -q -P "$CF/models/checkpoints"   $HF/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors
-wget -nc -q -P "$CF/models/text_encoders"   $HF/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors
+wget -nc -q -P "$CF/models/checkpoints" \
+  $HF/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
+wget -nc -q -P "$CF/models/checkpoints" \
+  $HF/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors
+wget -nc -q -P "$CF/models/text_encoders" \
+  $HF/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors
 echo "модели на месте" > /workspace/gc-onstart.done
 SH;
     }
@@ -373,6 +387,60 @@ SH;
      * Главное здесь — внешний адрес ComfyUI. Vast прокидывает порты
      * наружу на случайные номера, и соответствие лежит в ports.
      */
+    /**
+     * Что отвечает на каждом порту машины.
+     *
+     * Когда ComfyUI не отзывается, вслепую не угадать: у части образов
+     * он сидит за своим порталом на другом порту. Опрашиваем только
+     * адреса этой же арендованной машины — чужие сюда не подставить.
+     */
+    public static function probe($instance_id) {
+        $list = self::instances();
+        if (!$list['ok']) {
+            return array('ok' => false, 'rows' => array(), 'message' => $list['message']);
+        }
+        $row = null;
+        foreach ($list['items'] as $item) {
+            if ((int) $item['id'] === (int) $instance_id) {
+                $row = $item;
+                break;
+            }
+        }
+        if (!$row || $row['host'] === '' || $row['ports'] === '') {
+            return array('ok' => false, 'rows' => array(), 'message' => 'у машины ещё нет портов');
+        }
+        $rows = array();
+        foreach (explode(',', $row['ports']) as $pair) {
+            if (!preg_match('~(\d+)/tcp\s*→\s*(\d+)~u', trim($pair), $m)) {
+                continue;
+            }
+            $inner = (int) $m[1];
+            $outer = (int) $m[2];
+            if ($inner === 22) {
+                continue;
+            }
+            $url = 'http://' . $row['host'] . ':' . $outer . '/';
+            $res = wp_remote_get($url, array('timeout' => 8, 'redirection' => 0));
+            if (is_wp_error($res)) {
+                $rows[] = array('port' => $inner, 'outer' => $outer, 'code' => 0,
+                                'note' => $res->get_error_message());
+                continue;
+            }
+            $body = (string) wp_remote_retrieve_body($res);
+            $title = '';
+            if (preg_match('~<title[^>]*>(.*?)</title>~is', $body, $t)) {
+                $title = trim($t[1]);
+            }
+            $rows[] = array(
+                'port'  => $inner,
+                'outer' => $outer,
+                'code'  => (int) wp_remote_retrieve_response_code($res),
+                'note'  => $title !== '' ? $title : mb_substr(trim(wp_strip_all_tags($body)), 0, 120),
+            );
+        }
+        return array('ok' => true, 'rows' => $rows, 'message' => '');
+    }
+
     private static function ports_line($ports) {
         $out = array();
         foreach ((array) $ports as $inner => $rows) {
