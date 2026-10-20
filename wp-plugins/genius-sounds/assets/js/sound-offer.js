@@ -37,6 +37,13 @@
         var playing = false;
         var timer = null;
 
+        /*
+         * Значения из wp_localize_script приходят строками, а строка «0»
+         * в JS правдива: без явного сравнения выключенный предпросмотр
+         * показывал карточку всем и сразу.
+         */
+        var preview = String(gsOffer.preview) === '1';
+
         /** Закрывал ли он карточку недавно. Память может быть недоступна. */
         function held() {
             try {
@@ -82,7 +89,41 @@
 
         function close() {
             box.hidden = true;
-            hold();
+            if (!preview) {
+                hold();
+            }
+        }
+
+        function bind() {
+            box.addEventListener('click', function (event) {
+                if (event.target.closest('[data-gs-offer-close]')) {
+                    close();
+                    return;
+                }
+                if (event.target.closest('[data-gs-offer-go]')) {
+                    goal(gsOffer.goalClick);
+                    hold();
+                }
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && !box.hidden) {
+                    close();
+                }
+            });
+        }
+
+        /*
+         * Предпросмотр по ссылке ?gs_offer=1.
+         *
+         * Показываем сразу, цель не зовём и в память не пишем: иначе наши
+         * же проверки попадут в отчёт, а проверяющему оффер замолчит на
+         * неделю.
+         */
+        if (preview) {
+            box.hidden = false;
+            bind();
+            return;
         }
 
         if (held()) {
@@ -112,27 +153,21 @@
             scrolled = true;
         }, { passive: true, once: true });
 
+        /*
+         * На списке разделов плееров нет вовсе, и ждать там полную минуту
+         * бессмысленно: человеку нечего проигрывать, ждём меньше.
+         */
+        var bare = !document.querySelector('[data-gs-play]');
+        var wait = bare
+            ? (parseInt(gsOffer.bare, 10) || 20000)
+            : (parseInt(gsOffer.idle, 10) || 45000);
+
         timer = setTimeout(function () {
             if (scrolled) {
                 show();
             }
-        }, parseInt(gsOffer.idle, 10) || 45000);
+        }, wait);
 
-        box.addEventListener('click', function (event) {
-            if (event.target.closest('[data-gs-offer-close]')) {
-                close();
-                return;
-            }
-            if (event.target.closest('[data-gs-offer-go]')) {
-                goal(gsOffer.goalClick);
-                hold();
-            }
-        });
-
-        document.addEventListener('keydown', function (event) {
-            if (event.key === 'Escape' && !box.hidden) {
-                close();
-            }
-        });
+        bind();
     });
 })();

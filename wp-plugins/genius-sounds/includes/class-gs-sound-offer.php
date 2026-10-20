@@ -30,20 +30,38 @@ class GS_Sound_Offer {
     /** Если звук так и не включили: показ по времени, с условием прокрутки. */
     const IDLE_MS = 45000;
 
+    /** На странице без плееров (список разделов) ждать 45 секунд нечего. */
+    const BARE_MS = 20000;
+
     public static function boot() {
         // Приоритет ниже, чем у печати скриптов подвала (она на 20):
         // иначе разметка появляется после своего же скрипта.
         add_action('wp_footer', array(__CLASS__, 'render'), 5);
     }
 
-    /** Показываем только гостю: вошедший уже пользуется сервисом. */
+    /**
+     * Предпросмотр по ссылке …?gs_offer=1.
+     *
+     * Без него карточку нельзя посмотреть, не выходя из админки: своим мы
+     * её не показываем, и редактор, проверяя страницу под своей учёткой,
+     * видит ровно ничего и решает, что оффер сломан.
+     */
+    public static function preview() {
+        return isset($_GET['gs_offer']) && (string) $_GET['gs_offer'] !== '0';
+    }
+
+    /** Показываем гостю: вошедший уже пользуется сервисом. */
     public static function wanted() {
-        if (is_user_logged_in() || is_admin()) {
+        if (is_admin()) {
             return false;
         }
-        return class_exists('GS_Catalog')
+        $ours = class_exists('GS_Catalog')
             && (GS_Catalog::is_catalog_request()
                 || (class_exists('GS_Pages') && GS_Pages::is_showcase_request()));
+        if (!$ours) {
+            return false;
+        }
+        return !is_user_logged_in() || self::preview();
     }
 
     public static function enqueue() {
@@ -55,7 +73,9 @@ class GS_Sound_Offer {
         wp_localize_script('genius-sounds-offer', 'gsOffer', array(
             'delay'   => self::DELAY_MS,
             'idle'    => self::IDLE_MS,
+            'bare'    => self::BARE_MS,
             'hold'    => self::HOLD_DAYS,
+            'preview' => self::preview() ? 1 : 0,
             'counter' => class_exists('GS_Metrika') ? (int) GS_Metrika::counter() : 0,
             'goalShow'  => 'offer_show',
             'goalClick' => 'offer_click',
