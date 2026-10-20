@@ -144,3 +144,28 @@
         hero.classList.add('is-in');
     }
 })();
+
+/**
+ * Липкая кнопка на телефоне.
+ *
+ * Показываем не сразу, а когда первый экран уехал: поверх заголовка она
+ * только мешает, а дальше это единственная кнопка в поле зрения.
+ */
+(function () {
+    'use strict';
+
+    var root = document.querySelector('.gs-kr');
+    if (!root) {
+        return;
+    }
+    var hero = root.querySelector('.gs-kr__hero');
+    if (!hero || !('IntersectionObserver' in window)) {
+        return;
+    }
+    var watch = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+            root.classList.toggle('is-scrolled', !entry.isIntersecting);
+        });
+    }, { threshold: 0, rootMargin: '-120px 0px 0px 0px' });
+    watch.observe(hero);
+})();

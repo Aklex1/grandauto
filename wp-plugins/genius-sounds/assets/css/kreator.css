@@ -1810,3 +1810,466 @@ body.gs-post-page .w-post-elm.post_content a.gs-krbanner__btn:focus-visible,
         transform: none;
     }
 }
+
+/* --- Приёмы, без которых коммерческая посадочная не работает --------- */
+
+/*
+ * Факты первого экрана.
+ *
+ * Цену, срок и условия в России ищут глазами раньше, чем читают
+ * заголовок, и если их нет — уходят искать в другом месте. Поэтому они
+ * стоят сразу под кнопками, а не в тарифах через четыре экрана.
+ */
+.gs-kr__facts {
+    margin: 26px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    /* Фактов пять, и жёсткая сетка в четыре колонки оставляла пятый
+       висеть в одиночестве на второй строке. */
+    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: 16px 14px;
+}
+
+.gs-kr__facts li {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 10px;
+    align-items: center;
+}
+
+.gs-kr__facts .gs-kr__ico {
+    grid-row: 1 / 3;
+    color: var(--kr-primary);
+}
+
+.gs-kr__facts b {
+    font-size: 16px;
+    line-height: 1.2;
+    color: var(--kr-ink);
+}
+
+.gs-kr__facts span {
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--kr-muted);
+}
+
+/* --- Подарок: месяц генераций --------------------------------------- */
+
+/*
+ * Единственный блок на странице с цветной заливкой и рамкой: он отвечает
+ * на главный невысказанный вопрос — «сколько ещё придётся доплатить
+ * сверх тарифа». Стоит сразу после программы, пока человек считает,
+ * во что ему обойдётся практика.
+ */
+.gs-kr__gift {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 34px;
+    margin-bottom: 60px;
+    padding: 36px 40px;
+    border: 1px solid var(--kr-primary-2);
+    border-radius: calc(var(--kr-radius) + 6px);
+    background:
+        var(--kr-dots),
+        linear-gradient(120deg, #f1efff 0%, #ffffff 52%, #e6f7fa 100%);
+    background-size: 22px 22px, auto;
+    box-shadow: var(--kr-shadow);
+}
+
+.gs-kr__gift-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 13px;
+    border-radius: 999px;
+    background: var(--kr-primary);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #fff;
+}
+
+.gs-kr__gift .gs-kr__h2 {
+    margin-top: 14px;
+    font-size: clamp(23px, 2.5vw, 32px);
+}
+
+.gs-kr__gift .gs-kr__sub {
+    margin-bottom: 22px;
+}
+
+.gs-kr__gift-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+}
+
+.gs-kr__gift-list li {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 10px;
+    align-items: center;
+    padding: 14px 16px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius-sm);
+    background: rgba(255, 255, 255, 0.86);
+}
+
+.gs-kr__gift-list .gs-kr__ico {
+    grid-row: 1 / 3;
+    color: var(--kr-accent);
+}
+
+.gs-kr__gift-list b {
+    font-size: 15.5px;
+    line-height: 1.2;
+    color: var(--kr-ink);
+}
+
+.gs-kr__gift-list span {
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--kr-muted);
+}
+
+.gs-kr__gift-act {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+@media (max-width: 1180px) {
+    .gs-kr__gift {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 24px;
+    }
+
+    .gs-kr__gift-act {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 680px) {
+    .gs-kr__gift {
+        padding: 26px 18px;
+    }
+
+    .gs-kr__gift-act {
+        flex-direction: column;
+    }
+}
+
+/* --- Доверие --------------------------------------------------------- */
+
+.gs-kr__trust {
+    margin-bottom: 60px;
+}
+
+.gs-kr__trust-grid {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.gs-kr__trust-grid li {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 24px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background: var(--kr-card);
+    box-shadow: var(--kr-shadow);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gs-kr__trust-grid li:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--kr-shadow-lg);
+}
+
+.gs-kr__trust-ico {
+    width: 28px;
+    height: 28px;
+    color: var(--kr-accent);
+}
+
+.gs-kr__trust-grid b {
+    font-size: 16.5px;
+    color: var(--kr-ink);
+}
+
+.gs-kr__trust-grid span {
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--kr-muted);
+}
+
+/* --- Возражения ------------------------------------------------------ */
+
+.gs-kr__doubts {
+    margin-bottom: 60px;
+}
+
+.gs-kr__doubt-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.gs-kr__doubt {
+    padding: 28px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background: var(--kr-card);
+    box-shadow: var(--kr-shadow);
+}
+
+.gs-kr__doubt-ico {
+    width: 30px;
+    height: 30px;
+    margin-bottom: 14px;
+    color: var(--kr-primary);
+}
+
+.gs-kr__doubt h3 {
+    margin: 0;
+    font-size: 17.5px;
+    line-height: 1.3;
+}
+
+.gs-kr__doubt p {
+    margin: 10px 0 0;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--kr-muted);
+}
+
+/* --- Второй путь из формы -------------------------------------------- */
+
+.gs-kr__or {
+    margin: 14px 0;
+    text-align: center;
+    font-size: 13px;
+    color: var(--kr-muted);
+}
+
+.gs-kr a.gs-kr__btn--wide {
+    display: flex;
+    width: 100%;
+}
+
+/* --- Липкая кнопка на телефоне --------------------------------------- */
+
+/*
+ * На телефоне кнопка уезжает за первый экран и больше не возвращается:
+ * человек читает четыре экрана подряд, а нажать уже нечего. Панель
+ * появляется только на узких экранах и только после первого экрана —
+ * перекрывать заголовок ей незачем.
+ */
+.gs-kr__sticky {
+    display: none;
+}
+
+@media (max-width: 860px) {
+    .gs-kr__sticky {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 40;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+        background: rgba(255, 255, 255, 0.96);
+        border-top: 1px solid var(--kr-line);
+        box-shadow: 0 -8px 24px rgba(16, 24, 40, 0.1);
+        backdrop-filter: saturate(140%) blur(8px);
+        transform: translateY(110%);
+        transition: transform 0.25s ease;
+    }
+
+    .gs-kr.is-scrolled .gs-kr__sticky {
+        transform: none;
+    }
+
+    .gs-kr__sticky-price {
+        display: flex;
+        flex-direction: column;
+        font-size: 17px;
+        font-weight: 800;
+        line-height: 1.1;
+        color: var(--kr-ink);
+    }
+
+    .gs-kr__sticky-price i {
+        font-style: normal;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--kr-muted);
+    }
+
+    .gs-kr .gs-kr__sticky-btn {
+        min-height: 46px;
+        padding: 0 22px;
+        font-size: 15.5px;
+    }
+
+    .gs-kr {
+        padding-bottom: 96px;
+    }
+}
+
+/* --- Экраны поменьше: новые блоки ------------------------------------ */
+
+@media (max-width: 1180px) {
+    .gs-kr__trust-grid,
+    .gs-kr__facts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .gs-kr__doubt-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+}
+
+@media (max-width: 680px) {
+    .gs-kr__facts,
+    .gs-kr__trust-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+
+
+    .gs-kr__doubt {
+        padding: 22px 18px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gs-kr__trust-grid li:hover {
+        transform: none;
+    }
+
+    .gs-kr__sticky {
+        transition: none;
+    }
+}
+
+/* --- Что после обучения ---------------------------------------------- */
+
+/*
+ * Главный коммерческий аргумент страницы, поэтому блок заметный: цветной
+ * фон, крупные номера шагов и своя сетка. Обещание на первом экране без
+ * такого блока выглядит лозунгом, а здесь видно, из чего оно состоит.
+ */
+.gs-kr__after {
+    margin-bottom: 60px;
+    padding: 40px 42px 34px;
+    border: 1px solid var(--kr-primary-2);
+    border-radius: calc(var(--kr-radius) + 6px);
+    background:
+        var(--kr-dots),
+        linear-gradient(135deg, #f3f1ff 0%, #ffffff 48%, #e9f8fa 100%);
+    background-size: 22px 22px, auto;
+    box-shadow: var(--kr-shadow);
+}
+
+/* Номера шагов висят на 14 точек выше карточек, и подзаголовок секции
+   оказывался под ними. Отодвигаем сетку. */
+.gs-kr__after .gs-kr__sub {
+    margin-bottom: 42px;
+}
+
+.gs-kr__after-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.gs-kr__after-item {
+    position: relative;
+    padding: 28px 26px 26px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gs-kr__after-item:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--kr-shadow-lg);
+}
+
+.gs-kr__after-n {
+    position: absolute;
+    top: -14px;
+    left: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: var(--kr-primary);
+    font-size: 14px;
+    font-weight: 800;
+    color: #fff;
+}
+
+.gs-kr__after-ico {
+    width: 30px;
+    height: 30px;
+    margin-bottom: 12px;
+    color: var(--kr-accent);
+}
+
+.gs-kr__after-item h3 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.3;
+}
+
+.gs-kr__after-item p {
+    margin: 10px 0 0;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--kr-muted);
+}
+
+.gs-kr__after .gs-kr__fine {
+    margin-top: 20px;
+}
+
+@media (max-width: 1180px) {
+    .gs-kr__after-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 680px) {
+    .gs-kr__after {
+        padding: 28px 18px 24px;
+    }
+
+    .gs-kr__after-item {
+        padding: 26px 18px 22px;
+    }
+}

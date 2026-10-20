@@ -503,12 +503,14 @@ class GS_Kreator {
                   'Базовый тариф — ' . number_format_i18n(self::PRICE_BASE) . ' ₽, тариф с наставником — ' . number_format_i18n(self::PRICE_PRO) . ' ₽. Программы «профессия AI-креатор» у крупных школ стоят от 36 000 ₽ за курс целиком при сроке от трёх до шести месяцев.'),
             array('Сколько длится и в каком режиме?',
                   'Восемь модулей, рассчитанных на два часа в день: это шесть недель. Материалы в записи, задания сдаются текстом и файлами, разборы письменные — поэтому разница во времени с Москвой значения не имеет.'),
+            array('Правда ли, что после обучения дают заказы?',
+                  'Да, и вот как это устроено. К нам приходят задачи, которые мы не берём сами: карточки для магазинов, короткие ролики, озвучка, оформление каналов. Их мы передаём выпускникам — на расширенном тарифе в первую очередь. Плюс помогаем с поиском удалённой работы: где искать вакансии, по каким названиям, какие работы показывать под конкретное объявление и что писать в отклике. Чего мы не делаем — не обещаем трудоустройство: честной гарантии здесь не даёт никто, а заказ всё равно нужно выполнить так, чтобы заказчик вернулся.'),
             array('Что входит в тариф с наставником?',
                   'Разбор каждой сданной работы, а не только шести выпускных, сборка портфолио под конкретную нишу и помощь с первыми откликами: что писать в сопроводительном и какие работы показывать под какую вакансию.'),
             array('Нужен ли мощный компьютер?',
                   'Для генерации нет: она считается на стороне сервисов, вам нужен браузер. Для монтажа хватает любого ноутбука последних лет и бесплатного редактора — именно на таком и ведём занятия.'),
             array('Сколько придётся потратить на сами запуски?',
-                  'Около 3 000 ₽ за всё обучение при оплате за запуск, без подписок: картинка — 9 ₽, озвучка — 18 ₽ за тысячу знаков, звук — 9 ₽, расшифровка — 3 ₽ за минуту, черновая начитка бесплатными голосами — 0 ₽. Смету вы считаете сами в восьмом модуле.'),
+                  'В течение первого месяца — нисколько: пакет генераций фото и видео без ограничения по количеству входит в оба тарифа, и на время обучения счётчик с них снят. Дальше работают обычные цены операций: картинка — 9 ₽, правка кадра — 35 ₽, озвучка — 18 ₽ за тысячу знаков, звук — 9 ₽, расшифровка — 3 ₽ за минуту, черновая начитка бесплатными голосами — 0 ₽. Считать себестоимость работы вы научитесь в восьмом модуле — именно по этим ценам.'),
             array('Кому принадлежат работы?',
                   'Вам. Всё, что сделано на обучении, можно показывать в портфолио и использовать в коммерческих проектах. Ограничения касаются чужого: узнаваемых лиц, логотипов и персонажей с правообладателем — это разбираем отдельно.'),
             array('Что если не получится?',
@@ -663,13 +665,28 @@ class GS_Kreator {
                     <h1 class="gs-kr__title">Обучение AI-креатора: учим тому, что спрашивают в вакансиях</h1>
                     <p class="gs-kr__lead">Мы разобрали выдачу hh.ru по запросу «AI креатор» и посчитали требования по
                         частоте. Самое частое — не красивые картинки, а монтаж, вертикальные ролики и UGC. Программа
-                        построена ровно в этом порядке: каждый модуль закрывает конкретное требование работодателей.</p>
+                        построена ровно в этом порядке. <strong>А после обучения мы передаём заказы и помогаем найти
+                        удалённую работу: разбираем портфолио под вакансию и отклики.</strong></p>
                     <div class="gs-kr__cta">
                         <a class="gs-kr__btn" href="#gs-kr-form">Записаться на обучение</a>
                         <a class="gs-kr__btn gs-kr__btn--ghost" href="#gs-kr-program">Смотреть программу</a>
                     </div>
-                    <p class="gs-kr__fine">Восемь модулей, шесть недель по два часа в день. Материалы в записи,
-                        разборы письменные — часовой пояс не мешает.</p>
+                    <ul class="gs-kr__facts">
+                        <li><?php echo self::icon('money', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            <b>от <?php echo esc_html(number_format_i18n(self::PRICE_BASE)); ?> ₽</b><span>два тарифа, рассрочки нет</span></li>
+                        <li><?php echo self::icon('clock', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            <b><?php echo (int) self::WEEKS; ?> недель</b><span>по два часа в день</span></li>
+                        <li><?php echo self::icon('check', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            <b>6 работ</b><span>в портфолио на выходе</span></li>
+                        <li><?php echo self::icon('cart', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            <b>Заказы после</b><span>передаём свои и помогаем с откликами</span></li>
+                        <li><?php echo self::icon('remote', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            <b>Удалённо</b><span>в 66 вакансиях из 100 — удалённая работа</span></li>
+                        <li><?php echo self::icon('sparkle', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            <b>Месяц без лимита</b><span>генерации фото и видео в подарок</span></li>
+                    </ul>
+                    <p class="gs-kr__fine">Материалы в записи, разборы письменные — часовой пояс не мешает.
+                        Обязательных эфиров нет.</p>
                 </div>
 
                 <?php if ($hero !== '') : ?>
@@ -762,6 +779,28 @@ class GS_Kreator {
                 </ol>
             </section>
 
+            <section class="gs-kr__gift">
+                <div class="gs-kr__gift-text">
+                    <span class="gs-kr__gift-tag">Входит в оба тарифа</span>
+                    <h2 class="gs-kr__h2">Месяц генераций без лимита — в подарок</h2>
+                    <p class="gs-kr__sub">Вся практика идёт на наших сервисах, и на месяц мы снимаем с них счётчик:
+                        генерируйте фото и видео сколько нужно, без оплаты за запуск и без ограничения по количеству.
+                        Переделывать кадр двадцать раз, пока он не сойдётся, — это и есть обучение.</p>
+                    <ul class="gs-kr__gift-list">
+                        <li><?php echo self::icon('image', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            <b>Фото без лимита</b><span>генерация и правка кадров</span></li>
+                        <li><?php echo self::icon('play', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            <b>Видео без лимита</b><span>оживление кадров и сцены</span></li>
+                        <li><?php echo self::icon('clock', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            <b>Целый месяц</b><span>со дня старта обучения</span></li>
+                    </ul>
+                </div>
+                <div class="gs-kr__gift-act">
+                    <a class="gs-kr__btn" href="#gs-kr-form">Записаться с подарком</a>
+                    <a class="gs-kr__btn gs-kr__btn--ghost" href="<?php echo esc_url(self::TG_URL); ?>" target="_blank" rel="noopener">Сначала посмотреть канал</a>
+                </div>
+            </section>
+
             <section class="gs-kr__folio">
                 <?php echo self::waves(); ?>
                 <h2 class="gs-kr__h2">Что остаётся на руках</h2>
@@ -800,6 +839,41 @@ class GS_Kreator {
                         <?php endforeach; ?>
                     </ul>
                 <?php endif; ?>
+            </section>
+
+            <section class="gs-kr__after">
+                <h2 class="gs-kr__h2">Что происходит после обучения</h2>
+                <p class="gs-kr__sub">Портфолио без первого заказа остаётся папкой с картинками. Поэтому обучение не
+                    заканчивается последним модулем: дальше мы помогаем превратить работы в деньги.</p>
+                <div class="gs-kr__after-grid">
+                    <div class="gs-kr__after-item">
+                        <span class="gs-kr__after-n">1</span>
+                        <?php echo self::icon('cart', 'gs-kr__after-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <h3>Передаём заказы</h3>
+                        <p>Через нас проходят задачи, которые мы не берём сами: карточки для магазинов, ролики,
+                            озвучка, оформление каналов. Выпускникам они уходят в первую очередь — с нашей стороны
+                            задача уже обсуждена с заказчиком, вам остаётся работа.</p>
+                    </div>
+                    <div class="gs-kr__after-item">
+                        <span class="gs-kr__after-n">2</span>
+                        <?php echo self::icon('remote', 'gs-kr__after-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <h3>Ищем удалённую работу вместе</h3>
+                        <p>Удалённая работа в этой профессии — норма, а не льгота: в <?php echo (int) self::HH_REMOTE; ?>
+                            вакансиях из <?php echo (int) self::HH_CARDS; ?> прямо написано «можно удалённо». Мы
+                            показываем, где эти вакансии искать и по каким пяти названиям, потому что единого
+                            названия у профессии до сих пор нет.</p>
+                    </div>
+                    <div class="gs-kr__after-item">
+                        <span class="gs-kr__after-n">3</span>
+                        <?php echo self::icon('star', 'gs-kr__after-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <h3>Собираем портфолио под вакансию</h3>
+                        <p>Под каждую вакансию нужен свой набор работ и своё сопроводительное. Разбираем, какие из
+                            шести работ показывать этому работодателю, что написать в отклике и какие цифры по
+                            результатам назвать — их просят почти везде.</p>
+                    </div>
+                </div>
+                <p class="gs-kr__fine">Честно: гарантии трудоустройства мы не даём — её не даёт никто, кто говорит
+                    правду. Заказы и помощь с откликами — даём, и это записано в тарифах ниже.</p>
             </section>
 
             <section class="gs-kr__tg">
@@ -854,6 +928,63 @@ class GS_Kreator {
                 <?php endif; ?>
             </section>
 
+            <section class="gs-kr__trust">
+                <h2 class="gs-kr__h2">Что можно проверить до оплаты</h2>
+                <p class="gs-kr__sub">Отзывов выпускников мы не показываем: курс молодой, а рисовать их — последнее
+                    дело. Вместо отзывов — то, что проверяется за десять минут.</p>
+                <ul class="gs-kr__trust-grid">
+                    <li>
+                        <?php echo self::icon('search', 'gs-kr__trust-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <b>Цифры рынка</b>
+                        <span>Откройте hh.ru, введите «AI креатор» — и сверьте с числами наверху страницы.</span>
+                    </li>
+                    <li>
+                        <?php echo self::icon('doc', 'gs-kr__trust-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <b>Как мы пишем и считаем</b>
+                        <span>Три разбора профессии опубликованы открыто и бесплатно — ссылки внизу страницы.</span>
+                    </li>
+                    <li>
+                        <?php echo self::icon('wallet', 'gs-kr__trust-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <b>Сервисы, на которых практика</b>
+                        <span>Генерация, озвучка и расшифровка работают на этом же сайте — попробуйте до оплаты, а на обучении месяц пользуетесь без лимита.</span>
+                    </li>
+                    <li>
+                        <?php echo self::icon('check', 'gs-kr__trust-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <b>Документы и реквизиты</b>
+                        <span>Исполнитель, ИНН и публичная оферта — внизу страницы, до всякой оплаты.</span>
+                    </li>
+                </ul>
+            </section>
+
+            <section class="gs-kr__doubts">
+                <h2 class="gs-kr__h2">Три возражения, которые мы слышим чаще всего</h2>
+                <p class="gs-kr__sub">Отвечаем на них здесь, а не в переписке после оплаты.</p>
+                <div class="gs-kr__doubt-grid">
+                    <div class="gs-kr__doubt">
+                        <?php echo self::icon('person', 'gs-kr__doubt-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <h3>«У меня нет опыта и профильного образования»</h3>
+                        <p>В <?php echo (int) self::HH_NOEXP; ?> вакансиях из <?php echo (int) self::HH_CARDS; ?> опыт
+                            не требуется вовсе, а в остальных смотрят портфолио: «смотрим работы, а не резюме» —
+                            дословная цитата из объявления. Первый модуль начинается с нуля, монтаж разбираем
+                            с первого нажатия.</p>
+                    </div>
+                    <div class="gs-kr__doubt">
+                        <?php echo self::icon('clock', 'gs-kr__doubt-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <h3>«У меня нет времени, я работаю»</h3>
+                        <p>Программа рассчитана на два часа в день — это вечер после работы. Эфиров нет, дедлайнов
+                            по группе нет: сдаёте работы своим темпом, разбор приходит текстом. При сорока минутах
+                            в день срок растягивается, но результат тот же.</p>
+                    </div>
+                    <div class="gs-kr__doubt">
+                        <?php echo self::icon('bulb', 'gs-kr__doubt-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                        <h3>«Нейросети есть в открытом доступе, зачем платить»</h3>
+                        <p>Незачем, если вы готовы собирать порядок сами — честный план на 90 дней мы выложили
+                            открыто, ссылка внизу страницы. Платят здесь не за доступ к моделям, а за
+                            последовательность и за разбор ваших работ живым человеком.</p>
+                    </div>
+                </div>
+            </section>
+
             <section class="gs-kr__price">
                 <h2 class="gs-kr__h2">Тарифы</h2>
                 <div class="gs-kr__plans">
@@ -866,6 +997,9 @@ class GS_Kreator {
                             <li>Проверка шести выпускных работ</li>
                             <li>Чат с ответами на вопросы</li>
                             <li>Шаблоны ТЗ, сметы и договора</li>
+                            <li>Месяц генераций фото и видео без лимита</li>
+                            <li>Доступ к заказам, которые проходят через нас</li>
+                            <li>Где искать удалённые вакансии и по каким названиям</li>
                         </ul>
                         <a class="gs-kr__btn gs-kr__btn--ghost" href="#gs-kr-form">Выбрать базовый</a>
                     </div>
@@ -877,7 +1011,10 @@ class GS_Kreator {
                             <li>Всё из базового тарифа</li>
                             <li>Разбор каждой сданной работы, а не только выпускных</li>
                             <li>Сборка портфолио под выбранную нишу</li>
-                            <li>Помощь с первыми откликами и сопроводительным</li>
+                            <li>Месяц генераций фото и видео без лимита</li>
+                            <li>Заказы в первую очередь — до общего доступа</li>
+                            <li>Подбор удалённых вакансий под вашу нишу</li>
+                            <li>Разбор откликов и сопроводительных писем</li>
                             <li>Разбор вашей сметы и ставки</li>
                         </ul>
                         <a class="gs-kr__btn" href="#gs-kr-form">Выбрать расширенный</a>
@@ -917,6 +1054,11 @@ class GS_Kreator {
                         </label>
                         <button class="gs-kr__btn gs-kr__btn--wide" id="gs-kreator-send" type="submit">Отправить заявку</button>
                         <p class="gs-form__note" id="gs-kreator-note" role="status"></p>
+                        <p class="gs-kr__or">или</p>
+                        <a class="gs-kr__btn gs-kr__btn--ghost gs-kr__btn--wide" href="<?php echo esc_url(self::TG_URL); ?>" target="_blank" rel="noopener">
+                            <?php echo self::icon('tg', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                            Написать в Telegram
+                        </a>
                         <p class="gs-kr__fine">Отправляя заявку, вы соглашаетесь с
                             <a href="https://genius-bot.ru/politika-konfidencialnosti/">политикой конфиденциальности</a>.</p>
                     </form>
@@ -994,6 +1136,11 @@ class GS_Kreator {
                     <?php endforeach; ?>
                 </p>
             </footer>
+
+            <div class="gs-kr__sticky" aria-hidden="false">
+                <span class="gs-kr__sticky-price">от <?php echo esc_html(number_format_i18n(self::PRICE_BASE)); ?> ₽<i><?php echo (int) self::WEEKS; ?> недель, 8 модулей</i></span>
+                <a class="gs-kr__btn gs-kr__sticky-btn" href="#gs-kr-form">Записаться</a>
+            </div>
 
         </div>
         <?php
