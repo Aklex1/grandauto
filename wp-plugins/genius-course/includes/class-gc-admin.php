@@ -406,6 +406,27 @@ class GC_Admin {
             в <code>worker/README.md</code>: там и команда запуска, и что открывать в портах.</p>
         <p>Состояние: <strong><?php echo $health['ok'] ? 'на связи' : 'недоступна'; ?></strong>
             <span class="description"><?php echo esc_html($health['message']); ?></span></p>
+        <?php if ($health['ok'] && $s['driver'] === 'comfy') : ?>
+            <?php
+            // Сверяем заготовки с машиной: какие узлы она знает. Так
+            // видно заранее, что ролики не поедут, а не после жалобы
+            // ученика.
+            $checks = array('кадры' => GC_Gpu::missing_nodes('image', false, $s));
+            if (GC_Gpu::video_allowed($s)) {
+                $checks['ролики'] = GC_Gpu::missing_nodes('video', false, $s);
+            }
+            foreach ($checks as $label => $miss) :
+                ?>
+                <p><?php echo esc_html(ucfirst($label)); ?>:
+                    <?php if ($miss) : ?>
+                        <strong style="color:#b32d2e">нет узлов <?php echo esc_html(implode(', ', $miss)); ?></strong>
+                        <span class="description">— нужен образ с ними, смотрите <code>worker/CLOUD.md</code>.</span>
+                    <?php else : ?>
+                        <strong style="color:#1a7f37">узлы на месте</strong>
+                    <?php endif; ?>
+                </p>
+            <?php endforeach; ?>
+        <?php endif; ?>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <?php wp_nonce_field('gc_settings'); ?>
             <input type="hidden" name="action" value="gc_settings">
@@ -441,23 +462,45 @@ class GC_Admin {
                     </td>
                 </tr>
                 <tr>
-                    <th scope="row"><label for="gc-model">Файл модели</label></th>
+                    <th scope="row"><label for="gc-model">Файл модели для кадров</label></th>
                     <td><input id="gc-model" name="model" type="text" class="regular-text code" value="<?php echo esc_attr($s['model']); ?>">
                         <p class="description">Имя как в папке моделей ComfyUI, например <code>sd_xl_base_1.0.safetensors</code>.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row">Ролики</th>
+                    <td><label><input type="checkbox" name="video" value="1" <?php checked(!empty($s['video'])); ?>>
+                        разрешить видео ученикам</label>
+                        <p class="description">Без своей заготовки берём встроенную — LTX-Video, узлы для него есть
+                            в самом ComfyUI. Нужен только файл весов на машине.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-model-video">Файл модели для роликов</label></th>
+                    <td><input id="gc-model-video" name="model_video" type="text" class="regular-text code" value="<?php echo esc_attr($s['model_video']); ?>">
+                        <p class="description">Например <code>ltx-video-2b-v0.9.5.safetensors</code>. Подставляется
+                            как <code>%VMODEL%</code>.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-clip-video">Текстовый кодировщик для роликов</label></th>
+                    <td><input id="gc-clip-video" name="clip_video" type="text" class="regular-text code" value="<?php echo esc_attr($s['clip_video']); ?>">
+                        <p class="description">Лежит в <code>models/text_encoders</code>, обычно
+                            <code>t5xxl_fp16.safetensors</code>. Подставляется как <code>%VCLIP%</code>.</p></td>
                 </tr>
                 <tr>
                     <th scope="row"><label for="gc-wf-image">Запрос для кадров</label></th>
                     <td><textarea id="gc-wf-image" name="wf_image" rows="6" class="large-text code" placeholder="пусто — берём встроенный SDXL"><?php echo esc_textarea($s['wf_image']); ?></textarea>
                         <p class="description">Граф ComfyUI в формате для API. Подстановки:
                             <code>%PROMPT%</code>, <code>%NEGATIVE%</code>, <code>%MODEL%</code>,
-                            <code>%WIDTH%</code>, <code>%HEIGHT%</code>, <code>%SEED%</code>.</p></td>
+                            <code>%WIDTH%</code>, <code>%HEIGHT%</code>, <code>%STEPS%</code>,
+                            <code>%CFG%</code>, <code>%STRENGTH%</code>, <code>%REFERENCE%</code>,
+                            <code>%SEED%</code>. Пусто — берём встроенный SDXL, а с референсом его же
+                            через <code>VAEEncode</code>.</p></td>
                 </tr>
                 <tr>
                     <th scope="row"><label for="gc-wf-video">Запрос для роликов</label></th>
-                    <td><textarea id="gc-wf-video" name="wf_video" rows="6" class="large-text code" placeholder="пусто — видео в кабинете недоступно"><?php echo esc_textarea($s['wf_video']); ?></textarea>
-                        <p class="description">Зависит от того, какие узлы и веса стоят на образе. Дополнительно
-                            доступна подстановка <code>%FRAMES%</code>. Пока поле пустое, кнопка видео у ученика не
-                            показывается — это честнее, чем ошибка после нажатия.</p></td>
+                    <td><textarea id="gc-wf-video" name="wf_video" rows="6" class="large-text code" placeholder="пусто — встроенный LTX-Video"><?php echo esc_textarea($s['wf_video']); ?></textarea>
+                        <p class="description">Для другой модели — Wan, Hunyuan — вставьте сюда её граф.
+                            Дополнительно доступны <code>%VMODEL%</code>, <code>%FRAMES%</code>,
+                            <code>%FPS%</code>. Размеры и длину подгоняем под сетку модели сами.</p></td>
                 </tr>
                 <tr>
                     <th scope="row"><label for="gc-daily">Заданий в сутки на ученика</label></th>

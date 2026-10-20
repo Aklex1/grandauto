@@ -59,6 +59,14 @@ class GC_Gpu {
             'token'    => '',
             'secret'   => '',
             'model'    => 'sd_xl_base_1.0.safetensors',
+            // Веса для роликов живут отдельным файлом: кадры считает
+            // SDXL, видео — LTX-Video, и один и тот же checkpoint тут
+            // не годится.
+            'model_video' => 'ltx-video-2b-v0.9.5.safetensors',
+            // LTX-Video читает описание не своим клипом, а текстовым
+            // кодировщиком t5: в ComfyUI он отдельным файлом.
+            'clip_video'  => 't5xxl_fp16.safetensors',
+            'video'    => 0,
             'wf_image' => '',
             'wf_video' => '',
             'daily'    => self::DAILY_DEFAULT,
@@ -72,6 +80,9 @@ class GC_Gpu {
         $now['token']    = sanitize_text_field((string) ($values['token'] ?? ''));
         $now['driver']   = in_array(($values['driver'] ?? ''), array('comfy', 'worker'), true) ? $values['driver'] : 'comfy';
         $now['model']    = sanitize_text_field((string) ($values['model'] ?? 'sd_xl_base_1.0.safetensors'));
+        $now['model_video'] = sanitize_text_field((string) ($values['model_video'] ?? 'ltx-video-2b-v0.9.5.safetensors'));
+        $now['clip_video']  = sanitize_text_field((string) ($values['clip_video'] ?? 't5xxl_fp16.safetensors'));
+        $now['video']    = !empty($values['video']) ? 1 : 0;
         // Заготовки запросов к ComfyUI храним как есть: это json из
         // самого ComfyUI, и чистить его фильтрами значит сломать.
         foreach (array('wf_image', 'wf_video') as $field) {
@@ -159,9 +170,20 @@ class GC_Gpu {
         global $wpdb;
         $table = GC_Install::jobs_table();
         $kind = $kind === 'video' ? 'video' : 'image';
-        if ($kind === 'video' && trim((string) $s['wf_video']) === '') {
+        if ($kind === 'video' && !self::video_allowed($s)) {
             return array('ok' => false, 'job' => 0, 'status' => '',
-                         'message' => 'Видео пока не настроено: на машине нет заготовки запроса для роликов.');
+                         'message' => 'Видео пока не настроено: администратор не включил ролики.');
+        }
+        // Пока задание не ушло, спрашиваем машину, есть ли на ней узлы
+        // из заготовки. Иначе ComfyUI молча вернёт ошибку, а ученик
+        // увидит «не получилось» без причины.
+        if (!empty($s['enabled']) && $s['driver'] === 'comfy' && $s['endpoint'] !== '') {
+            $miss = self::missing_nodes($kind, !empty($params['reference']), $s);
+            if ($miss) {
+                return array('ok' => false, 'job' => 0, 'status' => '',
+                             'message' => 'На машине нет нужных узлов ComfyUI: ' . implode(', ', $miss)
+                                        . '. Нужен образ с ними — смотрите worker/CLOUD.md.');
+            }
         }
         $wpdb->insert($table, array(
             'user_id'    => (int) $user_id,
@@ -367,12 +389,27 @@ class GC_Gpu {
      * весь запрос.
      */
     public static function workflow($kind, $prompt, $params, $s) {
+        $ref = trim((string) ($params['remote_file'] ?? '')) !== '';
         $raw = $kind === 'video' ? (string) $s['wf_video'] : (string) $s['wf_image'];
         if (trim($raw) === '') {
-            $raw = self::default_image_workflow();
+            $raw = self::default_workflow($kind, $ref);
+        }
+        if ($kind === 'video') {
+            // LTX-Video считает только по сетке: сторона кратна 32,
+            // длина — 8n+1. Числа из кабинета подгоняем сами, иначе
+            // машина отвечает ошибкой про размерности.
+            $params['width']  = max(256, ((int) ($params['width'] ?? 768) >> 5) << 5);
+            $params['height'] = max(256, ((int) ($params['height'] ?? 512) >> 5) << 5);
+            $frames = max(9, min(257, (int) ($params['frames'] ?? 49)));
+            $params['frames'] = ((int) floor(($frames - 1) / 8)) * 8 + 1;
+            $params['fps']    = max(8, min(30, (int) ($params['fps'] ?? 24)));
         }
         $quoted = function ($value) {
-            return trim(wp_json_encode((string) $value), '"');
+            // Снимаем ровно по одной кавычке с краёв. trim() тут не
+            // годится: у описания, которое само кончается кавычкой,
+            // он съедает и экранирующий слеш — и весь запрос ломается.
+            $json = wp_json_encode((string) $value);
+            return is_string($json) && strlen($json) >= 2 ? substr($json, 1, -1) : '';
         };
         $negative = trim((string) ($params['negative'] ?? ''));
         if ($negative === '') {
@@ -383,6 +420,8 @@ class GC_Gpu {
             '%PROMPT%'    => $quoted($prompt),
             '%NEGATIVE%'  => $quoted($negative),
             '%MODEL%'     => $quoted($s['model']),
+            '%VMODEL%'    => $quoted(isset($s['model_video']) ? $s['model_video'] : $s['model']),
+            '%VCLIP%'     => $quoted(isset($s['clip_video']) ? $s['clip_video'] : 't5xxl_fp16.safetensors'),
             '%WIDTH%'     => (int) ($params['width'] ?? 1024),
             '%HEIGHT%'    => (int) ($params['height'] ?? 1024),
             '%FRAMES%'    => (int) ($params['frames'] ?? 49),
@@ -400,6 +439,20 @@ class GC_Gpu {
         return is_array($decoded) ? $decoded : null;
     }
 
+    /** Доступны ли ролики ученику. */
+    public static function video_allowed($s = null) {
+        $s = is_array($s) ? $s : self::settings();
+        return trim((string) $s['wf_video']) !== '' || !empty($s['video']);
+    }
+
+    /** Какая заготовка идёт в дело, когда своей в настройках нет. */
+    public static function default_workflow($kind, $with_reference = false) {
+        if ($kind === 'video') {
+            return $with_reference ? self::default_video_ref_workflow() : self::default_video_workflow();
+        }
+        return $with_reference ? self::default_image_ref_workflow() : self::default_image_workflow();
+    }
+
     /** Простой текст-в-кадр на SDXL: то, что есть на любом образе с ComfyUI. */
     private static function default_image_workflow() {
         return '{
@@ -407,12 +460,139 @@ class GC_Gpu {
   "5": {"class_type": "EmptyLatentImage", "inputs": {"width": %WIDTH%, "height": %HEIGHT%, "batch_size": 1}},
   "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "%PROMPT%", "clip": ["4", 1]}},
   "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "%NEGATIVE%", "clip": ["4", 1]}},
-  "3": {"class_type": "KSampler", "inputs": {"seed": %SEED%, "steps": 28, "cfg": 6.5,
+  "3": {"class_type": "KSampler", "inputs": {"seed": %SEED%, "steps": %STEPS%, "cfg": %CFG%,
         "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": 1,
         "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
   "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
   "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "gc", "images": ["8", 0]}}
 }';
+    }
+
+    /**
+     * Кадр по референсу.
+     *
+     * Референс сначала растягиваем до выбранного размера, иначе кадр
+     * выйдет в размер исходника, а не тот, что человек выбрал. Сила
+     * влияния — это denoise: 0.3 оставит почти исходник, 0.9 — только
+     * общую композицию.
+     */
+    private static function default_image_ref_workflow() {
+        return '{
+  "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "%MODEL%"}},
+  "10": {"class_type": "LoadImage", "inputs": {"image": "%REFERENCE%"}},
+  "12": {"class_type": "ImageScale", "inputs": {"image": ["10", 0], "upscale_method": "lanczos",
+         "width": %WIDTH%, "height": %HEIGHT%, "crop": "center"}},
+  "11": {"class_type": "VAEEncode", "inputs": {"pixels": ["12", 0], "vae": ["4", 2]}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "%PROMPT%", "clip": ["4", 1]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "%NEGATIVE%", "clip": ["4", 1]}},
+  "3": {"class_type": "KSampler", "inputs": {"seed": %SEED%, "steps": %STEPS%, "cfg": %CFG%,
+        "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": %STRENGTH%,
+        "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["11", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "gc", "images": ["8", 0]}}
+}';
+    }
+
+    /**
+     * Ролик по описанию.
+     *
+     * Узлы LTX-Video лежат в самом ComfyUI, отдельных расширений не
+     * нужно: хватает файла весов в models/checkpoints. Сохраняем в
+     * webm — его играет браузер, и в кабинете он идёт в тег video.
+     */
+    private static function default_video_workflow() {
+        return '{
+  "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "%VMODEL%"}},
+  "10": {"class_type": "CLIPLoader", "inputs": {"clip_name": "%VCLIP%", "type": "ltxv"}},
+  "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "%PROMPT%", "clip": ["10", 0]}},
+  "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "%NEGATIVE%", "clip": ["10", 0]}},
+  "4": {"class_type": "EmptyLTXVLatentVideo", "inputs": {"width": %WIDTH%, "height": %HEIGHT%,
+        "length": %FRAMES%, "batch_size": 1}},
+  "5": {"class_type": "LTXVConditioning", "inputs": {"positive": ["2", 0], "negative": ["3", 0],
+        "frame_rate": %FPS%}},
+  "6": {"class_type": "KSampler", "inputs": {"seed": %SEED%, "steps": %STEPS%, "cfg": %CFG%,
+        "sampler_name": "euler", "scheduler": "normal", "denoise": 1,
+        "model": ["1", 0], "positive": ["5", 0], "negative": ["5", 1], "latent_image": ["4", 0]}},
+  "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": ["1", 2]}},
+  "8": {"class_type": "SaveWEBM", "inputs": {"images": ["7", 0], "filename_prefix": "gc",
+        "codec": "vp9", "fps": %FPS%, "crf": 32}}
+}';
+    }
+
+    /** Ролик из фотографии: первый кадр — референс. */
+    private static function default_video_ref_workflow() {
+        return '{
+  "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "%VMODEL%"}},
+  "10": {"class_type": "CLIPLoader", "inputs": {"clip_name": "%VCLIP%", "type": "ltxv"}},
+  "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "%PROMPT%", "clip": ["10", 0]}},
+  "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "%NEGATIVE%", "clip": ["10", 0]}},
+  "9": {"class_type": "LoadImage", "inputs": {"image": "%REFERENCE%"}},
+  "4": {"class_type": "LTXVImgToVideo", "inputs": {"positive": ["2", 0], "negative": ["3", 0],
+        "vae": ["1", 2], "image": ["9", 0], "width": %WIDTH%, "height": %HEIGHT%,
+        "length": %FRAMES%, "batch_size": 1}},
+  "5": {"class_type": "LTXVConditioning", "inputs": {"positive": ["4", 0], "negative": ["4", 1],
+        "frame_rate": %FPS%}},
+  "6": {"class_type": "KSampler", "inputs": {"seed": %SEED%, "steps": %STEPS%, "cfg": %CFG%,
+        "sampler_name": "euler", "scheduler": "normal", "denoise": 1,
+        "model": ["1", 0], "positive": ["5", 0], "negative": ["5", 1], "latent_image": ["4", 2]}},
+  "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": ["1", 2]}},
+  "8": {"class_type": "SaveWEBM", "inputs": {"images": ["7", 0], "filename_prefix": "gc",
+        "codec": "vp9", "fps": %FPS%, "crf": 32}}
+}';
+    }
+
+    /**
+     * Какие узлы из заготовки машина не знает.
+     *
+     * Спрашиваем поштучно: /object_info целиком — это несколько
+     * мегабайт json, а нам нужно только «есть или нет». Ответ держим
+     * десять минут: образ в середине аренды не меняется.
+     */
+    public static function missing_nodes($kind, $with_reference, $s = null) {
+        $s = is_array($s) ? $s : self::settings();
+        if ($s['endpoint'] === '' || $s['driver'] !== 'comfy') {
+            return array();
+        }
+        $graph = self::workflow($kind, 'проверка', array(
+            'remote_file' => $with_reference ? 'ref.png' : '',
+        ), $s);
+        if (!is_array($graph)) {
+            return array();
+        }
+        $classes = array();
+        foreach ($graph as $node) {
+            if (!empty($node['class_type'])) {
+                $classes[(string) $node['class_type']] = true;
+            }
+        }
+        $missing = array();
+        foreach (array_keys($classes) as $class) {
+            $key = 'gc_node_' . md5($s['endpoint'] . '|' . $class);
+            $known = get_transient($key);
+            if ($known === 'yes') {
+                continue;
+            }
+            if ($known === 'no') {
+                $missing[] = $class;
+                continue;
+            }
+            $res = wp_remote_get(trailingslashit($s['endpoint']) . 'object_info/' . rawurlencode($class), array(
+                'timeout' => 8,
+            ));
+            if (is_wp_error($res)) {
+                // Машина недоступна — это другая беда, и ругаться на
+                // узлы тут нечестно.
+                return array();
+            }
+            $body = json_decode((string) wp_remote_retrieve_body($res), true);
+            $ok = (int) wp_remote_retrieve_response_code($res) === 200
+                  && is_array($body) && isset($body[$class]);
+            set_transient($key, $ok ? 'yes' : 'no', 10 * MINUTE_IN_SECONDS);
+            if (!$ok) {
+                $missing[] = $class;
+            }
+        }
+        return $missing;
     }
 
     /**

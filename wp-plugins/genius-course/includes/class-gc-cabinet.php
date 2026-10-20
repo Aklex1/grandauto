@@ -297,7 +297,7 @@ class GC_Cabinet {
         $health = GC_Gpu::health();
         $active = GC_Students::gpu_active($user->ID);
         $gpu = GC_Gpu::settings();
-        $video = trim((string) $gpu['wf_video']) !== '';
+        $video = GC_Gpu::video_allowed($gpu);
         ob_start();
         ?>
         <section class="gc-card">
@@ -427,8 +427,14 @@ class GC_Cabinet {
             <?php foreach ($jobs as $job) : ?>
                 <li class="gc-job is-<?php echo esc_attr($job['status']); ?>" data-job="<?php echo (int) $job['id']; ?>">
                     <?php if ($job['status'] === 'done' && !empty($job['result_url'])) : ?>
-                        <?php $is_video = (string) $job['kind'] === 'video'
-                            || preg_match('~\.(mp4|webm|gif)(\?|$)~i', (string) $job['result_url']); ?>
+                        <?php
+                        // Решаем по файлу, а не только по виду задания:
+                        // узел сохранения на машине может отдать
+                        // анимированный webp, и тег video его не играет.
+                        $still = (bool) preg_match('~\.(png|jpe?g|webp)([^a-z]|$)~i', (string) $job['result_url']);
+                        $is_video = !$still && ((string) $job['kind'] === 'video'
+                            || preg_match('~\.(mp4|webm|mov|gif)([^a-z]|$)~i', (string) $job['result_url']));
+                        ?>
                         <?php if ($is_video) : ?>
                             <video src="<?php echo esc_url($job['result_url']); ?>" controls loop muted playsinline preload="metadata"></video>
                         <?php else : ?>
