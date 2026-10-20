@@ -141,6 +141,13 @@ class GC_Students {
     }
 
     public static function gpu_active($user_id) {
+        // Администратору срок генераций не выставляют: он заходит в
+        // кабинет, чтобы проверить, как всё выглядит у ученика, и
+        // упираться в «месяц закончился» ему незачем. Машина и так
+        // пускает его в обход срока — здесь выравниваем вид со смыслом.
+        if (user_can((int) $user_id, 'manage_options')) {
+            return true;
+        }
         $until = self::gpu_until($user_id);
         return $until !== '' && strtotime($until) > time();
     }
