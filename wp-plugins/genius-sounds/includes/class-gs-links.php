@@ -371,8 +371,19 @@ class GS_Links {
         return in_array($menu_id, $bound, true);
     }
 
+    /**
+     * Страницы, которым сквозные ссылки не нужны.
+     *
+     * Посадочная обучения продаёт одну вещь и ведёт к одной кнопке. Два
+     * десятка ссылок на звуки, дубляж и примерку дисков в подвале — это и
+     * лишние выходы с конверсионной страницы, и вес, утекающий мимо.
+     */
+    private static function quiet_page() {
+        return class_exists('GS_Kreator') && GS_Kreator::is_page();
+    }
+
     public static function add_menu_items($items, $args) {
-        if (is_admin() || !self::menu_enabled()) {
+        if (is_admin() || !self::menu_enabled() || self::quiet_page()) {
             return $items;
         }
         if (!self::is_site_menu($args)) {
@@ -433,7 +444,7 @@ class GS_Links {
     }
 
     public static function render_footer_block() {
-        if (is_admin() || !self::footer_enabled()) {
+        if (is_admin() || !self::footer_enabled() || self::quiet_page()) {
             return;
         }
         // На страницах каталога блок не нужен: там уже есть свои перелинковки.
