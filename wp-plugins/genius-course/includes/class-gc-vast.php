@@ -373,6 +373,17 @@ SH;
      * Главное здесь — внешний адрес ComfyUI. Vast прокидывает порты
      * наружу на случайные номера, и соответствие лежит в ports.
      */
+    private static function ports_line($ports) {
+        $out = array();
+        foreach ((array) $ports as $inner => $rows) {
+            if (!is_array($rows) || empty($rows[0]['HostPort'])) {
+                continue;
+            }
+            $out[] = $inner . ' → ' . (int) $rows[0]['HostPort'];
+        }
+        return implode(', ', $out);
+    }
+
     private static function shape($row) {
         $ports = isset($row['ports']) && is_array($row['ports']) ? $row['ports'] : array();
         $host = (string) ($row['public_ipaddr'] ?? '');
@@ -395,6 +406,10 @@ SH;
             // видно, качается образ или уже запускается контейнер. Без
             // этого «loading» ничем не отличается от зависшего заказа.
             'msg'    => (string) ($row['status_msg'] ?? ''),
+            // Все проброшенные порты строкой: когда ComfyUI не отвечает,
+            // первым делом нужно знать, выдан ли вообще порт 8188 и что
+            // ещё торчит наружу.
+            'ports'  => self::ports_line($ports),
         );
     }
 }

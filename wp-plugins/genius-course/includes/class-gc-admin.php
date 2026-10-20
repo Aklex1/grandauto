@@ -346,7 +346,10 @@ class GC_Admin {
                             <td><?php echo esc_html('$' . $i['price'] . '/час'); ?></td>
                             <td><?php if ($i['url'] !== '') : ?>
                                     <a href="<?php echo esc_url($i['url']); ?>" target="_blank"><?php echo esc_html($i['url']); ?></a>
-                                <?php else : ?><span class="description">порт ещё не выдан</span><?php endif; ?></td>
+                                <?php else : ?><span class="description">порт ещё не выдан</span><?php endif; ?>
+                                <?php if (!empty($i['ports'])) : ?>
+                                    <br><span class="description"><?php echo esc_html($i['ports']); ?></span>
+                                <?php endif; ?></td>
                             <td>
                                 <?php if ($i['url'] !== '') : ?>
                                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
