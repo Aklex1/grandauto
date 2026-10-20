@@ -678,6 +678,27 @@ class GS_Provider {
         return array('ok' => true, 'models' => $list, 'message' => '');
     }
 
+    /**
+     * Прямой вызов модели в обход каталога.
+     *
+     * Нужен, чтобы проверить новую модель: у поставщика они появляются
+     * чаще, чем мы правим каталог, и точное имя надёжнее спросить у
+     * него самого, чем угадывать. Маршрут к этому методу — только для
+     * администратора: каждый удачный вызов стоит денег.
+     */
+    public static function raw_job($model, $input, $timeout = 60) {
+        $res = self::send(self::API_JOBS, array(
+            'model' => (string) $model,
+            'input' => is_array($input) ? $input : array(),
+        ), (int) $timeout);
+        return array(
+            'ok'      => !empty($res['ok']),
+            'task'    => !empty($res['ok']) ? (string) ($res['body']['data']['taskId'] ?? '') : '',
+            'message' => (string) ($res['message'] ?? ''),
+            'body'    => isset($res['body']) ? $res['body'] : array(),
+        );
+    }
+
     private static function send($url, $payload, $timeout) {
         $key = self::key();
         if ($key === '') {

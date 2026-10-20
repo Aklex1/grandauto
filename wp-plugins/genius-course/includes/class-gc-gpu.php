@@ -100,6 +100,62 @@ class GC_Gpu {
         return $now;
     }
 
+    /**
+     * Поколение кэша.
+     *
+     * Ответы машины держим недолго, но иногда нужно спросить заново
+     * прямо сейчас — после скачивания весов, например. Вместо того
+     * чтобы искать и удалять каждый ключ, меняем номер поколения: все
+     * старые ключи разом перестают совпадать.
+     */
+    public static function epoch() {
+        return (int) get_option('gc_cache_epoch', 0);
+    }
+
+    public static function fresh() {
+        update_option('gc_cache_epoch', self::epoch() + 1, false);
+    }
+
+    /**
+     * Что лежит на машине.
+     *
+     * ComfyUI сам перечисляет доступные файлы в описании узлов: список
+     * моделей — это варианты поля ckpt_name. Так имя из настроек можно
+     * сверить с тем, что реально скачалось, не заходя на машину.
+     */
+    public static function models($s = null) {
+        $s = is_array($s) ? $s : self::settings();
+        $out = array('ok' => false, 'message' => '', 'ckpt' => array(), 'clip' => array());
+        if ($s['endpoint'] === '' || $s['driver'] !== 'comfy') {
+            $out['message'] = 'машина не подключена';
+            return $out;
+        }
+        $key = 'gc_gpu_models_' . self::epoch();
+        $cached = get_transient($key);
+        if (is_array($cached)) {
+            return $cached;
+        }
+        $pairs = array(
+            'CheckpointLoaderSimple' => array('ckpt', 'ckpt_name'),
+            'CLIPLoader'             => array('clip', 'clip_name'),
+        );
+        foreach ($pairs as $class => $pair) {
+            list($slot, $field) = $pair;
+            $res = wp_remote_get(trailingslashit($s['endpoint']) . 'object_info/' . $class, array('timeout' => 12));
+            if (is_wp_error($res)) {
+                $out['message'] = $res->get_error_message();
+                return $out;
+            }
+            $body = json_decode((string) wp_remote_retrieve_body($res), true);
+            $list = isset($body[$class]['input']['required'][$field][0])
+                ? $body[$class]['input']['required'][$field][0] : array();
+            $out[$slot] = is_array($list) ? array_values(array_filter($list, 'is_string')) : array();
+            $out['ok'] = true;
+        }
+        set_transient($key, $out, MINUTE_IN_SECONDS);
+        return $out;
+    }
+
     public static function ready() {
         $s = self::settings();
         return !empty($s['enabled']) && $s['endpoint'] !== '';
@@ -111,7 +167,7 @@ class GC_Gpu {
         if ($s['endpoint'] === '') {
             return array('ok' => false, 'message' => 'Адрес машины не указан');
         }
-        $cached = get_transient('gc_gpu_health');
+        $cached = get_transient('gc_gpu_health_' . self::epoch());
         if (is_array($cached)) {
             return $cached;
         }
@@ -136,7 +192,7 @@ class GC_Gpu {
                 $out = array('ok' => true, 'message' => isset($body['gpu']) ? (string) $body['gpu'] : 'на связи');
             }
         }
-        set_transient('gc_gpu_health', $out, MINUTE_IN_SECONDS);
+        set_transient('gc_gpu_health_' . self::epoch(), $out, MINUTE_IN_SECONDS);
         return $out;
     }
 
@@ -567,7 +623,7 @@ class GC_Gpu {
         }
         $missing = array();
         foreach (array_keys($classes) as $class) {
-            $key = 'gc_node_' . md5($s['endpoint'] . '|' . $class);
+            $key = 'gc_node_' . md5($s['endpoint'] . '|' . $class . '|' . self::epoch());
             $known = get_transient($key);
             if ($known === 'yes') {
                 continue;

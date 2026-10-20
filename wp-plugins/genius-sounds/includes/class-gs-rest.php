@@ -610,6 +610,15 @@ class GS_Rest {
             'permission_callback' => array(__CLASS__, 'perm_admin'),
         ));
 
+        // Проверка модели у поставщика в обход каталога: только для
+        // администратора. Нужна, когда у поставщика появилась новая
+        // модель и надо узнать её точное имя и набор полей.
+        register_rest_route(self::NS, '/lab/model-probe', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_model_probe'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         // Сводка по бесплатным пробам: сколько их, сколько людей потом
         // завели аккаунт и сколько из них платили.
         register_rest_route(self::NS, '/diag/trial', array(
@@ -1148,6 +1157,19 @@ class GS_Rest {
             'prompt' => $prompt,
             'ratio'  => (string) ($p['ratio'] ?? '16:9'),
         )));
+    }
+
+    public static function handle_model_probe($request) {
+        $p = $request->get_json_params();
+        if (!is_array($p)) {
+            $p = (array) $request->get_params();
+        }
+        $model = trim((string) ($p['model'] ?? ''));
+        if ($model === '') {
+            return new WP_Error('gs_no_model', 'Нужно имя модели', array('status' => 400));
+        }
+        $input = isset($p['input']) && is_array($p['input']) ? $p['input'] : array();
+        return rest_ensure_response(GS_Provider::raw_job($model, $input, 90));
     }
 
     public static function handle_pending_list($request) {

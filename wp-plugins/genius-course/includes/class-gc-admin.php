@@ -26,6 +26,7 @@ class GC_Admin {
         add_action('admin_post_gc_rent', array(__CLASS__, 'handle_rent'));
         add_action('admin_post_gc_stop', array(__CLASS__, 'handle_stop'));
         add_action('admin_post_gc_use', array(__CLASS__, 'handle_use'));
+        add_action('admin_post_gc_fresh', array(__CLASS__, 'handle_fresh'));
     }
 
     public static function menu() {
@@ -305,6 +306,17 @@ class GC_Admin {
                     <td><input id="gc-vast-image" name="image" type="text" class="large-text code" value="<?php echo esc_attr($v['image']); ?>">
                         <p class="description">Образ с уже установленным ComfyUI. Порт <?php echo (int) GC_Vast::COMFY_PORT; ?> прокидывается наружу автоматически.</p></td>
                 </tr>
+                <tr>
+                    <th scope="row"><label for="gc-vast-onstart">Скрипт запуска</label></th>
+                    <td><textarea id="gc-vast-onstart" name="onstart" rows="8" class="large-text code"
+                                  placeholder="пусто — берём встроенный"><?php echo esc_textarea($v['onstart']); ?></textarea>
+                        <p class="description">Выполняется один раз после старта машины. Пустое поле — встроенный
+                            скрипт: он находит папку ComfyUI и качает туда SDXL, LTX-Video и текстовый кодировщик.
+                            Правится только если нужны другие веса.</p>
+                        <details><summary>Показать встроенный</summary>
+                            <pre class="code" style="white-space:pre-wrap"><?php echo esc_html(GC_Vast::default_onstart()); ?></pre>
+                        </details></td>
+                </tr>
             </table>
             <p><button class="button button-primary">Сохранить</button>
                <button class="button" name="check" value="1">Сохранить и проверить ключ</button></p>
@@ -325,7 +337,10 @@ class GC_Admin {
                         <tr>
                             <td><?php echo (int) $i['id']; ?></td>
                             <td><?php echo esc_html($i['num'] . '× ' . $i['gpu']); ?></td>
-                            <td><?php echo esc_html($i['status']); ?></td>
+                            <td><?php echo esc_html($i['status']); ?>
+                                <?php if (!empty($i['msg'])) : ?>
+                                    <br><span class="description"><?php echo esc_html(mb_substr($i['msg'], 0, 200)); ?></span>
+                                <?php endif; ?></td>
                             <td><?php echo esc_html('$' . $i['price'] . '/час'); ?></td>
                             <td><?php if ($i['url'] !== '') : ?>
                                     <a href="<?php echo esc_url($i['url']); ?>" target="_blank"><?php echo esc_html($i['url']); ?></a>
@@ -393,8 +408,38 @@ class GC_Admin {
             <p><?php echo $gpu['endpoint'] !== '' ? esc_html($gpu['endpoint']) : 'адрес не задан'; ?>
                 — <?php echo !empty($gpu['enabled']) ? 'генерации включены' : 'генерации выключены'; ?>,
                 драйвер <?php echo esc_html($gpu['driver']); ?>.</p>
+            <?php if ($gpu['endpoint'] !== '') : ?>
+                <?php $models = GC_Gpu::models($gpu); ?>
+                <h3>Что лежит на машине</h3>
+                <?php if (!$models['ok']) : ?>
+                    <p class="description">Машина не отвечает: <?php echo esc_html($models['message']); ?>.
+                        Пока качаются веса, это нормально.</p>
+                <?php else : ?>
+                    <p>Модели: <?php echo $models['ckpt']
+                        ? '<code>' . implode('</code>, <code>', array_map('esc_html', $models['ckpt'])) . '</code>'
+                        : '<span class="description">ни одной — скрипт запуска ещё качает</span>'; ?></p>
+                    <p>Текстовые кодировщики: <?php echo $models['clip']
+                        ? '<code>' . implode('</code>, <code>', array_map('esc_html', $models['clip'])) . '</code>'
+                        : '<span class="description">нет</span>'; ?></p>
+                <?php endif; ?>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <?php wp_nonce_field('gc_fresh'); ?>
+                    <input type="hidden" name="action" value="gc_fresh">
+                    <button class="button">Спросить машину заново</button>
+                </form>
+            <?php endif; ?>
         <?php endif; ?>
         <?php
+    }
+
+    public static function handle_fresh() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Нет доступа');
+        }
+        check_admin_referer('gc_fresh');
+        GC_Gpu::fresh();
+        wp_safe_redirect(self::url('machine', array('gc_msg' => 'Ответы машины спрошены заново.')));
+        exit;
     }
 
     private static function settings() {

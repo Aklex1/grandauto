@@ -40,6 +40,9 @@ class GC_Vast {
             'disk'      => 40,
             'max_price' => 0.5,
             'gpu'       => 'RTX 4090',
+            // Скрипт запуска: качает веса и ставит недостающее. Пустое
+            // поле — значит берём встроенный.
+            'onstart'   => '',
         ));
     }
 
@@ -52,6 +55,11 @@ class GC_Vast {
             if (isset($values[$field])) {
                 $now[$field] = sanitize_text_field((string) $values[$field]);
             }
+        }
+        if (isset($values['onstart'])) {
+            // Это скрипт для машины: фильтры тут всё сломают, поэтому
+            // только снимаем слеши, добавленные WordPress.
+            $now['onstart'] = trim((string) wp_unslash($values['onstart']));
         }
         if (isset($values['disk'])) {
             $now['disk'] = max(10, min(500, (int) $values['disk']));
@@ -212,9 +220,7 @@ class GC_Vast {
                 '-p ' . self::TTS_PORT . ':' . self::TTS_PORT     => '1',
                 'OPEN_BUTTON_PORT' => (string) self::COMFY_PORT,
             ),
-            // Переменные окружения в ssh-сессии не видны, пока их не
-            // выложить в /etc/environment — так написано в документации.
-            'onstart' => 'env >> /etc/environment',
+            'onstart' => self::onstart($s),
         );
         $res = self::call('PUT', 'v0/asks/' . (int) $offer_id . '/', $body);
         if (!$res['ok']) {
@@ -229,7 +235,47 @@ class GC_Vast {
 
     public static function stop($instance_id) {
         $res = self::call('DELETE', 'v0/instances/' . (int) $instance_id . '/', array());
+        if (!$res['ok']) {
+            // Vast переводит маршруты на v1 по одному: если старый
+            // отвечает «устарел», пробуем новый, а не сдаёмся.
+            $res = self::call('DELETE', 'v1/instances/' . (int) $instance_id . '/', array());
+        }
         return array('ok' => $res['ok'], 'message' => $res['ok'] ? 'Машина остановлена.' : $res['message']);
+    }
+
+    /**
+     * Скрипт запуска машины.
+     *
+     * Vast выполняет его один раз после старта контейнера. Задача —
+     * положить веса туда, где ComfyUI их увидит. Папку ищем, а не
+     * пишем жёстко: у разных образов ComfyUI лежит в разных местах, и
+     * ошибка в пути означает машину без моделей за деньги.
+     */
+    public static function onstart($s = null) {
+        $s = is_array($s) ? $s : self::settings();
+        if (trim((string) $s['onstart']) !== '') {
+            return (string) $s['onstart'];
+        }
+        return self::default_onstart();
+    }
+
+    public static function default_onstart() {
+        return <<<'SH'
+env >> /etc/environment
+CF=""
+for p in /workspace/ComfyUI /opt/ComfyUI /opt/workspace-internal/ComfyUI /root/ComfyUI /ComfyUI; do
+  [ -d "$p" ] && CF="$p" && break
+done
+[ -z "$CF" ] && CF=$(find / -maxdepth 6 -type d -name ComfyUI 2>/dev/null | head -1)
+[ -z "$CF" ] && exit 0
+mkdir -p "$CF/models/checkpoints" "$CF/models/text_encoders"
+pip install --no-cache-dir av >/dev/null 2>&1
+HF=https://huggingface.co
+wget -nc -q -P "$CF/models/checkpoints"   $HF/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
+wget -nc -q -P "$CF/models/checkpoints"   $HF/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors
+wget -nc -q -P "$CF/models/text_encoders"   $HF/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors
+echo "модели на месте" > /workspace/gc-onstart.done
+SH;
     }
 
     /**
@@ -256,6 +302,10 @@ class GC_Vast {
             'host'   => $host,
             'url'    => $public,
             'label'  => (string) ($row['label'] ?? ''),
+            // Пояснение Vast к состоянию: пока машина поднимается, здесь
+            // видно, качается образ или уже запускается контейнер. Без
+            // этого «loading» ничем не отличается от зависшего заказа.
+            'msg'    => (string) ($row['status_msg'] ?? ''),
         );
     }
 }
