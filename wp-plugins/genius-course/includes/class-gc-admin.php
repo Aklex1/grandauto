@@ -27,6 +27,8 @@ class GC_Admin {
         add_action('admin_post_gc_stop', array(__CLASS__, 'handle_stop'));
         add_action('admin_post_gc_use', array(__CLASS__, 'handle_use'));
         add_action('admin_post_gc_fresh', array(__CLASS__, 'handle_fresh'));
+        add_action('admin_post_gc_exec', array(__CLASS__, 'handle_exec'));
+        add_action('admin_post_gc_state', array(__CLASS__, 'handle_state'));
     }
 
     public static function menu() {
@@ -354,6 +356,22 @@ class GC_Admin {
                                         <button class="button button-small button-primary">Использовать для генераций</button>
                                     </form>
                                 <?php endif; ?>
+                                <?php $live = strpos($i['status'], 'running') !== false; ?>
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                                    <?php wp_nonce_field('gc_state'); ?>
+                                    <input type="hidden" name="action" value="gc_state">
+                                    <input type="hidden" name="id" value="<?php echo (int) $i['id']; ?>">
+                                    <input type="hidden" name="state" value="<?php echo $live ? 'stopped' : 'running'; ?>">
+                                    <button class="button button-small"><?php echo $live ? 'Пауза' : 'Запустить'; ?></button>
+                                </form>
+                                <?php if (!$live) : ?>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                                        <?php wp_nonce_field('gc_exec'); ?>
+                                        <input type="hidden" name="action" value="gc_exec">
+                                        <input type="hidden" name="id" value="<?php echo (int) $i['id']; ?>">
+                                        <button class="button button-small">Докачать модели</button>
+                                    </form>
+                                <?php endif; ?>
                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline"
                                       onsubmit="return confirm('Остановить машину? Аренда прекратится.');">
                                     <?php wp_nonce_field('gc_stop'); ?>
@@ -367,6 +385,10 @@ class GC_Admin {
                     </tbody>
                 </table>
             <?php endif; ?>
+
+            <p class="description">Веса качает скрипт запуска. Если на машине их не оказалось — «Пауза», затем
+                «Запустить»: скрипт выполнится заново, а диск с уже скачанным останется. Команды на работающей
+                машине Vast через API не разрешает, только по ssh.</p>
 
             <h3>Свободные предложения</h3>
             <p class="description">Дешёвые сверху. Аренда списывает деньги с общего баланса Vast — нажатие сразу
@@ -422,6 +444,16 @@ class GC_Admin {
                         ? '<code>' . implode('</code>, <code>', array_map('esc_html', $models['clip'])) . '</code>'
                         : '<span class="description">нет</span>'; ?></p>
                 <?php endif; ?>
+                <?php $exec = GC_Vast::exec_output(); ?>
+                <?php if ($exec['ok'] || $exec['message'] !== 'команд ещё не было') : ?>
+                    <h3>Вывод последней команды</h3>
+                    <?php if (!$exec['ok']) : ?>
+                        <p class="description"><?php echo esc_html($exec['message']); ?></p>
+                    <?php else : ?>
+                        <pre class="code" style="white-space:pre-wrap;max-height:260px;overflow:auto"><?php
+                            echo esc_html(mb_substr($exec['text'], -4000)); ?></pre>
+                    <?php endif; ?>
+                <?php endif; ?>
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                     <?php wp_nonce_field('gc_fresh'); ?>
                     <input type="hidden" name="action" value="gc_fresh">
@@ -430,6 +462,35 @@ class GC_Admin {
             <?php endif; ?>
         <?php endif; ?>
         <?php
+    }
+
+    public static function handle_state() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Нет доступа');
+        }
+        check_admin_referer('gc_state');
+        $out = GC_Vast::state((int) ($_POST['id'] ?? 0), (string) ($_POST['state'] ?? ''));
+        GC_Gpu::fresh();
+        wp_safe_redirect(self::url('machine', $out['ok']
+            ? array('gc_msg' => $out['message'])
+            : array('gc_err' => $out['message'])));
+        exit;
+    }
+
+    public static function handle_exec() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Нет доступа');
+        }
+        check_admin_referer('gc_exec');
+        // Своя команда — для разбора неполадок; пустое поле означает
+        // обычное «докачать модели».
+        $cmd = trim((string) wp_unslash($_POST['cmd'] ?? ''));
+        $out = GC_Vast::exec((int) ($_POST['id'] ?? 0), $cmd !== '' ? $cmd : GC_Vast::weights_command());
+        GC_Gpu::fresh();
+        wp_safe_redirect(self::url('machine', $out['ok']
+            ? array('gc_msg' => 'Скрипт отправлен на машину. Вывод появится ниже через минуту-другую.')
+            : array('gc_err' => $out['message'])));
+        exit;
     }
 
     public static function handle_fresh() {

@@ -244,6 +244,95 @@ class GC_Vast {
     }
 
     /**
+     * Пауза и запуск.
+     *
+     * Пауза снимает плату за видеокарту, но оставляет диск: скачанные
+     * веса никуда не деваются, и следующее занятие начинается сразу, а
+     * не с получасовой загрузки моделей. Запуск заново выполняет скрипт
+     * запуска — значит, недостающие веса дотянутся сами.
+     */
+    public static function state($instance_id, $state) {
+        $state = $state === 'running' ? 'running' : 'stopped';
+        $body = array('state' => $state);
+        $res = self::call('PUT', 'v0/instances/' . (int) $instance_id . '/', $body);
+        if (!$res['ok']) {
+            $res = self::call('PUT', 'v1/instances/' . (int) $instance_id . '/', $body);
+        }
+        if (!$res['ok']) {
+            return array('ok' => false, 'message' => $res['message']);
+        }
+        return array('ok' => true, 'message' => $state === 'running'
+            ? 'Машина запускается. Скрипт запуска выполнится заново.'
+            : 'Машина на паузе: видеокарта не тарифицируется, диск с весами остаётся.');
+    }
+
+    /**
+     * Выполнить команду на машине.
+     *
+     * Vast умеет запускать команду в контейнере без ssh и отдаёт ссылку
+     * на вывод. Нужно это в одном случае: скрипт запуска сработал до
+     * того, как образ развернул свои папки, и веса не скачались —
+     * тогда тот же скрипт запускают ещё раз, уже руками.
+     */
+    public static function exec($instance_id, $command) {
+        $res = self::call('PUT', 'v0/instances/command/' . (int) $instance_id . '/',
+                          array('command' => (string) $command));
+        if (!$res['ok']) {
+            return array('ok' => false, 'url' => '', 'message' => $res['message']);
+        }
+        $url = (string) ($res['body']['result_url'] ?? '');
+        if ($url !== '') {
+            update_option('gc_exec_url', $url, false);
+        }
+        return array('ok' => true, 'url' => $url,
+                     'message' => $url !== '' ? 'Команда отправлена.' : 'Команда отправлена, ссылки на вывод нет.');
+    }
+
+    /**
+     * Та же загрузка весов, но одной строкой.
+     *
+     * Через API Vast принимает только однострочную команду, поэтому
+     * скрипт запуска для него не годится: переводы строк он отвергает.
+     */
+    public static function weights_command() {
+        $hf = 'https://huggingface.co';
+        $parts = array(
+            'CF=""',
+            'for p in /workspace/ComfyUI /opt/ComfyUI /opt/workspace-internal/ComfyUI /root/ComfyUI /ComfyUI; '
+                . 'do [ -d "$p" ] && CF="$p" && break; done',
+            '[ -z "$CF" ] && CF=$(find / -maxdepth 6 -type d -name ComfyUI 2>/dev/null | head -1)',
+            'echo "ComfyUI: $CF"',
+            'mkdir -p "$CF/models/checkpoints" "$CF/models/text_encoders"',
+            'pip install --no-cache-dir av >/dev/null 2>&1',
+            'wget -nc -q -P "$CF/models/checkpoints" '
+                . $hf . '/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors',
+            'wget -nc -q -P "$CF/models/checkpoints" '
+                . $hf . '/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors',
+            'wget -nc -q -P "$CF/models/text_encoders" '
+                . $hf . '/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors',
+            'ls -l "$CF/models/checkpoints" "$CF/models/text_encoders"',
+        );
+        return 'bash -lc ' . escapeshellarg(implode('; ', $parts));
+    }
+
+    /** Вывод последней команды. Появляется не сразу: Vast кладёт файл по готовности. */
+    public static function exec_output($url = '') {
+        $url = $url !== '' ? $url : (string) get_option('gc_exec_url', '');
+        if ($url === '') {
+            return array('ok' => false, 'text' => '', 'message' => 'команд ещё не было');
+        }
+        $res = wp_remote_get($url, array('timeout' => 20));
+        if (is_wp_error($res)) {
+            return array('ok' => false, 'text' => '', 'message' => $res->get_error_message());
+        }
+        $code = (int) wp_remote_retrieve_response_code($res);
+        if ($code !== 200) {
+            return array('ok' => false, 'text' => '', 'message' => 'вывод ещё не готов (ответ ' . $code . ')');
+        }
+        return array('ok' => true, 'text' => (string) wp_remote_retrieve_body($res), 'message' => '');
+    }
+
+    /**
      * Скрипт запуска машины.
      *
      * Vast выполняет его один раз после старта контейнера. Задача —
