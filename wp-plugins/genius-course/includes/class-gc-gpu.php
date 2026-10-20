@@ -337,6 +337,22 @@ class GC_Gpu {
         }
     }
 
+    /** Опросить машину по заданиям одного ученика: до трёх свежих. */
+    public static function refresh_user($user_id) {
+        if (!self::ready()) {
+            return;
+        }
+        global $wpdb;
+        $table = GC_Install::jobs_table();
+        $rows = (array) $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM {$table} WHERE user_id = %d AND status = 'running' ORDER BY id DESC LIMIT 3",
+            (int) $user_id
+        ));
+        foreach ($rows as $id) {
+            self::poll((int) $id);
+        }
+    }
+
     public static function poll($job_id) {
         $job = self::job($job_id);
         if (!$job || $job['remote_id'] === '') {

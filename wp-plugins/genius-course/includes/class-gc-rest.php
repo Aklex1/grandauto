@@ -169,6 +169,10 @@ class GC_Rest {
     }
 
     public static function jobs() {
+        // Спрашиваем машину прямо здесь: иначе готовый кадр появится
+        // только после очередного прохода расписания, и ученик минуту
+        // смотрит на «считается», хотя всё давно посчитано.
+        GC_Gpu::refresh_user(get_current_user_id());
         $jobs = GC_Gpu::for_user(get_current_user_id());
         return rest_ensure_response(array(
             'ok'     => true,
