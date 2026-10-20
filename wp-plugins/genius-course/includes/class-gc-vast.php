@@ -166,6 +166,11 @@ class GC_Vast {
             'dph_total'      => array('lte' => $max_price),
             'disk_space'     => array('gte' => (int) $s['disk']),
             'inet_down'      => array('gte' => 100),
+            // Драйвер на машине должен тянуть ту же CUDA, что собрана в
+            // образе, иначе ComfyUI падает ещё до первого запроса:
+            // «forward compatibility was attempted on non supported HW».
+            // Версию берём из имени образа — она там прямо написана.
+            'cuda_max_good'  => array('gte' => self::image_cuda($s['image'])),
             'order'          => array(array('dph_total', 'asc')),
             'type'           => 'on-demand',
             'limit'          => 12,
@@ -190,6 +195,20 @@ class GC_Vast {
             );
         }
         return array('ok' => true, 'items' => $items, 'message' => '');
+    }
+
+    /**
+     * Какая CUDA нужна образу.
+     *
+     * В имени тега она написана словами: vastai/comfy:v0.41.0-cuda-12.9.
+     * Если не написана — берём 12.4, это уровень, ниже которого
+     * современные образы всё равно не живут.
+     */
+    public static function image_cuda($image) {
+        if (preg_match('~cuda[-_]?(\d+)\.(\d+)~i', (string) $image, $m)) {
+            return (float) ($m[1] . '.' . $m[2]);
+        }
+        return 12.4;
     }
 
     /**
