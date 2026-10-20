@@ -242,7 +242,9 @@ class GC_Admin {
         ?>
         <h3>Генерации</h3>
         <p>Машина: <strong><?php echo $health['ok'] ? 'на связи' : 'недоступна'; ?></strong>
-            <span class="description"><?php echo esc_html($health['message']); ?></span></p>
+            <?php if (!$health['ok']) : ?>
+                <span class="description"><?php echo esc_html($health['message']); ?></span>
+            <?php endif; ?></p>
         <table class="widefat striped">
             <thead><tr><th>№</th><th>Ученик</th><th>Описание</th><th>Состояние</th><th>Результат</th><th>Когда</th></tr></thead>
             <tbody>
@@ -459,9 +461,12 @@ class GC_Admin {
                 <?php
                 // Журналы тянем с самой машины: без них «ComfyUI молчит»
                 // ничего не объясняет.
+                // Берём ту машину, что подключена к генерациям, а не
+                // первую работающую: на аккаунте их может быть несколько,
+                // и журнал чужой машины только путает.
                 $live_id = 0;
                 foreach ((array) ($list['items'] ?? array()) as $item) {
-                    if (strpos($item['status'], 'running') !== false) {
+                    if ($item['url'] !== '' && untrailingslashit($item['url']) === untrailingslashit($gpu['endpoint'])) {
                         $live_id = (int) $item['id'];
                         break;
                     }
@@ -574,7 +579,9 @@ class GC_Admin {
         <p class="description">Арендуется на vast.ai, сервис из папки <code>worker</code> плагина. Подробности —
             в <code>worker/README.md</code>: там и команда запуска, и что открывать в портах.</p>
         <p>Состояние: <strong><?php echo $health['ok'] ? 'на связи' : 'недоступна'; ?></strong>
-            <span class="description"><?php echo esc_html($health['message']); ?></span></p>
+            <?php if (!$health['ok']) : ?>
+                <span class="description"><?php echo esc_html($health['message']); ?></span>
+            <?php endif; ?></p>
         <?php if ($health['ok'] && $s['driver'] === 'comfy') : ?>
             <?php
             // Сверяем заготовки с машиной: какие узлы она знает. Так
