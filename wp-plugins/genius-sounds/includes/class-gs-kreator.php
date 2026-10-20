@@ -43,6 +43,10 @@ class GS_Kreator {
     /** Срок обучения. Называется в трёх местах, включая разметку для поиска. */
     const WEEKS = 6;
 
+    /** Телеграм-канал проекта: разборы вакансий, промты и заказы. */
+    const TG_URL  = 'https://t.me/neuro_creator_pro';
+    const TG_NAME = 'AI-креатор | Заработок на нейросетях';
+
     /* Цифры рынка. Собраны 20.10.2026 по выдаче hh.ru по запросу
      * «AI креатор»: 219 вакансий всего, разобрано 100 карточек и 14 полных
      * описаний. Дату держим рядом с цифрами — через полгода они другие. */
@@ -590,6 +594,18 @@ class GS_Kreator {
                 <?php endif; ?>
             </section>
 
+            <section class="gs-kr__tg">
+                <svg class="gs-kr__tg-ico" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+                    <circle cx="24" cy="24" r="24" fill="#fff" fill-opacity=".16"/>
+                    <path d="M34.6 14.5 30.9 33c-.3 1.3-1 1.6-2.1.99l-5.8-4.3-2.8 2.7c-.3.3-.6.6-1.2.6l.4-5.9 10.8-9.7c.5-.4-.1-.7-.8-.3l-13.3 8.4-5.7-1.8c-1.2-.4-1.3-1.2.3-1.8l22.3-8.6c1-.4 1.9.2 1.6 1.7z" fill="#fff"/>
+                </svg>
+                <div class="gs-kr__tg-text">
+                    <p class="gs-kr__tg-title">Разборы вакансий и заказы — в телеграм-канале</p>
+                    <p class="gs-kr__tg-lead">«<?php echo esc_html(self::TG_NAME); ?>»: живые цифры по заказам, промты, кейсы и вакансии, которые ищут исполнителя. Подписка ни к чему не обязывает — и по ней видно, что в профессии происходит прямо сейчас.</p>
+                </div>
+                <a class="gs-kr__tg-btn" href="<?php echo esc_url(self::TG_URL); ?>" target="_blank" rel="noopener">Открыть канал</a>
+            </section>
+
             <section class="gs-kr__how">
                 <h2 class="gs-kr__h2">Как устроено обучение</h2>
                 <div class="gs-kr__how-grid">
@@ -750,6 +766,8 @@ class GS_Kreator {
                         — план по неделям, если хотите попробовать самостоятельно.</li>
                     <li><a href="https://genius-bot.ru/kursy-ai-kreatora/">Курсы AI-креатора: разбор программ и цен</a>
                         — честное сравнение, включая случаи, когда обучение вам не нужно.</li>
+                    <li><a href="<?php echo esc_url(self::TG_URL); ?>" target="_blank" rel="noopener">Телеграм-канал «<?php echo esc_html(self::TG_NAME); ?>»</a>
+                        — разборы вакансий, промты и заказы по мере появления.</li>
                 </ul>
             </section>
 
