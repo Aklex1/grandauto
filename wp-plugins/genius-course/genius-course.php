@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Genius Course
  * Description: Личный кабинет обучения AI-креатора: доступы, модули, сдача работ и генерации на арендованном GPU.
- * Version:     1.11.3
+ * Version:     1.12.0
  * Author:      Genius-bot
  * Text Domain: genius-course
  *
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GC_VERSION', '1.11.3');
+define('GC_VERSION', '1.12.0');
 define('GC_FILE', __FILE__);
 define('GC_PATH', plugin_dir_path(__FILE__));
 define('GC_URL', plugin_dir_url(__FILE__));

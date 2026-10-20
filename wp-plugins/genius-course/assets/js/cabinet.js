@@ -95,6 +95,14 @@
     }
 
     /* Переключатель «кадр / ролик»: прячем настройки, которых нет у кадра */
+    function setField(name, value) {
+        if (!gen || !gen.elements[name]) {
+            return;
+        }
+        gen.elements[name].value = value;
+        gen.elements[name].dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
     if (gen) {
         var kinds = gen.querySelectorAll('.gc-kind input');
         Array.prototype.forEach.call(kinds, function (input) {
@@ -102,7 +110,15 @@
                 Array.prototype.forEach.call(gen.querySelectorAll('.gc-kind label'), function (l) {
                     l.classList.toggle('is-on', l.contains(input) && input.checked);
                 });
-                gen.classList.toggle('is-video', gen.elements.kind.value === 'video');
+                var isVideo = gen.elements.kind.value === 'video';
+                gen.classList.toggle('is-video', isVideo);
+                /* Ролику нужна другая строгость: на 6.5 LTX идёт пятнами,
+                   рабочий диапазон — около тройки. Подставляем сами,
+                   иначе первый ролик у каждого выходит браком. */
+                setField('cfg', isVideo ? 3 : 6.5);
+                if (isVideo) {
+                    setField('fps', 24);
+                }
             });
         });
 

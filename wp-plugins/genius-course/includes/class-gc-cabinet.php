@@ -386,7 +386,8 @@ class GC_Cabinet {
                             <label>
                                 <span>Насколько строго по описанию <b class="gc-val" data-for="cfg">6.5</b></span>
                                 <input type="range" name="cfg" min="1" max="14" step="0.5" value="6.5">
-                                <i>Выше — точнее по словам, но скучнее картинка.</i>
+                                <i>Выше — точнее по словам, но скучнее картинка. Для роликов ставим около тройки:
+                                    на шести LTX идёт пятнами.</i>
                             </label>
                             <label>
                                 <span>Зерно</span>
@@ -397,11 +398,11 @@ class GC_Cabinet {
                                 <label class="gc-only-video">
                                     <span>Длина ролика, кадров <b class="gc-val" data-for="frames">49</b></span>
                                     <input type="range" name="frames" min="16" max="129" step="1" value="49">
-                                    <i>При 16 кадрах в секунду 49 кадров — это около трёх секунд.</i>
+                                    <i>При 24 кадрах в секунду 49 кадров — это две секунды, 121 кадр — пять.</i>
                                 </label>
                                 <label class="gc-only-video">
                                     <span>Кадров в секунду <b class="gc-val" data-for="fps">16</b></span>
-                                    <input type="range" name="fps" min="6" max="30" step="1" value="16">
+                                    <input type="range" name="fps" min="6" max="30" step="1" value="24">
                                 </label>
                             <?php endif; ?>
                         </div>
