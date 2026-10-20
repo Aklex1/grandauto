@@ -359,15 +359,20 @@ env >> /etc/environment
 mkdir -p /workspace
 exec >>/workspace/gc-onstart.log 2>&1
 echo "=== запуск $(date -u)"
+# Отвязываем службы от скрипта запуска: Vast завершает его процесс, и
+# вместе с ним может уйти вся группа — тогда ComfyUI умрёт сразу после
+# старта, а порт останется проброшенным и молчащим.
+SS=""
+command -v setsid >/dev/null 2>&1 && SS="setsid"
 # Окно внутрь машины без ssh: отдаём /workspace по порту 8189. Иначе
 # причину «ComfyUI молчит» узнать нечем — команды на работающей машине
 # Vast через API не разрешает.
-(nohup python3 -m http.server 8189 --directory /workspace >/dev/null 2>&1 &)
+$SS nohup python3 -m http.server 8189 --directory /workspace >/dev/null 2>&1 &
 # Родные службы образа: в режиме ssh Vast подменяет точку входа, и
 # supervisord образа не стартует. Запускаем его сами — он поднимет
 # ComfyUI так, как задумано в образе, со своим окружением.
 if [ -f /etc/supervisor/supervisord.conf ]; then
-  (nohup supervisord -c /etc/supervisor/supervisord.conf >/dev/null 2>&1 &)
+  $SS nohup supervisord -c /etc/supervisor/supervisord.conf >/dev/null 2>&1 &
   sleep 30
 fi
 CF=""
@@ -386,7 +391,7 @@ if ! curl -s -m 5 http://127.0.0.1:8188/system_stats >/dev/null 2>&1; then
   echo "python: $PY"
   if [ -n "$PY" ] && [ -n "$CF" ]; then
     cd "$CF"
-    (nohup "$PY" main.py --listen 0.0.0.0 --port 8188 --disable-auto-launch >>/workspace/comfy.log 2>&1 &)
+    $SS nohup "$PY" main.py --listen 0.0.0.0 --port 8188 --disable-auto-launch >>/workspace/comfy.log 2>&1 &
   fi
 fi
 mkdir -p "$CF/models/checkpoints" "$CF/models/text_encoders"
