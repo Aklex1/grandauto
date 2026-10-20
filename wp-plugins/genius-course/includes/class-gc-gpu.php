@@ -412,14 +412,38 @@ class GC_Gpu {
             return;
         }
 
-        $name = 'gc-' . (int) $job_id . '-' . wp_generate_password(6, false) . '.png';
+        // Расширение берём из имени файла на машине: ComfyUI отдаёт и
+        // кадры, и ролики по одному адресу, и webm, сохранённый как png,
+        // браузер отказывается играть.
+        $known = array(
+            'png'  => 'image/png',  'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
+            'webp' => 'image/webp', 'gif' => 'image/gif',
+            'webm' => 'video/webm', 'mp4' => 'video/mp4',  'mov'  => 'video/quicktime',
+        );
+        $query = array();
+        $qs = (string) parse_url($image, PHP_URL_QUERY);
+        if ($qs !== '') {
+            parse_str($qs, $query);
+        }
+        $remote = !empty($query['filename'])
+            ? (string) $query['filename']
+            : basename((string) parse_url($image, PHP_URL_PATH));
+        $ext = strtolower((string) pathinfo($remote, PATHINFO_EXTENSION));
+        $mime = isset($known[$ext]) ? $known[$ext] : 'image/png';
+        if (!isset($known[$ext])) {
+            $ext = 'png';
+        } elseif ($ext === 'jpeg') {
+            $ext = 'jpg';
+        }
+
+        $name = 'gc-' . (int) $job_id . '-' . wp_generate_password(6, false) . '.' . $ext;
         $upload = wp_upload_bits($name, null, $bytes);
         if (!empty($upload['error'])) {
             self::fail($job_id, (string) $upload['error']);
             return;
         }
         $attachment = wp_insert_attachment(array(
-            'post_mime_type' => 'image/png',
+            'post_mime_type' => $mime,
             'post_title'     => mb_substr($job['prompt'], 0, 80),
             'post_status'    => 'inherit',
             'post_author'    => (int) $job['user_id'],
