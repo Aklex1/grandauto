@@ -125,10 +125,20 @@ class GS_Kreator {
         return !is_admin() && $page_id > 0 && is_page($page_id);
     }
 
+    /**
+     * Классы страницы.
+     *
+     * gs-kr-page красит полотно светлым: это единственная светлая страница
+     * плагина, и фон ей нужно перекрашивать на уровне body — тёмный цвет
+     * задан там же. Шапку и подвал оставляем тёмными: светлая вставка
+     * между ними читается как отдельный разворот, а перекрашивать всю
+     * обвязку ради одной страницы значило бы трогать весь сайт.
+     */
     public static function body_class($classes) {
         if (self::is_page()) {
             $classes[] = 'gs-studio-page';
             $classes[] = 'gs-chrome';
+            $classes[] = 'gs-kr-page';
         }
         return $classes;
     }
@@ -236,6 +246,150 @@ class GS_Kreator {
     }
 
     /* ---------------------------------------------------------------------
+     * Иконки и графика
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Набор иконок.
+     *
+     * Рисуем контуром в одной сетке 24×24 и одной толщиной линии: иконки
+     * из разных наборов рядом заметны сразу, а своя сетка держит их в одном
+     * весе. Цвет берётся у текста, поэтому в тёмной и светлой теме иконка
+     * ведёт себя как буква.
+     */
+    private static function icons() {
+        return array(
+            'film'     => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16M16 4v16M3 12h18"/>',
+            'play'     => '<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 12 5-3v6z"/>',
+            'person'   => '<circle cx="12" cy="8" r="3.2"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>',
+            'doc'      => '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',
+            'star'     => '<path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.9-5.2 2.9 1-5.9L3.5 9.7l5.9-.8z"/>',
+            'trend'    => '<path d="M3 17l5.5-5.5 3.5 3.5L21 6"/><path d="M15 6h6v6"/>',
+            'image'    => '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="m4 17 5-4.5 4.5 4 3-2.5L20 17"/>',
+            'sparkle'  => '<path d="M12 3.5 13.8 9l5.5 1.8-5.5 1.8L12 18l-1.8-5.4L4.7 10.8 10.2 9z"/><path d="M18.5 16.5 19.2 18l1.5.7-1.5.7-.7 1.5-.7-1.5-1.5-.7 1.5-.7z"/>',
+            'wave'     => '<path d="M4 12h2M8 8v8M12 5v14M16 9v6M20 12h-2"/>',
+            'cart'     => '<path d="M3 5h2.2l2.3 10.2h9.6L19 8H6"/><circle cx="9.5" cy="19" r="1.4"/><circle cx="16.5" cy="19" r="1.4"/>',
+            'bulb'     => '<path d="M9.5 17.5h5M10.5 20.5h3"/><path d="M12 3.5a5.5 5.5 0 0 1 3.3 9.9c-.6.5-.9 1.1-.9 1.8H9.6c0-.7-.3-1.3-.9-1.8A5.5 5.5 0 0 1 12 3.5z"/>',
+            'flow'     => '<rect x="3" y="4" width="6" height="5" rx="1.5"/><rect x="15" y="4" width="6" height="5" rx="1.5"/><rect x="9" y="15" width="6" height="5" rx="1.5"/><path d="M6 9v3h12V9M12 12v3"/>',
+            'check'    => '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9zM9 12l2 2 4-4"/>',
+            'wallet'   => '<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M16.5 14.5h1.5"/>',
+            'search'   => '<circle cx="11" cy="11" r="6"/><path d="m16 16 4.5 4.5"/>',
+            'layers'   => '<path d="m12 3.5 8.5 4.3-8.5 4.3-8.5-4.3z"/><path d="m4 12.5 8 4 8-4M4 16.5l8 4 8-4"/>',
+            'camera'   => '<path d="M4 8h3.5l1.5-2h6l1.5 2H20a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.4"/>',
+            'grid'     => '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
+            'phone'    => '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 5.5h3"/>',
+            'carousel' => '<rect x="7.5" y="5" width="9" height="14" rx="2"/><path d="M4 8v8M20 8v8"/>',
+            'clock'    => '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+            'money'    => '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v10M9.5 9.5h4a1.8 1.8 0 0 1 0 3.6h-4"/>',
+            'remote'   => '<path d="M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z"/><path d="M3.5 12h17M12 3.5c2.2 2.4 3.3 5.3 3.3 8.5S14.2 18.1 12 20.5c-2.2-2.4-3.3-5.3-3.3-8.5S9.8 5.9 12 3.5z"/>',
+            'tg'       => '<path d="M21 4.5 18.2 19c-.2 1-.8 1.2-1.6.8l-4.5-3.3-2.2 2.1c-.2.2-.5.4-.9.4l.3-4.6 8.4-7.6c.4-.3-.1-.5-.6-.2L6.7 11.1 2.3 9.7c-1-.3-1-1 .2-1.4L19.7 3c.8-.3 1.5.2 1.3 1.5z"/>',
+        );
+    }
+
+    /** Иконка в разметке. Неизвестное имя молча ничего не рисует. */
+    public static function icon($name, $class = 'gs-kr__ico') {
+        $icons = self::icons();
+        if (empty($icons[$name])) {
+            return '';
+        }
+        return '<svg class="' . esc_attr($class) . '" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+             . ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+             . $icons[$name] . '</svg>';
+    }
+
+    /**
+     * Шкала зарплат.
+     *
+     * Вилки из объявлений словами не читаются: «от 20 000 до 350 000» в
+     * тексте выглядит одинаково с любой другой парой чисел. На шкале сразу
+     * видно, что середина рынка — узкая полоса слева, а верхние цифры из
+     * заголовков вакансий это хвост.
+     */
+    public static function salary_chart() {
+        $min = 20000;
+        $max = self::HH_MAX;
+        $pos = function ($value) use ($min, $max) {
+            return round((($value - $min) / ($max - $min)) * 100, 2);
+        };
+        $a = $pos(self::HH_MED_LOW);
+        $b = $pos(self::HH_MED_TOP);
+        ob_start();
+        ?>
+        <figure class="gs-kr__chart gs-kr__chart--pay">
+            <figcaption class="gs-kr__chart-cap">Вилки в объявлениях, ₽ в месяц</figcaption>
+            <div class="gs-kr__pay">
+                <svg class="gs-kr__pay-svg" viewBox="0 0 100 18" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                    <rect x="0" y="6" width="100" height="6" rx="3" fill="var(--kr-line)"/>
+                    <rect x="<?php echo esc_attr($a); ?>" y="4" width="<?php echo esc_attr($b - $a); ?>" height="10" rx="5" fill="url(#gs-kr-pay-g)"/>
+                    <defs>
+                        <linearGradient id="gs-kr-pay-g" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0" stop-color="#5b4ae0"/>
+                            <stop offset="1" stop-color="#0ea5b7"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="gs-kr__pay-pin" style="left: <?php echo esc_attr($a); ?>%"><b><?php echo esc_html(number_format_i18n(self::HH_MED_LOW)); ?></b><i>медиана «от»</i></span>
+                <span class="gs-kr__pay-pin gs-kr__pay-pin--up" style="left: <?php echo esc_attr($b); ?>%"><b><?php echo esc_html(number_format_i18n(self::HH_MED_TOP)); ?></b><i>медиана «до»</i></span>
+            </div>
+            <div class="gs-kr__pay-axis">
+                <span><?php echo esc_html(number_format_i18n($min)); ?> ₽<br><i>минимум в выборке</i></span>
+                <span><?php echo esc_html(number_format_i18n($max)); ?> ₽<br><i>максимум в выборке</i></span>
+            </div>
+        </figure>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Кольцо опыта: сколько вакансий какой опыт просят.
+     *
+     * Круг рисуем одной окружностью с разрывами штриха — так сегменты
+     * считаются арифметикой процентов, без тригонометрии и без путаницы
+     * со знаками в дугах.
+     */
+    public static function experience_chart() {
+        $rows = array(
+            array(17, 'Опыт не требуется', '#0f9d58'),
+            array(59, 'От года до трёх',   '#5b4ae0'),
+            array(23, 'От трёх до шести',  '#0ea5b7'),
+            array(1,  'Больше шести лет',  '#94a3b8'),
+        );
+        $total = 0;
+        foreach ($rows as $row) {
+            $total += $row[0];
+        }
+        $circumference = 2 * M_PI * 42;
+        $offset = 0;
+        ob_start();
+        ?>
+        <figure class="gs-kr__chart gs-kr__chart--exp">
+            <figcaption class="gs-kr__chart-cap">Какой опыт просят в вакансиях</figcaption>
+            <div class="gs-kr__exp">
+                <svg class="gs-kr__exp-svg" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+                    <?php foreach ($rows as $row) :
+                        $len = $circumference * ($row[0] / $total);
+                        ?>
+                        <circle cx="50" cy="50" r="42" fill="none" stroke="<?php echo esc_attr($row[2]); ?>"
+                                stroke-width="14" stroke-linecap="butt"
+                                stroke-dasharray="<?php echo esc_attr(round($len, 2) . ' ' . round($circumference - $len, 2)); ?>"
+                                stroke-dashoffset="<?php echo esc_attr(round(-$offset, 2)); ?>"
+                                transform="rotate(-90 50 50)"/>
+                        <?php $offset += $len; ?>
+                    <?php endforeach; ?>
+                </svg>
+                <ul class="gs-kr__exp-legend">
+                    <?php foreach ($rows as $row) : ?>
+                        <li><span style="background: <?php echo esc_attr($row[2]); ?>"></span>
+                            <b><?php echo (int) $row[0]; ?></b> <?php echo esc_html($row[1]); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </figure>
+        <?php
+        return ob_get_clean();
+    }
+
+    /* ---------------------------------------------------------------------
      * Содержание
      * ------------------------------------------------------------------ */
 
@@ -247,16 +401,16 @@ class GS_Kreator {
      */
     public static function demands() {
         return array(
-            array(20, 'Монтаж', 'Premiere, DaVinci, After Effects, CapCut — сборка, ритм, цветокоррекция', 6),
-            array(15, 'Вертикальные ролики', 'Reels, Shorts, VK Клипы — от идеи до готового файла', 1),
-            array(15, 'UGC и работа в кадре', 'Живая подача, съёмка на телефон, личный стиль', 7),
-            array(14, 'Сценарии', 'Текст под хронометраж, первые секунды, структура', 2),
-            array(13, 'Портфолио', '«Смотрим работы, а не резюме» — дословно из объявлений', 8),
-            array(8,  'Тренды и референсы', 'Поиск идей у конкурентов и адаптация под бренд', 2),
-            array(7,  'Генерация кадров', 'Midjourney, Stable Diffusion, ComfyUI, правка готового кадра', 3),
-            array(7,  'Оживление и AI-видео', 'Kling, Runway, Seedance, Higgsfield', 4),
-            array(5,  'Звук и озвучка', 'Дорожка, музыка, эффекты, субтитры', 5),
-            array(3,  'Контент для маркетплейсов', 'Карточки и карусели для Wildberries и Ozon', 7),
+            array(20, 'Монтаж', 'Premiere, DaVinci, After Effects, CapCut — сборка, ритм, цветокоррекция', 6, 'film'),
+            array(15, 'Вертикальные ролики', 'Reels, Shorts, VK Клипы — от идеи до готового файла', 1, 'play'),
+            array(15, 'UGC и работа в кадре', 'Живая подача, съёмка на телефон, личный стиль', 7, 'person'),
+            array(14, 'Сценарии', 'Текст под хронометраж, первые секунды, структура', 2, 'doc'),
+            array(13, 'Портфолио', '«Смотрим работы, а не резюме» — дословно из объявлений', 8, 'star'),
+            array(8,  'Тренды и референсы', 'Поиск идей у конкурентов и адаптация под бренд', 2, 'trend'),
+            array(7,  'Генерация кадров', 'Midjourney, Stable Diffusion, ComfyUI, правка готового кадра', 3, 'image'),
+            array(7,  'Оживление и AI-видео', 'Kling, Runway, Seedance, Higgsfield', 4, 'sparkle'),
+            array(5,  'Звук и озвучка', 'Дорожка, музыка, эффекты, субтитры', 5, 'wave'),
+            array(3,  'Контент для маркетплейсов', 'Карточки и карусели для Wildberries и Ozon', 7, 'cart'),
         );
     }
 
@@ -268,48 +422,56 @@ class GS_Kreator {
                 'Собираем первый ролик целиком в первую же неделю: идея, сценарий, кадры, звук, монтаж, выгрузка под три площадки. Дальше всё обучение — углубление каждого шага.',
                 'Ролик 15 секунд со звуком и субтитрами',
                 'В объявлениях это главный ежедневный результат: «1 Reels в день», «вести ролик под ключ в одиночку».',
+                'play',
             ),
             array(
                 'Идея, референс, сценарий',
                 'Где брать идеи, когда своих нет: разбор чужих удачных роликов, адаптация тренда под бренд, сценарий под хронометраж, три варианта первых секунд.',
                 'Банк из 20 разобранных референсов и 5 сценариев',
                 'Требование «искать идеи у конкурентов и адаптировать их под нас» встречается в каждой второй вакансии.',
+                'bulb',
             ),
             array(
                 'Кадр: генерация и фотореализм',
                 'Постановка задачи модели по пяти слоям, правка готового кадра, серия в одном стиле. Отдельно — суперреализм: кожа с порами, фактура ткани, корректная анатомия и физика складок.',
                 'Серия из 10 кадров в одном стиле плюс один каталожный кадр',
                 'Дословно из вакансии fashion-направления: «натуральная кожа, реалистичная ткань, корректная физика, никаких деревянных моделей».',
+                'image',
             ),
             array(
                 'Оживление кадра и AI-видео',
                 'Движение из статичного кадра, сцены с одним персонажем, склейка отрезков в сюжет. Что модели ещё не умеют и как это обходить монтажом.',
                 'Мини-сериал: три связанных ролика с одним героем',
                 'Именно эти инструменты перечислены в объявлениях по именам: Kling, Runway, Seedance, Higgsfield.',
+                'sparkle',
             ),
             array(
                 'Звук: озвучка, музыка, эффекты',
                 'Начитка сценария, подбор голоса, фоновая подложка, акценты, субтитры с дорожки. Почему ролик без звука не досматривают и как попасть в хронометраж с первого раза.',
                 'Три ролика с разным звуковым решением',
                 'Требование «работать со звуком и озвучкой» идёт в одном ряду с монтажом.',
+                'wave',
             ),
             array(
                 'Монтаж и ритм',
                 'Сборка в Premiere или DaVinci, базовая анимация в After Effects, цветокоррекция, динамика и чувство ритма, субтитры, нарезка под площадки. Разбор, почему ролик выглядит дёшево.',
                 'Один материал, собранный в трёх разных ритмах',
                 'Самое частое требование во всей выборке — 20 упоминаний. Без монтажа генерация не продаётся.',
+                'film',
             ),
             array(
                 'Контент, который продаёт',
                 'Карточки товара и карусели для Wildberries и Ozon, UGC-ролики с собой в кадре, интеграция продукта в развлекательный сюжет. Разбор требований площадок.',
                 'Серия 20 карточек, карусель и UGC-ролик',
                 'UGC и контент для карточек — 18 упоминаний вместе; «работа в кадре» вынесена в отдельный навык.',
+                'cart',
             ),
             array(
                 'Поток, автоматизация, сдача',
                 'Пайплайн на сотни кадров через API, ТЗ подрядчику и монтажёру, смета и себестоимость работы, число правок в договоре, самозанятость и права на результат.',
                 'Посчитанная смета и рабочий пайплайн на 100 кадров',
                 'Из объявлений: «построить пайплайны, где ИИ работает за вас», «передавать монтажёру понятное ТЗ», «сдавать в срок и вносить правки».',
+                'flow',
             ),
         );
     }
@@ -317,28 +479,15 @@ class GS_Kreator {
     /** Что остаётся на руках. Портфолио собрано под то, что просят показать. */
     public static function portfolio() {
         return array(
-            array('Рекламный ролик 15 секунд', 'Полный цикл под бренд: сценарий, кадры, звук, монтаж'),
-            array('AI-мини-сериал из трёх роликов', 'Один персонаж, сквозной сюжет, узнаваемый стиль'),
-            array('Каталожный кадр', 'Товар или одежда на модели — уровень коммерческой съёмки'),
-            array('Серия из 20 карточек', 'Один свет, один фон, требования маркетплейса'),
-            array('UGC-ролик с собой в кадре', 'Живая подача, съёмка на телефон, монтаж под Shorts'),
-            array('Карусель под оффер', 'Текст и визуал, которые работают вместе'),
+            array('Рекламный ролик 15 секунд', 'Полный цикл под бренд: сценарий, кадры, звук, монтаж', 'film'),
+            array('AI-мини-сериал из трёх роликов', 'Один персонаж, сквозной сюжет, узнаваемый стиль', 'layers'),
+            array('Каталожный кадр', 'Товар или одежда на модели — уровень коммерческой съёмки', 'camera'),
+            array('Серия из 20 карточек', 'Один свет, один фон, требования маркетплейса', 'grid'),
+            array('UGC-ролик с собой в кадре', 'Живая подача, съёмка на телефон, монтаж под Shorts', 'phone'),
+            array('Карусель под оффер', 'Текст и визуал, которые работают вместе', 'carousel'),
         );
     }
 
-    /** Инструменты, на которых идёт практика, с ценой запуска. */
-    public static function tools() {
-        return array(
-            array('Картинка по описанию', '9 ₽ за запуск', 'https://genius-bot.ru/generaciya-foto-neyrosetyu/'),
-            array('Правка кадра по описанию', '35 ₽ за запуск', ''),
-            array('ИИ-фотосессия', '19 ₽ за кадр', 'https://genius-bot.ru/neyrofotosessiya/'),
-            array('Озвучка текста', '18 ₽ за 1000 знаков', 'https://genius-bot.ru/tts-pricing/'),
-            array('Бесплатные голоса', '0 ₽', ''),
-            array('Звуковой эффект', '9 ₽ за звук', 'https://genius-bot.ru/sound-generator/'),
-            array('Расшифровка для субтитров', '3 ₽ за минуту', 'https://genius-bot.ru/rasshifrovka-audio/'),
-            array('Единый API для потока', 'оплата за запуск', 'https://genius-bot.ru/api/'),
-        );
-    }
 
     public static function faq() {
         return array(
@@ -450,11 +599,48 @@ class GS_Kreator {
         ?>
         <div class="gs-wrap gs-studio gs-kr">
 
-            <nav class="gs-breadcrumbs" aria-label="Хлебные крошки">
-                <a href="<?php echo esc_url(home_url('/')); ?>">Главная</a>
-                <span aria-hidden="true">/</span>
-                <span>Обучение AI-креатора</span>
-            </nav>
+            <?php
+            /*
+             * Летающий слой.
+             *
+             * Страница шире содержимого, и по бокам оставалось пустое
+             * поле. Фигуры лежат в этих полях, не наезжая на текст:
+             * слой закреплён в окне, фигуры медленно дрейфуют и
+             * поворачиваются, у каждой свой темп. Ниже 1200 точек слой
+             * выключается — там полей нет, и фигуры попали бы под текст.
+             */
+            ?>
+            <div class="gs-kr__deco" aria-hidden="true">
+                <svg class="gs-kr__fig gs-kr__fig--1" viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-width="5"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--2" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="5" stroke-dasharray="3 13" stroke-linecap="round"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--3" viewBox="0 0 100 100"><rect x="14" y="14" width="72" height="72" rx="18" fill="none" stroke="currentColor" stroke-width="5"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--4" viewBox="0 0 100 100"><path d="M50 12v76M12 50h76" stroke="currentColor" stroke-width="7" stroke-linecap="round"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--5" viewBox="0 0 100 100"><path d="M50 14 88 82H12z" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--6" viewBox="0 0 100 100"><path d="M50 8 61 39l31 11-31 11-11 31-11-31L8 50l31-11z" fill="currentColor"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--7" viewBox="0 0 140 40"><path d="M4 26c14-22 26 10 40-8s26 22 40 4 26-10 52-14" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--8" viewBox="0 0 100 100"><g fill="currentColor"><circle cx="18" cy="18" r="7"/><circle cx="50" cy="18" r="7"/><circle cx="82" cy="18" r="7"/><circle cx="18" cy="50" r="7"/><circle cx="50" cy="50" r="7"/><circle cx="82" cy="50" r="7"/><circle cx="18" cy="82" r="7"/><circle cx="50" cy="82" r="7"/><circle cx="82" cy="82" r="7"/></g></svg>
+                <svg class="gs-kr__fig gs-kr__fig--9" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="none" stroke="currentColor" stroke-width="6"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--10" viewBox="0 0 100 100"><path d="M50 10c22 0 40 18 40 40s-18 40-40 40S10 72 10 50 28 10 50 10z" fill="none" stroke="currentColor" stroke-width="5" stroke-dasharray="26 18"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--11" viewBox="0 0 100 100"><path d="M20 80 50 20l30 60z" fill="currentColor" opacity=".55"/></svg>
+                <svg class="gs-kr__fig gs-kr__fig--12" viewBox="0 0 100 100"><rect x="20" y="20" width="60" height="60" rx="14" fill="currentColor" opacity=".5"/></svg>
+            </div>
+
+            <?php
+            /*
+             * Своя шапка вместо сайтовой.
+             *
+             * На посадочной меню — это список способов уйти, не дочитав.
+             * Оставляем единственную ссылку: логотип на главную, чтобы
+             * человек понимал, чей это сайт, и мог проверить.
+             */
+            ?>
+            <header class="gs-kr__bar">
+                <a class="gs-kr__logo" href="<?php echo esc_url(home_url('/')); ?>" aria-label="<?php echo esc_attr(get_bloginfo('name')); ?>">
+                    <img src="<?php echo esc_url(class_exists('GS_Brand') ? GS_Brand::logo('light') : ''); ?>"
+                         alt="<?php echo esc_attr(get_bloginfo('name')); ?>" width="176" height="48" decoding="async" />
+                </a>
+                <a class="gs-kr__bar-cta" href="#gs-kr-form">Записаться</a>
+            </header>
 
             <section class="gs-kr__hero">
                 <svg class="gs-kr__glow" viewBox="0 0 600 600" aria-hidden="true" focusable="false">
@@ -511,6 +697,10 @@ class GS_Kreator {
                     <span class="gs-kr__stat-num"><?php echo (int) self::HH_NOEXP; ?> из <?php echo (int) self::HH_CARDS; ?></span>
                     <span class="gs-kr__stat-cap">берут без опыта</span>
                 </div>
+                <div class="gs-kr__charts">
+                    <?php echo self::salary_chart(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                    <?php echo self::experience_chart(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                </div>
                 <p class="gs-kr__source">Выборка: <?php echo (int) self::HH_CARDS; ?> карточек и 14 полных описаний,
                     <?php echo esc_html(self::HH_DATE); ?>. Зарплата указана в <?php echo (int) self::HH_PAY; ?> из
                     <?php echo (int) self::HH_CARDS; ?> карточек, максимум в выборке — <?php echo esc_html(number_format_i18n(self::HH_MAX)); ?> ₽.
@@ -521,14 +711,29 @@ class GS_Kreator {
                 <h2 class="gs-kr__h2">Что требуют работодатели — по частоте</h2>
                 <p class="gs-kr__sub">Слева — сколько раз требование встретилось в выборке. Справа — модуль программы,
                     который его закрывает.</p>
+                <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+                    <defs>
+                        <linearGradient id="gs-kr-bar-g" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0" stop-color="#5b4ae0"/>
+                            <stop offset="1" stop-color="#0ea5b7"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
                 <ul class="gs-kr__dlist">
+                    <?php $top = max(array_map(function ($row) { return (int) $row[0]; }, self::demands())); ?>
                     <?php foreach (self::demands() as $d) : ?>
                         <li class="gs-kr__d">
-                            <span class="gs-kr__d-num"><?php echo (int) $d[0]; ?></span>
+                            <span class="gs-kr__d-ico"><?php echo self::icon($d[4]); // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
                             <span class="gs-kr__d-body">
                                 <strong class="gs-kr__d-name"><?php echo esc_html($d[1]); ?></strong>
                                 <span class="gs-kr__d-note"><?php echo esc_html($d[2]); ?></span>
+                                <?php /* Полоса частоты: доля от самого частого требования. */ ?>
+                                <svg class="gs-kr__d-bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                                    <rect x="0" y="0" width="100" height="4" rx="2" fill="var(--kr-line)"/>
+                                    <rect x="0" y="0" width="<?php echo esc_attr(round($d[0] / $top * 100, 1)); ?>" height="4" rx="2" fill="url(#gs-kr-bar-g)"/>
+                                </svg>
                             </span>
+                            <span class="gs-kr__d-num"><?php echo (int) $d[0]; ?><i>упом.</i></span>
                             <a class="gs-kr__d-mod" href="#gs-kr-m<?php echo (int) $d[3]; ?>">модуль <?php echo (int) $d[3]; ?></a>
                         </li>
                     <?php endforeach; ?>
@@ -542,7 +747,10 @@ class GS_Kreator {
                 <ol class="gs-kr__mods">
                     <?php $n = 0; foreach (self::program() as $m) : $n++; ?>
                         <li class="gs-kr__mod" id="gs-kr-m<?php echo (int) $n; ?>">
-                            <span class="gs-kr__mod-n"><?php echo (int) $n; ?></span>
+                            <span class="gs-kr__mod-n">
+                                <?php echo self::icon($m[4], 'gs-kr__mod-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                                <i><?php echo (int) $n; ?></i>
+                            </span>
                             <div class="gs-kr__mod-body">
                                 <h3 class="gs-kr__mod-title"><?php echo esc_html($m[0]); ?></h3>
                                 <p class="gs-kr__mod-text"><?php echo esc_html($m[1]); ?></p>
@@ -562,7 +770,7 @@ class GS_Kreator {
                 <ul class="gs-kr__cards">
                     <?php foreach (self::portfolio() as $i => $p) : ?>
                         <li class="gs-kr__card">
-                            <span class="gs-kr__card-n"><?php echo (int) ($i + 1); ?></span>
+                            <span class="gs-kr__card-n"><?php echo self::icon($p[2]); // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
                             <strong class="gs-kr__card-title"><?php echo esc_html($p[0]); ?></strong>
                             <span class="gs-kr__card-text"><?php echo esc_html($p[1]); ?></span>
                         </li>
@@ -610,21 +818,25 @@ class GS_Kreator {
                 <h2 class="gs-kr__h2">Как устроено обучение</h2>
                 <div class="gs-kr__how-grid">
                     <div class="gs-kr__how-item">
+                        <?php echo self::icon('play', 'gs-kr__how-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
                         <h3>Материалы в записи</h3>
                         <p>Смотрите когда удобно. Прямых эфиров нет намеренно: половина заказчиков и учеников живёт не
                             в московском времени, и обязательный вебинар в 19:00 попадает кому-то на ночь.</p>
                     </div>
                     <div class="gs-kr__how-item">
+                        <?php echo self::icon('check', 'gs-kr__how-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
                         <h3>Задания после каждого модуля</h3>
                         <p>Не тесты, а работа: ролик, серия кадров, смета. Сдаётся файлами и ссылкой, проверяется
                             письменно — с указанием, что именно переделать и почему.</p>
                     </div>
                     <div class="gs-kr__how-item">
+                        <?php echo self::icon('wallet', 'gs-kr__how-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
                         <h3>Практика на рабочих сервисах</h3>
                         <p>Не на демо-доступах: генерация, озвучка, звук и расшифровка идут на тех же сервисах, на
                             которых работают за деньги, с оплатой за запуск и видимой себестоимостью.</p>
                     </div>
                     <div class="gs-kr__how-item">
+                        <?php echo self::icon('search', 'gs-kr__how-ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
                         <h3>Разбор ошибок, а не похвала</h3>
                         <p>Главный навык — отличать плохую постановку задачи от плохого исходника и от неверного ритма
                             монтажа. Этому учат только на разборах конкретных работ.</p>
@@ -640,27 +852,6 @@ class GS_Kreator {
                         <figcaption>Разбор сданной работы: что переделать и почему.</figcaption>
                     </figure>
                 <?php endif; ?>
-            </section>
-
-            <section class="gs-kr__tools">
-                <h2 class="gs-kr__h2">На чём идёт практика</h2>
-                <p class="gs-kr__sub">Все операции — с одного рублёвого баланса и с оплатой за запуск, без подписок.
-                    Расход на всё обучение укладывается примерно в 3 000 ₽.</p>
-                <ul class="gs-kr__tgrid">
-                    <?php foreach (self::tools() as $t) : ?>
-                        <li class="gs-kr__tool">
-                            <?php if ($t[2] !== '') : ?>
-                                <a href="<?php echo esc_url($t[2]); ?>"><?php echo esc_html($t[0]); ?></a>
-                            <?php else : ?>
-                                <span><?php echo esc_html($t[0]); ?></span>
-                            <?php endif; ?>
-                            <em><?php echo esc_html($t[1]); ?></em>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-                <p class="gs-kr__sub">Из рыночных инструментов в программе разбираем те, что названы в самих
-                    объявлениях: Midjourney, Stable Diffusion, ComfyUI, Kling, Runway, Seedance, Higgsfield,
-                    Premiere Pro, DaVinci Resolve, After Effects, CapCut, Figma.</p>
             </section>
 
             <section class="gs-kr__price">
@@ -770,6 +961,39 @@ class GS_Kreator {
                         — разборы вакансий, промты и заказы по мере появления.</li>
                 </ul>
             </section>
+
+            <?php
+            /*
+             * Свой подвал: только то, без чего страница с формой не имеет
+             * права существовать — кто оказывает услугу и по каким
+             * правилам. Остальное в сайтовом подвале и на этой странице
+             * лишнее.
+             */
+            $org = class_exists('GS_Seo') ? GS_Seo::org_details() : array();
+            $legal = array();
+            if (class_exists('GS_Requisites')) {
+                $legal['Реквизиты'] = GS_Requisites::get_url();
+                $legal['Публичная оферта'] = GS_Requisites::oferta_url();
+                $legal['Политика обработки персональных данных'] = GS_Requisites::privacy_url();
+            }
+            $legal['Порядок оказания услуг'] = home_url('/poryadok-okazaniya-uslug/');
+            $legal = array_filter($legal);
+            ?>
+            <footer class="gs-kr__foot">
+                <p class="gs-kr__foot-org">
+                    <?php if (!empty($org['legalName'])) : ?>
+                        <?php echo esc_html($org['legalName']); ?><?php endif; ?>
+                    <?php if (!empty($org['taxID'])) : ?>
+                        · ИНН <?php echo esc_html($org['taxID']); ?><?php endif; ?>
+                    <?php if (!empty($org['email'])) : ?>
+                        · <a href="mailto:<?php echo esc_attr($org['email']); ?>"><?php echo esc_html($org['email']); ?></a><?php endif; ?>
+                </p>
+                <p class="gs-kr__foot-legal">
+                    <?php $i = 0; foreach ($legal as $title => $url) : $i++; ?>
+                        <?php echo $i > 1 ? ' · ' : ''; ?><a href="<?php echo esc_url($url); ?>"><?php echo esc_html($title); ?></a>
+                    <?php endforeach; ?>
+                </p>
+            </footer>
 
         </div>
         <?php

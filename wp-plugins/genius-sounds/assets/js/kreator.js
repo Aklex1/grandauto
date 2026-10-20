@@ -86,3 +86,61 @@
         });
     });
 })();
+
+/**
+ * Появление блоков при прокрутке.
+ *
+ * Класс kr-anim ставит скрипт, и только после этого стили прячут блоки:
+ * при отключённом скрипте страница должна оставаться видимой целиком.
+ * Наблюдатель срабатывает один раз на блок — повторные проявления при
+ * прокрутке вверх-вниз выглядят как брак, а не как оформление.
+ */
+(function () {
+    'use strict';
+
+    var root = document.querySelector('.gs-kr');
+    if (!root || !('IntersectionObserver' in window)) {
+        return;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return;
+    }
+
+    var marks = [];
+    root.querySelectorAll('section').forEach(function (section) {
+        var kids = section.children.length > 1
+            ? Array.prototype.slice.call(section.children)
+            : [section];
+        kids.forEach(function (el, i) {
+            el.setAttribute('data-kr-in', '');
+            el.style.setProperty('--kr-delay', Math.min(i, 6) * 0.06 + 's');
+            marks.push(el);
+        });
+    });
+    root.querySelectorAll('.gs-kr__d').forEach(function (el, i) {
+        el.setAttribute('data-kr-in', '');
+        el.style.setProperty('--kr-delay', Math.min(i, 9) * 0.05 + 's');
+        marks.push(el);
+    });
+
+    root.classList.add('kr-anim');
+
+    var seen = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+            if (!entry.isIntersecting) {
+                return;
+            }
+            entry.target.classList.add('is-in');
+            seen.unobserve(entry.target);
+        });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+
+    marks.forEach(function (el) { seen.observe(el); });
+
+    // Первый экран показываем сразу: ждать прокрутки ему незачем.
+    var hero = root.querySelector('.gs-kr__hero');
+    if (hero) {
+        Array.prototype.slice.call(hero.children).forEach(function (el) { el.classList.add('is-in'); });
+        hero.classList.add('is-in');
+    }
+})();

@@ -1,140 +1,464 @@
 /**
- * Лендинг «Обучение AI-креатора».
+ * Лендинг «Обучение AI-креатора» — светлая широкая версия.
  *
- * Строится поверх catalog.css и studio.css: токены, поля формы и кнопки
- * оттуда. Здесь — сетка лендинга и фоновая графика.
+ * Страница единственная светлая во всём плагине, поэтому своих цветов она
+ * не наследует ниоткуда: токены объявлены здесь под именами --kr-*, а не
+ * --gs-*. Иначе к ним примешивались бы тёмные значения из catalog.css,
+ * который грузится на этой же странице ради сетки и полей формы.
  *
- * Фоны нарисованы SVG, а не загружены картинками: на первом экране их три
- * слоя, и три растровых файла по сто килобайт сдвинули бы отрисовку
- * заголовка. Сетка и штриховка лежат в data-URI, свечение и волны —
- * инлайновыми svg в разметке, чтобы брать цвет у темы.
+ * Шапка и подвал остаются тёмными: светлая вставка между ними читается
+ * как отдельный разворот, а перекрашивать обвязку ради одной страницы
+ * значило бы трогать весь сайт.
+ *
+ * Фоновая графика нарисована SVG: сетка и штриховка — в data-URI,
+ * свечение, волны, полосы частоты и кольцо опыта — инлайновыми svg в
+ * разметке, чтобы брать цвет у страницы.
  */
 
+/* --- Обвязка страницы ------------------------------------------------ */
+
+/*
+ * Сайтовые шапку и подвал убираем целиком.
+ *
+ * На посадочной каждое меню — это список способов уйти, не дочитав, а
+ * подвал сайта на сорок ссылок делает это особенно убедительно. Вместо
+ * них своя шапка с одним логотипом и свой подвал с тем, без чего
+ * страница со сбором заявок существовать не вправе: кто оказывает
+ * услугу и по каким правилам.
+ */
+/*
+ * Селекторы длинные не для красоты: chrome.css возвращает шапку и подвал
+ * правилом body.gs-chrome.l-body header.l-header с !important — оно
+ * чинит темы, которые прячут их по-своему. Чтобы убрать их на одной
+ * странице, нужна точность выше, поэтому в селекторе и свой класс, и оба
+ * их.
+ */
+body.gs-kr-page.gs-chrome.l-body #page-header,
+body.gs-kr-page.gs-chrome.l-body header.l-header,
+body.gs-kr-page.gs-chrome.l-body .l-header,
+body.gs-kr-page.gs-chrome.l-body #page-footer,
+body.gs-kr-page.gs-chrome.l-body .l-footer,
+body.gs-kr-page.gs-chrome.l-body footer#page-footer,
+body.gs-kr-page .gs-legal,
+body.gs-kr-page .gs-footer-links {
+    display: none !important;
+}
+
+/* Шапка была липкой, и полотно под неё отступало. Отступ снимаем. */
+body.gs-kr-page .l-canvas {
+    padding-top: 0 !important;
+}
+
+.gs-kr__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px 0 18px;
+}
+
+.gs-kr__logo img {
+    display: block;
+    width: auto;
+    height: 40px;
+}
+
+.gs-kr .gs-kr__bar-cta,
+.gs-kr .gs-kr__bar-cta:hover,
+.gs-kr .gs-kr__bar-cta:focus-visible {
+    display: inline-flex;
+    align-items: center;
+    min-height: 42px;
+    padding: 0 20px;
+    border: 1px solid var(--kr-line-2);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 14.5px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--kr-ink) !important;
+}
+
+.gs-kr .gs-kr__bar-cta:hover {
+    border-color: var(--kr-primary-2);
+    background: var(--kr-primary-soft);
+}
+
+.gs-kr__foot {
+    margin-top: 10px;
+    padding: 26px 0 0;
+    border-top: 1px solid var(--kr-line);
+    text-align: center;
+}
+
+.gs-kr__foot p {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--kr-muted);
+}
+
+.gs-kr__foot-legal {
+    margin-top: 6px !important;
+}
+
+.gs-kr__foot a {
+    color: var(--kr-muted);
+    text-decoration: none;
+    border-bottom: 1px solid var(--kr-line-2);
+}
+
+.gs-kr__foot a:hover {
+    color: var(--kr-primary);
+}
+
+@media (max-width: 680px) {
+    .gs-kr__bar {
+        padding: 16px 0 12px;
+    }
+
+    .gs-kr__logo img {
+        height: 32px;
+    }
+
+    .gs-kr__foot p {
+        font-size: 12.5px;
+    }
+}
+
+/* --- Летающие фигуры ------------------------------------------------- */
+
+/*
+ * Слой закреплён в окне и лежит под содержимым: фигуры плывут в полях по
+ * бокам, пока человек читает. Ниже 1200 точек полей нет, и слой
+ * выключается — иначе фигуры оказались бы под текстом.
+ */
+.gs-kr__deco {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.gs-kr > *:not(.gs-kr__deco) {
+    position: relative;
+    z-index: 1;
+}
+
+.gs-kr__fig {
+    position: absolute;
+    display: block;
+    opacity: 0.5;
+    will-change: transform;
+}
+
+.gs-kr__fig--1  { top: 11%; left: 1.5%;  width: 86px;  height: 86px;  color: #7c6cf5; animation: gs-kr-fly-a 26s ease-in-out infinite; }
+.gs-kr__fig--2  { top: 34%; left: 5%;    width: 58px;  height: 58px;  color: #0ea5b7; animation: gs-kr-fly-b 31s ease-in-out infinite; }
+.gs-kr__fig--3  { top: 62%; left: 2.5%;  width: 64px;  height: 64px;  color: #5b4ae0; animation: gs-kr-fly-c 36s ease-in-out infinite; opacity: 0.38; }
+.gs-kr__fig--4  { top: 82%; left: 6%;    width: 34px;  height: 34px;  color: #0f9d58; animation: gs-kr-fly-b 22s ease-in-out infinite 2s; }
+.gs-kr__fig--5  { top: 18%; right: 3%;   width: 62px;  height: 62px;  color: #0ea5b7; animation: gs-kr-fly-c 29s ease-in-out infinite; opacity: 0.42; }
+.gs-kr__fig--6  { top: 47%; right: 1.5%; width: 44px;  height: 44px;  color: #7c6cf5; animation: gs-kr-fly-a 24s ease-in-out infinite 1.5s; }
+.gs-kr__fig--7  { top: 72%; right: 4%;   width: 128px; height: 36px;  color: #5b4ae0; animation: gs-kr-fly-b 34s ease-in-out infinite; opacity: 0.35; }
+.gs-kr__fig--8  { top: 27%; left: 8.5%;  width: 46px;  height: 46px;  color: #7c6cf5; animation: gs-kr-fly-c 28s ease-in-out infinite 1s; opacity: 0.3; }
+.gs-kr__fig--9  { top: 6%;  right: 9%;   width: 38px;  height: 38px;  color: #0f9d58; animation: gs-kr-fly-a 20s ease-in-out infinite 3s; opacity: 0.45; }
+.gs-kr__fig--10 { top: 88%; right: 10%;  width: 56px;  height: 56px;  color: #0ea5b7; animation: gs-kr-fly-c 33s ease-in-out infinite 2s; opacity: 0.32; }
+.gs-kr__fig--11 { top: 55%; left: 7.5%;  width: 30px;  height: 30px;  color: #0f9d58; animation: gs-kr-fly-a 27s ease-in-out infinite 4s; opacity: 0.34; }
+.gs-kr__fig--12 { top: 38%; right: 7.5%; width: 34px;  height: 34px;  color: #5b4ae0; animation: gs-kr-fly-b 25s ease-in-out infinite 2.5s; opacity: 0.3; }
+
+@keyframes gs-kr-fly-a {
+    0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+    33%      { transform: translate3d(22px, -34px, 0) rotate(14deg); }
+    66%      { transform: translate3d(-16px, 26px, 0) rotate(-10deg); }
+}
+
+@keyframes gs-kr-fly-b {
+    0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+    50%      { transform: translate3d(-26px, -40px, 0) rotate(-18deg) scale(1.12); }
+}
+
+@keyframes gs-kr-fly-c {
+    0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+    25%      { transform: translate3d(14px, 30px, 0) rotate(8deg); }
+    75%      { transform: translate3d(-20px, -22px, 0) rotate(-12deg); }
+}
+
+@media (max-width: 1200px) {
+    .gs-kr__deco {
+        display: none;
+    }
+}
+
+/* --- Полотно --------------------------------------------------------- */
+
+/*
+ * Светлое полотно.
+ *
+ * Тёмный фон ставит chrome.css правилом body.gs-chrome с !important —
+ * тем самым, которое красит шапку и подвал на всех страницах плагина.
+ * Шапка с подвалом нам нужны тёмными, а полотно светлым, поэтому
+ * перебиваем точечно: свой класс плюс их же, и тоже с !important.
+ */
+body.gs-kr-page.gs-chrome,
+body.gs-kr-page.gs-chrome .l-canvas,
+body.gs-kr-page.gs-chrome .l-main,
+body.gs-kr-page.gs-chrome .l-main > .l-section,
+body.gs-kr-page.gs-chrome .l-main .l-section.height_custom {
+    background-color: #f5f6fb !important;
+}
+
+/* Шире обычной страницы плагина: у лендинга таблицы, сетки по четыре и
+   графики, которым в 1200 точках тесно. Снаружи доступно 1510. */
+body.gs-kr-page .l-section > .l-section-h {
+    max-width: 1460px;
+}
+
+.gs-wrap.gs-kr {
+    max-width: 1440px;
+}
+
 .gs-kr {
-    /* Токены темы объявлены на .gs-wrap, и разметка лендинга лежит внутри
-       него. Повторяем их здесь запасным слоем: без значений лендинг
-       остаётся вовсе без фонов и рамок, а заметно это только на живой
-       странице. */
-    --gs-bg: #080c14;
-    --gs-surface: #131b2b;
-    --gs-surface-2: #182236;
-    --gs-border: rgba(148, 163, 184, 0.14);
-    --gs-border-strong: rgba(129, 140, 248, 0.38);
-    --gs-text: #f1f5f9;
-    --gs-muted: #94a3b8;
-    --gs-primary: #6366f1;
-    --gs-primary-light: #818cf8;
-    --gs-accent: #22d3ee;
-    --gs-ok: #34d399;
-    --gs-radius: 16px;
-    --gs-radius-sm: 10px;
-    --gs-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
-    --gs-ease: cubic-bezier(0.22, 1, 0.36, 1);
-    --gs-kr-grid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M48 0H0v48' fill='none' stroke='%23334155' stroke-opacity='.22' stroke-width='1'/%3E%3C/svg%3E");
-    --gs-kr-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='2' cy='2' r='1.3' fill='%236366f1' fill-opacity='.3'/%3E%3C/svg%3E");
-    --gs-kr-rays: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26'%3E%3Cpath d='M-6 26L26 -6' stroke='%2322d3ee' stroke-opacity='.14' stroke-width='2'/%3E%3C/svg%3E");
+    --kr-bg: #f5f6fb;
+    --kr-card: #ffffff;
+    --kr-card-2: #eef1f8;
+    --kr-ink: #101828;
+    --kr-ink-2: #344054;
+    --kr-muted: #667085;
+    --kr-line: #e3e8f0;
+    --kr-line-2: #cdd5e3;
+    --kr-primary: #5b4ae0;
+    --kr-primary-2: #7c6cf5;
+    --kr-primary-soft: #efecfe;
+    --kr-accent: #0ea5b7;
+    --kr-accent-soft: #e3f6f8;
+    --kr-ok: #0f9d58;
+    --kr-radius: 18px;
+    --kr-radius-sm: 12px;
+    --kr-shadow: 0 2px 4px rgba(16, 24, 40, 0.04), 0 12px 32px rgba(16, 24, 40, 0.07);
+    --kr-shadow-lg: 0 8px 18px rgba(16, 24, 40, 0.07), 0 28px 60px rgba(16, 24, 40, 0.1);
+    --kr-grid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M48 0H0v48' fill='none' stroke='%23101828' stroke-opacity='.06' stroke-width='1'/%3E%3C/svg%3E");
+    --kr-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='2' cy='2' r='1.3' fill='%235b4ae0' fill-opacity='.14'/%3E%3C/svg%3E");
+    --kr-rays: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26'%3E%3Cpath d='M-6 26L26 -6' stroke='%235b4ae0' stroke-opacity='.07' stroke-width='2'/%3E%3C/svg%3E");
+    --kr-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.4l3.2 3.1L13 4.8' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+
     padding-bottom: 80px;
+    color: var(--kr-ink);
 }
 
 .gs-kr section {
     position: relative;
 }
 
+/*
+ * Светлый фон с мягкими пятнами.
+ *
+ * Ровная серая заливка на всю высоту читается как незаполненная страница.
+ * Два больших размытых пятна в фирменных цветах и тонкая сетка дают
+ * глубину, не мешая тексту: пятна лежат под содержимым, прозрачность
+ * низкая, и ни одно не попадает под колонку с текстом целиком.
+ *
+ * Рисуем псевдоэлементами на body: так фон покрывает всю страницу, а не
+ * только карточку лендинга, и не растёт вместе с содержимым.
+ */
+body.gs-kr-page.gs-chrome .l-main {
+    position: relative;
+    overflow: hidden;
+}
+
+body.gs-kr-page.gs-chrome .l-main::before,
+body.gs-kr-page.gs-chrome .l-main::after {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+body.gs-kr-page.gs-chrome .l-main::before {
+    top: -180px;
+    right: -140px;
+    width: 780px;
+    height: 780px;
+    background: radial-gradient(circle, rgba(124, 108, 245, 0.22) 0%, rgba(124, 108, 245, 0) 68%);
+    animation: gs-kr-drift-a 26s ease-in-out infinite;
+}
+
+body.gs-kr-page.gs-chrome .l-main::after {
+    top: 820px;
+    left: -220px;
+    width: 720px;
+    height: 720px;
+    background: radial-gradient(circle, rgba(14, 165, 183, 0.18) 0%, rgba(14, 165, 183, 0) 68%);
+    animation: gs-kr-drift-b 32s ease-in-out infinite;
+}
+
+/* Содержимое — над пятнами. */
+body.gs-kr-page.gs-chrome .l-main > .l-section {
+    position: relative;
+    z-index: 1;
+    background-color: transparent !important;
+}
+
+@keyframes gs-kr-drift-a {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    50%      { transform: translate3d(-60px, 50px, 0) scale(1.08); }
+}
+
+@keyframes gs-kr-drift-b {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    50%      { transform: translate3d(70px, -40px, 0) scale(1.06); }
+}
+
+/*
+ * Появление при прокрутке.
+ *
+ * Прячем только когда скрипт жив: класс kr-anim он ставит сам. Без него
+ * страница выглядит обычно — иначе при отключённом скрипте лендинг
+ * остался бы пустым.
+ */
+.gs-kr.kr-anim [data-kr-in] {
+    opacity: 0;
+    transform: translateY(16px);
+}
+
+.gs-kr.kr-anim [data-kr-in].is-in {
+    opacity: 1;
+    transform: none;
+    transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1) var(--kr-delay, 0s),
+                transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) var(--kr-delay, 0s);
+}
+
+/* Карточки отзываются на курсор: страница перестаёт быть плакатом. */
+.gs-kr__stat,
+.gs-kr__mod,
+.gs-kr__card,
+.gs-kr__how-item,
+.gs-kr__gitem,
+.gs-kr__plan {
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.gs-kr__stat:hover,
+.gs-kr__mod:hover,
+.gs-kr__how-item:hover,
+.gs-kr__gitem:hover,
+.gs-kr__plan:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--kr-shadow-lg);
+}
+
+.gs-kr__card:hover {
+    transform: translateY(-2px);
+    border-color: var(--kr-primary-2);
+}
+
+.gs-kr .gs-breadcrumbs,
+.gs-kr .gs-breadcrumbs a {
+    color: var(--kr-muted);
+}
+
+.gs-kr h1,
+.gs-kr h2,
+.gs-kr h3 {
+    color: var(--kr-ink);
+}
+
 .gs-kr__h2 {
     margin: 0 0 10px;
-    font-size: clamp(24px, 3.1vw, 36px);
+    font-size: clamp(25px, 3vw, 37px);
     line-height: 1.16;
     letter-spacing: -0.02em;
-    color: var(--gs-text);
 }
 
 .gs-kr__sub {
-    margin: 0 0 26px;
-    max-width: 760px;
-    font-size: 16px;
+    margin: 0 0 28px;
+    max-width: 820px;
+    font-size: 16.5px;
     line-height: 1.6;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
 }
 
 .gs-kr__fine {
     margin: 16px 0 0;
     font-size: 13.5px;
     line-height: 1.55;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
+}
+
+/* Иконки: цвет берут у текста, размер задаёт место вставки. */
+.gs-kr__ico {
+    width: 22px;
+    height: 22px;
+    flex: none;
 }
 
 /* --- Кнопки ---------------------------------------------------------- */
 
-/* Цвет текста ссылок тема задаёт с !important, и на фиолетовой кнопке
-   надпись оставалась блёклой сиреневой. Белый тут обязателен — это
-   главное действие страницы. */
+.gs-kr__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 54px;
+    padding: 0 28px;
+    border: 1px solid transparent;
+    border-radius: var(--kr-radius-sm);
+    background: var(--kr-primary);
+    font-size: 16.5px;
+    font-weight: 700;
+    text-decoration: none;
+    box-shadow: 0 8px 20px rgba(91, 74, 224, 0.26);
+    transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
 .gs-kr a.gs-kr__btn,
 .gs-kr a.gs-kr__btn:hover,
 .gs-kr a.gs-kr__btn:focus-visible {
     color: #fff !important;
 }
 
-.gs-kr a.gs-kr__btn--ghost,
-.gs-kr a.gs-kr__btn--ghost:hover,
-.gs-kr a.gs-kr__btn--ghost:focus-visible {
-    color: var(--gs-text) !important;
-}
-
-.gs-kr__btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 52px;
-    padding: 0 26px;
-    border: 1px solid transparent;
-    border-radius: var(--gs-radius-sm);
-    background: var(--gs-primary);
-    color: #fff;
-    font-size: 16px;
-    font-weight: 700;
-    text-decoration: none;
-    transition: transform 0.16s var(--gs-ease), background 0.16s var(--gs-ease);
-}
-
 .gs-kr__btn:hover,
 .gs-kr__btn:focus-visible {
-    background: var(--gs-primary-light);
-    color: #fff;
+    background: var(--kr-primary-2);
     transform: translateY(-1px);
+    box-shadow: 0 12px 26px rgba(91, 74, 224, 0.3);
 }
 
 .gs-kr__btn--ghost {
-    background: transparent;
-    border-color: var(--gs-border-strong);
-    color: var(--gs-text);
+    background: #fff;
+    border-color: var(--kr-line-2);
+    box-shadow: none;
+}
+
+.gs-kr a.gs-kr__btn--ghost,
+.gs-kr a.gs-kr__btn--ghost:hover,
+.gs-kr a.gs-kr__btn--ghost:focus-visible {
+    color: var(--kr-ink) !important;
 }
 
 .gs-kr__btn--ghost:hover,
 .gs-kr__btn--ghost:focus-visible {
-    background: rgba(99, 102, 241, 0.14);
-    color: var(--gs-text);
+    background: var(--kr-primary-soft);
+    border-color: var(--kr-primary-2);
+    box-shadow: none;
 }
 
-/* Кнопка формы — это <button>, а тема красит кнопки своим голубым и делает
-   это с большей точностью селектора. Перебиваем явно: на лендинге обе
-   кнопки должны быть одного цвета, иначе главное действие выглядит чужим. */
 .gs-kr button.gs-kr__btn--wide {
     width: 100%;
     border: 0;
     cursor: pointer;
     font-family: inherit;
-    background: var(--gs-primary) !important;
+    background: var(--kr-primary) !important;
     color: #fff !important;
-    border-radius: var(--gs-radius-sm) !important;
+    border-radius: var(--kr-radius-sm) !important;
 }
 
 .gs-kr button.gs-kr__btn--wide:hover,
 .gs-kr button.gs-kr__btn--wide:focus-visible {
-    background: var(--gs-primary-light) !important;
+    background: var(--kr-primary-2) !important;
 }
 
-/* Якоря модулей: шапка сайта липкая и перекрывает заголовок, к которому
-   перешли из блока требований. */
+/* Якоря модулей: шапка липкая и перекрывает заголовок. */
 .gs-kr__mod,
 .gs-kr__program,
 .gs-kr__form-wrap {
@@ -145,27 +469,44 @@
 
 .gs-kr__hero {
     display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
     align-items: center;
-    gap: 40px;
-    margin: 8px 0 44px;
-    padding: 56px 48px;
-    border: 1px solid var(--gs-border);
-    border-radius: calc(var(--gs-radius) + 8px);
-    background-color: var(--gs-surface);
-    background-image: var(--gs-kr-grid);
-    box-shadow: var(--gs-shadow);
+    gap: 44px;
+    margin: 10px 0 44px;
+    padding: 58px 52px;
+    border: 1px solid var(--kr-line);
+    border-radius: calc(var(--kr-radius) + 8px);
+    background-color: var(--kr-card);
+    background-image: var(--kr-grid);
+    box-shadow: var(--kr-shadow-lg);
     overflow: hidden;
 }
 
-/* Свечение лежит под текстом и не мешает выделению: pointer-events снят. */
 .gs-kr__glow {
     position: absolute;
-    top: -22%;
-    right: -12%;
-    width: 68%;
+    top: -28%;
+    right: -14%;
+    width: 66%;
     min-width: 420px;
+    opacity: 0.55;
     pointer-events: none;
+    animation: gs-kr-breathe 18s ease-in-out infinite;
+}
+
+@keyframes gs-kr-breathe {
+    0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+    50%      { transform: translate3d(-18px, 14px, 0) rotate(4deg); }
+}
+
+/* Значок над заголовком слегка пульсирует рамкой — взгляд цепляется за
+   цифру 219, с которой начинается весь разговор. */
+.gs-kr__badge {
+    animation: gs-kr-pulse 3.6s ease-in-out infinite;
+}
+
+@keyframes gs-kr-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(124, 108, 245, 0.32); }
+    60%      { box-shadow: 0 0 0 10px rgba(124, 108, 245, 0); }
 }
 
 .gs-kr__hero-text {
@@ -176,50 +517,46 @@
 .gs-kr__badge {
     display: inline-flex;
     align-items: center;
-    padding: 7px 13px;
-    border: 1px solid var(--gs-border-strong);
+    padding: 8px 14px;
+    border: 1px solid var(--kr-primary-2);
     border-radius: 999px;
-    background: rgba(99, 102, 241, 0.14);
+    background: var(--kr-primary-soft);
     font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.02em;
     text-transform: uppercase;
-    color: var(--gs-primary-light);
+    color: var(--kr-primary);
 }
 
-/* Тема задаёт размер заголовка страницы правилом с тегом в селекторе и
-   выигрывает у одного класса: H1 оставался 30 пикселями при заголовках
-   разделов в 36. Одной точности селектора не хватило: размер у темы стоит
-   с !important, поэтому перебиваем тем же способом — иначе главный
-   заголовок страницы мельче заголовков её разделов. */
 .gs-kr h1.gs-kr__title {
-    margin: 18px 0 0;
-    font-size: clamp(29px, 4.2vw, 47px) !important;
-    line-height: 1.11;
-    letter-spacing: -0.025em;
-    color: var(--gs-text);
+    margin: 20px 0 0;
+    font-size: clamp(30px, 4.2vw, 50px) !important;
+    line-height: 1.1;
+    letter-spacing: -0.028em;
+    color: var(--kr-ink);
 }
 
 .gs-kr__lead {
-    margin: 16px 0 0;
-    max-width: 600px;
-    font-size: 17px;
+    margin: 18px 0 0;
+    max-width: 620px;
+    font-size: 17.5px;
     line-height: 1.62;
-    color: #c7d2e4;
+    color: var(--kr-ink-2);
 }
 
 .gs-kr__cta {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    margin-top: 26px;
+    margin-top: 28px;
 }
 
 .gs-kr__hero-art {
     position: relative;
     min-width: 0;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius);
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    box-shadow: var(--kr-shadow);
     overflow: hidden;
 }
 
@@ -234,28 +571,27 @@
 .gs-kr__stats {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 14px;
-    margin-bottom: 56px;
+    gap: 16px;
+    margin-bottom: 60px;
 }
 
 .gs-kr__stat {
-    padding: 22px 20px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius);
-    background-color: var(--gs-surface);
-    background-image: var(--gs-kr-dots);
+    padding: 24px 22px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background-color: var(--kr-card);
+    background-image: var(--kr-dots);
     background-size: 22px 22px;
+    box-shadow: var(--kr-shadow);
 }
 
 .gs-kr__stat-num {
     display: block;
-    /* «70 000–100 000 ₽» — самая длинная плитка, и на 30 пикселях она
-       ломалась посреди числа. Берём размер от ширины плитки. */
-    font-size: clamp(20px, 2vw, 27px);
-    text-wrap: balance;
+    font-size: clamp(21px, 2vw, 28px);
     font-weight: 800;
     letter-spacing: -0.02em;
-    color: var(--gs-accent);
+    text-wrap: balance;
+    color: var(--kr-primary);
 }
 
 .gs-kr__stat-cap {
@@ -263,21 +599,186 @@
     margin-top: 6px;
     font-size: 14px;
     line-height: 1.45;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
 }
 
 .gs-kr__source {
     grid-column: 1 / -1;
-    margin: 2px 0 0;
+    margin: 0;
     font-size: 13px;
     line-height: 1.55;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
+}
+
+/* --- Графики --------------------------------------------------------- */
+
+.gs-kr__charts {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 16px;
+}
+
+.gs-kr__chart {
+    margin: 0;
+    padding: 26px 28px 22px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background: var(--kr-card);
+    box-shadow: var(--kr-shadow);
+}
+
+.gs-kr__chart-cap {
+    margin-bottom: 26px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--kr-muted);
+}
+
+/* Шкала зарплат */
+.gs-kr__pay {
+    position: relative;
+    margin: 42px 0 12px;
+}
+
+.gs-kr__pay-svg {
+    display: block;
+    width: 100%;
+    height: 18px;
+}
+
+.gs-kr.kr-anim .gs-kr__pay-svg rect + rect {
+    transform: scaleX(0);
+    transform-origin: left center;
+}
+
+.gs-kr.kr-anim .is-in .gs-kr__pay-svg rect + rect {
+    transform: scaleX(1);
+    transition: transform 1.1s cubic-bezier(0.22, 1, 0.36, 1) 0.1s;
+}
+
+/* Кольцо опыта: проявляется целиком, без вращения — крутящаяся диаграмма
+   читается как загрузка, а это данные. */
+.gs-kr.kr-anim .gs-kr__exp-svg {
+    opacity: 0;
+    transform: scale(0.94);
+}
+
+.gs-kr.kr-anim .is-in .gs-kr__exp-svg {
+    opacity: 1;
+    transform: none;
+    transition: opacity 0.7s ease 0.1s, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.1s;
+}
+
+.gs-kr__pay-pin {
+    position: absolute;
+    top: 20px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.gs-kr__pay-pin::before {
+    content: "";
+    position: absolute;
+    top: -22px;
+    width: 2px;
+    height: 20px;
+    background: var(--kr-ink);
+    opacity: 0.35;
+}
+
+.gs-kr__pay-pin--up {
+    top: auto;
+    bottom: 20px;
+}
+
+.gs-kr__pay-pin--up::before {
+    top: auto;
+    bottom: -22px;
+}
+
+.gs-kr__pay-pin b {
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--kr-ink);
+}
+
+.gs-kr__pay-pin i {
+    font-style: normal;
+    font-size: 12px;
+    color: var(--kr-muted);
+}
+
+.gs-kr__pay-axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 46px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--kr-ink-2);
+}
+
+.gs-kr__pay-axis span:last-child {
+    text-align: right;
+}
+
+.gs-kr__pay-axis i {
+    font-style: normal;
+    font-weight: 400;
+    font-size: 12.5px;
+    color: var(--kr-muted);
+}
+
+/* Кольцо опыта */
+.gs-kr__exp {
+    display: grid;
+    grid-template-columns: 124px minmax(0, 1fr);
+    align-items: center;
+    gap: 20px;
+}
+
+.gs-kr__exp-svg {
+    width: 124px;
+    height: 124px;
+}
+
+.gs-kr__exp-legend {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 9px;
+    font-size: 14px;
+    color: var(--kr-muted);
+}
+
+.gs-kr__exp-legend li {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.gs-kr__exp-legend span {
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    flex: none;
+}
+
+.gs-kr__exp-legend b {
+    font-size: 15px;
+    color: var(--kr-ink);
 }
 
 /* --- Требования ------------------------------------------------------ */
 
 .gs-kr__demands {
-    margin-bottom: 56px;
+    margin-bottom: 60px;
 }
 
 .gs-kr__dlist {
@@ -290,25 +791,30 @@
 
 .gs-kr__d {
     display: grid;
-    grid-template-columns: 62px minmax(0, 1fr) auto;
+    grid-template-columns: 48px minmax(0, 1fr) 76px auto;
     align-items: center;
-    gap: 16px;
-    padding: 14px 18px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius-sm);
-    background: var(--gs-surface);
+    gap: 18px;
+    padding: 16px 20px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius-sm);
+    background: var(--kr-card);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
 }
 
-.gs-kr__d-num {
+.gs-kr__d-ico {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 44px;
-    border-radius: var(--gs-radius-sm);
-    background: rgba(34, 211, 238, 0.12);
-    font-size: 19px;
-    font-weight: 800;
-    color: var(--gs-accent);
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: var(--kr-primary-soft);
+    color: var(--kr-primary);
+}
+
+.gs-kr__d-ico .gs-kr__ico {
+    width: 24px;
+    height: 24px;
 }
 
 .gs-kr__d-body {
@@ -318,7 +824,7 @@
 .gs-kr__d-name {
     display: block;
     font-size: 16.5px;
-    color: var(--gs-text);
+    color: var(--kr-ink);
 }
 
 .gs-kr__d-note {
@@ -326,14 +832,51 @@
     margin-top: 3px;
     font-size: 14px;
     line-height: 1.45;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
+}
+
+.gs-kr__d-bar {
+    display: block;
+    width: 100%;
+    height: 4px;
+    margin-top: 10px;
+}
+
+/* Заполненная часть полосы выезжает слева: так видно, что это измерение,
+   а не декоративная черта. */
+.gs-kr.kr-anim .gs-kr__d-bar rect + rect {
+    transform: scaleX(0);
+    transform-origin: left center;
+}
+
+.gs-kr.kr-anim .is-in .gs-kr__d-bar rect + rect,
+.gs-kr.kr-anim .gs-kr__d.is-in .gs-kr__d-bar rect + rect {
+    transform: scaleX(1);
+    transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1) var(--kr-delay, 0s);
+}
+
+.gs-kr__d-num {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    font-size: 21px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--kr-primary);
+}
+
+.gs-kr__d-num i {
+    font-style: normal;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--kr-muted);
 }
 
 .gs-kr__d-mod {
     font-size: 13.5px;
     font-weight: 700;
     white-space: nowrap;
-    color: var(--gs-primary-light);
+    color: var(--kr-primary);
     text-decoration: none;
     border-bottom: 1px dashed currentColor;
 }
@@ -341,7 +884,7 @@
 /* --- Программа ------------------------------------------------------- */
 
 .gs-kr__program {
-    margin-bottom: 56px;
+    margin-bottom: 60px;
 }
 
 .gs-kr__mods {
@@ -349,35 +892,59 @@
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
 }
 
 .gs-kr__mod {
     display: grid;
-    grid-template-columns: 58px minmax(0, 1fr);
-    gap: 18px;
-    padding: 24px 26px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius);
-    background: var(--gs-surface);
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 20px;
+    padding: 26px 28px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background: var(--kr-card);
+    box-shadow: var(--kr-shadow);
 }
 
 .gs-kr__mod:target {
-    border-color: var(--gs-border-strong);
-    background: var(--gs-surface-2);
+    border-color: var(--kr-primary-2);
+    box-shadow: 0 0 0 3px var(--kr-primary-soft), var(--kr-shadow);
 }
 
 .gs-kr__mod-n {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 58px;
-    height: 58px;
+    width: 62px;
+    height: 62px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, var(--kr-primary), var(--kr-accent));
+    color: #fff;
+}
+
+.gs-kr__mod-ico {
+    width: 28px;
+    height: 28px;
+}
+
+.gs-kr__mod-n i {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--gs-primary), var(--gs-accent));
-    font-size: 22px;
+    border: 2px solid var(--kr-card);
+    background: var(--kr-ink);
+    font-style: normal;
+    font-size: 13px;
     font-weight: 800;
-    color: #0b1120;
+    color: #fff;
 }
 
 .gs-kr__mod-body {
@@ -385,39 +952,38 @@
 }
 
 .gs-kr__mod-title {
-    margin: 6px 0 0;
+    margin: 4px 0 0;
     font-size: 20px;
     line-height: 1.25;
-    color: var(--gs-text);
 }
 
 .gs-kr__mod-text {
     margin: 10px 0 0;
     font-size: 15.5px;
     line-height: 1.6;
-    color: #c7d2e4;
+    color: var(--kr-ink-2);
 }
 
 .gs-kr__mod-out {
     margin: 14px 0 0;
-    padding: 10px 14px;
-    border-left: 3px solid var(--gs-accent);
-    border-radius: 0 var(--gs-radius-sm) var(--gs-radius-sm) 0;
-    background: rgba(34, 211, 238, 0.08);
+    padding: 11px 15px;
+    border-left: 3px solid var(--kr-accent);
+    border-radius: 0 var(--kr-radius-sm) var(--kr-radius-sm) 0;
+    background: var(--kr-accent-soft);
     font-size: 15px;
-    color: var(--gs-text);
+    color: var(--kr-ink);
 }
 
 .gs-kr__mod-out span {
     font-weight: 700;
-    color: var(--gs-accent);
+    color: #0b7d8b;
 }
 
 .gs-kr__mod-why {
     margin: 12px 0 0;
     font-size: 13.5px;
     line-height: 1.55;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
 }
 
 /* --- Волны между секциями -------------------------------------------- */
@@ -428,7 +994,7 @@
     left: 0;
     width: 100%;
     height: 70px;
-    color: var(--gs-bg);
+    color: var(--kr-bg);
     pointer-events: none;
 }
 
@@ -436,13 +1002,14 @@
 
 .gs-kr__folio,
 .gs-kr__form-wrap {
-    margin-bottom: 56px;
+    margin-bottom: 60px;
     padding: 84px 40px 40px;
-    border: 1px solid var(--gs-border);
-    border-radius: calc(var(--gs-radius) + 8px);
-    background-color: var(--gs-surface);
-    background-image: var(--gs-kr-rays);
+    border: 1px solid var(--kr-line);
+    border-radius: calc(var(--kr-radius) + 8px);
+    background-color: var(--kr-card);
+    background-image: var(--kr-rays);
     background-size: 26px 26px;
+    box-shadow: var(--kr-shadow);
     overflow: hidden;
 }
 
@@ -456,30 +1023,34 @@
 }
 
 .gs-kr__card {
-    padding: 20px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius-sm);
-    background: rgba(8, 12, 20, 0.6);
+    padding: 22px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius-sm);
+    background: var(--kr-card-2);
 }
 
 .gs-kr__card-n {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    background: rgba(99, 102, 241, 0.2);
-    font-size: 14px;
-    font-weight: 800;
-    color: var(--gs-primary-light);
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid var(--kr-line);
+    color: var(--kr-primary);
+}
+
+.gs-kr__card-n .gs-kr__ico {
+    width: 22px;
+    height: 22px;
 }
 
 .gs-kr__card-title {
     display: block;
-    margin: 12px 0 0;
-    font-size: 16px;
-    color: var(--gs-text);
+    margin: 14px 0 0;
+    font-size: 16.5px;
+    color: var(--kr-ink);
 }
 
 .gs-kr__card-text {
@@ -487,23 +1058,23 @@
     margin-top: 6px;
     font-size: 14px;
     line-height: 1.5;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
 }
 
 .gs-kr__gallery {
-    margin: 22px 0 0;
+    margin: 24px 0 0;
     padding: 0;
     list-style: none;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+    gap: 14px;
 }
 
 .gs-kr__gitem {
     min-width: 0;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius-sm);
-    background: rgba(8, 12, 20, 0.6);
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius-sm);
+    background: #fff;
     overflow: hidden;
 }
 
@@ -515,34 +1086,105 @@
 
 .gs-kr__gitem span {
     display: block;
-    padding: 10px 12px;
+    padding: 11px 13px;
     font-size: 13px;
     line-height: 1.4;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
+}
+
+/* --- Как устроено ---------------------------------------------------- */
+
+.gs-kr__how {
+    margin-bottom: 60px;
+}
+
+.gs-kr__how-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.gs-kr__how-item {
+    padding: 26px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background: var(--kr-card);
+    box-shadow: var(--kr-shadow);
+}
+
+.gs-kr__how-ico {
+    width: 30px;
+    height: 30px;
+    margin-bottom: 14px;
+    color: var(--kr-primary);
+}
+
+.gs-kr__how-item h3 {
+    margin: 0;
+    font-size: 17.5px;
+    line-height: 1.3;
+}
+
+.gs-kr__how-item p {
+    margin: 10px 0 0;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--kr-muted);
+}
+
+.gs-kr__shot {
+    margin: 24px 0 0;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background: var(--kr-card);
+    overflow: hidden;
+}
+
+.gs-kr__shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.gs-kr__shot figcaption {
+    padding: 13px 18px;
+    font-size: 13.5px;
+    color: var(--kr-muted);
 }
 
 /* --- Плашка телеграм-канала ------------------------------------------ */
 
-/*
- * Единственное яркое пятно на тёмной странице — и это осознанно: плашка
- * должна выбиваться, но стоять после работ и до тарифов. Выше она
- * перетягивала бы внимание с заявки, ниже её просто не видят.
- */
 .gs-kr__tg {
     display: grid;
     grid-template-columns: 58px minmax(0, 1fr) auto;
     align-items: center;
-    gap: 20px;
-    margin-bottom: 56px;
-    padding: 26px 30px;
-    border-radius: var(--gs-radius);
+    gap: 22px;
+    margin-bottom: 60px;
+    padding: 28px 32px;
+    border-radius: var(--kr-radius);
     background:
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34'%3E%3Cpath d='M-8 34L34 -8' stroke='%23ffffff' stroke-opacity='.13' stroke-width='3'/%3E%3C/svg%3E"),
-        linear-gradient(104deg, #229ED9 0%, #4f7bf0 46%, #8b5cf6 100%);
-    box-shadow: 0 16px 40px rgba(34, 158, 217, 0.26);
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34'%3E%3Cpath d='M-8 34L34 -8' stroke='%23ffffff' stroke-opacity='.16' stroke-width='3'/%3E%3C/svg%3E"),
+        linear-gradient(104deg, #229ED9 0%, #4f7bf0 46%, #7c6cf5 100%);
+    background-size: 34px 34px, 220% 100%;
+    box-shadow: 0 16px 40px rgba(34, 158, 217, 0.28);
+    animation: gs-kr-flow 14s ease-in-out infinite;
+}
+
+@keyframes gs-kr-flow {
+    0%, 100% { background-position: 0 0, 0% 50%; }
+    50%      { background-position: 0 0, 100% 50%; }
 }
 
 .gs-kr__tg-ico {
+    animation: gs-kr-float 6s ease-in-out infinite;
+}
+
+@keyframes gs-kr-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-5px); }
+}
+
+.gs-kr__tg-ico-wrap {
     width: 58px;
     height: 58px;
 }
@@ -564,7 +1206,7 @@
     margin: 8px 0 0;
     font-size: 15px;
     line-height: 1.55;
-    color: rgba(255, 255, 255, 0.86);
+    color: rgba(255, 255, 255, 0.9);
 }
 
 .gs-kr .gs-kr__tg-btn,
@@ -573,9 +1215,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 52px;
-    padding: 0 26px;
-    border-radius: var(--gs-radius-sm);
+    min-height: 54px;
+    padding: 0 28px;
+    border-radius: var(--kr-radius-sm);
     background: #fff;
     font-size: 16px;
     font-weight: 700;
@@ -588,157 +1230,41 @@
     background: #eef2ff;
 }
 
-@media (max-width: 680px) {
-    .gs-kr__tg {
-        grid-template-columns: 44px minmax(0, 1fr);
-        gap: 14px;
-        padding: 20px 18px;
-    }
-
-    .gs-kr__tg-ico {
-        width: 44px;
-        height: 44px;
-    }
-
-    .gs-kr__tg-title {
-        font-size: 18px;
-    }
-
-    .gs-kr .gs-kr__tg-btn {
-        grid-column: 1 / -1;
-        width: 100%;
-    }
-}
-
-/* --- Как устроено ---------------------------------------------------- */
-
-.gs-kr__how {
-    margin-bottom: 56px;
-}
-
-.gs-kr__how-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-}
-
-.gs-kr__how-item {
-    padding: 24px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius);
-    background: var(--gs-surface);
-}
-
-.gs-kr__how-item h3 {
-    margin: 0;
-    font-size: 18px;
-    color: var(--gs-text);
-}
-
-.gs-kr__how-item p {
-    margin: 10px 0 0;
-    font-size: 15px;
-    line-height: 1.6;
-    color: var(--gs-muted);
-}
-
-.gs-kr__shot {
-    margin: 22px 0 0;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius);
-    overflow: hidden;
-}
-
-.gs-kr__shot img {
-    display: block;
-    width: 100%;
-    height: auto;
-}
-
-.gs-kr__shot figcaption {
-    padding: 12px 16px;
-    font-size: 13.5px;
-    color: var(--gs-muted);
-    background: var(--gs-surface);
-}
-
-/* --- Инструменты ----------------------------------------------------- */
-
-.gs-kr__tools {
-    margin-bottom: 56px;
-}
-
-.gs-kr__tgrid {
-    margin: 0 0 24px;
-    padding: 0;
-    list-style: none;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
-}
-
-.gs-kr__tool {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 16px 18px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius-sm);
-    background: var(--gs-surface);
-    font-size: 15px;
-    color: var(--gs-text);
-}
-
-.gs-kr__tool a {
-    color: var(--gs-text);
-    text-decoration: none;
-    border-bottom: 1px solid var(--gs-border-strong);
-}
-
-.gs-kr__tool a:hover {
-    color: var(--gs-primary-light);
-}
-
-.gs-kr__tool em {
-    font-style: normal;
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--gs-accent);
-}
-
 /* --- Тарифы ---------------------------------------------------------- */
 
 .gs-kr__price {
-    margin-bottom: 56px;
+    margin-bottom: 60px;
 }
 
 .gs-kr__plans {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    gap: 18px;
 }
 
 .gs-kr__plan {
     position: relative;
-    padding: 30px 28px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius);
-    background-color: var(--gs-surface);
+    padding: 32px 30px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background-color: var(--kr-card);
+    box-shadow: var(--kr-shadow);
 }
 
 .gs-kr__plan--pro {
-    border-color: var(--gs-border-strong);
-    background-image: var(--gs-kr-dots);
+    border-color: var(--kr-primary-2);
+    background-image: var(--kr-dots);
     background-size: 22px 22px;
+    box-shadow: var(--kr-shadow-lg);
 }
 
 .gs-kr__plan-tag {
     position: absolute;
-    top: -12px;
-    left: 28px;
-    padding: 5px 12px;
+    top: -13px;
+    left: 30px;
+    padding: 6px 13px;
     border-radius: 999px;
-    background: var(--gs-primary);
+    background: var(--kr-primary);
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -749,91 +1275,78 @@
 .gs-kr__plan-name {
     margin: 0;
     font-size: 19px;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
 }
 
 .gs-kr__plan-sum {
     margin: 8px 0 0;
-    font-size: clamp(30px, 3.6vw, 40px);
+    font-size: clamp(30px, 3.4vw, 42px);
     font-weight: 800;
     letter-spacing: -0.03em;
-    color: var(--gs-text);
+    color: var(--kr-ink);
 }
 
 .gs-kr__plan-list {
-    margin: 20px 0 24px;
+    margin: 22px 0 26px;
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 10px;
+    gap: 11px;
 }
 
 .gs-kr__plan-list li {
     position: relative;
-    padding-left: 26px;
+    padding-left: 28px;
     font-size: 15px;
     line-height: 1.5;
-    color: #c7d2e4;
+    color: var(--kr-ink-2);
 }
 
-/* Галочка фоном: шесть одинаковых svg в разметке были бы лишним весом. */
 .gs-kr__plan-list li::before {
     content: "";
     position: absolute;
     left: 0;
     top: 3px;
-    width: 17px;
-    height: 17px;
-    background: var(--gs-ok);
-    -webkit-mask: var(--gs-kr-tick) center / 17px 17px no-repeat;
-    mask: var(--gs-kr-tick) center / 17px 17px no-repeat;
-}
-
-.gs-kr {
-    --gs-kr-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.4l3.2 3.1L13 4.8' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    width: 18px;
+    height: 18px;
+    background: var(--kr-ok);
+    -webkit-mask: var(--kr-tick) center / 18px 18px no-repeat;
+    mask: var(--kr-tick) center / 18px 18px no-repeat;
 }
 
 /* --- Заявка ---------------------------------------------------------- */
 
 .gs-kr__form-inner {
     display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-    gap: 36px;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 40px;
     align-items: start;
 }
 
 .gs-kr__form-side {
-    padding: 24px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius);
-    background: rgba(8, 12, 20, 0.6);
+    padding: 26px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius);
+    background: var(--kr-card-2);
 }
 
 .gs-kr__form-side h3 {
-    margin: 0 0 12px;
-    font-size: 17px;
-    color: var(--gs-text);
+    margin: 0 0 14px;
+    font-size: 17.5px;
 }
 
 .gs-kr__form-side ol {
     margin: 0;
     padding-left: 20px;
     display: grid;
-    gap: 10px;
+    gap: 11px;
     font-size: 15px;
     line-height: 1.55;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
 }
 
 .gs-kr__form-side ol strong {
-    color: var(--gs-text);
-}
-
-@media (max-width: 860px) {
-    .gs-kr__form-inner {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 24px;
-    }
+    color: var(--kr-ink);
 }
 
 .gs-kr__form-wrap .gs-form {
@@ -843,11 +1356,10 @@
 /*
  * Поля формы.
  *
- * Тема рисует свои поля светлым кольцом в два пикселя и скругляет их почти
- * в таблетку, а кнопку красит голубым. На тёмном лендинге этот блок
- * выглядел вставленным с другого сайта, поэтому приводим поля к тем же
- * рамкам и радиусам, что у карточек выше. Перебиваем через !important:
- * у темы селекторы точнее, и без этого выигрывает она.
+ * Тема рисует их светлым кольцом в два пикселя и скругляет почти в
+ * таблетку, а на светлой странице это выглядит ещё чужероднее, чем на
+ * тёмной. Приводим к тем же рамкам и радиусам, что у карточек. Через
+ * !important: у темы селекторы точнее.
  */
 .gs-kr .gs-form__input,
 .gs-kr .gs-form__area,
@@ -855,49 +1367,47 @@
 .gs-kr textarea.gs-form__input {
     width: 100%;
     box-sizing: border-box;
-    min-height: 52px;
-    padding: 14px 16px !important;
-    border: 1px solid var(--gs-border) !important;
-    border-radius: var(--gs-radius-sm) !important;
-    background-color: rgba(8, 12, 20, 0.72) !important;
+    min-height: 54px;
+    padding: 15px 17px !important;
+    border: 1px solid var(--kr-line-2) !important;
+    border-radius: var(--kr-radius-sm) !important;
+    background-color: #fff !important;
     box-shadow: none !important;
-    color: var(--gs-text) !important;
+    color: var(--kr-ink) !important;
     font-family: inherit;
     font-size: 15.5px;
     line-height: 1.45;
-    transition: border-color 0.16s var(--gs-ease), background 0.16s var(--gs-ease);
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .gs-kr .gs-form__area,
 .gs-kr textarea.gs-form__input {
-    min-height: 104px;
+    min-height: 108px;
     resize: vertical;
 }
 
 .gs-kr .gs-form__input::placeholder {
-    color: #64748b;
+    color: #98a2b3;
 }
 
 .gs-kr .gs-form__input:hover {
-    border-color: rgba(148, 163, 184, 0.3) !important;
+    border-color: var(--kr-primary-2) !important;
 }
 
 .gs-kr .gs-form__input:focus,
 .gs-kr .gs-form__input:focus-visible {
     outline: none !important;
-    border-color: var(--gs-primary-light) !important;
-    background-color: rgba(8, 12, 20, 0.92) !important;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.22) !important;
+    border-color: var(--kr-primary) !important;
+    box-shadow: 0 0 0 3px var(--kr-primary-soft) !important;
 }
 
-/* Стрелку у списка тема прячет вместе со своим оформлением — рисуем свою. */
 .gs-kr select.gs-form__input {
     appearance: none;
     -webkit-appearance: none;
-    padding-right: 42px !important;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6.5L8 10.5L12 6.5' fill='none' stroke='%2394a3b8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+    padding-right: 44px !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6.5L8 10.5L12 6.5' fill='none' stroke='%23667085' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
     background-repeat: no-repeat !important;
-    background-position: right 14px center !important;
+    background-position: right 15px center !important;
     background-size: 16px 16px !important;
 }
 
@@ -911,48 +1421,47 @@
     margin-bottom: 7px;
     font-size: 13.5px;
     font-weight: 600;
-    letter-spacing: 0.01em;
-    color: var(--gs-muted);
+    color: var(--kr-ink-2);
 }
 
 .gs-kr .gs-form__label b {
-    color: var(--gs-accent);
+    color: #d92d20;
 }
 
 .gs-kr .gs-form__note {
     margin: 12px 0 0;
     font-size: 14.5px;
     line-height: 1.5;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
 }
 
 .gs-kr .gs-form__note.is-ok {
-    color: var(--gs-ok);
+    color: var(--kr-ok);
 }
 
 .gs-kr .gs-form__note.is-error {
-    color: #f87171;
+    color: #d92d20;
 }
 
 /* --- Вопросы --------------------------------------------------------- */
 
 .gs-kr__faq {
-    margin-bottom: 56px;
+    margin-bottom: 60px;
 }
 
 .gs-kr__q {
     margin-bottom: 10px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius-sm);
-    background: var(--gs-surface);
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius-sm);
+    background: var(--kr-card);
     overflow: hidden;
 }
 
 .gs-kr__q summary {
-    padding: 16px 20px;
+    padding: 17px 22px;
     font-size: 16.5px;
     font-weight: 700;
-    color: var(--gs-text);
+    color: var(--kr-ink);
     cursor: pointer;
     list-style: none;
 }
@@ -964,9 +1473,9 @@
 .gs-kr__q summary::after {
     content: "+";
     float: right;
-    font-size: 20px;
+    font-size: 21px;
     line-height: 1;
-    color: var(--gs-primary-light);
+    color: var(--kr-primary);
 }
 
 .gs-kr__q[open] summary::after {
@@ -975,14 +1484,14 @@
 
 .gs-kr__q p {
     margin: 0;
-    padding: 0 20px 18px;
+    padding: 0 22px 20px;
     font-size: 15.5px;
     line-height: 1.62;
-    color: var(--gs-muted);
+    color: var(--kr-ink-2);
 }
 
 .gs-kr__q a {
-    color: var(--gs-primary-light);
+    color: var(--kr-primary);
 }
 
 /* --- Что почитать ---------------------------------------------------- */
@@ -996,38 +1505,54 @@
 }
 
 .gs-kr__rlist li {
-    padding: 18px 20px;
-    border: 1px solid var(--gs-border);
-    border-radius: var(--gs-radius-sm);
-    background: var(--gs-surface);
+    padding: 20px 22px;
+    border: 1px solid var(--kr-line);
+    border-radius: var(--kr-radius-sm);
+    background: var(--kr-card);
     font-size: 15px;
     line-height: 1.55;
-    color: var(--gs-muted);
+    color: var(--kr-muted);
 }
 
 .gs-kr__rlist a {
     font-weight: 700;
-    color: var(--gs-text);
+    color: var(--kr-ink);
     text-decoration: none;
-    border-bottom: 1px solid var(--gs-border-strong);
+    border-bottom: 1px solid var(--kr-primary-2);
 }
 
 .gs-kr__rlist a:hover {
-    color: var(--gs-primary-light);
+    color: var(--kr-primary);
 }
 
-/* --- Телефон --------------------------------------------------------- */
+/* --- Экраны поменьше ------------------------------------------------- */
 
-@media (max-width: 1024px) {
+@media (max-width: 1180px) {
     .gs-kr__hero {
         grid-template-columns: minmax(0, 1fr);
-        padding: 40px 28px;
+        padding: 42px 30px;
     }
 
     .gs-kr__stats,
     .gs-kr__tgrid,
-    .gs-kr__gallery {
+    .gs-kr__gallery,
+    .gs-kr__how-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .gs-kr__mods {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .gs-kr__charts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 860px) {
+    .gs-kr__form-inner {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 26px;
     }
 
     .gs-kr__cards {
@@ -1041,10 +1566,8 @@
         padding: 30px 18px;
     }
 
-    /* Заголовок длинный, и на 390 точках он занимал пять строк: на экран
-       переставал помещаться первый абзац, а с ним и обе кнопки. */
     .gs-kr h1.gs-kr__title {
-        font-size: 27px !important;
+        font-size: 28px !important;
         line-height: 1.16;
     }
 
@@ -1070,33 +1593,91 @@
         grid-template-columns: minmax(0, 1fr);
     }
 
+    /* Строка требования на телефоне: иконка и название сверху, число и
+       ссылка на модуль — отдельной строкой под полосой. */
     .gs-kr__d {
-        grid-template-columns: 48px minmax(0, 1fr);
-        row-gap: 10px;
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        gap: 12px;
+        padding: 14px 16px;
+    }
+
+    .gs-kr__d-ico {
+        width: 44px;
+        height: 44px;
+    }
+
+    .gs-kr__d-body {
+        grid-column: 2 / -1;
+    }
+
+    .gs-kr__d-num {
+        grid-row: 1;
+        grid-column: 3;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 5px;
     }
 
     .gs-kr__d-mod {
-        grid-column: 2;
+        grid-column: 2 / -1;
         justify-self: start;
     }
 
     .gs-kr__mod {
         grid-template-columns: minmax(0, 1fr);
-        gap: 12px;
-        padding: 20px 18px;
+        gap: 14px;
+        padding: 22px 18px;
     }
 
     .gs-kr__folio,
     .gs-kr__form-wrap {
-        padding: 60px 18px 28px;
+        padding: 58px 18px 28px;
     }
 
     .gs-kr__waves {
         height: 48px;
     }
+
+    .gs-kr__tg {
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 14px;
+        padding: 22px 18px;
+    }
+
+    .gs-kr__tg-ico {
+        width: 44px;
+        height: 44px;
+    }
+
+    .gs-kr__tg-title {
+        font-size: 18px;
+    }
+
+    .gs-kr .gs-kr__tg-btn {
+        grid-column: 1 / -1;
+        width: 100%;
+    }
+
+    .gs-kr__exp {
+        grid-template-columns: minmax(0, 1fr);
+        justify-items: center;
+        text-align: left;
+    }
+
+    .gs-kr__chart {
+        padding: 22px 18px 18px;
+    }
+
+    .gs-kr__pay-pin b {
+        font-size: 15px;
+    }
+
+    .gs-kr__pay-pin i {
+        font-size: 11px;
+    }
 }
 
-/* --- Мини-баннер в статьях ------------------------------------------- */
+/* --- Мини-баннер в статьях (тёмные страницы блога) ------------------- */
 
 .gs-krbanner {
     display: grid;
@@ -1143,8 +1724,7 @@
  * Перебивать приходится не тему, а собственный blog.css: он красит все
  * ссылки в тексте статьи правилом
  * body.gs-post-page .w-post-elm.post_content a — и на фиолетовой кнопке
- * надпись выходила блёклой сиреневой. Поэтому селектор такой длинный:
- * у того правила выше точность, и короткий ему проигрывает.
+ * надпись выходила блёклой сиреневой.
  */
 body.gs-post-page .w-post-elm.post_content a.gs-krbanner__btn,
 body.gs-post-page .w-post-elm.post_content a.gs-krbanner__btn:hover,
@@ -1160,7 +1740,6 @@ body.gs-post-page .w-post-elm.post_content a.gs-krbanner__btn:focus-visible,
     padding: 0 22px;
     border-radius: 10px;
     background: #6366f1;
-    color: #fff !important;
     font-size: 15.5px;
     font-weight: 700;
     text-decoration: none !important;
@@ -1185,5 +1764,49 @@ body.gs-post-page .w-post-elm.post_content a.gs-krbanner__btn:focus-visible,
     .gs-krbanner__btn {
         grid-column: 1 / -1;
         justify-content: center;
+    }
+}
+
+
+/* --- Движение по желанию пользователя -------------------------------- */
+
+/*
+ * Системная настройка «уменьшить движение» выключает всё: и дрейф пятен,
+ * и рост полос, и появление блоков. Содержимое при этом остаётся на
+ * месте — анимации только показывали его, а не создавали.
+ */
+@media (prefers-reduced-motion: reduce) {
+    body.gs-kr-page.gs-chrome .l-main::before,
+    body.gs-kr-page.gs-chrome .l-main::after,
+    .gs-kr__fig,
+    .gs-kr__glow,
+    .gs-kr__badge,
+    .gs-kr__tg,
+    .gs-kr__tg-ico {
+        animation: none !important;
+    }
+
+    .gs-kr.kr-anim [data-kr-in],
+    .gs-kr.kr-anim [data-kr-in].is-in {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+    }
+
+    .gs-kr.kr-anim .gs-kr__d-bar rect + rect,
+    .gs-kr.kr-anim .gs-kr__pay-svg rect + rect,
+    .gs-kr.kr-anim .gs-kr__exp-svg {
+        transform: none !important;
+        opacity: 1 !important;
+        transition: none !important;
+    }
+
+    .gs-kr__stat:hover,
+    .gs-kr__mod:hover,
+    .gs-kr__how-item:hover,
+    .gs-kr__gitem:hover,
+    .gs-kr__plan:hover,
+    .gs-kr__card:hover {
+        transform: none;
     }
 }
