@@ -371,7 +371,8 @@ class GC_Admin {
                                         <button class="button button-small">Опросить порты</button>
                                     </form>
                                 <?php endif; ?>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline"
+                                      <?php if ($live) : ?>onsubmit="return confirm('Поставить на паузу? Не каждый хозяин машины умеет её держать остановленной — бывает, что Vast её удаляет вместе с диском, и веса придётся качать заново.');"<?php endif; ?>>
                                     <?php wp_nonce_field('gc_state'); ?>
                                     <input type="hidden" name="action" value="gc_state">
                                     <input type="hidden" name="id" value="<?php echo (int) $i['id']; ?>">
