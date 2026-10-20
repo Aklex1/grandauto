@@ -456,6 +456,29 @@ class GC_Admin {
                         ? '<code>' . implode('</code>, <code>', array_map('esc_html', $models['clip'])) . '</code>'
                         : '<span class="description">нет</span>'; ?></p>
                 <?php endif; ?>
+                <?php
+                // Журналы тянем с самой машины: без них «ComfyUI молчит»
+                // ничего не объясняет.
+                $live_id = 0;
+                foreach ((array) ($list['items'] ?? array()) as $item) {
+                    if (strpos($item['status'], 'running') !== false) {
+                        $live_id = (int) $item['id'];
+                        break;
+                    }
+                }
+                ?>
+                <?php if ($live_id) : ?>
+                    <?php foreach (array('gc-onstart.log' => 'Журнал запуска', 'comfy.log' => 'Журнал ComfyUI') as $file => $title) : ?>
+                        <?php $log = GC_Vast::machine_log($live_id, $file); ?>
+                        <h3><?php echo esc_html($title); ?></h3>
+                        <?php if (!$log['ok']) : ?>
+                            <p class="description"><?php echo esc_html($log['message']); ?></p>
+                        <?php else : ?>
+                            <pre class="code" style="white-space:pre-wrap;max-height:240px;overflow:auto"><?php
+                                echo esc_html(mb_substr($log['text'], -3000)); ?></pre>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                <?php endif; ?>
                 <?php $probe = (array) get_option('gc_probe_rows', array()); ?>
                 <?php if ($probe) : ?>
                     <h3>Опрос портов</h3>

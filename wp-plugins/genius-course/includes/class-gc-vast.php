@@ -356,20 +356,40 @@ class GC_Vast {
     public static function default_onstart() {
         return <<<'SH'
 env >> /etc/environment
+mkdir -p /workspace
+exec >>/workspace/gc-onstart.log 2>&1
+echo "=== запуск $(date -u)"
+# Окно внутрь машины без ssh: отдаём /workspace по порту 8189. Иначе
+# причину «ComfyUI молчит» узнать нечем — команды на работающей машине
+# Vast через API не разрешает.
+(nohup python3 -m http.server 8189 --directory /workspace >/dev/null 2>&1 &)
+# Родные службы образа: в режиме ssh Vast подменяет точку входа, и
+# supervisord образа не стартует. Запускаем его сами — он поднимет
+# ComfyUI так, как задумано в образе, со своим окружением.
+if [ -f /etc/supervisor/supervisord.conf ]; then
+  (nohup supervisord -c /etc/supervisor/supervisord.conf >/dev/null 2>&1 &)
+  sleep 30
+fi
 CF=""
 for p in /workspace/ComfyUI /opt/ComfyUI /opt/workspace-internal/ComfyUI /root/ComfyUI /ComfyUI; do
-  [ -d "$p" ] && CF="$p" && break
+  [ -f "$p/main.py" ] && CF="$p" && break
 done
-[ -z "$CF" ] && CF=$(find / -maxdepth 6 -type d -name ComfyUI 2>/dev/null | head -1)
-[ -z "$CF" ] && echo "ComfyUI не найден" && exit 0
-PY=$(command -v python3 || command -v python)
+[ -z "$CF" ] && CF=$(dirname "$(find / -maxdepth 7 -name main.py -path '*ComfyUI*' 2>/dev/null | head -1)")
+echo "ComfyUI: $CF"
+if ! curl -s -m 5 http://127.0.0.1:8188/system_stats >/dev/null 2>&1; then
+  # Python берём тот, в котором есть torch: в образах он обычно в своём
+  # окружении, а системный python про него не знает.
+  PY=""
+  for c in /venv/main/bin/python /opt/venv/bin/python "$CF/venv/bin/python" "$(command -v python3)" "$(command -v python)"; do
+    [ -x "$c" ] && "$c" -c "import torch" >/dev/null 2>&1 && PY="$c" && break
+  done
+  echo "python: $PY"
+  if [ -n "$PY" ] && [ -n "$CF" ]; then
+    cd "$CF"
+    (nohup "$PY" main.py --listen 0.0.0.0 --port 8188 --disable-auto-launch >>/workspace/comfy.log 2>&1 &)
+  fi
+fi
 mkdir -p "$CF/models/checkpoints" "$CF/models/text_encoders"
-cd "$CF"
-# ComfyUI поднимаем сами: в режиме ssh Vast подменяет точку входа образа,
-# и собственный запуск образа до нас не доходит. Порт 8188 наружу уже
-# проброшен, слушать надо на всех адресах.
-nohup "$PY" main.py --listen 0.0.0.0 --port 8188 --disable-auto-launch > /workspace/comfy.log 2>&1 &
-"$PY" -m pip install --no-cache-dir av >/dev/null 2>&1
 HF=https://huggingface.co
 wget -nc -q -P "$CF/models/checkpoints" \
   $HF/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
@@ -377,7 +397,7 @@ wget -nc -q -P "$CF/models/checkpoints" \
   $HF/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors
 wget -nc -q -P "$CF/models/text_encoders" \
   $HF/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors
-echo "модели на месте" > /workspace/gc-onstart.done
+echo "веса на месте $(date -u)"
 SH;
     }
 
@@ -439,6 +459,44 @@ SH;
             );
         }
         return array('ok' => true, 'rows' => $rows, 'message' => '');
+    }
+
+    /**
+     * Журнал с машины.
+     *
+     * Скрипт запуска поднимает на порту 8189 раздачу /workspace, и это
+     * единственное окно внутрь: ssh из сайта нет, а команды на
+     * работающей машине Vast через API не даёт. Имена файлов — только
+     * свои, чужого отсюда не запросить.
+     */
+    public static function machine_log($instance_id, $file = 'gc-onstart.log') {
+        $allowed = array('gc-onstart.log', 'comfy.log');
+        if (!in_array($file, $allowed, true)) {
+            return array('ok' => false, 'text' => '', 'message' => 'такой журнал не предусмотрен');
+        }
+        $list = self::instances();
+        if (!$list['ok']) {
+            return array('ok' => false, 'text' => '', 'message' => $list['message']);
+        }
+        foreach ($list['items'] as $item) {
+            if ((int) $item['id'] !== (int) $instance_id) {
+                continue;
+            }
+            if (!preg_match('~(^|,)\s*' . self::STT_PORT . '/tcp\s*→\s*(\d+)~u', $item['ports'], $m)) {
+                return array('ok' => false, 'text' => '', 'message' => 'порт журнала не проброшен');
+            }
+            $url = 'http://' . $item['host'] . ':' . (int) $m[2] . '/' . $file;
+            $res = wp_remote_get($url, array('timeout' => 15));
+            if (is_wp_error($res)) {
+                return array('ok' => false, 'text' => '', 'message' => $res->get_error_message());
+            }
+            $code = (int) wp_remote_retrieve_response_code($res);
+            if ($code !== 200) {
+                return array('ok' => false, 'text' => '', 'message' => 'журнала ещё нет (ответ ' . $code . ')');
+            }
+            return array('ok' => true, 'text' => (string) wp_remote_retrieve_body($res), 'message' => '');
+        }
+        return array('ok' => false, 'text' => '', 'message' => 'машина не найдена');
     }
 
     private static function ports_line($ports) {
