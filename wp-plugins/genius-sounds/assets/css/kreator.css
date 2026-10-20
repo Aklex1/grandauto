@@ -1361,6 +1361,19 @@ body.gs-kr-page.gs-chrome .l-main > .l-section {
  * тёмной. Приводим к тем же рамкам и радиусам, что у карточек. Через
  * !important: у темы селекторы точнее.
  */
+/*
+ * Тип поля в селекторе обязателен.
+ *
+ * catalog.css красит поля правилом .gs-wrap input[type="text"] с
+ * !important — оно точнее, чем селектор по одному классу, и текстовые
+ * поля на светлой странице оставались тёмными, пока список и textarea
+ * были белыми. Поэтому здесь перечислены именно типы.
+ */
+.gs-kr input[type="text"].gs-form__input,
+.gs-kr input[type="email"].gs-form__input,
+.gs-kr input[type="tel"].gs-form__input,
+.gs-kr input[type="search"].gs-form__input,
+.gs-kr input[type="number"].gs-form__input,
 .gs-kr .gs-form__input,
 .gs-kr .gs-form__area,
 .gs-kr select.gs-form__input,
@@ -1390,10 +1403,14 @@ body.gs-kr-page.gs-chrome .l-main > .l-section {
     color: #98a2b3;
 }
 
+.gs-kr input[type="text"].gs-form__input:hover,
+.gs-kr input[type="tel"].gs-form__input:hover,
 .gs-kr .gs-form__input:hover {
     border-color: var(--kr-primary-2) !important;
 }
 
+.gs-kr input[type="text"].gs-form__input:focus,
+.gs-kr input[type="tel"].gs-form__input:focus,
 .gs-kr .gs-form__input:focus,
 .gs-kr .gs-form__input:focus-visible {
     outline: none !important;
