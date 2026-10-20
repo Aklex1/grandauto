@@ -234,6 +234,23 @@ class GC_Gpu {
         // из заготовки. Иначе ComfyUI молча вернёт ошибку, а ученик
         // увидит «не получилось» без причины.
         if (!empty($s['enabled']) && $s['driver'] === 'comfy' && $s['endpoint'] !== '') {
+            // Веса качаются уже после того, как машина начала отвечать:
+            // пока файл не дописан, ComfyUI падает с невнятной ошибкой
+            // про загрузку модели. Проверяем заранее.
+            $have = self::models($s);
+            if ($have['ok']) {
+                $need = $kind === 'video'
+                    ? array((string) $s['model_video'], (string) $s['clip_video'])
+                    : array((string) $s['model']);
+                $list = array_merge($have['ckpt'], $have['clip']);
+                foreach ($need as $file) {
+                    if ($file !== '' && !in_array($file, $list, true)) {
+                        return array('ok' => false, 'job' => 0, 'status' => '',
+                                     'message' => 'Модель ' . $file . ' ещё не докачалась на машину. '
+                                                . 'Обычно это пара минут — попробуйте ещё раз.');
+                    }
+                }
+            }
             $miss = self::missing_nodes($kind, !empty($params['reference']), $s);
             if ($miss) {
                 return array('ok' => false, 'job' => 0, 'status' => '',
