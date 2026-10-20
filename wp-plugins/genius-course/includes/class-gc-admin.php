@@ -22,6 +22,10 @@ class GC_Admin {
         add_action('admin_post_gc_gpu_days', array(__CLASS__, 'handle_gpu_days'));
         add_action('admin_post_gc_review', array(__CLASS__, 'handle_review'));
         add_action('admin_post_gc_settings', array(__CLASS__, 'handle_settings'));
+        add_action('admin_post_gc_vast', array(__CLASS__, 'handle_vast'));
+        add_action('admin_post_gc_rent', array(__CLASS__, 'handle_rent'));
+        add_action('admin_post_gc_stop', array(__CLASS__, 'handle_stop'));
+        add_action('admin_post_gc_use', array(__CLASS__, 'handle_use'));
     }
 
     public static function menu() {
@@ -36,7 +40,7 @@ class GC_Admin {
 
     private static function tab() {
         $tab = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : 'students';
-        return in_array($tab, array('students', 'works', 'jobs', 'settings'), true) ? $tab : 'students';
+        return in_array($tab, array('students', 'works', 'jobs', 'machine', 'settings'), true) ? $tab : 'students';
     }
 
     private static function url($tab = '', $args = array()) {
@@ -58,6 +62,7 @@ class GC_Admin {
                     $waiting = GC_Works::waiting();
                     echo $waiting > 0 ? ' (' . (int) $waiting . ')' : ''; ?></a>
                 <a class="nav-tab <?php echo $tab === 'jobs' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('jobs')); ?>">Генерации</a>
+                <a class="nav-tab <?php echo $tab === 'machine' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('machine')); ?>">Машина</a>
                 <a class="nav-tab <?php echo $tab === 'settings' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('settings')); ?>">Настройки</a>
             </h2>
             <?php
@@ -66,6 +71,8 @@ class GC_Admin {
                 self::works();
             } elseif ($tab === 'jobs') {
                 self::jobs();
+            } elseif ($tab === 'machine') {
+                self::machine();
             } elseif ($tab === 'settings') {
                 self::settings();
             } else {
@@ -253,6 +260,143 @@ class GC_Admin {
         <?php
     }
 
+    /**
+     * Аренда видеокарты.
+     *
+     * Здесь три разных действия, и их нарочно не смешали в одну кнопку:
+     * найти предложение, арендовать и подключить к генерациям. Аренда
+     * тратит деньги с общего баланса, поэтому она всегда отдельное
+     * осознанное нажатие.
+     */
+    private static function machine() {
+        $v = GC_Vast::settings();
+        $gpu = GC_Gpu::settings();
+        ?>
+        <h3>Ключ Vast</h3>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <?php wp_nonce_field('gc_vast'); ?>
+            <input type="hidden" name="action" value="gc_vast">
+            <table class="form-table" role="presentation">
+                <tr>
+                    <th scope="row"><label for="gc-vast-key">Ключ API</label></th>
+                    <td>
+                        <input id="gc-vast-key" name="key" type="password" class="regular-text code" autocomplete="off"
+                               placeholder="<?php echo GC_Vast::has_key() ? esc_attr('сохранён: ' . GC_Vast::key_hint()) : 'вставьте ключ'; ?>">
+                        <p class="description">Ключ лежит только здесь, на сервере. В кабинет ученика и в код страницы он
+                            не попадает: это ключ управления арендой, а не генерации.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-vast-gpu">Какую карту искать</label></th>
+                    <td><input id="gc-vast-gpu" name="gpu" type="text" class="regular-text" value="<?php echo esc_attr($v['gpu']); ?>">
+                        <p class="description">Название как у Vast: RTX 4090, RTX 3090, L40S.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-vast-price">Потолок цены</label></th>
+                    <td><input id="gc-vast-price" name="max_price" type="number" step="0.05" min="0.05" max="10" value="<?php echo esc_attr($v['max_price']); ?>" class="small-text"> $ в час</td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-vast-disk">Диск</label></th>
+                    <td><input id="gc-vast-disk" name="disk" type="number" min="10" max="500" value="<?php echo (int) $v['disk']; ?>" class="small-text"> ГБ
+                        <p class="description">Веса SDXL и моделей видео занимают десятки гигабайт.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-vast-image">Образ</label></th>
+                    <td><input id="gc-vast-image" name="image" type="text" class="large-text code" value="<?php echo esc_attr($v['image']); ?>">
+                        <p class="description">Образ с уже установленным ComfyUI. Порт <?php echo (int) GC_Vast::COMFY_PORT; ?> прокидывается наружу автоматически.</p></td>
+                </tr>
+            </table>
+            <p><button class="button button-primary">Сохранить</button>
+               <button class="button" name="check" value="1">Сохранить и проверить ключ</button></p>
+        </form>
+
+        <?php if (GC_Vast::has_key()) : ?>
+            <h3>Наши машины</h3>
+            <?php $list = GC_Vast::instances(); ?>
+            <?php if (!$list['ok']) : ?>
+                <div class="notice notice-error inline"><p>Vast не ответил: <?php echo esc_html($list['message']); ?></p></div>
+            <?php elseif (!$list['items']) : ?>
+                <p>Сейчас ни одной машины не арендовано.</p>
+            <?php else : ?>
+                <table class="widefat striped">
+                    <thead><tr><th>№</th><th>Карта</th><th>Состояние</th><th>Цена</th><th>Адрес ComfyUI</th><th>Действия</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($list['items'] as $i) : ?>
+                        <tr>
+                            <td><?php echo (int) $i['id']; ?></td>
+                            <td><?php echo esc_html($i['num'] . '× ' . $i['gpu']); ?></td>
+                            <td><?php echo esc_html($i['status']); ?></td>
+                            <td><?php echo esc_html('$' . $i['price'] . '/час'); ?></td>
+                            <td><?php if ($i['url'] !== '') : ?>
+                                    <a href="<?php echo esc_url($i['url']); ?>" target="_blank"><?php echo esc_html($i['url']); ?></a>
+                                <?php else : ?><span class="description">порт ещё не выдан</span><?php endif; ?></td>
+                            <td>
+                                <?php if ($i['url'] !== '') : ?>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                                        <?php wp_nonce_field('gc_use'); ?>
+                                        <input type="hidden" name="action" value="gc_use">
+                                        <input type="hidden" name="url" value="<?php echo esc_attr($i['url']); ?>">
+                                        <button class="button button-small button-primary">Использовать для генераций</button>
+                                    </form>
+                                <?php endif; ?>
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline"
+                                      onsubmit="return confirm('Остановить машину? Аренда прекратится.');">
+                                    <?php wp_nonce_field('gc_stop'); ?>
+                                    <input type="hidden" name="action" value="gc_stop">
+                                    <input type="hidden" name="id" value="<?php echo (int) $i['id']; ?>">
+                                    <button class="button button-small">Остановить</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+
+            <h3>Свободные предложения</h3>
+            <p class="description">Дешёвые сверху. Аренда списывает деньги с общего баланса Vast — нажатие сразу
+                запускает машину.</p>
+            <?php $offers = GC_Vast::offers(); ?>
+            <?php if (!$offers['ok']) : ?>
+                <div class="notice notice-error inline"><p>Поиск не прошёл: <?php echo esc_html($offers['message']); ?></p></div>
+            <?php elseif (!$offers['items']) : ?>
+                <p>По заданным условиям ничего нет. Поднимите потолок цены или смените карту.</p>
+            <?php else : ?>
+                <table class="widefat striped">
+                    <thead><tr><th>Карта</th><th>Память</th><th>Цена</th><th>Диск</th><th>Канал</th><th>Где</th><th>Надёжность</th><th></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($offers['items'] as $o) : ?>
+                        <tr>
+                            <td><?php echo esc_html($o['num'] . '× ' . $o['gpu']); ?></td>
+                            <td><?php echo (int) $o['ram']; ?> ГБ</td>
+                            <td><strong><?php echo esc_html('$' . $o['price']); ?></strong>/час</td>
+                            <td><?php echo (int) $o['disk']; ?> ГБ</td>
+                            <td><?php echo (int) $o['down']; ?> Мбит</td>
+                            <td><?php echo esc_html($o['place']); ?></td>
+                            <td><?php echo esc_html($o['rel']); ?>%</td>
+                            <td>
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
+                                      onsubmit="return confirm('Арендовать за $<?php echo esc_attr($o['price']); ?> в час? Деньги спишутся с баланса Vast.');">
+                                    <?php wp_nonce_field('gc_rent'); ?>
+                                    <input type="hidden" name="action" value="gc_rent">
+                                    <input type="hidden" name="offer" value="<?php echo (int) $o['id']; ?>">
+                                    <button class="button button-small">Арендовать</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+
+            <h3>Что сейчас подключено к генерациям</h3>
+            <p><?php echo $gpu['endpoint'] !== '' ? esc_html($gpu['endpoint']) : 'адрес не задан'; ?>
+                — <?php echo !empty($gpu['enabled']) ? 'генерации включены' : 'генерации выключены'; ?>,
+                драйвер <?php echo esc_html($gpu['driver']); ?>.</p>
+        <?php endif; ?>
+        <?php
+    }
+
     private static function settings() {
         $s = GC_Gpu::settings();
         $health = GC_Gpu::health();
@@ -288,8 +432,32 @@ class GC_Admin {
                         <p class="description">Положите его на машину в <code>GC_SECRET</code>. Им подписывается результат.</p></td>
                 </tr>
                 <tr>
-                    <th scope="row"><label for="gc-model">Модель</label></th>
-                    <td><input id="gc-model" name="model" type="text" class="regular-text code" value="<?php echo esc_attr($s['model']); ?>"></td>
+                    <th scope="row">Чем считаем</th>
+                    <td>
+                        <label><input type="radio" name="driver" value="comfy" <?php checked($s['driver'], 'comfy'); ?>>
+                            ComfyUI на арендованной машине</label><br>
+                        <label><input type="radio" name="driver" value="worker" <?php checked($s['driver'], 'worker'); ?>>
+                            своя служба из папки worker</label>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-model">Файл модели</label></th>
+                    <td><input id="gc-model" name="model" type="text" class="regular-text code" value="<?php echo esc_attr($s['model']); ?>">
+                        <p class="description">Имя как в папке моделей ComfyUI, например <code>sd_xl_base_1.0.safetensors</code>.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-wf-image">Запрос для кадров</label></th>
+                    <td><textarea id="gc-wf-image" name="wf_image" rows="6" class="large-text code" placeholder="пусто — берём встроенный SDXL"><?php echo esc_textarea($s['wf_image']); ?></textarea>
+                        <p class="description">Граф ComfyUI в формате для API. Подстановки:
+                            <code>%PROMPT%</code>, <code>%NEGATIVE%</code>, <code>%MODEL%</code>,
+                            <code>%WIDTH%</code>, <code>%HEIGHT%</code>, <code>%SEED%</code>.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-wf-video">Запрос для роликов</label></th>
+                    <td><textarea id="gc-wf-video" name="wf_video" rows="6" class="large-text code" placeholder="пусто — видео в кабинете недоступно"><?php echo esc_textarea($s['wf_video']); ?></textarea>
+                        <p class="description">Зависит от того, какие узлы и веса стоят на образе. Дополнительно
+                            доступна подстановка <code>%FRAMES%</code>. Пока поле пустое, кнопка видео у ученика не
+                            показывается — это честнее, чем ошибка после нажатия.</p></td>
                 </tr>
                 <tr>
                     <th scope="row"><label for="gc-daily">Заданий в сутки на ученика</label></th>
@@ -363,6 +531,78 @@ class GC_Admin {
         }
         GC_Works::review((int) ($_POST['id'] ?? 0), (string) ($_POST['status'] ?? 'sent'), (string) ($_POST['feedback'] ?? ''));
         wp_safe_redirect(self::url('works', array('gc_msg' => 'Разбор сохранён')));
+        exit;
+    }
+
+    public static function handle_vast() {
+        check_admin_referer('gc_vast');
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        GC_Vast::save((array) $_POST);
+        $msg = 'Настройки аренды сохранены';
+        if (!empty($_POST['check'])) {
+            $list = GC_Vast::instances();
+            $msg = $list['ok']
+                ? sprintf('Ключ рабочий. Машин на аккаунте: %d.', count($list['items']))
+                : ('Ключ не подошёл: ' . $list['message']);
+        }
+        wp_safe_redirect(self::url('machine', array('gc_msg' => $msg)));
+        exit;
+    }
+
+    public static function handle_rent() {
+        check_admin_referer('gc_rent');
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        $out = GC_Vast::rent((int) ($_POST['offer'] ?? 0));
+        wp_safe_redirect(self::url('machine', $out['ok']
+            ? array('gc_msg' => $out['message'] . ' Номер: ' . (int) $out['id'] . '. Адрес появится через минуту-две.')
+            : array('gc_err' => $out['message'])));
+        exit;
+    }
+
+    public static function handle_stop() {
+        check_admin_referer('gc_stop');
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        $out = GC_Vast::stop((int) ($_POST['id'] ?? 0));
+        wp_safe_redirect(self::url('machine', $out['ok']
+            ? array('gc_msg' => $out['message'])
+            : array('gc_err' => $out['message'])));
+        exit;
+    }
+
+    /**
+     * Подключить машину к генерациям.
+     *
+     * Одним нажатием: адрес, драйвер ComfyUI и включение — иначе человек
+     * копирует адрес руками и ошибается в порте.
+     */
+    public static function handle_use() {
+        check_admin_referer('gc_use');
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        $url = esc_url_raw((string) ($_POST['url'] ?? ''));
+        if ($url === '') {
+            wp_safe_redirect(self::url('machine', array('gc_err' => 'Пустой адрес')));
+            exit;
+        }
+        $now = GC_Gpu::settings();
+        $now['endpoint'] = $url;
+        $now['driver'] = 'comfy';
+        $now['enabled'] = 1;
+        GC_Gpu::save_settings($now);
+        delete_transient('gc_gpu_health');
+        $health = GC_Gpu::health();
+        wp_safe_redirect(self::url('machine', array(
+            'gc_msg' => $health['ok']
+                ? ('Подключено: ' . $health['message'])
+                : ('Адрес сохранён, но машина пока не отвечает: ' . $health['message']),
+        )));
         exit;
     }
 

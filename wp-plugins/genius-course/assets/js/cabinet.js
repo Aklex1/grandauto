@@ -94,13 +94,111 @@
         timer = setInterval(refresh, 5000);
     }
 
+    /* Переключатель «кадр / ролик»: прячем настройки, которых нет у кадра */
     if (gen) {
+        var kinds = gen.querySelectorAll('.gc-kind input');
+        Array.prototype.forEach.call(kinds, function (input) {
+            input.addEventListener('change', function () {
+                Array.prototype.forEach.call(gen.querySelectorAll('.gc-kind label'), function (l) {
+                    l.classList.toggle('is-on', l.contains(input) && input.checked);
+                });
+                gen.classList.toggle('is-video', gen.elements.kind.value === 'video');
+            });
+        });
+
+        /* Числа рядом с ползунками: без них значение приходится угадывать */
+        Array.prototype.forEach.call(gen.querySelectorAll('input[type="range"]'), function (range) {
+            var out = gen.querySelector('.gc-val[data-for="' + range.name + '"]')
+                || (range.name === 'strength' ? document.getElementById('gc-ref-val') : null);
+            if (!out) { return; }
+            var show = function () { out.textContent = range.value; };
+            range.addEventListener('input', show);
+            show();
+        });
+
+        /* Референс */
+        var pick = document.getElementById('gc-ref-pick');
+        var file = document.getElementById('gc-ref-file');
+        var drop = document.getElementById('gc-ref-drop');
+        var prev = document.getElementById('gc-ref-preview');
+        var img = document.getElementById('gc-ref-img');
+        var nameOut = document.getElementById('gc-ref-name');
+        var idField = document.getElementById('gc-ref-id');
+        var clear = document.getElementById('gc-ref-clear');
+
+        function upload(f) {
+            if (!f) { return; }
+            var data = new FormData();
+            data.append('file', f);
+            say(gen, 'Загружаем референс…');
+            fetch(cfg.rest + 'reference', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'X-WP-Nonce': cfg.nonce || '' },
+                body: data
+            }).then(function (r) {
+                return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+            }).then(function (res) {
+                if (!res.ok) {
+                    say(gen, (res.d && res.d.message) || 'Не получилось загрузить', 'bad');
+                    return;
+                }
+                idField.value = res.d.id;
+                img.src = res.d.url;
+                nameOut.textContent = res.d.name;
+                prev.hidden = false;
+                if (drop) { drop.hidden = true; }
+                say(gen, 'Референс загружен', 'good');
+            }).catch(function () { say(gen, 'Связь оборвалась', 'bad'); });
+        }
+
+        if (pick && file) {
+            pick.addEventListener('click', function () { file.click(); });
+            file.addEventListener('change', function () { upload(file.files[0]); });
+        }
+        if (drop) {
+            ['dragenter', 'dragover'].forEach(function (ev) {
+                drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('is-over'); });
+            });
+            ['dragleave', 'drop'].forEach(function (ev) {
+                drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('is-over'); });
+            });
+            drop.addEventListener('drop', function (e) {
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    upload(e.dataTransfer.files[0]);
+                }
+            });
+        }
+        if (clear) {
+            clear.addEventListener('click', function () {
+                idField.value = '';
+                prev.hidden = true;
+                if (drop) { drop.hidden = false; }
+                if (file) { file.value = ''; }
+            });
+        }
+
         gen.addEventListener('submit', function (e) {
             e.preventDefault();
-            var btn = gen.querySelector('button');
+            var btn = gen.querySelector('button[type="submit"]');
             btn.disabled = true;
             say(gen, 'Отправляем на машину…');
-            send('gen', { prompt: gen.elements.prompt.value, size: gen.elements.size.value })
+            var num = function (name, fallback) {
+                return gen.elements[name] ? gen.elements[name].value : fallback;
+            };
+            send('gen', {
+                prompt: gen.elements.prompt.value,
+                size: gen.elements.size.value,
+                kind: gen.elements.kind ? gen.elements.kind.value : 'image',
+                negative: num('negative', ''),
+                steps: num('steps', 28),
+                cfg: num('cfg', 6.5),
+                seed: num('seed', 0),
+                frames: num('frames', 49),
+                fps: num('fps', 16),
+                strength: num('strength', 0.75),
+                reference: idField ? idField.value : ''
+            })
                 .then(function (res) {
                     btn.disabled = false;
                     if (!res.ok) {

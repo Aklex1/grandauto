@@ -296,25 +296,65 @@ class GC_Cabinet {
         $jobs = GC_Gpu::for_user($user->ID);
         $health = GC_Gpu::health();
         $active = GC_Students::gpu_active($user->ID);
+        $gpu = GC_Gpu::settings();
+        $video = trim((string) $gpu['wf_video']) !== '';
         ob_start();
         ?>
         <section class="gc-card">
             <h2 class="gc-h2">Мастерская</h2>
-            <p class="gc-lead">Кадры считаются на нашей видеокарте: пока идёт месяц без лимита, количество не
+            <p class="gc-lead">Кадры и ролики считаются на нашей видеокарте: пока идёт месяц без лимита, количество не
                 ограничено. Переделывать описание по двадцать раз — это и есть обучение.</p>
 
             <p class="gc-gpu-state <?php echo $health['ok'] ? 'is-on' : 'is-off'; ?>">
-                <?php echo $health['ok'] ? 'Машина на связи' : 'Машина выключена — задания встанут в очередь'; ?>
+                <?php echo $health['ok'] ? esc_html($health['message']) : 'Машина выключена — задания встанут в очередь'; ?>
             </p>
 
             <?php if (!$active) : ?>
                 <div class="gc-note">Месяц безлимитных генераций закончился. Напишите нам, если нужно продлить.</div>
             <?php else : ?>
-                <form class="gc-form" id="gc-gen-form">
+                <form class="gc-form gc-studio" id="gc-gen-form">
+                    <?php if ($video) : ?>
+                        <div class="gc-kind" role="tablist">
+                            <label class="is-on"><input type="radio" name="kind" value="image" checked> Кадр</label>
+                            <label><input type="radio" name="kind" value="video"> Ролик</label>
+                        </div>
+                    <?php else : ?>
+                        <input type="hidden" name="kind" value="image">
+                    <?php endif; ?>
+
                     <label>
-                        <span>Опишите кадр</span>
+                        <span>Опишите, что нужно</span>
                         <textarea name="prompt" rows="3" placeholder="Что в кадре, как расположено, какой свет, какой фон, в каком стиле снято"></textarea>
                     </label>
+
+                    <?php
+                    /*
+                     * Референс — главная вещь в работе креатора: заказчик
+                     * почти всегда приносит «как здесь, только с нашим
+                     * товаром». Поэтому загрузка стоит на виду, а не в
+                     * тонких настройках.
+                     */
+                    ?>
+                    <div class="gc-ref">
+                        <div class="gc-ref__drop" id="gc-ref-drop">
+                            <input type="file" id="gc-ref-file" accept="image/jpeg,image/png,image/webp" hidden>
+                            <button type="button" class="gc-ref__btn" id="gc-ref-pick">Выбрать референс</button>
+                            <span class="gc-ref__hint">или перетащите картинку сюда — jpg, png, webp до 12 МБ</span>
+                        </div>
+                        <div class="gc-ref__preview" id="gc-ref-preview" hidden>
+                            <img alt="" id="gc-ref-img">
+                            <div>
+                                <p class="gc-ref__name" id="gc-ref-name"></p>
+                                <label class="gc-ref__range">
+                                    <span>Насколько держаться референса: <b id="gc-ref-val">0.75</b></span>
+                                    <input type="range" name="strength" min="0.1" max="1" step="0.05" value="0.75">
+                                </label>
+                                <button type="button" class="gc-ref__drop-btn" id="gc-ref-clear">Убрать</button>
+                            </div>
+                        </div>
+                        <input type="hidden" name="reference" id="gc-ref-id" value="">
+                    </div>
+
                     <div class="gc-row">
                         <label>
                             <span>Размер</span>
@@ -322,10 +362,49 @@ class GC_Cabinet {
                                 <option value="1024x1024">Квадрат 1024×1024</option>
                                 <option value="832x1216">Вертикальный 832×1216</option>
                                 <option value="1216x832">Горизонтальный 1216×832</option>
+                                <option value="768x1344">Сторис 768×1344</option>
+                                <option value="1344x768">Широкий 1344×768</option>
                             </select>
                         </label>
                         <button type="submit" class="gc-btn">Сгенерировать</button>
                     </div>
+
+                    <details class="gc-more">
+                        <summary>Тонкие настройки</summary>
+                        <div class="gc-more__grid">
+                            <label>
+                                <span>Чего не должно быть в кадре</span>
+                                <textarea name="negative" rows="2" placeholder="текст, надписи, водяной знак, искажённые руки"></textarea>
+                            </label>
+                            <label>
+                                <span>Шагов расчёта <b class="gc-val" data-for="steps">28</b></span>
+                                <input type="range" name="steps" min="6" max="60" step="1" value="28">
+                                <i>Больше шагов — чище кадр и дольше ожидание.</i>
+                            </label>
+                            <label>
+                                <span>Насколько строго по описанию <b class="gc-val" data-for="cfg">6.5</b></span>
+                                <input type="range" name="cfg" min="1" max="14" step="0.5" value="6.5">
+                                <i>Выше — точнее по словам, но скучнее картинка.</i>
+                            </label>
+                            <label>
+                                <span>Зерно</span>
+                                <input type="number" name="seed" min="0" max="2147483646" value="0" placeholder="0 — случайное">
+                                <i>Одно и то же зерно с тем же описанием даёт тот же кадр.</i>
+                            </label>
+                            <?php if ($video) : ?>
+                                <label class="gc-only-video">
+                                    <span>Длина ролика, кадров <b class="gc-val" data-for="frames">49</b></span>
+                                    <input type="range" name="frames" min="16" max="129" step="1" value="49">
+                                    <i>При 16 кадрах в секунду 49 кадров — это около трёх секунд.</i>
+                                </label>
+                                <label class="gc-only-video">
+                                    <span>Кадров в секунду <b class="gc-val" data-for="fps">16</b></span>
+                                    <input type="range" name="fps" min="6" max="30" step="1" value="16">
+                                </label>
+                            <?php endif; ?>
+                        </div>
+                    </details>
+
                     <p class="gc-note-line" role="status"></p>
                 </form>
             <?php endif; ?>
@@ -348,9 +427,15 @@ class GC_Cabinet {
             <?php foreach ($jobs as $job) : ?>
                 <li class="gc-job is-<?php echo esc_attr($job['status']); ?>" data-job="<?php echo (int) $job['id']; ?>">
                     <?php if ($job['status'] === 'done' && !empty($job['result_url'])) : ?>
-                        <a href="<?php echo esc_url($job['result_url']); ?>" target="_blank" rel="noopener">
-                            <img src="<?php echo esc_url($job['result_url']); ?>" alt="" loading="lazy" decoding="async" />
-                        </a>
+                        <?php $is_video = (string) $job['kind'] === 'video'
+                            || preg_match('~\.(mp4|webm|gif)(\?|$)~i', (string) $job['result_url']); ?>
+                        <?php if ($is_video) : ?>
+                            <video src="<?php echo esc_url($job['result_url']); ?>" controls loop muted playsinline preload="metadata"></video>
+                        <?php else : ?>
+                            <a href="<?php echo esc_url($job['result_url']); ?>" target="_blank" rel="noopener">
+                                <img src="<?php echo esc_url($job['result_url']); ?>" alt="" loading="lazy" decoding="async" />
+                            </a>
+                        <?php endif; ?>
                     <?php else : ?>
                         <span class="gc-job__state">
                             <?php

@@ -708,3 +708,182 @@ body.gc-page .l-main > .l-section {
         margin-left: 0;
     }
 }
+
+/* --- Мастерская: настройки и референс --------------------------------- */
+
+.gc-kind {
+    display: inline-flex;
+    gap: 4px;
+    margin-bottom: 18px;
+    padding: 4px;
+    border: 1px solid var(--gc-line);
+    border-radius: 999px;
+    background: var(--gc-card-2);
+}
+
+.gc-kind label {
+    margin: 0;
+    padding: 8px 20px;
+    border-radius: 999px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--gc-muted);
+    cursor: pointer;
+}
+
+.gc-kind label.is-on {
+    background: var(--gc-primary);
+    color: #fff;
+}
+
+.gc-kind input {
+    display: none;
+}
+
+/* Настройки ролика показываем только в режиме ролика: в режиме кадра
+   они сбивают с толку. */
+.gc-only-video {
+    display: none;
+}
+
+.gc-studio.is-video .gc-only-video {
+    display: block;
+}
+
+.gc-ref {
+    margin-bottom: 16px;
+}
+
+.gc-ref__drop {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 18px;
+    border: 1px dashed var(--gc-line-2);
+    border-radius: var(--gc-radius-sm);
+    background: var(--gc-card-2);
+}
+
+.gc-ref__drop.is-over {
+    border-color: var(--gc-primary);
+    background: var(--gc-primary-soft);
+}
+
+.gc-ref__btn,
+.gc-ref__drop-btn {
+    padding: 9px 16px;
+    border: 1px solid var(--gc-line-2);
+    border-radius: 9px;
+    background: #fff;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gc-ink);
+    cursor: pointer;
+}
+
+.gc-ref__hint {
+    font-size: 13.5px;
+    color: var(--gc-muted);
+}
+
+.gc-ref__preview {
+    display: flex;
+    gap: 16px;
+    padding: 14px;
+    border: 1px solid var(--gc-line);
+    border-radius: var(--gc-radius-sm);
+    background: var(--gc-card-2);
+}
+
+.gc-ref__preview img {
+    width: 110px;
+    height: 110px;
+    object-fit: cover;
+    border-radius: 10px;
+}
+
+.gc-ref__name {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.gc-ref__range {
+    display: block;
+    margin-bottom: 10px;
+}
+
+.gc-ref__range span {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+    color: var(--gc-muted);
+}
+
+.gc input[type="range"] {
+    width: 100%;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    accent-color: var(--gc-primary);
+}
+
+.gc-more {
+    margin-top: 6px;
+    border: 1px solid var(--gc-line);
+    border-radius: var(--gc-radius-sm);
+    background: var(--gc-card-2);
+}
+
+.gc-more summary {
+    padding: 13px 18px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--gc-ink-2);
+    cursor: pointer;
+}
+
+.gc-more__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px;
+    padding: 4px 18px 18px;
+}
+
+.gc-more__grid label {
+    margin: 0;
+}
+
+.gc-more__grid i {
+    display: block;
+    margin-top: 4px;
+    font-style: normal;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--gc-muted);
+}
+
+.gc-val {
+    color: var(--gc-primary);
+}
+
+.gc-job video {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #000;
+}
+
+@media (max-width: 560px) {
+    .gc-ref__preview {
+        flex-direction: column;
+    }
+
+    .gc-ref__preview img {
+        width: 100%;
+        height: 160px;
+    }
+}

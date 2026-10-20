@@ -162,7 +162,7 @@ class GS_Kreator {
      * Настройкой можно подменить любой кадр, не трогая код.
      */
     const IMAGES = array(
-        'hero'    => 7240,
+        'hero'    => 7287,
         'video'   => 7241,
         'fashion' => 7242,
         'ugc'     => 7243,
@@ -702,7 +702,7 @@ class GS_Kreator {
 
                 <?php if ($hero !== '') : ?>
                     <div class="gs-kr__hero-art">
-                        <img src="<?php echo esc_url($hero); ?>" alt="Креатор монтирует вертикальный ролик за компьютером"
+                        <img src="<?php echo esc_url($hero); ?>" alt="Рабочий стол AI-креатора: ноутбук с кадрами, планшет и телефон с вертикальным видео"
                              width="1280" height="720" loading="eager" decoding="async" />
                     </div>
                 <?php endif; ?>

@@ -38,6 +38,11 @@ class GC_Rest {
             'callback'            => array(__CLASS__, 'generate'),
             'permission_callback' => $student,
         ));
+        register_rest_route(self::NS, '/reference', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'upload_reference'),
+            'permission_callback' => $student,
+        ));
         register_rest_route(self::NS, '/jobs', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'jobs'),
@@ -85,15 +90,82 @@ class GC_Rest {
         $p = (array) $request->get_json_params();
         $size = (string) ($p['size'] ?? '1024x1024');
         $parts = array_map('intval', explode('x', $size));
+        $kind = ($p['kind'] ?? 'image') === 'video' ? 'video' : 'image';
+
+        /*
+         * Границы ставим здесь, а не в заготовке запроса: ученик меняет
+         * настройки руками, и кадр 4096×4096 на 150 шагов займёт
+         * видеокарту на полчаса, а очередь общая.
+         */
         $params = array(
-            'width'  => isset($parts[0]) && $parts[0] > 0 ? min(1536, $parts[0]) : 1024,
-            'height' => isset($parts[1]) && $parts[1] > 0 ? min(1536, $parts[1]) : 1024,
+            'width'    => isset($parts[0]) && $parts[0] > 0 ? max(256, min(1536, $parts[0])) : 1024,
+            'height'   => isset($parts[1]) && $parts[1] > 0 ? max(256, min(1536, $parts[1])) : 1024,
+            'steps'    => max(6, min(60, (int) ($p['steps'] ?? 28))),
+            'cfg'      => max(1, min(14, (float) ($p['cfg'] ?? 6.5))),
+            'seed'     => max(0, min(2147483646, (int) ($p['seed'] ?? 0))),
+            'negative' => sanitize_textarea_field((string) ($p['negative'] ?? '')),
+            'frames'   => max(8, min(($kind === 'video' ? 129 : 16), (int) ($p['frames'] ?? 49))),
+            'fps'      => max(6, min(30, (int) ($p['fps'] ?? 16))),
+            'strength' => max(0.05, min(1, (float) ($p['strength'] ?? 0.75))),
         );
-        $out = GC_Gpu::submit(get_current_user_id(), (string) ($p['prompt'] ?? ''), $params);
+
+        $reference = (int) ($p['reference'] ?? 0);
+        if ($reference > 0) {
+            // Чужую картинку по номеру не берём: только то, что этот же
+            // человек загрузил сам.
+            $author = (int) get_post_field('post_author', $reference);
+            if ($author === get_current_user_id() || current_user_can('manage_options')) {
+                $params['reference'] = $reference;
+            }
+        }
+
+        $out = GC_Gpu::submit(get_current_user_id(), (string) ($p['prompt'] ?? ''), $params, $kind);
         if (empty($out['ok'])) {
             return new WP_Error('gc_gen', $out['message'], array('status' => 400));
         }
         return rest_ensure_response($out);
+    }
+
+    /**
+     * Загрузка референса.
+     *
+     * Файл кладём в медиатеку сайта за учеником: он остаётся у человека
+     * в кабинете и переживает перезапуск машины, а на саму машину
+     * уезжает уже перед заданием.
+     */
+    public static function upload_reference($request) {
+        $files = $request->get_file_params();
+        if (empty($files['file']['tmp_name'])) {
+            return new WP_Error('gc_file', 'Файл не пришёл', array('status' => 400));
+        }
+        $file = $files['file'];
+        $type = wp_check_filetype((string) $file['name']);
+        if (!in_array((string) $type['type'], array('image/jpeg', 'image/png', 'image/webp'), true)) {
+            return new WP_Error('gc_type', 'Референс принимаем картинкой: jpg, png или webp', array('status' => 400));
+        }
+        if ((int) $file['size'] > 12 * MB_IN_BYTES) {
+            return new WP_Error('gc_size', 'Слишком большой файл: до 12 МБ', array('status' => 400));
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+
+        $id = media_handle_sideload(array(
+            'name'     => sanitize_file_name((string) $file['name']),
+            'tmp_name' => (string) $file['tmp_name'],
+        ), 0, 'Референс ученика');
+        if (is_wp_error($id)) {
+            return new WP_Error('gc_save', $id->get_error_message(), array('status' => 500));
+        }
+        wp_update_post(array('ID' => (int) $id, 'post_author' => get_current_user_id()));
+
+        return rest_ensure_response(array(
+            'ok'   => true,
+            'id'   => (int) $id,
+            'url'  => wp_get_attachment_image_url((int) $id, 'medium'),
+            'name' => sanitize_file_name((string) $file['name']),
+        ));
     }
 
     public static function jobs() {

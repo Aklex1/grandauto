@@ -50,10 +50,17 @@ class GC_Gpu {
         $saved = get_option(self::OPT, array());
         return wp_parse_args(is_array($saved) ? $saved : array(), array(
             'enabled'  => 0,
+            // Чем считаем: comfy — ComfyUI на арендованной машине (так
+            // работает связка с Vast), worker — наша служба из папки
+            // worker. Второй путь оставлен для случая, когда ComfyUI на
+            // образе нет.
+            'driver'   => 'comfy',
             'endpoint' => '',
             'token'    => '',
             'secret'   => '',
-            'model'    => 'sdxl',
+            'model'    => 'sd_xl_base_1.0.safetensors',
+            'wf_image' => '',
+            'wf_video' => '',
             'daily'    => self::DAILY_DEFAULT,
         ));
     }
@@ -63,7 +70,15 @@ class GC_Gpu {
         $now['enabled']  = !empty($values['enabled']) ? 1 : 0;
         $now['endpoint'] = esc_url_raw(trim((string) ($values['endpoint'] ?? '')));
         $now['token']    = sanitize_text_field((string) ($values['token'] ?? ''));
-        $now['model']    = sanitize_text_field((string) ($values['model'] ?? 'sdxl'));
+        $now['driver']   = in_array(($values['driver'] ?? ''), array('comfy', 'worker'), true) ? $values['driver'] : 'comfy';
+        $now['model']    = sanitize_text_field((string) ($values['model'] ?? 'sd_xl_base_1.0.safetensors'));
+        // Заготовки запросов к ComfyUI храним как есть: это json из
+        // самого ComfyUI, и чистить его фильтрами значит сломать.
+        foreach (array('wf_image', 'wf_video') as $field) {
+            if (isset($values[$field])) {
+                $now[$field] = trim((string) wp_unslash($values[$field]));
+            }
+        }
         $now['daily']    = max(1, (int) ($values['daily'] ?? self::DAILY_DEFAULT));
         if (empty($now['secret'])) {
             // Ключ подписи обратного вызова заводим один раз и не показываем
@@ -89,7 +104,10 @@ class GC_Gpu {
         if (is_array($cached)) {
             return $cached;
         }
-        $res = wp_remote_get(trailingslashit($s['endpoint']) . 'health', array(
+        // У ComfyUI нет своего /health: спрашиваем системную сводку,
+        // она же показывает видеокарту и свободную память.
+        $path = $s['driver'] === 'comfy' ? 'system_stats' : 'health';
+        $res = wp_remote_get(trailingslashit($s['endpoint']) . $path, array(
             'timeout' => 8,
             'headers' => array('Authorization' => 'Bearer ' . $s['token']),
         ));
@@ -98,9 +116,14 @@ class GC_Gpu {
         } else {
             $code = (int) wp_remote_retrieve_response_code($res);
             $body = json_decode((string) wp_remote_retrieve_body($res), true);
-            $out = $code === 200
-                ? array('ok' => true, 'message' => isset($body['gpu']) ? (string) $body['gpu'] : 'на связи')
-                : array('ok' => false, 'message' => 'машина ответила ' . $code);
+            if ($code !== 200) {
+                $out = array('ok' => false, 'message' => 'машина ответила ' . $code);
+            } elseif ($s['driver'] === 'comfy') {
+                $name = isset($body['devices'][0]['name']) ? (string) $body['devices'][0]['name'] : 'ComfyUI на связи';
+                $out = array('ok' => true, 'message' => $name);
+            } else {
+                $out = array('ok' => true, 'message' => isset($body['gpu']) ? (string) $body['gpu'] : 'на связи');
+            }
         }
         set_transient('gc_gpu_health', $out, MINUTE_IN_SECONDS);
         return $out;
@@ -120,7 +143,7 @@ class GC_Gpu {
      *
      * @return array{ok:bool,job:int,status:string,message:string}
      */
-    public static function submit($user_id, $prompt, $params = array()) {
+    public static function submit($user_id, $prompt, $params = array(), $kind = 'image') {
         $prompt = trim(wp_strip_all_tags((string) $prompt));
         if (mb_strlen($prompt) < 3) {
             return array('ok' => false, 'job' => 0, 'status' => '', 'message' => 'Опишите кадр словами — хотя бы одной фразой.');
@@ -135,9 +158,14 @@ class GC_Gpu {
 
         global $wpdb;
         $table = GC_Install::jobs_table();
+        $kind = $kind === 'video' ? 'video' : 'image';
+        if ($kind === 'video' && trim((string) $s['wf_video']) === '') {
+            return array('ok' => false, 'job' => 0, 'status' => '',
+                         'message' => 'Видео пока не настроено: на машине нет заготовки запроса для роликов.');
+        }
         $wpdb->insert($table, array(
             'user_id'    => (int) $user_id,
-            'kind'       => 'image',
+            'kind'       => $kind,
             'prompt'     => $prompt,
             'params'     => wp_json_encode($params),
             'status'     => 'queued',
@@ -163,6 +191,10 @@ class GC_Gpu {
         $s = self::settings();
         $params = json_decode((string) $job['params'], true);
         $params = is_array($params) ? $params : array();
+
+        if ($s['driver'] === 'comfy') {
+            return self::send_comfy($job, $params, $s);
+        }
 
         $res = wp_remote_post(trailingslashit($s['endpoint']) . 'jobs', array(
             'timeout' => 20,
@@ -233,6 +265,10 @@ class GC_Gpu {
             return;
         }
         $s = self::settings();
+        if ($s['driver'] === 'comfy') {
+            self::poll_comfy($job, $s);
+            return;
+        }
         $res = wp_remote_get(trailingslashit($s['endpoint']) . 'jobs/' . rawurlencode($job['remote_id']), array(
             'timeout' => 15,
             'headers' => array('Authorization' => 'Bearer ' . $s['token']),
@@ -311,6 +347,212 @@ class GC_Gpu {
             'error'       => mb_substr((string) $message, 0, 500),
             'finished_at' => current_time('mysql'),
         ));
+    }
+
+    /* ---------------------------------------------------------------------
+     * ComfyUI на арендованной машине
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Заготовка запроса для ComfyUI.
+     *
+     * ComfyUI принимает не «текст и размер», а граф узлов — тот самый,
+     * что человек собирает мышью в интерфейсе, выгруженный в формате
+     * для API. Граф зависит от того, какие модели стоят на машине,
+     * поэтому держим его настройкой, а не в коде: сменился образ —
+     * поменялась и заготовка, без правки плагина.
+     *
+     * Подстановки делаем по готовой json-строке, а значения прогоняем
+     * через json-кодирование: описание кадра с кавычкой иначе ломает
+     * весь запрос.
+     */
+    public static function workflow($kind, $prompt, $params, $s) {
+        $raw = $kind === 'video' ? (string) $s['wf_video'] : (string) $s['wf_image'];
+        if (trim($raw) === '') {
+            $raw = self::default_image_workflow();
+        }
+        $quoted = function ($value) {
+            return trim(wp_json_encode((string) $value), '"');
+        };
+        $negative = trim((string) ($params['negative'] ?? ''));
+        if ($negative === '') {
+            $negative = 'текст, надписи, водяной знак, искажённые руки, пластиковая кожа';
+        }
+        $seed = (int) ($params['seed'] ?? 0);
+        $map = array(
+            '%PROMPT%'    => $quoted($prompt),
+            '%NEGATIVE%'  => $quoted($negative),
+            '%MODEL%'     => $quoted($s['model']),
+            '%WIDTH%'     => (int) ($params['width'] ?? 1024),
+            '%HEIGHT%'    => (int) ($params['height'] ?? 1024),
+            '%FRAMES%'    => (int) ($params['frames'] ?? 49),
+            '%FPS%'       => (int) ($params['fps'] ?? 16),
+            '%STEPS%'     => (int) ($params['steps'] ?? 28),
+            '%CFG%'       => (float) ($params['cfg'] ?? 6.5),
+            '%STRENGTH%'  => (float) ($params['strength'] ?? 0.75),
+            // Имя файла-референса на самой машине: его туда кладёт
+            // upload_reference() перед отправкой задания.
+            '%REFERENCE%' => $quoted((string) ($params['remote_file'] ?? '')),
+            '%SEED%'      => $seed > 0 ? $seed : wp_rand(1, 2147483646),
+        );
+        $json = strtr($raw, $map);
+        $decoded = json_decode($json, true);
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /** Простой текст-в-кадр на SDXL: то, что есть на любом образе с ComfyUI. */
+    private static function default_image_workflow() {
+        return '{
+  "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "%MODEL%"}},
+  "5": {"class_type": "EmptyLatentImage", "inputs": {"width": %WIDTH%, "height": %HEIGHT%, "batch_size": 1}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "%PROMPT%", "clip": ["4", 1]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "%NEGATIVE%", "clip": ["4", 1]}},
+  "3": {"class_type": "KSampler", "inputs": {"seed": %SEED%, "steps": 28, "cfg": 6.5,
+        "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": 1,
+        "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "gc", "images": ["8", 0]}}
+}';
+    }
+
+    /**
+     * Положить референс на машину.
+     *
+     * ComfyUI берёт картинки не по ссылке, а из своей папки input:
+     * поэтому файл из медиатеки сайта сначала уезжает туда, и только
+     * потом его имя подставляется в граф. Имя возвращаем вместе с
+     * подпапкой — ComfyUI различает их.
+     */
+    public static function upload_reference($attachment_id, $s) {
+        $path = get_attached_file((int) $attachment_id);
+        if (!$path || !file_exists($path)) {
+            return array('ok' => false, 'name' => '', 'message' => 'файл референса не найден');
+        }
+        $body = file_get_contents($path);
+        if ($body === false) {
+            return array('ok' => false, 'name' => '', 'message' => 'файл референса не читается');
+        }
+        $name = basename($path);
+        $boundary = 'gc' . wp_generate_password(16, false);
+        $type = (string) get_post_mime_type((int) $attachment_id);
+        $parts = '';
+        foreach (array('type' => 'input', 'overwrite' => 'true', 'subfolder' => '') as $field => $value) {
+            $parts .= "--{$boundary}\r\n"
+                    . "Content-Disposition: form-data; name=\"{$field}\"\r\n\r\n{$value}\r\n";
+        }
+        $parts .= "--{$boundary}\r\n"
+                . "Content-Disposition: form-data; name=\"image\"; filename=\"{$name}\"\r\n"
+                . "Content-Type: " . ($type !== '' ? $type : 'application/octet-stream') . "\r\n\r\n"
+                . $body . "\r\n--{$boundary}--\r\n";
+
+        $res = wp_remote_post(trailingslashit($s['endpoint']) . 'upload/image', array(
+            'timeout' => 60,
+            'headers' => array('Content-Type' => 'multipart/form-data; boundary=' . $boundary),
+            'body'    => $parts,
+        ));
+        if (is_wp_error($res)) {
+            return array('ok' => false, 'name' => '', 'message' => $res->get_error_message());
+        }
+        $code = (int) wp_remote_retrieve_response_code($res);
+        $data = json_decode((string) wp_remote_retrieve_body($res), true);
+        if ($code !== 200 || empty($data['name'])) {
+            return array('ok' => false, 'name' => '', 'message' => 'машина не приняла файл, ответ ' . $code);
+        }
+        $full = (string) $data['name'];
+        if (!empty($data['subfolder'])) {
+            $full = trim((string) $data['subfolder'], '/') . '/' . $full;
+        }
+        return array('ok' => true, 'name' => $full, 'message' => '');
+    }
+
+    private static function send_comfy($job, $params, $s) {
+        // Референс уезжает на машину прямо перед заданием: между
+        // постановкой в очередь и отправкой машину могли перезапустить,
+        // а её папка input живёт только вместе с ней.
+        if (!empty($params['reference'])) {
+            $up = self::upload_reference((int) $params['reference'], $s);
+            if (!$up['ok']) {
+                self::fail((int) $job['id'], $up['message']);
+                return array('ok' => false, 'job' => (int) $job['id'], 'status' => 'failed',
+                             'message' => 'Референс не доехал до машины: ' . $up['message']);
+            }
+            $params['remote_file'] = $up['name'];
+        }
+
+        $graph = self::workflow((string) $job['kind'], (string) $job['prompt'], $params, $s);
+        if (!$graph) {
+            self::fail((int) $job['id'], 'заготовка запроса не разобралась как json');
+            return array('ok' => false, 'job' => (int) $job['id'], 'status' => 'failed',
+                         'message' => 'Заготовка запроса к ComfyUI не разобралась. Проверьте её в настройках.');
+        }
+        $res = wp_remote_post(trailingslashit($s['endpoint']) . 'prompt', array(
+            'timeout' => 20,
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => wp_json_encode(array(
+                'prompt'    => $graph,
+                'client_id' => 'genius-course-' . (int) $job['id'],
+            )),
+        ));
+        if (is_wp_error($res)) {
+            self::fail((int) $job['id'], $res->get_error_message());
+            return array('ok' => false, 'job' => (int) $job['id'], 'status' => 'failed',
+                         'message' => 'Машина не ответила: ' . $res->get_error_message());
+        }
+        $code = (int) wp_remote_retrieve_response_code($res);
+        $body = json_decode((string) wp_remote_retrieve_body($res), true);
+        if ($code !== 200 || empty($body['prompt_id'])) {
+            $message = isset($body['error']['message']) ? (string) $body['error']['message'] : ('ответ ' . $code);
+            self::fail((int) $job['id'], $message);
+            return array('ok' => false, 'job' => (int) $job['id'], 'status' => 'failed',
+                         'message' => 'ComfyUI отказался: ' . $message);
+        }
+        self::update((int) $job['id'], array('status' => 'running', 'remote_id' => (string) $body['prompt_id']));
+        return array('ok' => true, 'job' => (int) $job['id'], 'status' => 'running', 'message' => 'Считается.');
+    }
+
+    /**
+     * Опрос ComfyUI.
+     *
+     * Обратного вызова у него нет, поэтому только опрос: раз в минуту
+     * по расписанию и чаще — из кабинета, пока человек смотрит на
+     * страницу. Готовый файл лежит в outputs под разными ключами в
+     * зависимости от узла, которым сохраняли: кадры в images, ролики в
+     * gifs или videos.
+     */
+    private static function poll_comfy($job, $s) {
+        $res = wp_remote_get(trailingslashit($s['endpoint']) . 'history/' . rawurlencode((string) $job['remote_id']), array(
+            'timeout' => 15,
+        ));
+        if (is_wp_error($res)) {
+            return;
+        }
+        $body = json_decode((string) wp_remote_retrieve_body($res), true);
+        if (!is_array($body) || empty($body[$job['remote_id']])) {
+            return;
+        }
+        $item = $body[$job['remote_id']];
+        $status = isset($item['status']['status_str']) ? (string) $item['status']['status_str'] : '';
+        if ($status === 'error') {
+            $why = isset($item['status']['messages']) ? wp_json_encode($item['status']['messages']) : 'ошибка на машине';
+            self::fail((int) $job['id'], mb_substr((string) $why, 0, 300));
+            return;
+        }
+        $outputs = isset($item['outputs']) && is_array($item['outputs']) ? $item['outputs'] : array();
+        foreach ($outputs as $node) {
+            foreach (array('images', 'gifs', 'videos') as $key) {
+                if (empty($node[$key][0]['filename'])) {
+                    continue;
+                }
+                $file = $node[$key][0];
+                $url = add_query_arg(array(
+                    'filename'  => $file['filename'],
+                    'subfolder' => isset($file['subfolder']) ? $file['subfolder'] : '',
+                    'type'      => isset($file['type']) ? $file['type'] : 'output',
+                ), trailingslashit($s['endpoint']) . 'view');
+                self::finish((int) $job['id'], $url);
+                return;
+            }
+        }
     }
 
     public static function job($job_id) {
