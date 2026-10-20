@@ -529,6 +529,10 @@ class GC_Gpu {
             // upload_reference() перед отправкой задания.
             '%REFERENCE%' => $quoted((string) ($params['remote_file'] ?? '')),
             '%SEED%'      => $seed > 0 ? $seed : wp_rand(1, 2147483646),
+            // Размер второго прохода: полтора раза по стороне, кратно
+            // восьми. На нём и чинятся мелкие лица и руки.
+            '%WIDTH2%'    => ((int) round((int) ($params['width'] ?? 1024) * 1.5 / 8)) * 8,
+            '%HEIGHT2%'   => ((int) round((int) ($params['height'] ?? 1024) * 1.5 / 8)) * 8,
         );
         $json = strtr($raw, $map);
         $decoded = json_decode($json, true);
@@ -549,7 +553,15 @@ class GC_Gpu {
         return $with_reference ? self::default_image_ref_workflow() : self::default_image_workflow();
     }
 
-    /** Простой текст-в-кадр на SDXL: то, что есть на любом образе с ComfyUI. */
+    /**
+     * Текст в кадр, два прохода.
+     *
+     * Один проход на полный рост даёт мелкое лицо и кашу вместо
+     * пальцев: модель рисует фигуру целиком в те же пиксели. Второй
+     * проход увеличивает картинку в полтора раза и дорисовывает её с
+     * малым denoise — композиция остаётся, детали появляются. Это
+     * стоит секунд двадцать и снимает большую часть артефактов.
+     */
     private static function default_image_workflow() {
         return '{
   "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "%MODEL%"}},
@@ -557,9 +569,14 @@ class GC_Gpu {
   "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "%PROMPT%", "clip": ["4", 1]}},
   "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "%NEGATIVE%", "clip": ["4", 1]}},
   "3": {"class_type": "KSampler", "inputs": {"seed": %SEED%, "steps": %STEPS%, "cfg": %CFG%,
-        "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": 1,
+        "sampler_name": "dpmpp_2m_sde", "scheduler": "karras", "denoise": 1,
         "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
-  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+  "11": {"class_type": "LatentUpscale", "inputs": {"samples": ["3", 0], "upscale_method": "nearest-exact",
+         "width": %WIDTH2%, "height": %HEIGHT2%, "crop": "disabled"}},
+  "12": {"class_type": "KSampler", "inputs": {"seed": %SEED%, "steps": 14, "cfg": %CFG%,
+         "sampler_name": "dpmpp_2m_sde", "scheduler": "karras", "denoise": 0.45,
+         "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["11", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["12", 0], "vae": ["4", 2]}},
   "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "gc", "images": ["8", 0]}}
 }';
     }

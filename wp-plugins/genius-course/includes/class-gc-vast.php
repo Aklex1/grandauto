@@ -396,6 +396,10 @@ if ! curl -s -m 5 http://127.0.0.1:8188/system_stats >/dev/null 2>&1; then
 fi
 mkdir -p "$CF/models/checkpoints" "$CF/models/text_encoders"
 HF=https://huggingface.co
+# Фотореалистичная сборка SDXL: у базовой модели руки и лица в полный
+# рост выходят кашей, у этой — заметно чище. Её и ставим основной.
+wget -nc -q -P "$CF/models/checkpoints" \
+  $HF/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors
 wget -nc -q -P "$CF/models/checkpoints" \
   $HF/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
 wget -nc -q -P "$CF/models/checkpoints" \
