@@ -671,19 +671,30 @@ class GS_Kreator {
                         <a class="gs-kr__btn" href="#gs-kr-form">Записаться на обучение</a>
                         <a class="gs-kr__btn gs-kr__btn--ghost" href="#gs-kr-program">Смотреть программу</a>
                     </div>
+                    <?php
+                    /*
+                     * Подписи держим в две-три коротких строки: в узкой
+                     * колонке первого экрана длинная подпись переносится
+                     * посреди словосочетания, и ряд перестаёт читаться
+                     * как ряд.
+                     */
+                    $facts = array(
+                        array('money',   'от ' . number_format_i18n(self::PRICE_BASE) . ' ₽', 'два тарифа, без рассрочки'),
+                        array('clock',   self::WEEKS . ' недель',      'по два часа в день'),
+                        array('check',   '6 работ',                    'в портфолио на выходе'),
+                        array('cart',    'Заказы после',               'передаём свои задачи'),
+                        array('remote',  'Удалённо',                   '66 вакансий из 100'),
+                        array('sparkle', 'Месяц без лимита',           'генерации фото и видео'),
+                    );
+                    ?>
                     <ul class="gs-kr__facts">
-                        <li><?php echo self::icon('money', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-                            <b>от <?php echo esc_html(number_format_i18n(self::PRICE_BASE)); ?> ₽</b><span>два тарифа, рассрочки нет</span></li>
-                        <li><?php echo self::icon('clock', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-                            <b><?php echo (int) self::WEEKS; ?> недель</b><span>по два часа в день</span></li>
-                        <li><?php echo self::icon('check', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-                            <b>6 работ</b><span>в портфолио на выходе</span></li>
-                        <li><?php echo self::icon('cart', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-                            <b>Заказы после</b><span>передаём свои и помогаем с откликами</span></li>
-                        <li><?php echo self::icon('remote', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-                            <b>Удалённо</b><span>в 66 вакансиях из 100 — удалённая работа</span></li>
-                        <li><?php echo self::icon('sparkle', 'gs-kr__ico'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-                            <b>Месяц без лимита</b><span>генерации фото и видео в подарок</span></li>
+                        <?php foreach ($facts as $fact) : ?>
+                            <li>
+                                <span class="gs-kr__fact-ico"><?php echo self::icon($fact[0]); // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
+                                <b><?php echo esc_html($fact[1]); ?></b>
+                                <span class="gs-kr__fact-note"><?php echo esc_html($fact[2]); ?></span>
+                            </li>
+                        <?php endforeach; ?>
                     </ul>
                     <p class="gs-kr__fine">Материалы в записи, разборы письменные — часовой пояс не мешает.
                         Обязательных эфиров нет.</p>
