@@ -3,7 +3,7 @@
  * Plugin Name: Genius Sounds — каталог звуков и генератор SFX
  * Plugin URI: https://genius-bot.ru/sounds-catalog/
  * Description: Современный адаптивный каталог звуков (подменяет вывод [kie_tts_sounds_catalog]), серверный импортёр звуков и студия генерации звуков и спецэффектов на Suno через KIE.
- * Version:     2.99.4
+ * Version:     3.1.1
  * Author: Genius-bot
  * Text Domain: genius-sounds
  */
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 // запускается разовая инициализация. Номера разошлись, и при обновлении
 // обе колонки показывали одно и то же, хотя код был новый. Держим их
 // равными: меняя один, меняйте и второй.
-define('GS_VERSION', '2.99.4');
+define('GS_VERSION', '3.1.1');
 define('GS_PLUGIN_FILE', __FILE__);
 define('GS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('GS_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -87,6 +87,7 @@ $gs_parts = array(
     'includes/class-gs-voice-page.php',
     'includes/class-gs-songs.php',
     'includes/class-gs-course.php',
+    'includes/class-gs-kreator.php',
     'includes/class-gs-cta.php',
     'includes/class-gs-apicta.php',
     'includes/class-gs-openai.php',
@@ -214,6 +215,7 @@ class Genius_Sounds_Plugin {
         GS_Landing::boot();
         GS_Songs::boot();
         GS_Course::boot();
+        GS_Kreator::boot();
         GS_CTA::boot();
         GS_ApiCta::boot();
         GS_OpenAI::boot();
@@ -262,6 +264,7 @@ class Genius_Sounds_Plugin {
         GS_Landing::ensure_pages();
         GS_Songs::ensure_page();
         GS_Course::ensure_page();
+        GS_Kreator::ensure_page();
         GS_Slides_Page::ensure_pages();
         GS_Api_Page::ensure_page();
         GS_Partner_Page::ensure_page();
@@ -286,6 +289,7 @@ class Genius_Sounds_Plugin {
         GS_Voice_Page::register_shortcodes();
         GS_Songs::register_shortcodes();
         GS_Course::register_shortcodes();
+        GS_Kreator::register_shortcodes();
         GS_Slides_Page::register_shortcodes();
         GS_Api_Page::register_shortcodes();
         GS_Partner_Page::register_shortcodes();
@@ -317,6 +321,7 @@ class Genius_Sounds_Plugin {
                 GS_Landing::ensure_pages();
                 GS_Songs::ensure_page();
                 GS_Course::ensure_page();
+                GS_Kreator::ensure_page();
                 GS_Slides_Page::ensure_pages();
                 GS_Api_Page::ensure_page();
                 GS_Partner_Page::ensure_page();
@@ -547,6 +552,7 @@ class Genius_Sounds_Plugin {
         $ours = GS_Catalog::is_catalog_request() || GS_Pages::is_showcase_request()
             || GS_Pages::is_studio_request() || GS_Lab::current_service() || GS_Landing::current()
             || GS_Songs::is_page() || GS_Course::is_page() || GS_404::is_page() || GS_Slides_Page::is_any() || $blog || $api || $dashboard || $partner || $voicehub
+            || (class_exists('GS_Kreator') && GS_Kreator::is_page())
             || (class_exists('GS_Wheel') && GS_Wheel::is_landing())
             || (class_exists('GS_Prompts_Page') && GS_Prompts_Page::is_page());
         if ($ours) {
@@ -561,6 +567,12 @@ class Genius_Sounds_Plugin {
                 'studioUrl' => GS_Pages::get_studio_url(),
             ));
             GS_Sound_Offer::enqueue();
+        }
+
+        if ($blog && class_exists('GS_Kreator') && GS_Kreator::is_cluster_post()) {
+            // Мини-баннер печатается внутри статьи, а оформление его лежит в
+            // стилях лендинга: без этой строки баннер в статье без рамки.
+            wp_enqueue_style('genius-sounds-kreator', GS_PLUGIN_URL . 'assets/css/kreator.css', array(), GS_VERSION);
         }
 
         if ($blog) {
@@ -686,6 +698,20 @@ class Genius_Sounds_Plugin {
             wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
             wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
             wp_enqueue_style('genius-sounds-404', GS_PLUGIN_URL . 'assets/css/e404.css', array('genius-sounds-studio'), GS_VERSION);
+        }
+
+        if (GS_Kreator::is_page()) {
+            wp_enqueue_style('genius-sounds-catalog', GS_PLUGIN_URL . 'assets/css/catalog.css', array(), GS_VERSION);
+            wp_enqueue_style('genius-sounds-studio', GS_PLUGIN_URL . 'assets/css/studio.css', array('genius-sounds-catalog'), GS_VERSION);
+            wp_enqueue_style('genius-sounds-kreator', GS_PLUGIN_URL . 'assets/css/kreator.css', array('genius-sounds-studio'), GS_VERSION);
+            wp_enqueue_script('genius-sounds-kreator', GS_PLUGIN_URL . 'assets/js/kreator.js', array(), GS_VERSION, true);
+            wp_localize_script('genius-sounds-kreator', 'GS_KREATOR', array(
+                'restUrl' => esc_url_raw(rest_url(GS_Rest::NS . '/')),
+                'nonce'   => wp_create_nonce('wp_rest'),
+                'source'  => 'обучение AI-креатора',
+                'counter' => class_exists('GS_Metrika') ? (int) GS_Metrika::counter() : 0,
+                'goal'    => 'lead_form',
+            ));
         }
 
         if (GS_Course::is_page()) {

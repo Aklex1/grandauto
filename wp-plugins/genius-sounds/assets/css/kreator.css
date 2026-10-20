@@ -1,0 +1,1100 @@
+/**
+ * Лендинг «Обучение AI-креатора».
+ *
+ * Строится поверх catalog.css и studio.css: токены, поля формы и кнопки
+ * оттуда. Здесь — сетка лендинга и фоновая графика.
+ *
+ * Фоны нарисованы SVG, а не загружены картинками: на первом экране их три
+ * слоя, и три растровых файла по сто килобайт сдвинули бы отрисовку
+ * заголовка. Сетка и штриховка лежат в data-URI, свечение и волны —
+ * инлайновыми svg в разметке, чтобы брать цвет у темы.
+ */
+
+.gs-kr {
+    /* Токены темы объявлены на .gs-wrap, и разметка лендинга лежит внутри
+       него. Повторяем их здесь запасным слоем: без значений лендинг
+       остаётся вовсе без фонов и рамок, а заметно это только на живой
+       странице. */
+    --gs-bg: #080c14;
+    --gs-surface: #131b2b;
+    --gs-surface-2: #182236;
+    --gs-border: rgba(148, 163, 184, 0.14);
+    --gs-border-strong: rgba(129, 140, 248, 0.38);
+    --gs-text: #f1f5f9;
+    --gs-muted: #94a3b8;
+    --gs-primary: #6366f1;
+    --gs-primary-light: #818cf8;
+    --gs-accent: #22d3ee;
+    --gs-ok: #34d399;
+    --gs-radius: 16px;
+    --gs-radius-sm: 10px;
+    --gs-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
+    --gs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --gs-kr-grid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M48 0H0v48' fill='none' stroke='%23334155' stroke-opacity='.22' stroke-width='1'/%3E%3C/svg%3E");
+    --gs-kr-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='2' cy='2' r='1.3' fill='%236366f1' fill-opacity='.3'/%3E%3C/svg%3E");
+    --gs-kr-rays: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26'%3E%3Cpath d='M-6 26L26 -6' stroke='%2322d3ee' stroke-opacity='.14' stroke-width='2'/%3E%3C/svg%3E");
+    padding-bottom: 80px;
+}
+
+.gs-kr section {
+    position: relative;
+}
+
+.gs-kr__h2 {
+    margin: 0 0 10px;
+    font-size: clamp(24px, 3.1vw, 36px);
+    line-height: 1.16;
+    letter-spacing: -0.02em;
+    color: var(--gs-text);
+}
+
+.gs-kr__sub {
+    margin: 0 0 26px;
+    max-width: 760px;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--gs-muted);
+}
+
+.gs-kr__fine {
+    margin: 16px 0 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--gs-muted);
+}
+
+/* --- Кнопки ---------------------------------------------------------- */
+
+/* Цвет текста ссылок тема задаёт с !important, и на фиолетовой кнопке
+   надпись оставалась блёклой сиреневой. Белый тут обязателен — это
+   главное действие страницы. */
+.gs-kr a.gs-kr__btn,
+.gs-kr a.gs-kr__btn:hover,
+.gs-kr a.gs-kr__btn:focus-visible {
+    color: #fff !important;
+}
+
+.gs-kr a.gs-kr__btn--ghost,
+.gs-kr a.gs-kr__btn--ghost:hover,
+.gs-kr a.gs-kr__btn--ghost:focus-visible {
+    color: var(--gs-text) !important;
+}
+
+.gs-kr__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    padding: 0 26px;
+    border: 1px solid transparent;
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-primary);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: transform 0.16s var(--gs-ease), background 0.16s var(--gs-ease);
+}
+
+.gs-kr__btn:hover,
+.gs-kr__btn:focus-visible {
+    background: var(--gs-primary-light);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.gs-kr__btn--ghost {
+    background: transparent;
+    border-color: var(--gs-border-strong);
+    color: var(--gs-text);
+}
+
+.gs-kr__btn--ghost:hover,
+.gs-kr__btn--ghost:focus-visible {
+    background: rgba(99, 102, 241, 0.14);
+    color: var(--gs-text);
+}
+
+/* Кнопка формы — это <button>, а тема красит кнопки своим голубым и делает
+   это с большей точностью селектора. Перебиваем явно: на лендинге обе
+   кнопки должны быть одного цвета, иначе главное действие выглядит чужим. */
+.gs-kr button.gs-kr__btn--wide {
+    width: 100%;
+    border: 0;
+    cursor: pointer;
+    font-family: inherit;
+    background: var(--gs-primary) !important;
+    color: #fff !important;
+    border-radius: var(--gs-radius-sm) !important;
+}
+
+.gs-kr button.gs-kr__btn--wide:hover,
+.gs-kr button.gs-kr__btn--wide:focus-visible {
+    background: var(--gs-primary-light) !important;
+}
+
+/* Якоря модулей: шапка сайта липкая и перекрывает заголовок, к которому
+   перешли из блока требований. */
+.gs-kr__mod,
+.gs-kr__program,
+.gs-kr__form-wrap {
+    scroll-margin-top: 96px;
+}
+
+/* --- Первый экран ---------------------------------------------------- */
+
+.gs-kr__hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    align-items: center;
+    gap: 40px;
+    margin: 8px 0 44px;
+    padding: 56px 48px;
+    border: 1px solid var(--gs-border);
+    border-radius: calc(var(--gs-radius) + 8px);
+    background-color: var(--gs-surface);
+    background-image: var(--gs-kr-grid);
+    box-shadow: var(--gs-shadow);
+    overflow: hidden;
+}
+
+/* Свечение лежит под текстом и не мешает выделению: pointer-events снят. */
+.gs-kr__glow {
+    position: absolute;
+    top: -22%;
+    right: -12%;
+    width: 68%;
+    min-width: 420px;
+    pointer-events: none;
+}
+
+.gs-kr__hero-text {
+    position: relative;
+    min-width: 0;
+}
+
+.gs-kr__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 13px;
+    border: 1px solid var(--gs-border-strong);
+    border-radius: 999px;
+    background: rgba(99, 102, 241, 0.14);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--gs-primary-light);
+}
+
+/* Тема задаёт размер заголовка страницы правилом с тегом в селекторе и
+   выигрывает у одного класса: H1 оставался 30 пикселями при заголовках
+   разделов в 36. Одной точности селектора не хватило: размер у темы стоит
+   с !important, поэтому перебиваем тем же способом — иначе главный
+   заголовок страницы мельче заголовков её разделов. */
+.gs-kr h1.gs-kr__title {
+    margin: 18px 0 0;
+    font-size: clamp(29px, 4.2vw, 47px) !important;
+    line-height: 1.11;
+    letter-spacing: -0.025em;
+    color: var(--gs-text);
+}
+
+.gs-kr__lead {
+    margin: 16px 0 0;
+    max-width: 600px;
+    font-size: 17px;
+    line-height: 1.62;
+    color: #c7d2e4;
+}
+
+.gs-kr__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 26px;
+}
+
+.gs-kr__hero-art {
+    position: relative;
+    min-width: 0;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    overflow: hidden;
+}
+
+.gs-kr__hero-art img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+/* --- Цифры рынка ----------------------------------------------------- */
+
+.gs-kr__stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 56px;
+}
+
+.gs-kr__stat {
+    padding: 22px 20px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background-color: var(--gs-surface);
+    background-image: var(--gs-kr-dots);
+    background-size: 22px 22px;
+}
+
+.gs-kr__stat-num {
+    display: block;
+    /* «70 000–100 000 ₽» — самая длинная плитка, и на 30 пикселях она
+       ломалась посреди числа. Берём размер от ширины плитки. */
+    font-size: clamp(20px, 2vw, 27px);
+    text-wrap: balance;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--gs-accent);
+}
+
+.gs-kr__stat-cap {
+    display: block;
+    margin-top: 6px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--gs-muted);
+}
+
+.gs-kr__source {
+    grid-column: 1 / -1;
+    margin: 2px 0 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--gs-muted);
+}
+
+/* --- Требования ------------------------------------------------------ */
+
+.gs-kr__demands {
+    margin-bottom: 56px;
+}
+
+.gs-kr__dlist {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 10px;
+}
+
+.gs-kr__d {
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 18px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+}
+
+.gs-kr__d-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 44px;
+    border-radius: var(--gs-radius-sm);
+    background: rgba(34, 211, 238, 0.12);
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--gs-accent);
+}
+
+.gs-kr__d-body {
+    min-width: 0;
+}
+
+.gs-kr__d-name {
+    display: block;
+    font-size: 16.5px;
+    color: var(--gs-text);
+}
+
+.gs-kr__d-note {
+    display: block;
+    margin-top: 3px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--gs-muted);
+}
+
+.gs-kr__d-mod {
+    font-size: 13.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--gs-primary-light);
+    text-decoration: none;
+    border-bottom: 1px dashed currentColor;
+}
+
+/* --- Программа ------------------------------------------------------- */
+
+.gs-kr__program {
+    margin-bottom: 56px;
+}
+
+.gs-kr__mods {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 14px;
+}
+
+.gs-kr__mod {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 18px;
+    padding: 24px 26px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+}
+
+.gs-kr__mod:target {
+    border-color: var(--gs-border-strong);
+    background: var(--gs-surface-2);
+}
+
+.gs-kr__mod-n {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gs-primary), var(--gs-accent));
+    font-size: 22px;
+    font-weight: 800;
+    color: #0b1120;
+}
+
+.gs-kr__mod-body {
+    min-width: 0;
+}
+
+.gs-kr__mod-title {
+    margin: 6px 0 0;
+    font-size: 20px;
+    line-height: 1.25;
+    color: var(--gs-text);
+}
+
+.gs-kr__mod-text {
+    margin: 10px 0 0;
+    font-size: 15.5px;
+    line-height: 1.6;
+    color: #c7d2e4;
+}
+
+.gs-kr__mod-out {
+    margin: 14px 0 0;
+    padding: 10px 14px;
+    border-left: 3px solid var(--gs-accent);
+    border-radius: 0 var(--gs-radius-sm) var(--gs-radius-sm) 0;
+    background: rgba(34, 211, 238, 0.08);
+    font-size: 15px;
+    color: var(--gs-text);
+}
+
+.gs-kr__mod-out span {
+    font-weight: 700;
+    color: var(--gs-accent);
+}
+
+.gs-kr__mod-why {
+    margin: 12px 0 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--gs-muted);
+}
+
+/* --- Волны между секциями -------------------------------------------- */
+
+.gs-kr__waves {
+    position: absolute;
+    top: -1px;
+    left: 0;
+    width: 100%;
+    height: 70px;
+    color: var(--gs-bg);
+    pointer-events: none;
+}
+
+/* --- Портфолио ------------------------------------------------------- */
+
+.gs-kr__folio,
+.gs-kr__form-wrap {
+    margin-bottom: 56px;
+    padding: 84px 40px 40px;
+    border: 1px solid var(--gs-border);
+    border-radius: calc(var(--gs-radius) + 8px);
+    background-color: var(--gs-surface);
+    background-image: var(--gs-kr-rays);
+    background-size: 26px 26px;
+    overflow: hidden;
+}
+
+.gs-kr__cards {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.gs-kr__card {
+    padding: 20px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: rgba(8, 12, 20, 0.6);
+}
+
+.gs-kr__card-n {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: rgba(99, 102, 241, 0.2);
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--gs-primary-light);
+}
+
+.gs-kr__card-title {
+    display: block;
+    margin: 12px 0 0;
+    font-size: 16px;
+    color: var(--gs-text);
+}
+
+.gs-kr__card-text {
+    display: block;
+    margin-top: 6px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--gs-muted);
+}
+
+.gs-kr__gallery {
+    margin: 22px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.gs-kr__gitem {
+    min-width: 0;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: rgba(8, 12, 20, 0.6);
+    overflow: hidden;
+}
+
+.gs-kr__gitem img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.gs-kr__gitem span {
+    display: block;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--gs-muted);
+}
+
+/* --- Как устроено ---------------------------------------------------- */
+
+.gs-kr__how {
+    margin-bottom: 56px;
+}
+
+.gs-kr__how-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.gs-kr__how-item {
+    padding: 24px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: var(--gs-surface);
+}
+
+.gs-kr__how-item h3 {
+    margin: 0;
+    font-size: 18px;
+    color: var(--gs-text);
+}
+
+.gs-kr__how-item p {
+    margin: 10px 0 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--gs-muted);
+}
+
+.gs-kr__shot {
+    margin: 22px 0 0;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    overflow: hidden;
+}
+
+.gs-kr__shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.gs-kr__shot figcaption {
+    padding: 12px 16px;
+    font-size: 13.5px;
+    color: var(--gs-muted);
+    background: var(--gs-surface);
+}
+
+/* --- Инструменты ----------------------------------------------------- */
+
+.gs-kr__tools {
+    margin-bottom: 56px;
+}
+
+.gs-kr__tgrid {
+    margin: 0 0 24px;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.gs-kr__tool {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px 18px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+    font-size: 15px;
+    color: var(--gs-text);
+}
+
+.gs-kr__tool a {
+    color: var(--gs-text);
+    text-decoration: none;
+    border-bottom: 1px solid var(--gs-border-strong);
+}
+
+.gs-kr__tool a:hover {
+    color: var(--gs-primary-light);
+}
+
+.gs-kr__tool em {
+    font-style: normal;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--gs-accent);
+}
+
+/* --- Тарифы ---------------------------------------------------------- */
+
+.gs-kr__price {
+    margin-bottom: 56px;
+}
+
+.gs-kr__plans {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.gs-kr__plan {
+    position: relative;
+    padding: 30px 28px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background-color: var(--gs-surface);
+}
+
+.gs-kr__plan--pro {
+    border-color: var(--gs-border-strong);
+    background-image: var(--gs-kr-dots);
+    background-size: 22px 22px;
+}
+
+.gs-kr__plan-tag {
+    position: absolute;
+    top: -12px;
+    left: 28px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: var(--gs-primary);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #fff;
+}
+
+.gs-kr__plan-name {
+    margin: 0;
+    font-size: 19px;
+    color: var(--gs-muted);
+}
+
+.gs-kr__plan-sum {
+    margin: 8px 0 0;
+    font-size: clamp(30px, 3.6vw, 40px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--gs-text);
+}
+
+.gs-kr__plan-list {
+    margin: 20px 0 24px;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 10px;
+}
+
+.gs-kr__plan-list li {
+    position: relative;
+    padding-left: 26px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: #c7d2e4;
+}
+
+/* Галочка фоном: шесть одинаковых svg в разметке были бы лишним весом. */
+.gs-kr__plan-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 3px;
+    width: 17px;
+    height: 17px;
+    background: var(--gs-ok);
+    -webkit-mask: var(--gs-kr-tick) center / 17px 17px no-repeat;
+    mask: var(--gs-kr-tick) center / 17px 17px no-repeat;
+}
+
+.gs-kr {
+    --gs-kr-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.4l3.2 3.1L13 4.8' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* --- Заявка ---------------------------------------------------------- */
+
+.gs-kr__form-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 36px;
+    align-items: start;
+}
+
+.gs-kr__form-side {
+    padding: 24px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius);
+    background: rgba(8, 12, 20, 0.6);
+}
+
+.gs-kr__form-side h3 {
+    margin: 0 0 12px;
+    font-size: 17px;
+    color: var(--gs-text);
+}
+
+.gs-kr__form-side ol {
+    margin: 0;
+    padding-left: 20px;
+    display: grid;
+    gap: 10px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--gs-muted);
+}
+
+.gs-kr__form-side ol strong {
+    color: var(--gs-text);
+}
+
+@media (max-width: 860px) {
+    .gs-kr__form-inner {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 24px;
+    }
+}
+
+.gs-kr__form-wrap .gs-form {
+    margin-top: 8px;
+}
+
+/*
+ * Поля формы.
+ *
+ * Тема рисует свои поля светлым кольцом в два пикселя и скругляет их почти
+ * в таблетку, а кнопку красит голубым. На тёмном лендинге этот блок
+ * выглядел вставленным с другого сайта, поэтому приводим поля к тем же
+ * рамкам и радиусам, что у карточек выше. Перебиваем через !important:
+ * у темы селекторы точнее, и без этого выигрывает она.
+ */
+.gs-kr .gs-form__input,
+.gs-kr .gs-form__area,
+.gs-kr select.gs-form__input,
+.gs-kr textarea.gs-form__input {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 52px;
+    padding: 14px 16px !important;
+    border: 1px solid var(--gs-border) !important;
+    border-radius: var(--gs-radius-sm) !important;
+    background-color: rgba(8, 12, 20, 0.72) !important;
+    box-shadow: none !important;
+    color: var(--gs-text) !important;
+    font-family: inherit;
+    font-size: 15.5px;
+    line-height: 1.45;
+    transition: border-color 0.16s var(--gs-ease), background 0.16s var(--gs-ease);
+}
+
+.gs-kr .gs-form__area,
+.gs-kr textarea.gs-form__input {
+    min-height: 104px;
+    resize: vertical;
+}
+
+.gs-kr .gs-form__input::placeholder {
+    color: #64748b;
+}
+
+.gs-kr .gs-form__input:hover {
+    border-color: rgba(148, 163, 184, 0.3) !important;
+}
+
+.gs-kr .gs-form__input:focus,
+.gs-kr .gs-form__input:focus-visible {
+    outline: none !important;
+    border-color: var(--gs-primary-light) !important;
+    background-color: rgba(8, 12, 20, 0.92) !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.22) !important;
+}
+
+/* Стрелку у списка тема прячет вместе со своим оформлением — рисуем свою. */
+.gs-kr select.gs-form__input {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 42px !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6.5L8 10.5L12 6.5' fill='none' stroke='%2394a3b8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 14px center !important;
+    background-size: 16px 16px !important;
+}
+
+.gs-kr .gs-form__row {
+    display: block;
+    margin-bottom: 16px;
+}
+
+.gs-kr .gs-form__label {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--gs-muted);
+}
+
+.gs-kr .gs-form__label b {
+    color: var(--gs-accent);
+}
+
+.gs-kr .gs-form__note {
+    margin: 12px 0 0;
+    font-size: 14.5px;
+    line-height: 1.5;
+    color: var(--gs-muted);
+}
+
+.gs-kr .gs-form__note.is-ok {
+    color: var(--gs-ok);
+}
+
+.gs-kr .gs-form__note.is-error {
+    color: #f87171;
+}
+
+/* --- Вопросы --------------------------------------------------------- */
+
+.gs-kr__faq {
+    margin-bottom: 56px;
+}
+
+.gs-kr__q {
+    margin-bottom: 10px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+    overflow: hidden;
+}
+
+.gs-kr__q summary {
+    padding: 16px 20px;
+    font-size: 16.5px;
+    font-weight: 700;
+    color: var(--gs-text);
+    cursor: pointer;
+    list-style: none;
+}
+
+.gs-kr__q summary::-webkit-details-marker {
+    display: none;
+}
+
+.gs-kr__q summary::after {
+    content: "+";
+    float: right;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--gs-primary-light);
+}
+
+.gs-kr__q[open] summary::after {
+    content: "–";
+}
+
+.gs-kr__q p {
+    margin: 0;
+    padding: 0 20px 18px;
+    font-size: 15.5px;
+    line-height: 1.62;
+    color: var(--gs-muted);
+}
+
+.gs-kr__q a {
+    color: var(--gs-primary-light);
+}
+
+/* --- Что почитать ---------------------------------------------------- */
+
+.gs-kr__rlist {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 12px;
+}
+
+.gs-kr__rlist li {
+    padding: 18px 20px;
+    border: 1px solid var(--gs-border);
+    border-radius: var(--gs-radius-sm);
+    background: var(--gs-surface);
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--gs-muted);
+}
+
+.gs-kr__rlist a {
+    font-weight: 700;
+    color: var(--gs-text);
+    text-decoration: none;
+    border-bottom: 1px solid var(--gs-border-strong);
+}
+
+.gs-kr__rlist a:hover {
+    color: var(--gs-primary-light);
+}
+
+/* --- Телефон --------------------------------------------------------- */
+
+@media (max-width: 1024px) {
+    .gs-kr__hero {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 40px 28px;
+    }
+
+    .gs-kr__stats,
+    .gs-kr__tgrid,
+    .gs-kr__gallery {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .gs-kr__cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 680px) {
+    .gs-kr__hero {
+        margin-bottom: 32px;
+        padding: 30px 18px;
+    }
+
+    /* Заголовок длинный, и на 390 точках он занимал пять строк: на экран
+       переставал помещаться первый абзац, а с ним и обе кнопки. */
+    .gs-kr h1.gs-kr__title {
+        font-size: 27px !important;
+        line-height: 1.16;
+    }
+
+    .gs-kr__lead {
+        font-size: 15.5px;
+    }
+
+    .gs-kr__badge {
+        font-size: 11.5px;
+    }
+
+    .gs-kr__cta {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .gs-kr__stats,
+    .gs-kr__cards,
+    .gs-kr__how-grid,
+    .gs-kr__plans,
+    .gs-kr__tgrid,
+    .gs-kr__gallery {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .gs-kr__d {
+        grid-template-columns: 48px minmax(0, 1fr);
+        row-gap: 10px;
+    }
+
+    .gs-kr__d-mod {
+        grid-column: 2;
+        justify-self: start;
+    }
+
+    .gs-kr__mod {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        padding: 20px 18px;
+    }
+
+    .gs-kr__folio,
+    .gs-kr__form-wrap {
+        padding: 60px 18px 28px;
+    }
+
+    .gs-kr__waves {
+        height: 48px;
+    }
+}
+
+/* --- Мини-баннер в статьях ------------------------------------------- */
+
+.gs-krbanner {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 18px;
+    margin: 0 0 30px;
+    padding: 20px 24px;
+    border: 1px solid rgba(129, 140, 248, 0.38);
+    border-radius: 16px;
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M48 0H0v48' fill='none' stroke='%23334155' stroke-opacity='.2' stroke-width='1'/%3E%3C/svg%3E"),
+        linear-gradient(120deg, rgba(99, 102, 241, 0.16), rgba(34, 211, 238, 0.08));
+    background-color: #131b2b;
+}
+
+.gs-krbanner__art {
+    width: 72px;
+    height: 72px;
+}
+
+.gs-krbanner__text {
+    min-width: 0;
+}
+
+.gs-krbanner__title {
+    margin: 0 !important;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.25;
+    color: #f1f5f9;
+}
+
+.gs-krbanner__lead {
+    margin: 7px 0 0 !important;
+    font-size: 14.5px;
+    line-height: 1.5;
+    color: #94a3b8;
+}
+
+/*
+ * Цвет надписи на кнопке баннера.
+ *
+ * Перебивать приходится не тему, а собственный blog.css: он красит все
+ * ссылки в тексте статьи правилом
+ * body.gs-post-page .w-post-elm.post_content a — и на фиолетовой кнопке
+ * надпись выходила блёклой сиреневой. Поэтому селектор такой длинный:
+ * у того правила выше точность, и короткий ему проигрывает.
+ */
+body.gs-post-page .w-post-elm.post_content a.gs-krbanner__btn,
+body.gs-post-page .w-post-elm.post_content a.gs-krbanner__btn:hover,
+body.gs-post-page .w-post-elm.post_content a.gs-krbanner__btn:focus-visible,
+.gs-krbanner a.gs-krbanner__btn {
+    color: #fff !important;
+}
+
+.gs-krbanner__btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 48px;
+    padding: 0 22px;
+    border-radius: 10px;
+    background: #6366f1;
+    color: #fff !important;
+    font-size: 15.5px;
+    font-weight: 700;
+    text-decoration: none !important;
+    white-space: nowrap;
+}
+
+.gs-krbanner__btn:hover {
+    background: #818cf8;
+}
+
+@media (max-width: 680px) {
+    .gs-krbanner {
+        grid-template-columns: 52px minmax(0, 1fr);
+        padding: 18px;
+    }
+
+    .gs-krbanner__art {
+        width: 52px;
+        height: 52px;
+    }
+
+    .gs-krbanner__btn {
+        grid-column: 1 / -1;
+        justify-content: center;
+    }
+}

@@ -165,6 +165,12 @@ class GS_Course {
         if (class_exists('GS_Legal') && GS_Legal::is_doc_post()) {
             return $content;
         }
+        // У кластера о профессии AI-креатора свой лендинг и свой баннер:
+        // два баннера подряд в начале статьи — это уже не предложение, а
+        // перекрытый первый экран.
+        if (class_exists('GS_Kreator') && GS_Kreator::is_cluster_post()) {
+            return $content;
+        }
         return self::banner() . $content;
     }
 
