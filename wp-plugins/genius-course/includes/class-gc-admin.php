@@ -25,7 +25,13 @@ class GC_Admin {
     }
 
     public static function menu() {
-        add_menu_page('Курс', 'Курс', 'manage_options', self::SLUG, array(__CLASS__, 'render'), 'dashicons-welcome-learn-more', 31);
+        $waiting = GC_Works::waiting();
+        $label = 'Курс';
+        if ($waiting > 0) {
+            $label .= ' <span class="update-plugins count-' . (int) $waiting . '"><span class="plugin-count">'
+                    . (int) $waiting . '</span></span>';
+        }
+        add_menu_page('Курс', $label, 'manage_options', self::SLUG, array(__CLASS__, 'render'), 'dashicons-welcome-learn-more', 31);
     }
 
     private static function tab() {
@@ -48,7 +54,9 @@ class GC_Admin {
             <h1>Курс «Обучение AI-креатора»</h1>
             <h2 class="nav-tab-wrapper">
                 <a class="nav-tab <?php echo $tab === 'students' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('students')); ?>">Ученики</a>
-                <a class="nav-tab <?php echo $tab === 'works' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('works')); ?>">Работы</a>
+                <a class="nav-tab <?php echo $tab === 'works' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('works')); ?>">Работы<?php
+                    $waiting = GC_Works::waiting();
+                    echo $waiting > 0 ? ' (' . (int) $waiting . ')' : ''; ?></a>
                 <a class="nav-tab <?php echo $tab === 'jobs' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('jobs')); ?>">Генерации</a>
                 <a class="nav-tab <?php echo $tab === 'settings' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('settings')); ?>">Настройки</a>
             </h2>

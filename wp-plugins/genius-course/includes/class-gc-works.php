@@ -64,6 +64,51 @@ class GC_Works {
         ), array('id' => (int) $id), array('%s', '%s', '%s'), array('%d'));
     }
 
+    /** Сколько работ ждёт проверки — для счётчика в меню админки. */
+    public static function waiting() {
+        global $wpdb;
+        $table = GC_Install::works_table();
+        return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'sent'");
+    }
+
+    /**
+     * Письмо проверяющему.
+     *
+     * Счётчик в меню видно только тому, кто зашёл в консоль, а работа
+     * может прийти ночью. Письмо шлём тихо: не ушло — не беда, работа
+     * всё равно лежит в очереди и никуда не денется.
+     */
+    public static function notify_admin($work_id) {
+        $work = self::get($work_id);
+        if (!$work) {
+            return;
+        }
+        $user = get_user_by('id', (int) $work['user_id']);
+        $module = GC_Program::module((int) $work['module']);
+        $subject = sprintf('Работа на проверку: %s, модуль %d',
+            $user ? $user->display_name : 'ученик', (int) $work['module'] + 1);
+        $body = sprintf(
+            "Ученик: %s (%s)
+Модуль %d: %s
+
+Ссылки:
+%s
+
+Что пишет:
+%s
+
+Проверить: %s",
+            $user ? $user->display_name : '—',
+            $user ? $user->user_email : '—',
+            (int) $work['module'] + 1,
+            $module ? $module['title'] : '',
+            (string) $work['links'],
+            wp_strip_all_tags((string) $work['body']),
+            admin_url('admin.php?page=genius-course&tab=works')
+        );
+        wp_mail(get_option('admin_email'), $subject, $body);
+    }
+
     public static function get($id) {
         global $wpdb;
         $table = GC_Install::works_table();

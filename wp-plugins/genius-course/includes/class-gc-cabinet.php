@@ -96,7 +96,12 @@ class GC_Cabinet {
         $user = wp_get_current_user();
         $modules = GC_Program::modules();
         $done = GC_Students::progress($user->ID);
-        $open = isset($_GET['m']) ? max(0, min(count($modules) - 1, (int) $_GET['m'])) : -1;
+        /*
+         * Имя «m» здесь занято: WordPress разбирает его как архив по
+         * дате, и адрес вида ?m=3 отдавал 404 вместо модуля. Своим
+         * параметрам нужны имена, которых нет в списке системных.
+         */
+        $open = isset($_GET['mod']) ? max(0, min(count($modules) - 1, (int) $_GET['mod'])) : -1;
         $tab = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : 'program';
 
         ob_start();
@@ -192,7 +197,7 @@ class GC_Cabinet {
                 $state = in_array($i, $done, true) ? 'done' : ($work ? 'sent' : 'open');
                 ?>
                 <li class="gc-module is-<?php echo esc_attr($state); ?>">
-                    <a href="<?php echo esc_url(add_query_arg('m', $i, self::url())); ?>">
+                    <a href="<?php echo esc_url(add_query_arg('mod', $i, self::url())); ?>">
                         <span class="gc-module__n"><?php echo (int) ($i + 1); ?></span>
                         <span class="gc-module__body">
                             <strong><?php echo esc_html($m['title']); ?></strong>
@@ -269,6 +274,19 @@ class GC_Cabinet {
             <form class="gc-done" id="gc-done-form" data-module="<?php echo (int) $index; ?>">
                 <label><input type="checkbox" <?php checked(in_array($index, $done, true)); ?>> Отметить модуль пройденным</label>
             </form>
+
+            <nav class="gc-nav">
+                <?php if ($index > 0) : ?>
+                    <a class="gc-nav__prev" href="<?php echo esc_url(add_query_arg('mod', $index - 1, self::url())); ?>">
+                        ← Модуль <?php echo (int) $index; ?></a>
+                <?php else : ?><span></span><?php endif; ?>
+                <?php if ($index + 1 < GC_Program::count()) : ?>
+                    <a class="gc-nav__next" href="<?php echo esc_url(add_query_arg('mod', $index + 1, self::url())); ?>">
+                        Модуль <?php echo (int) ($index + 2); ?> →</a>
+                <?php else : ?>
+                    <a class="gc-nav__next" href="<?php echo esc_url(self::url()); ?>">К списку модулей</a>
+                <?php endif; ?>
+            </nav>
         </article>
         <?php
         return ob_get_clean();

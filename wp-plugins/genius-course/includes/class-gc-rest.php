@@ -66,6 +66,7 @@ class GC_Rest {
             return new WP_Error('gc_empty', 'Пришлите ссылку на работу или опишите, что сделали', array('status' => 400));
         }
         $id = GC_Works::submit(get_current_user_id(), $module, $body, $links);
+        GC_Works::notify_admin($id);
         return rest_ensure_response(array('ok' => true, 'id' => $id, 'message' => 'Работа ушла на проверку. Разбор придёт в кабинет.'));
     }
 
