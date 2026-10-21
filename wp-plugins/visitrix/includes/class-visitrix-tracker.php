@@ -99,6 +99,12 @@ class Visitrix_Tracker {
 			return $done;
 		}
 
+		// The browser signal is honoured on the server too: the script checks
+		// it before sending, but a beacon can reach this route on its own.
+		if ( ! empty( $settings['respect_dnt'] ) && self::opted_out( $request ) ) {
+			return $done;
+		}
+
 		$ua = substr( (string) $request->get_header( 'user_agent' ), 0, 512 );
 		if ( Visitrix_UA::is_bot( $ua ) ) {
 			return $done;
@@ -126,6 +132,17 @@ class Visitrix_Tracker {
 		}
 
 		return $done;
+	}
+
+	/**
+	 * Whether the visitor asked not to be tracked (Do Not Track / Global Privacy Control).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return bool
+	 */
+	public static function opted_out( WP_REST_Request $request ) {
+		return '1' === (string) $request->get_header( 'dnt' )
+			|| '1' === (string) $request->get_header( 'sec_gpc' );
 	}
 
 	/**
@@ -279,7 +296,14 @@ class Visitrix_Tracker {
 			return '/';
 		}
 		$path = (string) wp_parse_url( $url, PHP_URL_PATH );
-		$path = preg_replace( '/[^\x21-\x7E]/', '', $path );
+		// Control characters and spaces go; everything else outside plain ASCII
+		// is percent-encoded rather than dropped. Dropping it merged every
+		// Cyrillic address into one row «//», and the admin screen decodes
+		// percent-encoding back for display anyway.
+		$path = preg_replace( '/[\x00-\x20\x7F]/', '', $path );
+		if ( preg_match( '/[^\x21-\x7E]/', $path ) ) {
+			$path = implode( '/', array_map( 'rawurlencode', explode( '/', $path ) ) );
+		}
 		if ( '' === $path || '/' !== $path[0] ) {
 			$path = '/' . $path;
 		}

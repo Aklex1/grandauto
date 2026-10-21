@@ -4,7 +4,7 @@ Tags: analytics, statistics, visitors, traffic, stats
 Requires at least: 6.2
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -91,6 +91,10 @@ Users with the `manage_options` capability. Developers can change it with the `v
 
 == Changelog ==
 
+= 1.1.1 =
+* Fix: non-ASCII page addresses (Cyrillic and others) are stored percent-encoded instead of being stripped, so such pages no longer merge into a single row in the reports.
+* Fix: the Do Not Track setting is now honoured on the server as well, not only in the browser script. Global Privacy Control (Sec-GPC) counts too.
+
 = 1.1.0 =
 * New: "New and returning visitors" report and chart line.
 
@@ -98,6 +102,9 @@ Users with the `manage_options` capability. Developers can change it with the `v
 * Initial release.
 
 == Upgrade Notice ==
+
+= 1.1.1 =
+Fixes reporting of addresses with non-Latin characters and makes Do Not Track work server-side.
 
 = 1.1.0 =
 Adds the new and returning visitors report.

@@ -3,7 +3,7 @@
  * Plugin Name:       Visitrix – Lightweight Visitor Analytics
  * Plugin URI:        https://wordpress.org/plugins/visitrix/
  * Description:       Lightweight, privacy-friendly visitor statistics: traffic sources, search engines, devices, browsers, time on site and bounce rate. All data stays in your database.
- * Version:           1.1.0
+ * Version:           1.1.1
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            Visitrix Team
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'VISITRIX_VERSION', '1.1.0' );
+define( 'VISITRIX_VERSION', '1.1.1' );
 define( 'VISITRIX_DB_VERSION', '1' );
 define( 'VISITRIX_FILE', __FILE__ );
 define( 'VISITRIX_DIR', plugin_dir_path( __FILE__ ) );
