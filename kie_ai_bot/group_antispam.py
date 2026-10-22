@@ -191,12 +191,22 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
         отдельным доводом, и считать второй раз не придётся."""
         if message.is_automatic_forward:          # пост из привязанного канала
             return False
+
+        # Сообщение «от имени канала»: отправителем Telegram подставляет
+        # служебного бота, и по старой проверке такое пролетало мимо.
+        # Анонимный админ пишет от имени самой группы — его не трогаем,
+        # а чужой канал в группе это ровно тот спам, ради которого всё.
+        sender_chat = getattr(message, "sender_chat", None)
+        from_channel = bool(sender_chat) and sender_chat.id != message.chat.id
+
         user = message.from_user
-        if not user or user.is_bot:               # анонимный админ / канал / бот
+        if not from_channel and (not user or user.is_bot):
             return False
         reason = spam_reason(message)
         if not reason:
             return False
+        if from_channel:
+            return {"reason": reason}
         if user.id in await _admin_ids(bot, message.chat.id):
             return False
         return {"reason": reason}
@@ -204,10 +214,12 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
     @dp.message(F.chat.id.in_(CHAT_IDS), _is_spam)
     async def delete_spam(message: Message, reason: str = "ссылка"):
         user = message.from_user
+        sender_chat = getattr(message, "sender_chat", None)
+        who = ("канал %s (@%s)" % (sender_chat.id, sender_chat.username)) if sender_chat \
+            else ("%s (@%s)" % (user.id, user.username) if user else "неизвестно")
         try:
             await bot.delete_message(message.chat.id, message.message_id)
-            logger.info("[антиспам] удалено (%s) от %s (@%s) в %s",
-                        reason, user.id, user.username, message.chat.id)
+            logger.info("[антиспам] удалено (%s) от %s в %s", reason, who, message.chat.id)
         except Exception as e:
             logger.warning("[антиспам] не удалить сообщение %s в %s: %s",
                            message.message_id, message.chat.id, e)
