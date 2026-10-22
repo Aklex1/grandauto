@@ -33,6 +33,9 @@ class GS_Sticky {
     /** После скольких пикселей прокрутки показывать. */
     const AFTER_PX = 600;
 
+    /** Рубрика статей про плагины: её статьи ведут на страницы плагинов. */
+    const PLUGIN_CATEGORY = 'wordpress-plaginy';
+
     public static function boot() {
         // Раньше скриптов подвала: они печатаются на двадцатом приоритете, и
         // панель, выведенная после них, скрипту уже не видна — он ищет её в
@@ -94,6 +97,15 @@ class GS_Sticky {
             if ($legal !== null) {
                 return $legal;
             }
+        }
+
+        // Кластер про плагины: такая статья ведёт на страницу своего
+        // плагина, а не в нейрохаб. Человек, который читает «как поставить
+        // баннер cookie», пришёл за плагином, и кнопка «открыть нейрохаб»
+        // для него пустая.
+        $plugin = self::plugin_card($post);
+        if ($plugin !== null) {
+            return $plugin;
         }
 
         $topic = mb_strtolower($post->post_title . ' ' . $post->post_name);
@@ -194,6 +206,50 @@ class GS_Sticky {
             'text'  => $text . ' От ' . GS_Legal::price_base($id) . ' ₽.',
             'cta'   => (string) ($ui['action'] ?? 'Составить документ'),
         );
+    }
+
+    /**
+     * Статья из рубрики «WordPress-плагины»: какой плагин ей подходит.
+     *
+     * Заголовок и адрес статьи весомее текста: в теле любой статьи про
+     * cookie найдётся и слово «уведомление», и слово «статистика», а в
+     * заголовке стоит то, за чем человек пришёл. Ничего не узнали —
+     * ведём в каталог плагинов, он всё равно ближе нейрохаба.
+     *
+     * @param WP_Post $post Статья.
+     * @return array{url:string,title:string,text:string,cta:string}|null
+     */
+    private static function plugin_card($post) {
+        if (!has_category(self::PLUGIN_CATEGORY, $post)) {
+            return null;
+        }
+
+        $head = mb_strtolower($post->post_title . ' ' . $post->post_name);
+        $body = mb_strtolower(wp_strip_all_tags((string) $post->post_content));
+        $words = array(
+            'cookietrix' => array('cookie', 'куки', '152-фз', '152 фз', 'соглас', 'персональных данных',
+                                  'политика конфиденц', 'cookie-баннер'),
+            'pingtrix'   => array('телеграм', 'telegram', ' max', 'макс-бот', 'уведомлен', 'заявк',
+                                  'обратной связи', 'токен бота', 'вебхук'),
+            'visitrix'   => array('статистик', 'счётчик', 'счетчик', 'посещаем', 'посещений', 'аналитик',
+                                  'скролл', 'метрик', 'трафик'),
+        );
+
+        $best = '';
+        $score = 0;
+        foreach ($words as $key => $list) {
+            $sum = 0;
+            foreach ($list as $word) {
+                // Заголовок и адрес весят впятеро: по ним статья и названа.
+                $sum += 5 * substr_count($head, $word) + min(3, substr_count($body, $word));
+            }
+            if ($sum > $score) {
+                $score = $sum;
+                $best = $key;
+            }
+        }
+
+        return self::card($score > 0 ? $best : 'plugins');
     }
 
     /**
@@ -355,6 +411,30 @@ class GS_Sticky {
                 'title' => 'Оживить фото',
                 'text'  => 'Снимок превращается в короткое видео: взгляд, улыбка, поворот головы.',
                 'cta'   => 'Оживить фото',
+            ),
+            'plugins' => array(
+                'path'  => 'plugins',
+                'title' => 'Плагины для сайта',
+                'text'  => 'Счётчик посещений, баннер cookie и заявки в Телеграм — бесплатно, ставятся за минуту.',
+                'cta'   => 'Открыть каталог',
+            ),
+            'cookietrix' => array(
+                'path'  => 'plugins/cookietrix',
+                'title' => 'Cookietrix — баннер cookie',
+                'text'  => 'Согласие на cookie по 152-ФЗ: для WordPress, Тильды и любого сайта. Бесплатно.',
+                'cta'   => 'Поставить баннер',
+            ),
+            'visitrix' => array(
+                'path'  => 'plugins/visitrix',
+                'title' => 'Visitrix — статистика сайта',
+                'text'  => 'Счётчик посещений без сторонних сервисов: источники, устройства, время на сайте.',
+                'cta'   => 'Поставить счётчик',
+            ),
+            'pingtrix' => array(
+                'path'  => 'plugins/pingtrix',
+                'title' => 'Pingtrix — заявки в Телеграм',
+                'text'  => 'Уведомления о заявках с сайта в Телеграм и MAX: без прослоек и платных интеграторов.',
+                'cta'   => 'Подключить уведомления',
             ),
             'gift' => array(
                 'path'  => 'pesnya-v-podarok',
