@@ -1054,3 +1054,104 @@ body.gc-page .l-main > .l-section {
         padding: 20px 18px 22px;
     }
 }
+
+/* --- Примеры в модуле ------------------------------------------------- */
+
+/*
+ * Примеры — не иллюстрации, а материал урока: кадр, который разбирают,
+ * и текст, который повторяют. Поэтому они на светлой подложке и в один
+ * столбец, а не плиткой: плитку пролистывают, колонку читают.
+ */
+.gc-examples {
+    margin: 28px 0 0;
+    padding: 24px 24px 8px;
+    border: 1px solid var(--gc-line);
+    border-radius: var(--gc-radius);
+    background: var(--gc-card-2);
+}
+
+.gc-examples > h3 {
+    margin: 0 0 6px !important;
+    font-size: 18px;
+}
+
+.gc-example {
+    margin: 18px 0 0;
+    padding: 18px 20px 20px;
+    border-radius: var(--gc-radius-sm);
+    background: var(--gc-card);
+}
+
+.gc-example h4 {
+    margin: 0 0 12px !important;
+    font-size: 16px;
+}
+
+.gc-example__shot img,
+.gc-example__clip {
+    display: block;
+    width: 100%;
+    max-width: 560px;
+    height: auto;
+    border-radius: var(--gc-radius-sm);
+    background: #000;
+}
+
+.gc-example__text {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--gc-ink-2);
+}
+
+.gc-example__text h3,
+.gc-example__text h4 {
+    margin: 16px 0 6px !important;
+    font-size: 15.5px;
+}
+
+.gc-example__text ul,
+.gc-example__text ol {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.gc-example__text table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.gc-example__text th,
+.gc-example__text td {
+    padding: 7px 10px;
+    border: 1px solid var(--gc-line);
+    text-align: left;
+    vertical-align: top;
+}
+
+.gc-example__text pre {
+    overflow-x: auto;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--gc-card-2);
+    font-size: 13.5px;
+}
+
+.gc-example__note {
+    margin: 12px 0 0;
+    padding-left: 14px;
+    border-left: 3px solid var(--gc-primary-2);
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--gc-muted);
+}
+
+@media (max-width: 560px) {
+    .gc-examples {
+        padding: 18px 14px 4px;
+    }
+
+    .gc-example {
+        padding: 16px 14px 18px;
+    }
+}

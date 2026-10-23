@@ -478,6 +478,8 @@ class GC_Cabinet {
                 </section>
             <?php endforeach; ?>
 
+            <?php echo self::examples($course, $index); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <div class="gc-task">
                 <h3>Задание</h3>
                 <p><?php echo esc_html($m['task']); ?></p>
@@ -530,6 +532,59 @@ class GC_Cabinet {
                 <?php endif; ?>
             </nav>
         </article>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Примеры к модулю.
+     *
+     * Кадры и ролики лежат в медиатеке, тексты — в настройках: ученику
+     * они приходят готовыми, без единого обращения к моделям. Пока
+     * пример не сделан, блока просто нет — пустых рамок с надписью
+     * «скоро» в кабинете быть не должно.
+     */
+    private static function examples($course, $index) {
+        if (!class_exists('GC_Examples')) {
+            return '';
+        }
+        $items = GC_Examples::get($course, $index);
+        if (!$items) {
+            return '';
+        }
+        ob_start();
+        ?>
+        <section class="gc-examples">
+            <h3>Примеры по теме</h3>
+            <p class="gc-fine">Всё, что ниже, сделано теми же моделями, что стоят у вас в мастерской — повторить
+                можно сразу после урока.</p>
+            <?php foreach ($items as $item) :
+                $kind = (string) ($item['kind'] ?? 'image');
+                ?>
+                <article class="gc-example is-<?php echo esc_attr($kind); ?>">
+                    <h4><?php echo esc_html((string) $item['title']); ?></h4>
+                    <?php if ($kind === 'image' && !empty($item['url'])) : ?>
+                        <a class="gc-example__shot" href="<?php echo esc_url($item['url']); ?>" target="_blank" rel="noopener">
+                            <img src="<?php echo esc_url($item['url']); ?>" alt="<?php echo esc_attr((string) $item['title']); ?>"
+                                 loading="lazy" decoding="async">
+                        </a>
+                    <?php elseif ($kind === 'video' && !empty($item['url'])) : ?>
+                        <video class="gc-example__clip" src="<?php echo esc_url($item['url']); ?>"
+                               controls loop muted playsinline preload="metadata"></video>
+                    <?php elseif ($kind === 'text' && !empty($item['text'])) : ?>
+                        <div class="gc-example__text">
+                            <?php
+                            $text = (string) $item['text'];
+                            echo wp_kses_post(class_exists('GS_Md') ? GS_Md::to_html($text) : wpautop($text));
+                            ?>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (!empty($item['note'])) : ?>
+                        <p class="gc-example__note"><?php echo esc_html((string) $item['note']); ?></p>
+                    <?php endif; ?>
+                </article>
+            <?php endforeach; ?>
+        </section>
         <?php
         return ob_get_clean();
     }

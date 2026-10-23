@@ -243,7 +243,7 @@ class GC_Gpu {
      *
      * @return array{ok:bool,job:int,status:string,message:string}
      */
-    public static function submit($user_id, $prompt, $params = array(), $kind = 'image') {
+    public static function submit($user_id, $prompt, $params = array(), $kind = 'image', $engine = '') {
         $prompt = trim(wp_strip_all_tags((string) $prompt));
         if (mb_strlen($prompt) < 3) {
             return array('ok' => false, 'job' => 0, 'status' => '', 'message' => 'Опишите кадр словами — хотя бы одной фразой.');
@@ -252,7 +252,10 @@ class GC_Gpu {
             return array('ok' => false, 'job' => 0, 'status' => '', 'message' => 'Месяц безлимитных генераций закончился. Напишите нам, если нужно продлить.');
         }
         $s = self::settings();
-        $engine = self::engine($user_id);
+        // Двигатель обычно берётся по курсу ученика. Явно его задают
+        // только примеры к модулям: их делает администратор, у которого
+        // своего курса нет, а считать их должен шлюз.
+        $engine = $engine === 'kie' ? 'kie' : self::engine($user_id);
         $limit = $engine === 'kie' ? GC_Kie::daily() : (int) $s['daily'];
         if (self::used_today($user_id) >= $limit) {
             return array('ok' => false, 'job' => 0, 'status' => '', 'message' => 'На сегодня достаточно: больше ' . $limit . ' заданий в сутки не ставим.');
@@ -539,6 +542,14 @@ class GC_Gpu {
             'result_url'  => $upload['url'],
             'finished_at' => current_time('mysql'),
         ));
+
+        // Задание могло быть не ученическим, а примером к модулю: тогда
+        // готовый файл сразу встаёт на своё место в программе.
+        $params = json_decode((string) $job['params'], true);
+        if (is_array($params) && !empty($params['example']) && class_exists('GC_Examples')) {
+            GC_Examples::attach($params['example'], (string) $upload['url'],
+                is_wp_error($attachment) ? 0 : (int) $attachment);
+        }
     }
 
     public static function fail($job_id, $message) {

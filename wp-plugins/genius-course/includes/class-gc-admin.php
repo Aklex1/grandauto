@@ -27,6 +27,7 @@ class GC_Admin {
         add_action('admin_post_gc_reset', array(__CLASS__, 'handle_reset'));
         add_action('admin_post_gc_gpu_days', array(__CLASS__, 'handle_gpu_days'));
         add_action('admin_post_gc_paid', array(__CLASS__, 'handle_paid'));
+        add_action('admin_post_gc_example', array(__CLASS__, 'handle_example'));
         add_action('admin_post_gc_review', array(__CLASS__, 'handle_review'));
         add_action('admin_post_gc_settings', array(__CLASS__, 'handle_settings'));
         add_action('admin_post_gc_vast', array(__CLASS__, 'handle_vast'));
@@ -64,6 +65,7 @@ class GC_Admin {
             }
         }
         return $tabs + array(
+            'examples' => 'Примеры',
             'works'    => 'Работы',
             'jobs'     => 'Генерации',
             'machine'  => 'Машина',
@@ -120,6 +122,8 @@ class GC_Admin {
             self::notice();
             if ($course !== '') {
                 self::students($course, $tab);
+            } elseif ($tab === 'examples') {
+                self::examples();
             } elseif ($tab === 'works') {
                 self::works();
             } elseif ($tab === 'jobs') {
@@ -317,6 +321,88 @@ class GC_Admin {
             <?php endforeach; ?>
             </tbody>
         </table>
+        <?php
+    }
+
+    /**
+     * Примеры к модулям.
+     *
+     * Делаются один раз и живут в медиатеке: ученику они приходят
+     * готовыми файлами, без обращения к моделям на каждый просмотр.
+     * Кадры и ролики считаются в общей очереди — кнопка их ставит, а
+     * не ждёт; через минуту страница покажет «готов».
+     */
+    private static function examples() {
+        $courses = array();
+        foreach (GC_Courses::keys() as $course) {
+            $counts = GC_Examples::counts($course);
+            if ($counts['total'] > 0) {
+                $courses[$course] = $counts;
+            }
+        }
+        $kie = GC_Kie::health();
+        ?>
+        <h3>Примеры в модулях</h3>
+        <p class="description">Кадры, ролики и тексты, которые ученик видит прямо в уроке. Считаются через шлюз
+            моделей и ложатся в медиатеку — каждый делается один раз.
+            Шлюз: <strong><?php echo $kie['ok'] ? 'на связи' : 'недоступен'; ?></strong>
+            <?php echo $kie['ok'] ? '' : esc_html(' — ' . $kie['message']); ?></p>
+        <?php if (!$courses) : ?>
+            <p>В программах пока нет описанных примеров.</p>
+            <?php return; ?>
+        <?php endif; ?>
+        <?php foreach ($courses as $course => $counts) : ?>
+            <h4><?php echo esc_html(GC_Courses::title($course)); ?>
+                — готово <?php echo (int) $counts['ready']; ?> из <?php echo (int) $counts['total']; ?></h4>
+            <?php if ($counts['ready'] < $counts['total']) : ?>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
+                    <?php wp_nonce_field('gc_example'); ?>
+                    <input type="hidden" name="action" value="gc_example">
+                    <input type="hidden" name="course" value="<?php echo esc_attr($course); ?>">
+                    <input type="hidden" name="what" value="rest">
+                    <button class="button button-primary">Сделать недостающие (по три за раз)</button>
+                    <span class="description">Тексты приходят сразу, кадры и ролики — через минуту: обновите страницу.</span>
+                </form>
+            <?php endif; ?>
+            <table class="widefat striped" style="margin-bottom:20px">
+                <thead><tr><th>Модуль</th><th>Пример</th><th>Вид</th><th>Состояние</th><th>Что получилось</th><th></th></tr></thead>
+                <tbody>
+                <?php for ($i = 0; $i < GC_Program::count($course); $i++) :
+                    $module = GC_Program::module($i, $course);
+                    foreach (GC_Examples::specs($course, $i) as $key => $spec) :
+                        $state = GC_Examples::state($course, $i, $key);
+                        $row = GC_Examples::row($course, $i, $key);
+                        ?>
+                        <tr>
+                            <td><?php echo (int) ($i + 1); ?>. <?php echo esc_html($module ? $module['title'] : ''); ?></td>
+                            <td><strong><?php echo esc_html((string) $spec['title']); ?></strong><br>
+                                <span class="description"><?php echo esc_html(mb_substr((string) $spec['prompt'], 0, 120)); ?>…</span></td>
+                            <td><?php echo esc_html((string) $spec['kind']); ?></td>
+                            <td><?php echo esc_html($state); ?></td>
+                            <td>
+                                <?php if (!empty($row['url'])) : ?>
+                                    <a href="<?php echo esc_url($row['url']); ?>" target="_blank" rel="noopener">файл</a>
+                                <?php elseif (!empty($row['text'])) : ?>
+                                    <span class="description"><?php echo esc_html(mb_substr(wp_strip_all_tags((string) $row['text']), 0, 90)); ?>…</span>
+                                <?php else : ?>—<?php endif; ?>
+                            </td>
+                            <td>
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                    <?php wp_nonce_field('gc_example'); ?>
+                                    <input type="hidden" name="action" value="gc_example">
+                                    <input type="hidden" name="course" value="<?php echo esc_attr($course); ?>">
+                                    <input type="hidden" name="module" value="<?php echo (int) $i; ?>">
+                                    <input type="hidden" name="key" value="<?php echo esc_attr($key); ?>">
+                                    <input type="hidden" name="what" value="one">
+                                    <button class="button button-small"><?php echo $state === 'готов' ? 'Переделать' : 'Сделать'; ?></button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php endfor; ?>
+                </tbody>
+            </table>
+        <?php endforeach; ?>
         <?php
     }
 
@@ -945,6 +1031,60 @@ class GC_Admin {
         $days = (int) ($_POST['days'] ?? 30);
         GC_Students::set_gpu_days($user_id, $days);
         wp_safe_redirect(self::url($back, array('gc_msg' => 'Срок генераций обновлён: ' . $days . ' дней с сегодня')));
+        exit;
+    }
+
+    /**
+     * Сделать пример к модулю.
+     *
+     * «Недостающие» делаем по три за запрос: чат отвечает секунд
+     * двадцать, и десяток текстов подряд упёрся бы в тайм-аут сервера.
+     */
+    public static function handle_example() {
+        check_admin_referer('gc_example');
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        $course = sanitize_key((string) ($_POST['course'] ?? ''));
+        if (!GC_Courses::exists($course)) {
+            wp_safe_redirect(self::url('examples', array('gc_err' => 'Курс не найден')));
+            exit;
+        }
+
+        if ((string) ($_POST['what'] ?? '') === 'one') {
+            $module = (int) ($_POST['module'] ?? 0);
+            $key = sanitize_key((string) ($_POST['key'] ?? ''));
+            $out = GC_Examples::make($course, $module, $key);
+            $field = empty($out['ok']) ? 'gc_err' : 'gc_msg';
+            wp_safe_redirect(self::url('examples', array($field => (string) $out['message'])));
+            exit;
+        }
+
+        $done = 0;
+        $errors = array();
+        for ($i = 0; $i < GC_Program::count($course) && $done < 3; $i++) {
+            foreach (GC_Examples::specs($course, $i) as $key => $spec) {
+                if ($done >= 3) {
+                    break;
+                }
+                if (GC_Examples::state($course, $i, $key) !== 'нет') {
+                    continue;
+                }
+                $out = GC_Examples::make($course, $i, $key);
+                $done++;
+                if (empty($out['ok'])) {
+                    $errors[] = $spec['title'] . ': ' . $out['message'];
+                }
+            }
+        }
+        $counts = GC_Examples::counts($course);
+        $message = $done > 0
+            ? sprintf('Запущено примеров: %d. Готово %d из %d.', $done, $counts['ready'], $counts['total'])
+            : 'Недостающих примеров не осталось.';
+        wp_safe_redirect(self::url('examples', array(
+            'gc_msg' => $message,
+            'gc_err' => $errors ? implode('; ', $errors) : null,
+        )));
         exit;
     }
 

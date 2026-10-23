@@ -128,12 +128,37 @@ foreach ($money as $i => $m) {
     foreach (array('title', 'lead', 'goal', 'lessons', 'task', 'deliver', 'hint') as $key) {
         if (empty($m[$key])) { $bad[] = $i . ':' . $key; }
     }
-    if (count($m['lessons']) !== 3) { $bad[] = $i . ':уроков ' . count($m['lessons']); }
+    if (count($m['lessons']) !== 5) { $bad[] = $i . ':уроков ' . count($m['lessons']); }
     foreach ($m['lessons'] as $n => $lesson) {
         if (count($lesson) !== 2 || $lesson[0] === '' || $lesson[1] === '') { $bad[] = $i . ':урок' . $n; }
     }
 }
 check('все поля модулей заполнены',                 $bad, array());
+
+$kinds = array();
+$bad = array();
+$keys = array();
+foreach ($money as $i => $m) {
+    if (empty($m['examples'])) { $bad[] = $i . ':нет примеров'; continue; }
+    foreach ($m['examples'] as $ex) {
+        foreach (array('key', 'kind', 'title', 'note', 'prompt') as $field) {
+            if (empty($ex[$field])) { $bad[] = $i . ':' . $field; }
+        }
+        $kind = (string) ($ex['kind'] ?? '');
+        $kinds[$kind] = ($kinds[$kind] ?? 0) + 1;
+        if (in_array($kind, array('image', 'video'), true) && empty($ex['size'])) {
+            $bad[] = $i . ':' . $ex['key'] . ' без размера';
+        }
+        $pair = $i . '/' . ($ex['key'] ?? '');
+        if (in_array($pair, $keys, true)) { $bad[] = 'повтор ключа ' . $pair; }
+        $keys[] = $pair;
+    }
+}
+check('примеры описаны у всех модулей',            $bad, array());
+check('примеров всего',                            count($keys), 17);
+check('кадров',                                    (int) ($kinds['image'] ?? 0), 4);
+check('роликов',                                   (int) ($kinds['video'] ?? 0), 1);
+check('текстов',                                   (int) ($kinds['text'] ?? 0), 12);
 
 echo "\n=== доступ до оплаты ===\n";
 check('первый модуль открыт сразу',                 GC_Courses::module_open(10, 0, 'money'), true);
