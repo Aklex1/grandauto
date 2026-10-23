@@ -1067,7 +1067,11 @@ class GC_Admin {
                 if ($done >= 3) {
                     break;
                 }
-                if (GC_Examples::state($course, $i, $key) !== 'нет') {
+                $state = GC_Examples::state($course, $i, $key);
+                // Неудачную попытку повторяем вместе с недостающими:
+                // иначе один отказ поставщика пришлось бы добивать
+                // кнопкой в каждой строке.
+                if ($state !== 'нет' && strpos($state, 'не вышло') !== 0) {
                     continue;
                 }
                 $out = GC_Examples::make($course, $i, $key);
