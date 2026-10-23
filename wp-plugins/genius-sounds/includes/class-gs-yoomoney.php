@@ -5,6 +5,7 @@
  * Кошелёк один на все сервисы, а уведомление ЮMoney шлёт на один адрес.
  * Поэтому сайт принимает его сам и раскладывает по назначению:
  *
+ *   gckurs_…         → доступ к модулям курса в кабинете обучения
  *   kie-neurohub|…   → баланс раздела «Нейросети»
  *   topup_wp_…       → баланс кабинета озвучки (он же общий для микросервисов)
  *   topup_telegram_… → он же, для пользователей из бота
@@ -269,6 +270,17 @@ class GS_Yoomoney {
             self::remember($label, $amount, !empty($result['ok']) ? 'зачислено' : 'ошибка',
                 (string) ($result['message'] ?? ''), $params, 'gift');
             return self::reply(!empty($result['ok']), 'gift', (string) ($result['message'] ?? ''));
+        }
+
+        // Обучение в кабинете курса: метка содержит ученика, курс и тариф,
+        // баланс не трогаем — оплата разовая и открывает все модули сразу.
+        // Класс живёт в плагине курса: его может не быть включённым, и
+        // тогда уведомление уходит дальше по общим правилам.
+        if (class_exists('GC_Pay') && strpos($label, GC_Pay::LABEL_PREFIX) === 0) {
+            $result = GC_Pay::paid($label);
+            self::remember($label, $amount, !empty($result['ok']) ? 'зачислено' : 'ошибка',
+                (string) ($result['message'] ?? ''), $params, 'course');
+            return self::reply(!empty($result['ok']), 'course', (string) ($result['message'] ?? ''));
         }
 
         if (strpos($label, 'kie-neurohub|') === 0) {
@@ -636,6 +648,7 @@ class GS_Yoomoney {
             'wheel_'  => 'wheel',
             'photo_'  => 'photo',
             'course_' => 'course',
+            'gckurs_' => 'course',
             'slides_' => 'slides',
         );
         foreach ($by_prefix as $prefix => $source) {

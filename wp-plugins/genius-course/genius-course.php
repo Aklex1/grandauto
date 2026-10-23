@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Genius Course
- * Description: Личный кабинет обучения AI-креатора: доступы, модули, сдача работ и генерации на арендованном GPU.
- * Version:     1.14.2
+ * Description: Личные кабинеты курсов: доступы, модули, оплата, сдача работ и генерации на арендованном GPU.
+ * Version:     1.15.0
  * Author:      Genius-bot
  * Text Domain: genius-course
  *
@@ -19,14 +19,17 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GC_VERSION', '1.14.2');
+define('GC_VERSION', '1.15.0');
 define('GC_FILE', __FILE__);
 define('GC_PATH', plugin_dir_path(__FILE__));
 define('GC_URL', plugin_dir_url(__FILE__));
 
 foreach (array(
     'includes/class-gc-install.php',
+    'includes/class-gc-courses.php',
     'includes/class-gc-program.php',
+    'includes/class-gc-program-money.php',
+    'includes/class-gc-pay.php',
     'includes/class-gc-students.php',
     'includes/class-gc-works.php',
     'includes/class-gc-vast.php',

@@ -22,6 +22,13 @@ class GC_Students {
     const META_UNTIL   = 'gc_gpu_until';
     const META_NOTE    = 'gc_note';
     const META_PROGRESS = 'gc_progress';
+    /** Какой курс человек учит: у кабинетов разные программы и правила. */
+    const META_COURSE  = 'gc_course';
+    /** Оплаченный тариф. Пусто — доступ только к бесплатным модулям. */
+    const META_PAID    = 'gc_paid';
+    const META_PAID_AT = 'gc_paid_at';
+    /** Метка платежа ЮMoney, по которой оплата нашлась. */
+    const META_PAID_LABEL = 'gc_paid_label';
 
     public static function boot() {
         add_filter('login_redirect', array(__CLASS__, 'redirect_after_login'), 10, 3);
@@ -60,16 +67,67 @@ class GC_Students {
             return;
         }
         if (self::is_student()) {
-            wp_safe_redirect(GC_Cabinet::url());
+            wp_safe_redirect(GC_Cabinet::url(self::course(get_current_user_id())));
             exit;
         }
     }
 
     public static function redirect_after_login($redirect, $requested, $user) {
         if ($user instanceof WP_User && user_can($user, self::CAP) && !user_can($user, 'edit_posts')) {
-            return GC_Cabinet::url();
+            return GC_Cabinet::url(self::course($user->ID));
         }
         return $redirect;
+    }
+
+    /* ---------------------------------------------------------------------
+     * Курс и оплата
+     * ------------------------------------------------------------------ */
+
+    public static function course($user_id) {
+        return GC_Courses::of_user($user_id);
+    }
+
+    public static function set_course($user_id, $course) {
+        $course = GC_Courses::exists($course) ? (string) $course : GC_Courses::DEFAULT_KEY;
+        update_user_meta((int) $user_id, self::META_COURSE, $course);
+        return $course;
+    }
+
+    /** Оплаченный тариф ученика. Пусто — не оплачено. */
+    public static function paid_plan($user_id) {
+        return (string) get_user_meta((int) $user_id, self::META_PAID, true);
+    }
+
+    /**
+     * Отметить оплату.
+     *
+     * Повторное уведомление по той же метке ничего не меняет: ЮMoney
+     * присылает уведомление повторно, пока не получит ответ, и открывать
+     * доступ дважды нечем — а вот перезаписать дату оплаты и потерять
+     * настоящую легко.
+     */
+    public static function set_paid($user_id, $plan, $label = '') {
+        $user_id = (int) $user_id;
+        $plan = sanitize_key($plan);
+        $already = self::paid_plan($user_id);
+        update_user_meta($user_id, self::META_PAID, $plan);
+        if ($label !== '') {
+            update_user_meta($user_id, self::META_PAID_LABEL, sanitize_text_field($label));
+        }
+        if ($already === '') {
+            update_user_meta($user_id, self::META_PAID_AT, current_time('mysql'));
+        }
+        return $already === '';
+    }
+
+    public static function clear_paid($user_id) {
+        delete_user_meta((int) $user_id, self::META_PAID);
+        delete_user_meta((int) $user_id, self::META_PAID_AT);
+        delete_user_meta((int) $user_id, self::META_PAID_LABEL);
+    }
+
+    public static function paid_at($user_id) {
+        return (string) get_user_meta((int) $user_id, self::META_PAID_AT, true);
     }
 
     /**
@@ -80,7 +138,7 @@ class GC_Students {
      *
      * @return array{ok:bool,user_id:int,login:string,password:string,message:string}
      */
-    public static function create($email, $name = '', $plan = 'базовый', $note = '', $gpu_days = 30) {
+    public static function create($email, $name = '', $plan = 'базовый', $note = '', $gpu_days = 30, $course = '') {
         $email = sanitize_email($email);
         if (!is_email($email)) {
             return array('ok' => false, 'user_id' => 0, 'login' => '', 'password' => '', 'message' => 'Нужна настоящая почта: на неё приходит восстановление пароля.');
@@ -103,6 +161,7 @@ class GC_Students {
             return array('ok' => false, 'user_id' => 0, 'login' => '', 'password' => '', 'message' => $user_id->get_error_message());
         }
 
+        update_user_meta($user_id, self::META_COURSE, GC_Courses::exists($course) ? (string) $course : GC_Courses::DEFAULT_KEY);
         update_user_meta($user_id, self::META_PLAN, sanitize_text_field($plan));
         update_user_meta($user_id, self::META_NOTE, sanitize_textarea_field($note));
         update_user_meta($user_id, self::META_STARTED, current_time('mysql'));
@@ -173,9 +232,33 @@ class GC_Students {
         return $list;
     }
 
-    /** @return WP_User[] */
-    public static function all() {
-        return get_users(array('role' => self::ROLE, 'orderby' => 'registered', 'order' => 'DESC', 'number' => 500));
+    /**
+     * Ученики курса.
+     *
+     * Пустой курс — все. У учеников, заведённых до появления второго
+     * курса, метки нет вовсе: для курса по умолчанию их приходится
+     * добирать условием «метки нет», иначе первый набор пропадёт из
+     * списка вместе с их работами.
+     *
+     * @return WP_User[]
+     */
+    public static function all($course = '') {
+        $args = array('role' => self::ROLE, 'orderby' => 'registered', 'order' => 'DESC', 'number' => 500);
+        if ($course !== '' && GC_Courses::exists($course)) {
+            if ($course === GC_Courses::DEFAULT_KEY) {
+                $args['meta_query'] = array(
+                    'relation' => 'OR',
+                    array('key' => self::META_COURSE, 'value' => $course),
+                    array('key' => self::META_COURSE, 'compare' => 'NOT EXISTS'),
+                    array('key' => self::META_COURSE, 'value' => '', 'compare' => '='),
+                );
+            } else {
+                $args['meta_query'] = array(
+                    array('key' => self::META_COURSE, 'value' => $course),
+                );
+            }
+        }
+        return get_users($args);
     }
 
     private static function make_login($email) {

@@ -127,6 +127,20 @@ class GS_Course {
         }
     }
 
+    /**
+     * Адрес кабинета курса.
+     *
+     * Кабинет держит отдельный плагин: его может не быть включённым, и
+     * тогда лендинг всё равно должен открываться — отдаём известный
+     * адрес страницы.
+     */
+    public static function cabinet_url() {
+        if (class_exists('GC_Cabinet')) {
+            return (string) GC_Cabinet::url('money');
+        }
+        return home_url('/kabinet-zarabotok/');
+    }
+
     public static function get_url() {
         $page_id = (int) get_option(self::OPT_PAGE);
         $url = $page_id > 0 ? get_permalink($page_id) : '';
@@ -418,6 +432,12 @@ class GS_Course {
                     Рекламный бюджет площадок оплачивается отдельно и напрямую — мы настраиваем
                     кампанию, а сколько на неё тратить, решаете вы. Начать можно с минимальной суммы.
                 </p>
+                <p class="gs-course__market">
+                    Оплата проходит в личном кабинете, картой через ЮMoney. После заявки мы открываем
+                    доступ и первый модуль — его можно пройти целиком и посмотреть, как устроено
+                    обучение, до оплаты. Остальные модули, сдача работ и мастерская генераций
+                    открываются сразу после платежа.
+                </p>
             </section>
 
             <section class="gs-course__form-wrap" id="zayavka">
@@ -425,6 +445,7 @@ class GS_Course {
                     <h2 class="gs-section-title">Записаться на обучение</h2>
                     <p>Оставьте контакт — расскажем про ближайший поток, формат и стоимость,
                     ответим на вопросы. Без спама и звонков в неурочное время.</p>
+                    <p>Уже учитесь? <a href="<?php echo esc_url(self::cabinet_url()); ?>">Вход в личный кабинет</a>.</p>
                 </div>
                 <form class="gs-panel gs-form gs-course__form" id="gs-course-form" novalidate>
                     <div class="gs-field">

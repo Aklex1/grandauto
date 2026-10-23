@@ -6,6 +6,12 @@
  * работы и мастерская генераций. Своего шаблона темы не трогаем — тема
  * на сайте одна и меняться не собирается, а лишний шаблон пришлось бы
  * чинить при каждом её обновлении.
+ *
+ * Кабинетов теперь два — по одному на курс, и оба собираются этим же
+ * кодом: отличаются страница, программа и правило доступа, а всё
+ * остальное у них одинаковое. Какой курс показывать, решает атрибут
+ * шорткода на странице, а не учётка посетителя: администратор заходит
+ * смотреть любой из кабинетов.
  */
 
 if (!defined('ABSPATH')) {
@@ -14,6 +20,7 @@ if (!defined('ABSPATH')) {
 
 class GC_Cabinet {
 
+    /** Страница курса AI-креатора: была первой и адрес менять нельзя. */
     const SLUG     = 'kabinet-kursa';
     const OPT_PAGE = 'gc_cabinet_page';
 
@@ -25,38 +32,86 @@ class GC_Cabinet {
         add_action('wp_head', array(__CLASS__, 'noindex'), 1);
     }
 
-    public static function ensure_page() {
-        $page_id = (int) get_option(self::OPT_PAGE);
+    /* ---------------------------------------------------------------------
+     * Страницы кабинетов
+     * ------------------------------------------------------------------ */
+
+    /** Страницы под все курсы: вызывается при включении и обновлении. */
+    public static function ensure_pages() {
+        foreach (GC_Courses::keys() as $course) {
+            self::ensure_page($course);
+        }
+    }
+
+    public static function ensure_page($course = GC_Courses::DEFAULT_KEY) {
+        $def = GC_Courses::get($course);
+        $option = (string) $def['option'];
+        $slug = (string) $def['slug'];
+        $content = '[genius_course_cabinet course="' . esc_attr($def['key']) . '"]';
+
+        $page_id = (int) get_option($option);
         if ($page_id > 0 && get_post($page_id)) {
             return;
         }
-        $existing = get_page_by_path(self::SLUG);
+        $existing = get_page_by_path($slug);
         if ($existing) {
             $page_id = (int) $existing->ID;
-            wp_update_post(array('ID' => $page_id, 'post_content' => '[genius_course_cabinet]', 'post_status' => 'publish'));
+            wp_update_post(array('ID' => $page_id, 'post_content' => $content, 'post_status' => 'publish'));
         } else {
             $page_id = (int) wp_insert_post(array(
-                'post_title'   => 'Кабинет обучения',
-                'post_name'    => self::SLUG,
-                'post_content' => '[genius_course_cabinet]',
+                'post_title'   => (string) $def['page'],
+                'post_name'    => $slug,
+                'post_content' => $content,
                 'post_status'  => 'publish',
                 'post_type'    => 'page',
             ));
         }
         if ($page_id > 0) {
-            update_option(self::OPT_PAGE, $page_id, false);
+            update_option($option, $page_id, false);
         }
     }
 
-    public static function url() {
-        $page_id = (int) get_option(self::OPT_PAGE);
-        $url = $page_id > 0 ? get_permalink($page_id) : '';
-        return $url ? $url : home_url('/' . self::SLUG . '/');
+    public static function page_id($course = '') {
+        $def = GC_Courses::get($course);
+        return (int) get_option((string) $def['option']);
     }
 
-    public static function is_page() {
-        $page_id = (int) get_option(self::OPT_PAGE);
-        return !is_admin() && $page_id > 0 && is_page($page_id);
+    public static function url($course = '') {
+        $def = GC_Courses::get($course);
+        $page_id = (int) get_option((string) $def['option']);
+        $url = $page_id > 0 ? get_permalink($page_id) : '';
+        return $url ? $url : home_url('/' . (string) $def['slug'] . '/');
+    }
+
+    /**
+     * Какой кабинет открыт.
+     *
+     * Пустая строка — это не страница кабинета вовсе. Нужна именно
+     * страница, а не курс посетителя: по ней решают и программу, и
+     * правило доступа, и администратор видит то, что видит ученик.
+     */
+    public static function course_of_page() {
+        if (is_admin()) {
+            return '';
+        }
+        foreach (GC_Courses::all() as $key => $def) {
+            $page_id = (int) get_option((string) $def['option']);
+            if ($page_id > 0 && is_page($page_id)) {
+                return (string) $key;
+            }
+        }
+        return '';
+    }
+
+    public static function is_page($course = '') {
+        if (is_admin()) {
+            return false;
+        }
+        if ($course === '') {
+            return self::course_of_page() !== '';
+        }
+        $page_id = self::page_id($course);
+        return $page_id > 0 && is_page($page_id);
     }
 
     public static function body_class($classes) {
@@ -79,14 +134,24 @@ class GC_Cabinet {
         wp_enqueue_style('genius-course', GC_URL . 'assets/css/cabinet.css', array(), GC_VERSION);
         wp_enqueue_script('genius-course', GC_URL . 'assets/js/cabinet.js', array(), GC_VERSION, true);
         wp_localize_script('genius-course', 'GC', array(
-            'rest'  => esc_url_raw(rest_url('genius-course/v1/')),
-            'nonce' => wp_create_nonce('wp_rest'),
+            'rest'   => esc_url_raw(rest_url('genius-course/v1/')),
+            'nonce'  => wp_create_nonce('wp_rest'),
+            // Курс страницы: по нему маршруты сверяют номер модуля, когда
+            // кабинет открыл администратор, у которого своего курса нет.
+            'course' => self::course_of_page(),
         ));
     }
 
-    public static function render() {
+    /* ---------------------------------------------------------------------
+     * Разметка
+     * ------------------------------------------------------------------ */
+
+    public static function render($atts = array()) {
+        $atts = shortcode_atts(array('course' => ''), is_array($atts) ? $atts : array(), 'genius_course_cabinet');
+        $course = GC_Courses::exists($atts['course']) ? (string) $atts['course'] : GC_Courses::DEFAULT_KEY;
+
         if (!is_user_logged_in()) {
-            return self::login_form();
+            return self::login_form($course);
         }
         if (!GC_Students::is_student()) {
             return '<div class="gc"><div class="gc-note">Этот кабинет для учеников курса. Если вы оплатили обучение,'
@@ -94,8 +159,23 @@ class GC_Cabinet {
         }
 
         $user = wp_get_current_user();
-        $modules = GC_Program::modules();
+
+        /*
+         * Ученик другого курса на этой странице ничего не найдёт: у
+         * курсов разные программы, и его работы привязаны к номерам
+         * модулей своей. Отправляем к своему кабинету, а не показываем
+         * чужую программу.
+         */
+        if (!current_user_can('manage_options') && GC_Students::course($user->ID) !== $course) {
+            $own = GC_Students::course($user->ID);
+            return '<div class="gc"><div class="gc-note">Вы учитесь на другом курсе: «'
+                 . esc_html(GC_Courses::title($own)) . '». <a href="' . esc_url(self::url($own))
+                 . '">Открыть свой кабинет</a>.</div></div>';
+        }
+
+        $modules = GC_Program::modules($course);
         $done = GC_Students::progress($user->ID);
+        $paid = GC_Courses::is_paid($user->ID, $course);
         /*
          * Имя «m» здесь занято: WordPress разбирает его как архив по
          * дате, и адрес вида ?m=3 отдавал 404 вместо модуля. Своим
@@ -107,23 +187,35 @@ class GC_Cabinet {
         ob_start();
         ?>
         <div class="gc">
-            <?php echo self::header($user, $done, $modules); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php
+            echo self::header($user, $done, $modules, $course); // phpcs:ignore WordPress.Security.EscapeOutput
+
+            if (!empty($_GET['paid'])) {
+                echo '<div class="gc-note gc-note--ok">Платёж принят. Доступ открывается автоматически, обычно за'
+                   . ' минуту: если модули ещё закрыты, обновите страницу.</div>';
+            }
+
+            // Уведомление об оплате висит на каждой вкладке, пока курс не
+            // оплачен: человек должен видеть, что именно закрыто и почему,
+            // а не искать это по модулям.
+            echo self::paywall($user, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
+            ?>
 
             <nav class="gc-tabs">
-                <a class="<?php echo $tab === 'program' && $open < 0 ? 'is-on' : ''; ?>" href="<?php echo esc_url(self::url()); ?>">Программа</a>
-                <a class="<?php echo $tab === 'studio' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'studio', self::url())); ?>">Мастерская</a>
-                <a class="<?php echo $tab === 'works' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'works', self::url())); ?>">Мои работы</a>
+                <a class="<?php echo $tab === 'program' && $open < 0 ? 'is-on' : ''; ?>" href="<?php echo esc_url(self::url($course)); ?>">Программа</a>
+                <a class="<?php echo $tab === 'studio' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'studio', self::url($course))); ?>">Мастерская</a>
+                <a class="<?php echo $tab === 'works' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'works', self::url($course))); ?>">Мои работы</a>
             </nav>
 
             <?php
             if ($tab === 'studio') {
-                echo self::studio($user); // phpcs:ignore WordPress.Security.EscapeOutput
+                echo self::studio($user, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
             } elseif ($tab === 'works') {
-                echo self::works($user); // phpcs:ignore WordPress.Security.EscapeOutput
+                echo self::works($user, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
             } elseif ($open >= 0) {
-                echo self::module($user, $open, $modules[$open], $done); // phpcs:ignore WordPress.Security.EscapeOutput
+                echo self::module($user, $open, $modules[$open], $done, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
             } else {
-                echo self::program($user, $modules, $done); // phpcs:ignore WordPress.Security.EscapeOutput
+                echo self::program($user, $modules, $done, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
             }
             ?>
         </div>
@@ -131,7 +223,7 @@ class GC_Cabinet {
         return ob_get_clean();
     }
 
-    private static function login_form() {
+    private static function login_form($course = '') {
         ob_start();
         ?>
         <div class="gc gc--narrow">
@@ -141,23 +233,27 @@ class GC_Cabinet {
                     выдадим новый пароль.</p>
                 <?php
                 wp_login_form(array(
-                    'redirect'       => self::url(),
+                    'redirect'       => self::url($course),
                     'label_username' => 'Логин или почта',
                     'label_password' => 'Пароль',
                     'label_log_in'   => 'Войти',
                     'remember'       => true,
                 ));
                 ?>
-                <p class="gc-fine"><a href="<?php echo esc_url(wp_lostpassword_url(self::url())); ?>">Забыли пароль?</a></p>
+                <p class="gc-fine"><a href="<?php echo esc_url(wp_lostpassword_url(self::url($course))); ?>">Забыли пароль?</a></p>
+                <?php $landing = GC_Courses::landing_url($course); ?>
+                <?php if ($landing !== '') : ?>
+                    <p class="gc-fine">Ещё не учитесь? <a href="<?php echo esc_url($landing); ?>">Посмотреть программу курса</a>.</p>
+                <?php endif; ?>
             </div>
         </div>
         <?php
         return ob_get_clean();
     }
 
-    private static function header($user, $done, $modules) {
+    private static function header($user, $done, $modules, $course) {
         $total = count($modules);
-        $passed = count(array_intersect($done, range(0, $total - 1)));
+        $passed = count(array_intersect($done, range(0, max(0, $total - 1))));
         $percent = $total > 0 ? round($passed / $total * 100) : 0;
         $until = GC_Students::gpu_until($user->ID);
         ob_start();
@@ -165,7 +261,7 @@ class GC_Cabinet {
         <header class="gc-head">
             <div>
                 <p class="gc-hello">Здравствуйте, <?php echo esc_html($user->display_name); ?></p>
-                <h1 class="gc-h1">Обучение AI-креатора</h1>
+                <h1 class="gc-h1"><?php echo esc_html(GC_Courses::title($course)); ?></h1>
             </div>
             <div class="gc-head-side">
                 <div class="gc-progress" role="img" aria-label="Пройдено <?php echo (int) $passed; ?> из <?php echo (int) $total; ?>">
@@ -188,16 +284,79 @@ class GC_Cabinet {
         return ob_get_clean();
     }
 
-    private static function program($user, $modules, $done) {
+    /**
+     * Блок оплаты.
+     *
+     * Показывается на каждой вкладке, пока курс не оплачен: так человек
+     * всегда видит, что открыто сейчас и что откроется после оплаты.
+     * Платёж уходит в ЮMoney с меткой этого ученика — доступ открывается
+     * сам, без письма в поддержку.
+     */
+    private static function paywall($user, $course, $paid) {
+        if ($paid || !GC_Courses::paywall($course)) {
+            return '';
+        }
+        $plans = GC_Courses::plans($course);
+        $free = GC_Courses::free_modules($course);
+        ob_start();
+        ?>
+        <section class="gc-pay" id="oplata">
+            <div class="gc-pay__head">
+                <h2 class="gc-h2">Открыт <?php echo $free === 1 ? 'первый модуль' : 'вводный блок'; ?>. Остальное — после оплаты</h2>
+                <p class="gc-lead">Сейчас доступн<?php echo $free === 1 ? 'а программа первого модуля' : 'ы вводные модули'; ?>:
+                    посмотрите, как устроено обучение. После оплаты сразу открываются все модули,
+                    сдача работ на проверку и мастерская генераций.</p>
+            </div>
+            <div class="gc-pay__plans">
+                <?php foreach ($plans as $key => $plan) :
+                    $link = GC_Pay::link($user->ID, $course, $key);
+                    ?>
+                    <article class="gc-pay__plan<?php echo !empty($plan['flag']) ? ' is-best' : ''; ?>">
+                        <?php if (!empty($plan['flag'])) : ?>
+                            <span class="gc-pay__flag"><?php echo esc_html($plan['flag']); ?></span>
+                        <?php endif; ?>
+                        <h3><?php echo esc_html($plan['title']); ?></h3>
+                        <p class="gc-pay__price"><?php echo esc_html(number_format_i18n((float) $plan['price'])); ?> <span>₽</span></p>
+                        <p class="gc-pay__note"><?php echo esc_html($plan['note']); ?></p>
+                        <ul class="gc-pay__list">
+                            <?php foreach ((array) $plan['list'] as $line) : ?>
+                                <li><?php echo esc_html($line); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                        <?php if ($link !== '') : ?>
+                            <a class="gc-btn<?php echo !empty($plan['flag']) ? '' : ' gc-btn--ghost'; ?>"
+                               href="<?php echo esc_url($link); ?>" rel="nofollow noopener">Оплатить
+                                <?php echo esc_html(number_format_i18n((float) $plan['price'])); ?> ₽</a>
+                        <?php else : ?>
+                            <p class="gc-fine">Оплата картой сейчас недоступна — напишите нам, выставим счёт.</p>
+                        <?php endif; ?>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+            <p class="gc-fine">Оплата проходит через ЮMoney, картой любого банка. Доступ открывается автоматически
+                после подтверждения платежа — обычно это минута. Чек приходит на почту от платёжной системы.</p>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    /** Короткое напоминание на вкладках, которые закрыты до оплаты. */
+    private static function locked_note($course, $what) {
+        return '<div class="gc-note gc-note--lock">' . esc_html($what)
+             . ' открывается после оплаты обучения. <a href="#oplata">Посмотреть тарифы</a>.</div>';
+    }
+
+    private static function program($user, $modules, $done, $course, $paid) {
         ob_start();
         ?>
         <ol class="gc-modules">
             <?php foreach ($modules as $i => $m) :
-                $work = GC_Works::last_for_module($user->ID, $i);
-                $state = in_array($i, $done, true) ? 'done' : ($work ? 'sent' : 'open');
+                $open = $paid || GC_Courses::module_open($user->ID, $i, $course);
+                $work = $open ? GC_Works::last_for_module($user->ID, $i) : null;
+                $state = !$open ? 'lock' : (in_array($i, $done, true) ? 'done' : ($work ? 'sent' : 'open'));
                 ?>
                 <li class="gc-module is-<?php echo esc_attr($state); ?>">
-                    <a href="<?php echo esc_url(add_query_arg('mod', $i, self::url())); ?>">
+                    <a href="<?php echo esc_url(add_query_arg('mod', $i, self::url($course))); ?>">
                         <span class="gc-module__n"><?php echo (int) ($i + 1); ?></span>
                         <span class="gc-module__body">
                             <strong><?php echo esc_html($m['title']); ?></strong>
@@ -205,7 +364,9 @@ class GC_Cabinet {
                         </span>
                         <span class="gc-module__state">
                             <?php
-                            if ($state === 'done') {
+                            if (!$open) {
+                                echo 'после оплаты';
+                            } elseif ($state === 'done') {
                                 echo 'пройден';
                             } elseif ($work) {
                                 echo esc_html($work['status'] === 'accepted' ? 'принято' : ($work['status'] === 'rework' ? 'на доработке' : 'на проверке'));
@@ -222,16 +383,39 @@ class GC_Cabinet {
         return ob_get_clean();
     }
 
-    private static function module($user, $index, $m, $done) {
+    private static function module($user, $index, $m, $done, $course, $paid) {
+        $open = $paid || GC_Courses::module_open($user->ID, $index, $course);
         $work = GC_Works::last_for_module($user->ID, $index);
         ob_start();
         ?>
-        <article class="gc-card gc-lesson">
-            <p class="gc-back"><a href="<?php echo esc_url(self::url()); ?>">← Все модули</a></p>
-            <p class="gc-kicker">Модуль <?php echo (int) ($index + 1); ?> из <?php echo (int) GC_Program::count(); ?></p>
+        <article class="gc-card gc-lesson<?php echo $open ? '' : ' is-locked'; ?>">
+            <p class="gc-back"><a href="<?php echo esc_url(self::url($course)); ?>">← Все модули</a></p>
+            <p class="gc-kicker">Модуль <?php echo (int) ($index + 1); ?> из <?php echo (int) GC_Program::count($course); ?></p>
             <h2 class="gc-h2"><?php echo esc_html($m['title']); ?></h2>
             <p class="gc-lead"><?php echo esc_html($m['lead']); ?></p>
             <p class="gc-goal"><strong>Чему научитесь:</strong> <?php echo esc_html($m['goal']); ?></p>
+
+            <?php if (!$open) : ?>
+                <?php
+                // Закрытый модуль показываем оглавлением: что внутри —
+                // видно, сами уроки и задание открываются после оплаты.
+                ?>
+                <ul class="gc-locked-list">
+                    <?php foreach ($m['lessons'] as $lesson) : ?>
+                        <li><?php echo esc_html($lesson[0]); ?></li>
+                    <?php endforeach; ?>
+                    <li>Задание с разбором</li>
+                </ul>
+                <?php echo self::locked_note($course, 'Этот модуль'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                <nav class="gc-nav">
+                    <a class="gc-nav__prev" href="<?php echo esc_url(self::url($course)); ?>">← Все модули</a>
+                    <a class="gc-nav__next" href="<?php echo esc_url(self::url($course)); ?>#oplata">Открыть весь курс →</a>
+                </nav>
+            </article>
+            <?php
+            return ob_get_clean();
+        endif;
+        ?>
 
             <?php foreach ($m['lessons'] as $n => $lesson) : ?>
                 <section class="gc-step">
@@ -257,19 +441,23 @@ class GC_Cabinet {
                 </div>
             <?php endif; ?>
 
-            <form class="gc-form" id="gc-work-form" data-module="<?php echo (int) $index; ?>">
-                <h3><?php echo $work ? 'Сдать ещё раз' : 'Сдать работу'; ?></h3>
-                <label>
-                    <span>Ссылки на файлы</span>
-                    <textarea name="links" rows="2" placeholder="Ссылка на облако, по одной в строке"></textarea>
-                </label>
-                <label>
-                    <span>Что получилось и где застряли</span>
-                    <textarea name="body" rows="4" placeholder="Пара абзацев: что задумали, что вышло не так, что уже пробовали"></textarea>
-                </label>
-                <button type="submit" class="gc-btn">Отправить на проверку</button>
-                <p class="gc-note-line" role="status"></p>
-            </form>
+            <?php if (GC_Courses::tools_open($user->ID, $course)) : ?>
+                <form class="gc-form" id="gc-work-form" data-module="<?php echo (int) $index; ?>">
+                    <h3><?php echo $work ? 'Сдать ещё раз' : 'Сдать работу'; ?></h3>
+                    <label>
+                        <span>Ссылки на файлы</span>
+                        <textarea name="links" rows="2" placeholder="Ссылка на облако, по одной в строке"></textarea>
+                    </label>
+                    <label>
+                        <span>Что получилось и где застряли</span>
+                        <textarea name="body" rows="4" placeholder="Пара абзацев: что задумали, что вышло не так, что уже пробовали"></textarea>
+                    </label>
+                    <button type="submit" class="gc-btn">Отправить на проверку</button>
+                    <p class="gc-note-line" role="status"></p>
+                </form>
+            <?php else : ?>
+                <?php echo self::locked_note($course, 'Сдача работ на проверку'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php endif; ?>
 
             <form class="gc-done" id="gc-done-form" data-module="<?php echo (int) $index; ?>">
                 <label><input type="checkbox" <?php checked(in_array($index, $done, true)); ?>> Отметить модуль пройденным</label>
@@ -277,14 +465,14 @@ class GC_Cabinet {
 
             <nav class="gc-nav">
                 <?php if ($index > 0) : ?>
-                    <a class="gc-nav__prev" href="<?php echo esc_url(add_query_arg('mod', $index - 1, self::url())); ?>">
+                    <a class="gc-nav__prev" href="<?php echo esc_url(add_query_arg('mod', $index - 1, self::url($course))); ?>">
                         ← Модуль <?php echo (int) $index; ?></a>
                 <?php else : ?><span></span><?php endif; ?>
-                <?php if ($index + 1 < GC_Program::count()) : ?>
-                    <a class="gc-nav__next" href="<?php echo esc_url(add_query_arg('mod', $index + 1, self::url())); ?>">
+                <?php if ($index + 1 < GC_Program::count($course)) : ?>
+                    <a class="gc-nav__next" href="<?php echo esc_url(add_query_arg('mod', $index + 1, self::url($course))); ?>">
                         Модуль <?php echo (int) ($index + 2); ?> →</a>
                 <?php else : ?>
-                    <a class="gc-nav__next" href="<?php echo esc_url(self::url()); ?>">К списку модулей</a>
+                    <a class="gc-nav__next" href="<?php echo esc_url(self::url($course)); ?>">К списку модулей</a>
                 <?php endif; ?>
             </nav>
         </article>
@@ -292,7 +480,13 @@ class GC_Cabinet {
         return ob_get_clean();
     }
 
-    private static function studio($user) {
+    private static function studio($user, $course, $paid) {
+        if (!GC_Courses::tools_open($user->ID, $course)) {
+            return '<section class="gc-card"><h2 class="gc-h2">Мастерская</h2>'
+                 . '<p class="gc-lead">Кадры и ролики считаются на нашей видеокарте: после оплаты обучения'
+                 . ' количество не ограничено месяц. Переделывать описание по двадцать раз — это и есть обучение.</p>'
+                 . self::locked_note($course, 'Мастерская генераций') . '</section>';
+        }
         $jobs = GC_Gpu::for_user($user->ID);
         $health = GC_Gpu::health();
         $active = GC_Students::gpu_active($user->ID);
@@ -466,18 +660,22 @@ class GC_Cabinet {
         return ob_get_clean();
     }
 
-    private static function works($user) {
+    private static function works($user, $course, $paid) {
         $works = GC_Works::for_user($user->ID);
         ob_start();
         ?>
         <section class="gc-card">
             <h2 class="gc-h2">Мои работы</h2>
-            <?php if (!$works) : ?>
+            <?php if (!GC_Courses::tools_open($user->ID, $course)) : ?>
+                <p class="gc-lead">Каждый модуль заканчивается работой: вы присылаете её сюда, в ответ приходит
+                    разбор — что отдавать заказчику, а что переделать.</p>
+                <?php echo self::locked_note($course, 'Сдача работ на проверку'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            <?php elseif (!$works) : ?>
                 <p class="gc-fine">Пока ничего не сдано. Работы появятся здесь вместе с разбором.</p>
             <?php else : ?>
                 <ul class="gc-works">
                     <?php foreach ($works as $w) :
-                        $m = GC_Program::module((int) $w['module']);
+                        $m = GC_Program::module((int) $w['module'], $course);
                         ?>
                         <li class="is-<?php echo esc_attr($w['status']); ?>">
                             <p class="gc-works__head">

@@ -84,9 +84,12 @@ class GC_Works {
             return;
         }
         $user = get_user_by('id', (int) $work['user_id']);
-        $module = GC_Program::module((int) $work['module']);
-        $subject = sprintf('Работа на проверку: %s, модуль %d',
-            $user ? $user->display_name : 'ученик', (int) $work['module'] + 1);
+        $course = GC_Students::course((int) $work['user_id']);
+        $module = GC_Program::module((int) $work['module'], $course);
+        $subject = sprintf('Работа на проверку: %s, %s, модуль %d',
+            $user ? $user->display_name : 'ученик',
+            GC_Courses::field($course, 'short', ''),
+            (int) $work['module'] + 1);
         $body = sprintf(
             "Ученик: %s (%s)
 Модуль %d: %s

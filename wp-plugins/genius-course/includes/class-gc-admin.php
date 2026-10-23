@@ -1,10 +1,16 @@
 <?php
 /**
- * Админка курса.
+ * Админка курсов.
  *
  * Отдельный пункт меню верхнего уровня, а не вкладка внутри плагина
  * звуков: курсом занимается другой человек в другие дни, и искать его
  * среди настроек каталога — лишняя работа каждый раз.
+ *
+ * У каждого курса своя вкладка со своим списком учеников: программы
+ * разные, оплата у одного внутри кабинета, у другого вне сайта, и
+ * смешивать их в одной таблице значит однажды выдать доступ не туда.
+ * Таблицу и форму рисует один и тот же код — отличия берутся из
+ * описания курса, а не из копии разметки.
  */
 
 if (!defined('ABSPATH')) {
@@ -20,6 +26,7 @@ class GC_Admin {
         add_action('admin_post_gc_create', array(__CLASS__, 'handle_create'));
         add_action('admin_post_gc_reset', array(__CLASS__, 'handle_reset'));
         add_action('admin_post_gc_gpu_days', array(__CLASS__, 'handle_gpu_days'));
+        add_action('admin_post_gc_paid', array(__CLASS__, 'handle_paid'));
         add_action('admin_post_gc_review', array(__CLASS__, 'handle_review'));
         add_action('admin_post_gc_settings', array(__CLASS__, 'handle_settings'));
         add_action('admin_post_gc_vast', array(__CLASS__, 'handle_vast'));
@@ -42,9 +49,45 @@ class GC_Admin {
         add_menu_page('Курс', $label, 'manage_options', self::SLUG, array(__CLASS__, 'render'), 'dashicons-welcome-learn-more', 31);
     }
 
+    /**
+     * Вкладки.
+     *
+     * Курс по умолчанию живёт на вкладке «Ученики» — её адрес уже
+     * разослан в закладках, менять его незачем. Остальные курсы берут
+     * имя вкладки от своего ключа.
+     */
+    private static function tabs() {
+        $tabs = array('students' => 'Ученики');
+        foreach (GC_Courses::all() as $key => $def) {
+            if ($key !== GC_Courses::DEFAULT_KEY) {
+                $tabs[$key] = (string) $def['short'];
+            }
+        }
+        return $tabs + array(
+            'works'    => 'Работы',
+            'jobs'     => 'Генерации',
+            'machine'  => 'Машина',
+            'settings' => 'Настройки',
+        );
+    }
+
+    /** Курс вкладки или пусто, если вкладка не про учеников. */
+    private static function tab_course($tab) {
+        if ($tab === 'students') {
+            return GC_Courses::DEFAULT_KEY;
+        }
+        return GC_Courses::exists($tab) ? $tab : '';
+    }
+
     private static function tab() {
         $tab = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : 'students';
-        return in_array($tab, array('students', 'works', 'jobs', 'machine', 'settings'), true) ? $tab : 'students';
+        return array_key_exists($tab, self::tabs()) ? $tab : 'students';
+    }
+
+    /** На какую вкладку вернуться после действия. */
+    private static function back() {
+        $tab = isset($_POST['back']) ? sanitize_key(wp_unslash($_POST['back'])) : 'students';
+        return array_key_exists($tab, self::tabs()) ? $tab : 'students';
     }
 
     private static function url($tab = '', $args = array()) {
@@ -57,21 +100,27 @@ class GC_Admin {
             return;
         }
         $tab = self::tab();
+        $course = self::tab_course($tab);
+        $waiting = GC_Works::waiting();
         ?>
         <div class="wrap">
-            <h1>Курс «Обучение AI-креатора»</h1>
+            <h1><?php echo $course !== ''
+                ? 'Курс «' . esc_html(GC_Courses::title($course)) . '»'
+                : 'Курсы обучения'; ?></h1>
             <h2 class="nav-tab-wrapper">
-                <a class="nav-tab <?php echo $tab === 'students' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('students')); ?>">Ученики</a>
-                <a class="nav-tab <?php echo $tab === 'works' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('works')); ?>">Работы<?php
-                    $waiting = GC_Works::waiting();
-                    echo $waiting > 0 ? ' (' . (int) $waiting . ')' : ''; ?></a>
-                <a class="nav-tab <?php echo $tab === 'jobs' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('jobs')); ?>">Генерации</a>
-                <a class="nav-tab <?php echo $tab === 'machine' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('machine')); ?>">Машина</a>
-                <a class="nav-tab <?php echo $tab === 'settings' ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(self::url('settings')); ?>">Настройки</a>
+                <?php foreach (self::tabs() as $key => $label) : ?>
+                    <a class="nav-tab <?php echo $tab === $key ? 'nav-tab-active' : ''; ?>"
+                       href="<?php echo esc_url(self::url($key)); ?>"><?php
+                        echo esc_html($label);
+                        echo $key === 'works' && $waiting > 0 ? ' (' . (int) $waiting . ')' : '';
+                    ?></a>
+                <?php endforeach; ?>
             </h2>
             <?php
             self::notice();
-            if ($tab === 'works') {
+            if ($course !== '') {
+                self::students($course, $tab);
+            } elseif ($tab === 'works') {
                 self::works();
             } elseif ($tab === 'jobs') {
                 self::jobs();
@@ -79,8 +128,6 @@ class GC_Admin {
                 self::machine();
             } elseif ($tab === 'settings') {
                 self::settings();
-            } else {
-                self::students();
             }
             ?>
         </div>
@@ -100,7 +147,8 @@ class GC_Admin {
             ?>
             <div class="notice notice-success">
                 <p><strong>Доступ готов. Скопируйте и отправьте ученику — второй раз пароль не покажется.</strong></p>
-                <p><code>Вход: <?php echo esc_html(GC_Cabinet::url()); ?><br>
+                <?php $at = isset($_GET['gc_at']) ? sanitize_key(wp_unslash($_GET['gc_at'])) : ''; ?>
+                <p><code>Вход: <?php echo esc_html(GC_Cabinet::url($at)); ?><br>
                     Логин: <?php echo esc_html($login); ?><br>
                     Пароль: <?php echo esc_html($pass); ?></code></p>
             </div>
@@ -114,13 +162,36 @@ class GC_Admin {
         }
     }
 
-    private static function students() {
-        $students = GC_Students::all();
+    /**
+     * Ученики курса: форма выдачи доступа и таблица.
+     *
+     * У платного курса в таблице появляется оплата: доступ открывается
+     * сам после платежа в кабинете, но иногда платят переводом или
+     * возвращают деньги — тогда оплату ставят и снимают руками.
+     */
+    private static function students($course, $tab) {
+        $students = GC_Students::all($course);
+        $paywall = GC_Courses::paywall($course);
+        $plans = GC_Courses::plans($course);
+        $total = GC_Program::count($course);
+        $titles = $plans ? wp_list_pluck($plans, 'title') : array('базовый' => 'Базовый', 'расширенный' => 'Расширенный');
         ?>
         <h3>Выдать доступ</h3>
+        <p class="description">
+            Кабинет курса: <a href="<?php echo esc_url(GC_Cabinet::url($course)); ?>" target="_blank" rel="noopener"><?php
+                echo esc_html(GC_Cabinet::url($course)); ?></a>.
+            <?php if ($paywall) : ?>
+                После первого входа ученику открыт <?php echo (int) GC_Courses::free_modules($course); ?>-й модуль,
+                остальное — после оплаты внутри кабинета.
+            <?php else : ?>
+                Все модули открыты сразу: оплата у этого курса проходит вне сайта.
+            <?php endif; ?>
+        </p>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="gc-admin-form">
             <?php wp_nonce_field('gc_create'); ?>
             <input type="hidden" name="action" value="gc_create">
+            <input type="hidden" name="course" value="<?php echo esc_attr($course); ?>">
+            <input type="hidden" name="back" value="<?php echo esc_attr($tab); ?>">
             <table class="form-table" role="presentation">
                 <tr>
                     <th scope="row"><label for="gc-email">Почта ученика</label></th>
@@ -134,13 +205,28 @@ class GC_Admin {
                 <tr>
                     <th scope="row"><label for="gc-plan">Тариф</label></th>
                     <td><select id="gc-plan" name="plan">
-                        <option value="базовый">Базовый</option>
-                        <option value="расширенный">Расширенный</option>
-                    </select></td>
+                        <?php foreach ($titles as $title) : ?>
+                            <option value="<?php echo esc_attr($title); ?>"><?php echo esc_html($title); ?></option>
+                        <?php endforeach; ?>
+                        <?php if ($paywall) : ?>
+                            <option value="не выбран">Выберет сам при оплате</option>
+                        <?php endif; ?>
+                    </select>
+                        <?php if ($paywall) : ?>
+                            <p class="description">Это пометка для вас. Доступ открывает оплата, а не тариф в этом поле.</p>
+                        <?php endif; ?>
+                    </td>
                 </tr>
+                <?php if ($paywall) : ?>
+                    <tr>
+                        <th scope="row">Оплата</th>
+                        <td><label><input type="checkbox" name="paid" value="1"> Уже оплатил — открыть всё сразу</label>
+                            <p class="description">Ставьте, если деньги пришли мимо кабинета: переводом или на счёт.</p></td>
+                    </tr>
+                <?php endif; ?>
                 <tr>
                     <th scope="row"><label for="gc-days">Генерации без лимита</label></th>
-                    <td><input id="gc-days" name="gpu_days" type="number" min="0" max="365" value="30" class="small-text"> дней</td>
+                    <td><input id="gc-days" name="gpu_days" type="number" min="0" max="3650" value="30" class="small-text"> дней</td>
                 </tr>
                 <tr>
                     <th scope="row"><label for="gc-note">Заметка</label></th>
@@ -152,14 +238,19 @@ class GC_Admin {
 
         <h3>Ученики (<?php echo count($students); ?>)</h3>
         <table class="widefat striped">
-            <thead><tr><th>Ученик</th><th>Логин</th><th>Тариф</th><th>Прогресс</th><th>Генерации до</th><th>Действия</th></tr></thead>
+            <thead><tr>
+                <th>Ученик</th><th>Логин</th><th>Тариф</th>
+                <?php if ($paywall) : ?><th>Оплата</th><?php endif; ?>
+                <th>Прогресс</th><th>Генерации до</th><th>Действия</th>
+            </tr></thead>
             <tbody>
             <?php if (!$students) : ?>
-                <tr><td colspan="6">Пока никого. Выдайте первый доступ формой выше.</td></tr>
+                <tr><td colspan="<?php echo $paywall ? 7 : 6; ?>">Пока никого. Выдайте первый доступ формой выше.</td></tr>
             <?php endif; ?>
             <?php foreach ($students as $u) :
                 $done = count(GC_Students::progress($u->ID));
                 $until = GC_Students::gpu_until($u->ID);
+                $paid_plan = GC_Students::paid_plan($u->ID);
                 ?>
                 <tr>
                     <td><strong><?php echo esc_html($u->display_name); ?></strong><br><span class="description"><?php echo esc_html($u->user_email); ?></span>
@@ -168,22 +259,59 @@ class GC_Admin {
                     </td>
                     <td><code><?php echo esc_html($u->user_login); ?></code></td>
                     <td><?php echo esc_html((string) get_user_meta($u->ID, GC_Students::META_PLAN, true)); ?></td>
-                    <td><?php echo (int) $done; ?> из <?php echo (int) GC_Program::count(); ?></td>
+                    <?php if ($paywall) : ?>
+                        <td>
+                            <?php if ($paid_plan !== '') :
+                                $plan_def = GC_Courses::plan($course, $paid_plan);
+                                $paid_at = GC_Students::paid_at($u->ID);
+                                ?>
+                                <strong><?php echo esc_html($plan_def ? $plan_def['title'] : $paid_plan); ?></strong>
+                                <?php if ($paid_at !== '') : ?>
+                                    <br><span class="description"><?php echo esc_html(date_i18n('j M Y', strtotime($paid_at))); ?></span>
+                                <?php endif; ?>
+                            <?php else : ?>
+                                <span class="description">не оплачено</span>
+                            <?php endif; ?>
+                        </td>
+                    <?php endif; ?>
+                    <td><?php echo (int) $done; ?> из <?php echo (int) $total; ?></td>
                     <td><?php echo $until ? esc_html(date_i18n('j M Y', strtotime($until))) : '—'; ?></td>
                     <td>
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
                             <?php wp_nonce_field('gc_reset'); ?>
                             <input type="hidden" name="action" value="gc_reset">
+                            <input type="hidden" name="back" value="<?php echo esc_attr($tab); ?>">
                             <input type="hidden" name="user" value="<?php echo (int) $u->ID; ?>">
                             <button class="button button-small">Новый пароль</button>
                         </form>
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
                             <?php wp_nonce_field('gc_gpu_days'); ?>
                             <input type="hidden" name="action" value="gc_gpu_days">
+                            <input type="hidden" name="back" value="<?php echo esc_attr($tab); ?>">
                             <input type="hidden" name="user" value="<?php echo (int) $u->ID; ?>">
-                            <input type="number" name="days" value="30" min="0" max="365" class="small-text">
+                            <input type="number" name="days" value="30" min="0" max="3650" class="small-text">
                             <button class="button button-small">Продлить</button>
                         </form>
+                        <?php if ($paywall) : ?>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                                <?php wp_nonce_field('gc_paid'); ?>
+                                <input type="hidden" name="action" value="gc_paid">
+                                <input type="hidden" name="back" value="<?php echo esc_attr($tab); ?>">
+                                <input type="hidden" name="course" value="<?php echo esc_attr($course); ?>">
+                                <input type="hidden" name="user" value="<?php echo (int) $u->ID; ?>">
+                                <?php if ($paid_plan === '') : ?>
+                                    <select name="plan">
+                                        <?php foreach ($plans as $key => $plan) : ?>
+                                            <option value="<?php echo esc_attr($key); ?>"><?php echo esc_html($plan['title']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <button class="button button-small">Отметить оплату</button>
+                                <?php else : ?>
+                                    <input type="hidden" name="plan" value="">
+                                    <button class="button button-small" onclick="return confirm('Снять оплату? Ученику закроются все модули, кроме первого.')">Снять оплату</button>
+                                <?php endif; ?>
+                            </form>
+                        <?php endif; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -203,12 +331,14 @@ class GC_Admin {
         <?php endif; ?>
         <?php foreach ($queue as $w) :
             $u = get_user_by('id', (int) $w['user_id']);
-            $m = GC_Program::module((int) $w['module']);
+            $course = GC_Students::course((int) $w['user_id']);
+            $m = GC_Program::module((int) $w['module'], $course);
             ?>
             <div class="card" style="max-width:900px;margin-bottom:16px">
                 <h4 style="margin-top:0">
                     <?php echo esc_html($u ? $u->display_name : ('id ' . (int) $w['user_id'])); ?>
-                    — модуль <?php echo (int) ($w['module'] + 1); ?><?php echo $m ? ': ' . esc_html($m['title']) : ''; ?>
+                    — <?php echo esc_html(GC_Courses::field($course, 'short', '')); ?>,
+                    модуль <?php echo (int) ($w['module'] + 1); ?><?php echo $m ? ': ' . esc_html($m['title']) : ''; ?>
                     <span class="description"><?php echo esc_html(date_i18n('j F, H:i', strtotime($w['created_at']))); ?></span>
                 </h4>
                 <?php if (!empty($w['links'])) : ?>
@@ -701,18 +831,74 @@ class GC_Admin {
         if (!current_user_can('manage_options')) {
             wp_die('Недостаточно прав');
         }
+        $back = self::back();
+        $course = sanitize_key((string) ($_POST['course'] ?? ''));
+        $course = GC_Courses::exists($course) ? $course : GC_Courses::DEFAULT_KEY;
         $out = GC_Students::create(
             (string) ($_POST['email'] ?? ''),
             (string) ($_POST['name'] ?? ''),
             (string) ($_POST['plan'] ?? 'базовый'),
             (string) ($_POST['note'] ?? ''),
-            (int) ($_POST['gpu_days'] ?? 30)
+            (int) ($_POST['gpu_days'] ?? 30),
+            $course
         );
         if (empty($out['ok'])) {
-            wp_safe_redirect(self::url('students', array('gc_err' => $out['message'])));
+            wp_safe_redirect(self::url($back, array('gc_err' => $out['message'])));
             exit;
         }
-        wp_safe_redirect(self::url('students', array('gc_login' => $out['login'], 'gc_pass' => $out['password'])));
+        /*
+         * Оплата мимо кабинета: деньги пришли переводом, и открывать всё
+         * руками по одной галочке дешевле, чем объяснять ученику, почему
+         * у него закрыты модули.
+         */
+        if (!empty($_POST['paid'])) {
+            $plans = GC_Courses::plans($course);
+            reset($plans);
+            $first = $plans ? (string) key($plans) : '';
+            if ($first !== '') {
+                GC_Students::set_paid((int) $out['user_id'], $first);
+            }
+        }
+        wp_safe_redirect(self::url($back, array(
+            'gc_login' => $out['login'],
+            'gc_pass'  => $out['password'],
+            'gc_at'    => $course,
+        )));
+        exit;
+    }
+
+    /**
+     * Оплата руками.
+     *
+     * Пустой тариф — снять оплату: возврат денег и доступ «по ошибке»
+     * бывают чаще, чем хотелось бы, а закрывать доступ через базу
+     * данных — способ однажды закрыть его не тому.
+     */
+    public static function handle_paid() {
+        check_admin_referer('gc_paid');
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        $back = self::back();
+        $user_id = (int) ($_POST['user'] ?? 0);
+        $course = sanitize_key((string) ($_POST['course'] ?? ''));
+        $plan = sanitize_key((string) ($_POST['plan'] ?? ''));
+        $user = get_user_by('id', $user_id);
+        if (!$user) {
+            wp_safe_redirect(self::url($back, array('gc_err' => 'Ученик не найден')));
+            exit;
+        }
+        if ($plan === '') {
+            GC_Students::clear_paid($user_id);
+            wp_safe_redirect(self::url($back, array('gc_msg' => 'Оплата снята: ' . $user->user_email)));
+            exit;
+        }
+        if (!GC_Courses::plan($course, $plan)) {
+            wp_safe_redirect(self::url($back, array('gc_err' => 'Тариф не найден')));
+            exit;
+        }
+        GC_Students::set_paid($user_id, $plan);
+        wp_safe_redirect(self::url($back, array('gc_msg' => 'Доступ открыт полностью: ' . $user->user_email)));
         exit;
     }
 
@@ -721,14 +907,19 @@ class GC_Admin {
         if (!current_user_can('manage_options')) {
             wp_die('Недостаточно прав');
         }
+        $back = self::back();
         $user_id = (int) ($_POST['user'] ?? 0);
         $pass = GC_Students::reset_password($user_id);
         $user = get_user_by('id', $user_id);
         if ($pass === '' || !$user) {
-            wp_safe_redirect(self::url('students', array('gc_err' => 'Ученик не найден')));
+            wp_safe_redirect(self::url($back, array('gc_err' => 'Ученик не найден')));
             exit;
         }
-        wp_safe_redirect(self::url('students', array('gc_login' => $user->user_login, 'gc_pass' => $pass)));
+        wp_safe_redirect(self::url($back, array(
+            'gc_login' => $user->user_login,
+            'gc_pass'  => $pass,
+            'gc_at'    => GC_Students::course($user_id),
+        )));
         exit;
     }
 
@@ -737,10 +928,11 @@ class GC_Admin {
         if (!current_user_can('manage_options')) {
             wp_die('Недостаточно прав');
         }
+        $back = self::back();
         $user_id = (int) ($_POST['user'] ?? 0);
         $days = (int) ($_POST['days'] ?? 30);
         GC_Students::set_gpu_days($user_id, $days);
-        wp_safe_redirect(self::url('students', array('gc_msg' => 'Срок генераций обновлён: ' . $days . ' дней с сегодня')));
+        wp_safe_redirect(self::url($back, array('gc_msg' => 'Срок генераций обновлён: ' . $days . ' дней с сегодня')));
         exit;
     }
 

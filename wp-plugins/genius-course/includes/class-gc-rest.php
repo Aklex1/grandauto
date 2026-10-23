@@ -59,10 +59,51 @@ class GC_Rest {
         return is_user_logged_in() && GC_Students::is_student();
     }
 
+    /**
+     * Курс, к которому относится запрос.
+     *
+     * У ученика он один — свой, и подменить его запросом нельзя: иначе
+     * чужая программа решала бы, сколько у него модулей. Администратор
+     * ходит по кабинетам обоих курсов, поэтому ему курс сообщает сама
+     * страница.
+     */
+    private static function course($request) {
+        $user_id = get_current_user_id();
+        if (current_user_can('manage_options')) {
+            $p = (array) $request->get_json_params();
+            $asked = isset($p['course']) ? sanitize_key((string) $p['course']) : '';
+            if ($asked === '') {
+                $asked = sanitize_key((string) $request->get_param('course'));
+            }
+            if (GC_Courses::exists($asked)) {
+                return $asked;
+            }
+        }
+        return GC_Students::course($user_id);
+    }
+
+    /**
+     * Оплачен ли доступ к работе и мастерской.
+     *
+     * Проверка стоит здесь, а не только в разметке: кнопку можно не
+     * показывать, а запрос всё равно отправить руками.
+     */
+    private static function paid_guard($course) {
+        if (GC_Courses::tools_open(get_current_user_id(), $course)) {
+            return null;
+        }
+        return new WP_Error('gc_unpaid', 'Эта часть кабинета открывается после оплаты обучения.', array('status' => 402));
+    }
+
     public static function submit_work($request) {
         $p = (array) $request->get_json_params();
+        $course = self::course($request);
+        $guard = self::paid_guard($course);
+        if ($guard) {
+            return $guard;
+        }
         $module = isset($p['module']) ? (int) $p['module'] : -1;
-        if ($module < 0 || $module >= GC_Program::count()) {
+        if ($module < 0 || $module >= GC_Program::count($course)) {
             return new WP_Error('gc_module', 'Модуль не найден', array('status' => 400));
         }
         $body = (string) ($p['body'] ?? '');
@@ -77,10 +118,14 @@ class GC_Rest {
 
     public static function mark_done($request) {
         $p = (array) $request->get_json_params();
+        $course = self::course($request);
         $module = isset($p['module']) ? (int) $p['module'] : -1;
         $done = !empty($p['done']);
-        if ($module < 0 || $module >= GC_Program::count()) {
+        if ($module < 0 || $module >= GC_Program::count($course)) {
             return new WP_Error('gc_module', 'Модуль не найден', array('status' => 400));
+        }
+        if (!GC_Courses::module_open(get_current_user_id(), $module, $course)) {
+            return new WP_Error('gc_unpaid', 'Модуль откроется после оплаты обучения.', array('status' => 402));
         }
         $list = GC_Students::mark_done(get_current_user_id(), $module, $done);
         return rest_ensure_response(array('ok' => true, 'done' => $list));
@@ -88,6 +133,10 @@ class GC_Rest {
 
     public static function generate($request) {
         $p = (array) $request->get_json_params();
+        $guard = self::paid_guard(self::course($request));
+        if ($guard) {
+            return $guard;
+        }
         $size = (string) ($p['size'] ?? '1024x1024');
         $parts = array_map('intval', explode('x', $size));
         $kind = ($p['kind'] ?? 'image') === 'video' ? 'video' : 'image';
@@ -134,6 +183,10 @@ class GC_Rest {
      * уезжает уже перед заданием.
      */
     public static function upload_reference($request) {
+        $guard = self::paid_guard(self::course($request));
+        if ($guard) {
+            return $guard;
+        }
         $files = $request->get_file_params();
         if (empty($files['file']['tmp_name'])) {
             return new WP_Error('gc_file', 'Файл не пришёл', array('status' => 400));

@@ -1,14 +1,20 @@
 <?php
 /**
- * Программа курса.
+ * Программы курсов.
  *
- * Держим её в коде, а не в записях базы: материалы правятся вместе с
+ * Держим их в коде, а не в записях базы: материалы правятся вместе с
  * плагином, версия видна в git, и ученик не может получить полупустой
  * модуль из-за недосохранённой записи. Когда уроков станет больше
  * полусотни, переедем в свой тип записей — пока это лишний слой.
  *
- * Состав модулей повторяет программу с посадочной: она собрана по 219
- * вакансиям hh.ru, и расходиться им нельзя.
+ * Курсов стало два, поэтому класс отдаёт программу того курса, о
+ * котором спрашивают: список AI-креатора лежит здесь, «Заработок на
+ * нейросетях» — в GC_Program_Money, а кто чей, знает GC_Courses.
+ * Старые вызовы без курса продолжают работать: без указания берётся
+ * курс страницы кабинета, а вне кабинета — курс вошедшего ученика.
+ *
+ * Состав модулей AI-креатора повторяет программу с посадочной: она
+ * собрана по 219 вакансиям hh.ru, и расходиться им нельзя.
  */
 
 if (!defined('ABSPATH')) {
@@ -18,9 +24,31 @@ if (!defined('ABSPATH')) {
 class GC_Program {
 
     /**
+     * Программа курса.
+     *
+     * @param string $course ключ курса; пусто — курс страницы или ученика
      * @return array<int, array{title:string,lead:string,goal:string,lessons:array,task:string,deliver:string,hint:string}>
      */
-    public static function modules() {
+    public static function modules($course = '') {
+        $program = GC_Courses::field($course, 'program', array(__CLASS__, 'kreator'));
+        if (is_callable($program)) {
+            return (array) call_user_func($program);
+        }
+        return self::kreator();
+    }
+
+    public static function count($course = '') {
+        return count(self::modules($course));
+    }
+
+    public static function module($index, $course = '') {
+        $modules = self::modules($course);
+        $index = (int) $index;
+        return isset($modules[$index]) ? $modules[$index] : null;
+    }
+
+    /** Программа «Обучение AI-креатора». */
+    public static function kreator() {
         return array(
             array(
                 'title'   => 'Вертикальный ролик под ключ',
@@ -127,15 +155,5 @@ class GC_Program {
                 'hint'    => 'Автоматизация до трёх заказов в неделю — преждевременная трата времени. Считайте её заделом.',
             ),
         );
-    }
-
-    public static function count() {
-        return count(self::modules());
-    }
-
-    public static function module($index) {
-        $modules = self::modules();
-        $index = (int) $index;
-        return isset($modules[$index]) ? $modules[$index] : null;
     }
 }

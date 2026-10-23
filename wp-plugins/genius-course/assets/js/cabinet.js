@@ -14,6 +14,12 @@
     }
 
     function send(path, body) {
+        // Курс страницы прикладываем ко всем запросам: у ученика он и так
+        // один, а администратор смотрит оба кабинета — иначе маршрут
+        // проверял бы номер модуля по чужой программе.
+        if (body && cfg.course && !body.course) {
+            body.course = cfg.course;
+        }
         return fetch(cfg.rest + path, {
             method: 'POST',
             credentials: 'same-origin',
@@ -146,6 +152,7 @@
             if (!f) { return; }
             var data = new FormData();
             data.append('file', f);
+            if (cfg.course) { data.append('course', cfg.course); }
             say(gen, 'Загружаем референс…');
             fetch(cfg.rest + 'reference', {
                 method: 'POST',

@@ -15,12 +15,12 @@ if (!defined('ABSPATH')) {
 class GC_Install {
 
     const OPT_VERSION = 'gc_db_version';
-    const DB_VERSION  = 3;
+    const DB_VERSION  = 4;
 
     public static function activate() {
         self::tables();
         GC_Students::add_role();
-        GC_Cabinet::ensure_page();
+        GC_Cabinet::ensure_pages();
         update_option(self::OPT_VERSION, self::DB_VERSION, false);
     }
 
@@ -31,7 +31,7 @@ class GC_Install {
         }
         self::tables();
         GC_Students::add_role();
-        GC_Cabinet::ensure_page();
+        GC_Cabinet::ensure_pages();
         update_option(self::OPT_VERSION, self::DB_VERSION, false);
     }
 
