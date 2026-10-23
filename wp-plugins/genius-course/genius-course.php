@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Genius Course
  * Description: Личные кабинеты курсов: доступы, модули, оплата, сдача работ и генерации на арендованном GPU.
- * Version:     1.15.0
+ * Version:     1.15.1
  * Author:      Genius-bot
  * Text Domain: genius-course
  *
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('GC_VERSION', '1.15.0');
+define('GC_VERSION', '1.15.1');
 define('GC_FILE', __FILE__);
 define('GC_PATH', plugin_dir_path(__FILE__));
 define('GC_URL', plugin_dir_url(__FILE__));
@@ -45,6 +45,10 @@ register_activation_hook(__FILE__, array('GC_Install', 'activate'));
 
 add_action('plugins_loaded', function () {
     GC_Install::maybe_upgrade();
+    // Страницы кабинетов создаются только на init: wp_insert_post раньше
+    // валит сайт, потому что часть констант WordPress определяет уже
+    // после загрузки плагинов.
+    add_action('init', array('GC_Install', 'maybe_pages'), 5);
     GC_Students::boot();
     GC_Cabinet::boot();
     GC_Rest::boot();

@@ -44,6 +44,15 @@ class GC_Cabinet {
     }
 
     public static function ensure_page($course = GC_Courses::DEFAULT_KEY) {
+        /*
+         * Раньше init страницу не создаём. wp_insert_post до этого
+         * момента выбрасывает фатальную ошибку: WordPress определяет
+         * WP_POST_REVISIONS и создаёт $wp_rewrite уже после загрузки
+         * плагинов. Лучше остаться без страницы, чем без сайта.
+         */
+        if (!did_action('init')) {
+            return;
+        }
         $def = GC_Courses::get($course);
         $option = (string) $def['option'];
         $slug = (string) $def['slug'];
