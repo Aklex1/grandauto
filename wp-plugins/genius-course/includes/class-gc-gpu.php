@@ -402,6 +402,12 @@ class GC_Gpu {
             }
         }
 
+        // Заодно догоняем быстрые разборы: расписание WordPress
+        // срабатывает на чужих запросах и иногда опаздывает.
+        if (class_exists('GC_Review')) {
+            GC_Review::catch_up();
+        }
+
         $running = (array) $wpdb->get_results(
             "SELECT id, remote_id, created_at, params FROM {$table} WHERE status = 'running' ORDER BY id ASC LIMIT 20", ARRAY_A);
         foreach ($running as $row) {
@@ -980,6 +986,26 @@ class GC_Gpu {
     }
 
     /** Подпись обратного вызова: иначе результат сможет прислать кто угодно. */
+    /** Показывать ли кадр другим ученикам. */
+    public static function set_shared($job_id, $shared) {
+        self::update($job_id, array('shared' => $shared ? 1 : 0));
+    }
+
+    /**
+     * Кадры и ролики, которые ученики сами открыли для галереи.
+     *
+     * Берём по одной работе от человека: иначе один увлёкшийся займёт
+     * всю страницу, а галерея нужна, чтобы видеть разных.
+     */
+    public static function shared($limit = 24) {
+        global $wpdb;
+        $table = GC_Install::jobs_table();
+        return (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$table} WHERE shared = 1 AND status = 'done' AND result_url <> ''
+             GROUP BY user_id ORDER BY finished_at DESC LIMIT %d", (int) $limit
+        ), ARRAY_A);
+    }
+
     /** Задание ушло считаться: номер у поставщика и состояние «идёт». */
     public static function mark_running($job_id, $remote_id) {
         self::update($job_id, array(

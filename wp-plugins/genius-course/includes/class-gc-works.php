@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 
 class GC_Works {
 
-    public static function submit($user_id, $module, $body, $links) {
+    public static function submit($user_id, $module, $body, $links, $shared = false) {
         global $wpdb;
         $table = GC_Install::works_table();
         $wpdb->insert($table, array(
@@ -22,9 +22,50 @@ class GC_Works {
             'body'       => wp_kses_post($body),
             'links'      => sanitize_textarea_field($links),
             'status'     => 'sent',
+            'shared'     => $shared ? 1 : 0,
             'created_at' => current_time('mysql'),
-        ), array('%d', '%d', '%s', '%s', '%s', '%s'));
+        ), array('%d', '%d', '%s', '%s', '%s', '%d', '%s'));
         return (int) $wpdb->insert_id;
+    }
+
+    /** Быстрый разбор: его пишет модель сразу после сдачи. */
+    public static function set_auto($id, $text) {
+        global $wpdb;
+        $wpdb->update(GC_Install::works_table(), array('auto_feedback' => wp_kses_post($text)),
+            array('id' => (int) $id), array('%s'), array('%d'));
+    }
+
+    /** Работы, которым быстрый разбор ещё не написан. */
+    public static function awaiting_auto($limit = 3) {
+        global $wpdb;
+        $table = GC_Install::works_table();
+        return (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$table} WHERE (auto_feedback IS NULL OR auto_feedback = '')
+             AND created_at > %s ORDER BY id ASC LIMIT %d",
+            gmdate('Y-m-d H:i:s', time() - DAY_IN_SECONDS), (int) $limit
+        ), ARRAY_A);
+    }
+
+    /**
+     * Работы в галерею.
+     *
+     * Показываем только то, что ученик сам разрешил показать и что
+     * принято проверяющим: чужая неудачная работа учит плохому, а
+     * показанная без спроса — повод для обиды.
+     */
+    public static function gallery($limit = 30) {
+        global $wpdb;
+        $table = GC_Install::works_table();
+        return (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$table} WHERE shared = 1 AND status = 'accepted'
+             ORDER BY created_at DESC LIMIT %d", (int) $limit
+        ), ARRAY_A);
+    }
+
+    public static function set_shared($id, $shared) {
+        global $wpdb;
+        $wpdb->update(GC_Install::works_table(), array('shared' => $shared ? 1 : 0),
+            array('id' => (int) $id), array('%d'), array('%d'));
     }
 
     public static function for_user($user_id) {

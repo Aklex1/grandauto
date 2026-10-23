@@ -17,7 +17,7 @@ class GC_Install {
     const OPT_VERSION = 'gc_db_version';
     /** Счётчик страниц кабинетов: отдельный, потому что создаются они позже. */
     const OPT_PAGES   = 'gc_pages_version';
-    const DB_VERSION  = 4;
+    const DB_VERSION  = 5;
 
     public static function activate() {
         self::tables();
@@ -88,6 +88,8 @@ class GC_Install {
             links TEXT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'sent',
             feedback LONGTEXT NULL,
+            auto_feedback LONGTEXT NULL,
+            shared TINYINT(1) NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL,
             reviewed_at DATETIME NULL,
             PRIMARY KEY (id),
@@ -106,6 +108,7 @@ class GC_Install {
             remote_id VARCHAR(64) NULL,
             result_url TEXT NULL,
             error TEXT NULL,
+            shared TINYINT(1) NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL,
             finished_at DATETIME NULL,
             PRIMARY KEY (id),

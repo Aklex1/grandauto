@@ -37,6 +37,75 @@
         note.className = 'gc-note-line' + (kind ? ' is-' + kind : '');
     }
 
+    /* Мини-проверка модуля: ответы сверяет сервер */
+    var quiz = document.getElementById('gc-quiz');
+    if (quiz) {
+        var quizBtn = document.getElementById('gc-quiz-send');
+        quizBtn.addEventListener('click', function () {
+            var blocks = quiz.querySelectorAll('.gc-quiz__q');
+            var answers = [];
+            var missed = false;
+            Array.prototype.forEach.call(blocks, function (block, i) {
+                var picked = block.querySelector('input:checked');
+                answers[i] = picked ? parseInt(picked.value, 10) : -1;
+                if (!picked) { missed = true; }
+            });
+            if (missed) {
+                say(quiz, 'Ответьте на все три вопроса', 'bad');
+                return;
+            }
+            quizBtn.disabled = true;
+            say(quiz, 'Проверяем…');
+            send('quiz', { module: parseInt(quiz.getAttribute('data-module'), 10), answers: answers })
+                .then(function (res) {
+                    quizBtn.disabled = false;
+                    if (!res.ok) {
+                        say(quiz, (res.data && res.data.message) || 'Не получилось проверить', 'bad');
+                        return;
+                    }
+                    (res.data.rows || []).forEach(function (row) {
+                        var block = quiz.querySelector('.gc-quiz__q[data-n="' + row.n + '"]');
+                        if (!block) { return; }
+                        block.classList.remove('is-right', 'is-wrong');
+                        block.classList.add(row.ok ? 'is-right' : 'is-wrong');
+                        var opts = block.querySelectorAll('.gc-quiz__opt');
+                        Array.prototype.forEach.call(opts, function (opt, i) {
+                            opt.classList.toggle('is-answer', i === row.right);
+                        });
+                        var why = block.querySelector('.gc-quiz__why');
+                        if (why) {
+                            why.textContent = row.why || '';
+                            why.hidden = !row.why;
+                        }
+                    });
+                    var score = res.data.score, total = res.data.total;
+                    say(quiz, score + ' из ' + total + (score === total ? ' — всё верно' : '. Ответы разобраны ниже'),
+                        score === total ? 'good' : '');
+                })
+                .catch(function () {
+                    quizBtn.disabled = false;
+                    say(quiz, 'Связь оборвалась. Попробуйте ещё раз.', 'bad');
+                });
+        });
+    }
+
+    /* Показать свою работу в галерее */
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest ? e.target.closest('.gc-share') : null;
+        if (!btn) { return; }
+        var on = btn.getAttribute('data-on') !== '1';
+        btn.disabled = true;
+        send('share', { kind: 'job', id: parseInt(btn.getAttribute('data-job'), 10), on: on })
+            .then(function (res) {
+                btn.disabled = false;
+                if (!res.ok) { return; }
+                btn.setAttribute('data-on', on ? '1' : '0');
+                btn.classList.toggle('is-on', on);
+                btn.textContent = on ? 'В галерее' : 'В галерею';
+            })
+            .catch(function () { btn.disabled = false; });
+    });
+
     /* Сдача работы */
     var work = document.getElementById('gc-work-form');
     if (work) {
@@ -48,7 +117,8 @@
             send('work', {
                 module: parseInt(work.getAttribute('data-module'), 10),
                 body: work.elements.body.value,
-                links: work.elements.links.value
+                links: work.elements.links.value,
+                shared: work.elements.shared ? work.elements.shared.checked : false
             }).then(function (res) {
                 if (!res.ok) {
                     say(work, (res.data && res.data.message) || 'Не получилось отправить', 'bad');

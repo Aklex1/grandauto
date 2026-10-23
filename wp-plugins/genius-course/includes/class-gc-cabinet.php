@@ -261,6 +261,7 @@ class GC_Cabinet {
                 <a class="<?php echo $tab === 'program' && $open < 0 ? 'is-on' : ''; ?>" href="<?php echo esc_url(self::url($course)); ?>">Программа</a>
                 <a class="<?php echo $tab === 'studio' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'studio', self::url($course))); ?>">Мастерская</a>
                 <a class="<?php echo $tab === 'works' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'works', self::url($course))); ?>">Мои работы</a>
+                <a class="<?php echo $tab === 'gallery' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'gallery', self::url($course))); ?>">Галерея</a>
             </nav>
 
             <?php
@@ -268,6 +269,8 @@ class GC_Cabinet {
                 echo self::studio($user, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
             } elseif ($tab === 'works') {
                 echo self::works($user, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
+            } elseif ($tab === 'gallery') {
+                echo self::gallery($course); // phpcs:ignore WordPress.Security.EscapeOutput
             } elseif ($open >= 0) {
                 echo self::module($user, $open, $modules[$open], $done, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
             } else {
@@ -499,12 +502,26 @@ class GC_Cabinet {
                 <p class="gc-fine"><?php echo esc_html($m['hint']); ?></p>
             </div>
 
+            <?php echo self::quiz($user, $course, $index); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <?php if ($work) : ?>
                 <div class="gc-sent is-<?php echo esc_attr($work['status']); ?>">
                     <p><strong>Работа сдана <?php echo esc_html(date_i18n('j F, H:i', strtotime($work['created_at']))); ?>.</strong>
                         Статус: <?php echo esc_html($work['status'] === 'accepted' ? 'принята' : ($work['status'] === 'rework' ? 'на доработку' : 'ждёт проверки')); ?>.</p>
+                    <?php if (!empty($work['auto_feedback'])) : ?>
+                        <div class="gc-feedback gc-feedback--auto">
+                            <strong>Быстрый разбор</strong>
+                            <span class="gc-fine">Его пишет модель сразу после сдачи — по чек-листу модуля.
+                                Разбор проверяющего придёт следом.</span>
+                            <?php echo wp_kses_post(class_exists('GS_Md')
+                                ? GS_Md::to_html((string) $work['auto_feedback'])
+                                : wpautop((string) $work['auto_feedback'])); ?>
+                        </div>
+                    <?php elseif ($work['status'] === 'sent' && GC_Review::available()) : ?>
+                        <p class="gc-fine">Быстрый разбор считается — обновите страницу через минуту.</p>
+                    <?php endif; ?>
                     <?php if (!empty($work['feedback'])) : ?>
-                        <div class="gc-feedback"><strong>Разбор:</strong> <?php echo wp_kses_post(wpautop($work['feedback'])); ?></div>
+                        <div class="gc-feedback"><strong>Разбор проверяющего:</strong> <?php echo wp_kses_post(wpautop($work['feedback'])); ?></div>
                     <?php endif; ?>
                 </div>
             <?php endif; ?>
@@ -519,6 +536,10 @@ class GC_Cabinet {
                     <label>
                         <span>Что получилось и где застряли</span>
                         <textarea name="body" rows="4" placeholder="Пара абзацев: что задумали, что вышло не так, что уже пробовали"></textarea>
+                    </label>
+                    <label class="gc-check">
+                        <input type="checkbox" name="shared" value="1">
+                        <span>Можно показать мою работу другим ученикам в галерее — после того, как её примут</span>
                     </label>
                     <button type="submit" class="gc-btn">Отправить на проверку</button>
                     <p class="gc-note-line" role="status"></p>
@@ -594,8 +615,141 @@ class GC_Cabinet {
                     <?php if (!empty($item['note'])) : ?>
                         <p class="gc-example__note"><?php echo esc_html((string) $item['note']); ?></p>
                     <?php endif; ?>
+                    <?php
+                    /*
+                     * Кнопка повторяет пример в мастерской: описание уже
+                     * вписано, человеку остаётся нажать «сгенерировать».
+                     * Копировать текст руками никто не станет.
+                     */
+                    if (in_array($kind, array('image', 'video'), true) && !empty($item['prompt'])
+                        && GC_Courses::tools_open(get_current_user_id(), $course)) :
+                        $link = add_query_arg(array(
+                            'tab'    => 'studio',
+                            'kind'   => $kind,
+                            'size'   => (string) ($item['size'] ?? '1024x1024'),
+                            'prompt' => rawurlencode((string) $item['prompt']),
+                        ), self::url($course));
+                        ?>
+                        <p class="gc-example__do">
+                            <a class="gc-btn gc-btn--ghost" href="<?php echo esc_url($link); ?>">Сделать это задание</a>
+                            <span class="gc-fine">Откроется мастерская с этим описанием</span>
+                        </p>
+                    <?php endif; ?>
                 </article>
             <?php endforeach; ?>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Мини-проверка модуля.
+     *
+     * Три вопроса с объяснением ответа. Правильные варианты в разметку
+     * не попадают: их знает только сервер, иначе ответ виден в коде
+     * страницы и проверка превращается в игру «найди подсказку».
+     */
+    private static function quiz($user, $course, $index) {
+        if (!class_exists('GC_Quiz')) {
+            return '';
+        }
+        $questions = GC_Quiz::questions($course, $index);
+        if (!$questions) {
+            return '';
+        }
+        $was = GC_Quiz::result($user->ID, $course, $index);
+        ob_start();
+        ?>
+        <section class="gc-quiz" id="gc-quiz" data-module="<?php echo (int) $index; ?>">
+            <h3>Проверьте себя</h3>
+            <p class="gc-fine">Три вопроса по модулю. Ответ разбирается сразу — это не экзамен, а способ
+                закрепить прочитанное.</p>
+            <?php if ($was) : ?>
+                <p class="gc-quiz__was">В прошлый раз: <strong><?php echo (int) $was['score']; ?> из
+                    <?php echo (int) $was['total']; ?></strong>. Можно пройти ещё раз.</p>
+            <?php endif; ?>
+            <?php foreach ($questions as $q) : ?>
+                <div class="gc-quiz__q" data-n="<?php echo (int) $q['n']; ?>">
+                    <p class="gc-quiz__text"><?php echo (int) ($q['n'] + 1); ?>. <?php echo esc_html($q['text']); ?></p>
+                    <?php foreach ($q['options'] as $i => $option) : ?>
+                        <label class="gc-quiz__opt">
+                            <input type="radio" name="q<?php echo (int) $q['n']; ?>" value="<?php echo (int) $i; ?>">
+                            <span><?php echo esc_html($option); ?></span>
+                        </label>
+                    <?php endforeach; ?>
+                    <p class="gc-quiz__why" hidden></p>
+                </div>
+            <?php endforeach; ?>
+            <button type="button" class="gc-btn" id="gc-quiz-send">Проверить ответы</button>
+            <p class="gc-note-line" role="status"></p>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Галерея работ учеников.
+     *
+     * Только то, что человек сам открыл: кадры из мастерской по кнопке
+     * «показать» и принятые работы, к которым он поставил согласие.
+     * Чужая хорошая работа объясняет планку лучше любого текста.
+     */
+    private static function gallery($course) {
+        $jobs = class_exists('GC_Gpu') ? GC_Gpu::shared(24) : array();
+        $works = GC_Works::gallery(20);
+        ob_start();
+        ?>
+        <section class="gc-card">
+            <h2 class="gc-h2">Галерея курса</h2>
+            <p class="gc-lead">Работы других учеников — те, что они сами открыли. Свои кадры можно показать
+                кнопкой «В галерею» в мастерской, а сданную работу — галочкой при отправке.</p>
+
+            <?php if (!$jobs && !$works) : ?>
+                <p class="gc-fine">Пока пусто. Будьте первым: сделайте кадр в мастерской и нажмите «В галерею».</p>
+            <?php endif; ?>
+
+            <?php if ($jobs) : ?>
+                <ul class="gc-grid">
+                    <?php foreach ($jobs as $job) :
+                        $author = get_user_by('id', (int) $job['user_id']);
+                        $still = (bool) preg_match('~\.(png|jpe?g|webp)([^a-z]|$)~i', (string) $job['result_url']);
+                        ?>
+                        <li class="gc-job is-done">
+                            <?php if (!$still && preg_match('~\.(mp4|webm|mov)([^a-z]|$)~i', (string) $job['result_url'])) : ?>
+                                <video src="<?php echo esc_url($job['result_url']); ?>" controls loop muted playsinline preload="metadata"></video>
+                            <?php else : ?>
+                                <a href="<?php echo esc_url($job['result_url']); ?>" target="_blank" rel="noopener">
+                                    <img src="<?php echo esc_url($job['result_url']); ?>" alt="" loading="lazy" decoding="async"></a>
+                            <?php endif; ?>
+                            <span class="gc-job__prompt"><?php echo esc_html(mb_substr((string) $job['prompt'], 0, 80)); ?></span>
+                            <span class="gc-fine"><?php echo esc_html($author ? $author->display_name : 'ученик'); ?></span>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
+
+            <?php if ($works) : ?>
+                <h3>Принятые работы</h3>
+                <ul class="gc-works">
+                    <?php foreach ($works as $w) :
+                        $author = get_user_by('id', (int) $w['user_id']);
+                        $m = GC_Program::module((int) $w['module'], GC_Students::course((int) $w['user_id']));
+                        ?>
+                        <li class="is-accepted">
+                            <p class="gc-works__head">
+                                <strong>Модуль <?php echo (int) ($w['module'] + 1); ?><?php echo $m ? ': ' . esc_html($m['title']) : ''; ?></strong>
+                                <span><?php echo esc_html($author ? $author->display_name : 'ученик'); ?></span>
+                            </p>
+                            <?php if (!empty($w['links'])) : ?>
+                                <p class="gc-fine"><?php echo esc_html($w['links']); ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($w['feedback'])) : ?>
+                                <div class="gc-feedback"><strong>Разбор:</strong> <?php echo wp_kses_post(wpautop($w['feedback'])); ?></div>
+                            <?php endif; ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
         </section>
         <?php
         return ob_get_clean();
@@ -740,16 +894,30 @@ class GC_Cabinet {
                 <form class="gc-form gc-studio" id="gc-gen-form">
                     <?php if ($video) : ?>
                         <div class="gc-kind" role="tablist">
-                            <label class="is-on"><input type="radio" name="kind" value="image" checked> Кадр</label>
-                            <label><input type="radio" name="kind" value="video"> Ролик</label>
+                            <label class="<?php echo (isset($_GET['kind']) && $_GET['kind'] === 'video') ? '' : 'is-on'; ?>">
+                                <input type="radio" name="kind" value="image" <?php checked(!isset($_GET['kind']) || $_GET['kind'] !== 'video'); ?>> Кадр</label>
+                            <label class="<?php echo (isset($_GET['kind']) && $_GET['kind'] === 'video') ? 'is-on' : ''; ?>">
+                                <input type="radio" name="kind" value="video" <?php checked(isset($_GET['kind']) && $_GET['kind'] === 'video'); ?>> Ролик</label>
                         </div>
                     <?php else : ?>
                         <input type="hidden" name="kind" value="image">
                     <?php endif; ?>
 
+                    <?php
+                    // Описание из урока: кнопка «Сделать это задание»
+                    // приводит сюда с готовым текстом, размером и видом.
+                    $preset = isset($_GET['prompt']) ? sanitize_textarea_field(wp_unslash(rawurldecode((string) $_GET['prompt']))) : '';
+                    $preset_size = isset($_GET['size']) ? sanitize_text_field(wp_unslash($_GET['size'])) : '';
+                    $preset_kind = isset($_GET['kind']) && $_GET['kind'] === 'video' ? 'video' : 'image';
+                    ?>
+                    <?php if ($preset !== '') : ?>
+                        <p class="gc-preset">Описание из урока уже вписано — можно сразу нажать «Сгенерировать»
+                            или поменять в нём пару слов и посмотреть, что изменится.</p>
+                    <?php endif; ?>
                     <label>
                         <span>Опишите, что нужно</span>
-                        <textarea name="prompt" rows="3" placeholder="Что в кадре, как расположено, какой свет, какой фон, в каком стиле снято"></textarea>
+                        <textarea name="prompt" rows="3" placeholder="Что в кадре, как расположено, какой свет, какой фон, в каком стиле снято"><?php
+                            echo esc_textarea($preset); ?></textarea>
                     </label>
 
                     <?php
@@ -784,12 +952,19 @@ class GC_Cabinet {
                         <label>
                             <span>Размер</span>
                             <select name="size">
-                                <?php if ($kie) : ?>
-                                    <option value="1024x1024">Квадрат — карточка товара</option>
-                                    <option value="1080x1920">Вертикальный — сторис и рилс</option>
-                                    <option value="1920x1080">Горизонтальный — ютуб и сайт</option>
-                                    <option value="1080x1440">Книжный 3:4 — пост в ленте</option>
-                                    <option value="1440x1080">Альбомный 4:3 — обложка</option>
+                                <?php if ($kie) :
+                                    $sizes = array(
+                                        '1024x1024' => 'Квадрат — карточка товара',
+                                        '1080x1920' => 'Вертикальный — сторис и рилс',
+                                        '1920x1080' => 'Горизонтальный — ютуб и сайт',
+                                        '1080x1440' => 'Книжный 3:4 — пост в ленте',
+                                        '1440x1080' => 'Альбомный 4:3 — обложка',
+                                    );
+                                    $chosen = isset($sizes[$preset_size]) ? $preset_size : '1024x1024';
+                                    foreach ($sizes as $value => $label) : ?>
+                                        <option value="<?php echo esc_attr($value); ?>" <?php selected($value, $chosen); ?>><?php
+                                            echo esc_html($label); ?></option>
+                                    <?php endforeach; ?>
                                 <?php else : ?>
                                     <option value="1024x1024">Квадрат 1024×1024</option>
                                     <option value="832x1216">Вертикальный 832×1216</option>
@@ -895,6 +1070,12 @@ class GC_Cabinet {
                         </span>
                     <?php endif; ?>
                     <span class="gc-job__prompt"><?php echo esc_html(mb_substr((string) $job['prompt'], 0, 90)); ?></span>
+                    <?php if ($job['status'] === 'done' && !empty($job['result_url'])) : ?>
+                        <button type="button" class="gc-share<?php echo !empty($job['shared']) ? ' is-on' : ''; ?>"
+                                data-job="<?php echo (int) $job['id']; ?>"
+                                data-on="<?php echo !empty($job['shared']) ? '1' : '0'; ?>"><?php
+                            echo !empty($job['shared']) ? 'В галерее' : 'В галерею'; ?></button>
+                    <?php endif; ?>
                 </li>
             <?php endforeach; ?>
         </ul>

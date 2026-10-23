@@ -335,6 +335,11 @@ class GC_Admin {
                                 <?php if (!empty($been['first'])) : ?>
                                     <br>первый вход <?php echo esc_html(date_i18n('j M', strtotime($been['first']))); ?>
                                 <?php endif; ?>
+                                <?php $quiz = GC_Quiz::summary($u->ID, $course); ?>
+                                <?php if ($quiz['done'] > 0) : ?>
+                                    <br>проверки: <?php echo (int) $quiz['done']; ?> из <?php echo (int) $quiz['modules']; ?>,
+                                    верных <?php echo (int) $quiz['score']; ?> из <?php echo (int) $quiz['total']; ?>
+                                <?php endif; ?>
                             </span>
                         <?php endif; ?>
                     </td>
@@ -505,6 +510,15 @@ class GC_Admin {
                 <?php endif; ?>
                 <?php if (!empty($w['body'])) : ?>
                     <div><?php echo wp_kses_post(wpautop($w['body'])); ?></div>
+                <?php endif; ?>
+                <?php if (!empty($w['shared'])) : ?>
+                    <p><span class="description">Ученик разрешил показать работу в галерее — попадёт туда, когда вы её примете.</span></p>
+                <?php endif; ?>
+                <?php if (!empty($w['auto_feedback'])) : ?>
+                    <details>
+                        <summary>Быстрый разбор, который уже увидел ученик</summary>
+                        <div><?php echo wp_kses_post(wpautop(wp_strip_all_tags((string) $w['auto_feedback']))); ?></div>
+                    </details>
                 <?php endif; ?>
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                     <?php wp_nonce_field('gc_review'); ?>

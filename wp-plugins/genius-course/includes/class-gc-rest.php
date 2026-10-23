@@ -43,6 +43,16 @@ class GC_Rest {
             'callback'            => array(__CLASS__, 'upload_reference'),
             'permission_callback' => $student,
         ));
+        register_rest_route(self::NS, '/quiz', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'quiz'),
+            'permission_callback' => $student,
+        ));
+        register_rest_route(self::NS, '/share', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'share'),
+            'permission_callback' => $student,
+        ));
         register_rest_route(self::NS, '/jobs', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'jobs'),
@@ -111,9 +121,18 @@ class GC_Rest {
         if (trim($body) === '' && trim($links) === '') {
             return new WP_Error('gc_empty', 'Пришлите ссылку на работу или опишите, что сделали', array('status' => 400));
         }
-        $id = GC_Works::submit(get_current_user_id(), $module, $body, $links);
+        $id = GC_Works::submit(get_current_user_id(), $module, $body, $links, !empty($p['shared']));
         GC_Works::notify_admin($id);
-        return rest_ensure_response(array('ok' => true, 'id' => $id, 'message' => 'Работа ушла на проверку. Разбор придёт в кабинет.'));
+        // Быстрый разбор считается фоном: ученику не надо ждать минуту
+        // в форме, а первый ответ он увидит, обновив страницу.
+        GC_Review::queue($id);
+        return rest_ensure_response(array(
+            'ok'      => true,
+            'id'      => $id,
+            'message' => GC_Review::available()
+                ? 'Работа ушла на проверку. Через минуту здесь появится быстрый разбор, следом — разбор от проверяющего.'
+                : 'Работа ушла на проверку. Разбор придёт в кабинет.',
+        ));
     }
 
     public static function mark_done($request) {
@@ -218,6 +237,68 @@ class GC_Rest {
             'id'   => (int) $id,
             'url'  => wp_get_attachment_image_url((int) $id, 'medium'),
             'name' => sanitize_file_name((string) $file['name']),
+        ));
+    }
+
+    /**
+     * Мини-проверка модуля.
+     *
+     * Ответы сверяет сервер: правильные варианты в браузер не уезжают,
+     * иначе их видно в коде страницы.
+     */
+    public static function quiz($request) {
+        $p = (array) $request->get_json_params();
+        $course = self::course($request);
+        $module = isset($p['module']) ? (int) $p['module'] : -1;
+        if ($module < 0 || $module >= GC_Program::count($course)) {
+            return new WP_Error('gc_module', 'Модуль не найден', array('status' => 400));
+        }
+        if (!GC_Courses::module_open(get_current_user_id(), $module, $course)) {
+            return new WP_Error('gc_unpaid', 'Модуль откроется после оплаты обучения.', array('status' => 402));
+        }
+        $answers = isset($p['answers']) && is_array($p['answers']) ? array_map('intval', $p['answers']) : array();
+        $out = GC_Quiz::check($course, $module, $answers);
+        if ($out['total'] === 0) {
+            return new WP_Error('gc_quiz', 'У этого модуля нет проверки', array('status' => 400));
+        }
+        GC_Quiz::save(get_current_user_id(), $course, $module, $out['score'], $out['total']);
+        return rest_ensure_response(array('ok' => true) + $out);
+    }
+
+    /**
+     * Показать работу другим ученикам или убрать из галереи.
+     *
+     * Чужое не трогаем: и кадр, и работа проверяются на владельца.
+     */
+    public static function share($request) {
+        $p = (array) $request->get_json_params();
+        $kind = ($p['kind'] ?? 'job') === 'work' ? 'work' : 'job';
+        $id = (int) ($p['id'] ?? 0);
+        $on = !empty($p['on']);
+        $user_id = get_current_user_id();
+
+        if ($kind === 'job') {
+            $job = GC_Gpu::job($id);
+            if (!$job || (int) $job['user_id'] !== $user_id) {
+                return new WP_Error('gc_own', 'Это не ваша работа', array('status' => 403));
+            }
+            if ($on && (string) $job['status'] !== 'done') {
+                return new WP_Error('gc_not_done', 'Показывать нечего: задание ещё считается', array('status' => 400));
+            }
+            GC_Gpu::set_shared($id, $on);
+        } else {
+            $work = GC_Works::get($id);
+            if (!$work || (int) $work['user_id'] !== $user_id) {
+                return new WP_Error('gc_own', 'Это не ваша работа', array('status' => 403));
+            }
+            GC_Works::set_shared($id, $on);
+        }
+        return rest_ensure_response(array(
+            'ok'      => true,
+            'on'      => $on,
+            'message' => $on
+                ? 'Работа появится в галерее курса'
+                : 'Убрали из галереи',
         ));
     }
 
