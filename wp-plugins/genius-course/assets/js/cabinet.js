@@ -195,6 +195,18 @@
                 if (isVideo) {
                     setField('fps', 24);
                 }
+                // Выбор ступени нужен только ролику: у кадра одна модель.
+                var tiers = document.getElementById('gc-tier');
+                if (tiers) { tiers.hidden = !isVideo; }
+            });
+        });
+
+        /* Подсветка выбранной ступени ролика */
+        Array.prototype.forEach.call(gen.querySelectorAll('.gc-tier__item input'), function (input) {
+            input.addEventListener('change', function () {
+                Array.prototype.forEach.call(gen.querySelectorAll('.gc-tier__item'), function (l) {
+                    l.classList.toggle('is-on', l.contains(input) && input.checked);
+                });
             });
         });
 
@@ -283,6 +295,7 @@
                 prompt: gen.elements.prompt.value,
                 size: gen.elements.size.value,
                 kind: gen.elements.kind ? gen.elements.kind.value : 'image',
+                tier: gen.elements.tier ? gen.elements.tier.value : '',
                 negative: num('negative', ''),
                 steps: num('steps', 28),
                 cfg: num('cfg', 6.5),

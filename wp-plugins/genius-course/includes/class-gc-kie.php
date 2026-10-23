@@ -85,14 +85,81 @@ class GC_Kie {
     }
 
     /**
+     * Ступени роликов.
+     *
+     * Ролики у поставщика различаются в цене вчетверо, и уравнивать их
+     * в пакете нельзя: ученик, делающий всё на дорогой модели, съел бы
+     * чужие деньги. Поэтому в пакете считаются не ролики, а единицы, и
+     * каждая ступень списывает своё.
+     *
+     * Единица — это самый дешёвый ролик, Veo 3 Fast. Обычный ролик
+     * Seedance 2.0 стоит у поставщика вдвое дороже, «максимум» —
+     * вчетверо; столько же они стоят и в пакете.
+     */
+    public static function tiers() {
+        return array(
+            'fast' => array(
+                'title' => 'Быстрый',
+                'model' => 'Veo 3 Fast',
+                'note'  => '8 секунд со звуком, 720p. Самый дешёвый ролик: одна единица пакета.',
+                'cost'  => 1,
+                'cap'   => 'video_fast',
+            ),
+            'base' => array(
+                'title' => 'Обычный',
+                'model' => 'Seedance 2.0',
+                'note'  => '5 секунд со звуком, 720p. Лучше держит кадр и движение — две единицы.',
+                'cost'  => 2,
+                'cap'   => '',
+            ),
+            'max'  => array(
+                'title' => 'Максимум',
+                'model' => 'Veo 3 Quality',
+                'note'  => '8 секунд, лучшее качество картинки и звука — четыре единицы.',
+                'cost'  => 4,
+                'cap'   => 'video_max',
+            ),
+        );
+    }
+
+    const TIER_DEFAULT = 'base';
+
+    public static function tier($name) {
+        $all = self::tiers();
+        $name = (string) $name;
+        return isset($all[$name]) ? $all[$name] : $all[self::TIER_DEFAULT];
+    }
+
+    /** Сколько единиц пакета стоит задание. */
+    public static function cost($kind, $tier = '') {
+        if ((string) $kind !== 'video') {
+            return 1;
+        }
+        $t = self::tier($tier !== '' ? $tier : self::TIER_DEFAULT);
+        return max(1, (int) $t['cost']);
+    }
+
+    /** Ступень из параметров задания. */
+    public static function tier_of($params) {
+        $name = is_array($params) ? (string) ($params['tier'] ?? '') : '';
+        return isset(self::tiers()[$name]) ? $name : self::TIER_DEFAULT;
+    }
+
+    /**
      * Какую возможность шлюза просить.
      *
      * Референс меняет модель, а не параметр: кадр по описанию и правка
      * присланной картинки — это разные модели, как и ролик по описанию
-     * против оживления фотографии.
+     * против оживления фотографии. У роликов к этому добавляется
+     * ступень: у Veo обе задачи закрывает одна модель, у обычной
+     * ступени — две разные.
      */
-    public static function capability($kind, $with_reference) {
+    public static function capability($kind, $with_reference, $tier = '') {
         if ((string) $kind === 'video') {
+            $cap = (string) self::tier($tier !== '' ? $tier : self::TIER_DEFAULT)['cap'];
+            if ($cap !== '') {
+                return $cap;
+            }
             return $with_reference ? 'photo_video' : 'video';
         }
         return $with_reference ? 'image_edit' : 'image';
@@ -143,7 +210,8 @@ class GC_Kie {
         $params = is_array($params) ? $params : array();
         $reference = (int) ($params['reference'] ?? 0);
         $ref_url = $reference > 0 ? (string) wp_get_attachment_url($reference) : '';
-        $capability = self::capability($job['kind'], $ref_url !== '');
+        $tier = self::tier_of($params);
+        $capability = self::capability($job['kind'], $ref_url !== '', $tier);
 
         $input = array(
             'prompt' => (string) $job['prompt'],

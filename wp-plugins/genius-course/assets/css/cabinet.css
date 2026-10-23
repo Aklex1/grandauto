@@ -2124,3 +2124,88 @@ body.gc-page .gc {
         max-width: none;
     }
 }
+
+/* ---------------------------------------------------------------------
+ * Ступень ролика
+ *
+ * Три модели с разной ценой: выбор стоит рядом с кнопкой, и в каждой
+ * карточке видно, сколько единиц пакета спишется.
+ * ------------------------------------------------------------------ */
+
+.gc-tier {
+    margin: 0 0 14px;
+}
+
+.gc-tier__head {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--gc-muted);
+}
+
+.gc-tier__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.gc .gc-tier__item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 10px;
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--gc-line);
+    border-radius: var(--gc-radius-sm);
+    background: var(--gc-card);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gc .gc-tier__item:hover {
+    border-color: var(--gc-primary-2);
+}
+
+.gc .gc-tier__item.is-on {
+    border-color: var(--gc-primary);
+    box-shadow: 0 0 0 3px var(--gc-primary-soft);
+}
+
+.gc-tier__item input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.gc-tier__name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--gc-ink);
+}
+
+.gc-tier__name i {
+    display: block;
+    font-style: normal;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--gc-muted);
+}
+
+.gc-tier__cost {
+    align-self: start;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gc-primary);
+}
+
+.gc-tier__note {
+    grid-column: 1 / -1;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--gc-muted);
+}

@@ -274,7 +274,7 @@ class GC_Admin {
                             <?php foreach (GC_Pack::all() as $plan => $pack) :
                                 $def = GC_Courses::plan($course, $plan); ?>
                                 «<?php echo esc_html($def ? $def['title'] : $plan); ?>» —
-                                <?php echo (int) $pack['images']; ?> кадров и <?php echo (int) $pack['videos']; ?> роликов
+                                <?php echo (int) $pack['images']; ?> кадров и <?php echo (int) $pack['videos']; ?> единиц роликов
                                 на <?php echo (int) $pack['days']; ?> дней<?php echo ' · '; ?>
                             <?php endforeach; ?>
                             докупить ученик может сам в мастерской.</p></td>
@@ -362,7 +362,7 @@ class GC_Admin {
                                 <?php $pack = GC_Pack::for_user($u->ID, $course); ?>
                                 <?php if ($pack) : ?>
                                     <br>пакет: осталось <?php echo (int) $pack['left']['image']; ?> кадров,
-                                    <?php echo (int) $pack['left']['video']; ?> роликов<?php
+                                    <?php echo (int) $pack['left']['video']; ?> единиц роликов<?php
                                     echo (int) $pack['until'] > 0
                                         ? ' · до ' . esc_html(date_i18n('j M', (int) $pack['until'])) : ''; ?>
                                 <?php endif; ?>
@@ -406,7 +406,7 @@ class GC_Admin {
                                     <?php foreach (GC_Pack::extras() as $key => $extra) : ?>
                                         <option value="<?php echo esc_attr($key); ?>"><?php
                                             echo esc_html($extra['title'] . ': ' . $extra['images'] . ' кадров и '
-                                                . $extra['videos'] . ' роликов'); ?></option>
+                                                . $extra['videos'] . ' единиц роликов'); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                                 <button class="button button-small">Начислить пакет</button>
@@ -1154,14 +1154,16 @@ class GC_Admin {
                             <label>кадров <input type="number" min="0" max="100000" class="small-text"
                                 name="pack[<?php echo esc_attr($plan); ?>][images]"
                                 value="<?php echo (int) $pack['images']; ?>"></label>
-                            <label style="margin-left:12px">роликов <input type="number" min="0" max="100000" class="small-text"
+                            <label style="margin-left:12px">единиц роликов <input type="number" min="0" max="100000" class="small-text"
                                 name="pack[<?php echo esc_attr($plan); ?>][videos]"
                                 value="<?php echo (int) $pack['videos']; ?>"></label>
                             <label style="margin-left:12px">дней <input type="number" min="0" max="3650" class="small-text"
                                 name="pack[<?php echo esc_attr($plan); ?>][days]"
                                 value="<?php echo (int) $pack['days']; ?>"></label>
                             <p class="description">Сколько входит в тариф. Кадр обходится примерно в 4 кредита
-                                поставщика, ролик — в 16: ролики считаются отдельно, иначе пакет уходит за вечер.
+                                поставщика (около 2 ₽), единица ролика — в 60 (около 30 ₽). Ученик выбирает
+                                ступень: короткий ролик Veo 3 Fast — единица, обычный Seedance 2.0 — две,
+                                «максимум» — четыре. Держите расходы пакета в пределах трети цены тарифа.
                                 Эти же числа показываются на посадочной и в кабинете.</p>
                         </td>
                     </tr>
@@ -1174,8 +1176,9 @@ class GC_Admin {
                         <label style="margin-left:12px">роликов <input name="daily_kie_video" type="number" min="0" max="500"
                                value="<?php echo (int) ($s['daily_kie_video'] ?? GC_Kie::DAILY_VIDEOS); ?>" class="small-text"></label>
                         <p class="description">Мастерская курса «Заработок на нейросетях» считает через шлюз моделей, и
-                            каждое задание там стоит денег. Ролик обходится вчетверо дороже кадра, поэтому пределы
-                            разные: иначе пакет на два месяца выбирается за вечер.</p></td>
+                            каждое задание там стоит денег. Ролик обходится в разы дороже кадра, поэтому пределы
+                            разные: иначе пакет на два месяца выбирается за вечер. Предел считает задания, а
+                            стоимость ступени списывается из пакета отдельно.</p></td>
                 </tr>
             </table>
             <p><button class="button button-primary">Сохранить</button></p>

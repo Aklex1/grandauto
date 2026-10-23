@@ -293,13 +293,22 @@ class GC_Gpu {
         $table = GC_Install::jobs_table();
 
         if ($engine === 'kie') {
-            // Пакет тарифа: кадры и ролики считаются отдельно, потому что
-            // ролик обходится вчетверо дороже кадра.
-            $pack = GC_Pack::allows($user_id, $kind);
+            /*
+             * Пакет тарифа: кадры и ролики считаются отдельно, потому что
+             * ролик обходится дороже кадра. Среди роликов цена тоже
+             * разная — ступень выбирает ученик, и дорогая списывает из
+             * пакета несколько единиц.
+             */
+            $tier = $kind === 'video' ? GC_Kie::tier_of($params) : '';
+            $cost = GC_Kie::cost($kind, $tier);
+            $pack = GC_Pack::allows($user_id, $kind, '', $cost);
             if (empty($pack['ok'])) {
                 return array('ok' => false, 'job' => 0, 'status' => '', 'message' => (string) $pack['message']);
             }
             $params['engine'] = GC_Kie::ENGINE;
+            if ($kind === 'video') {
+                $params['tier'] = $tier;
+            }
             $wpdb->insert($table, array(
                 'user_id'    => (int) $user_id,
                 'kind'       => $kind,
@@ -310,7 +319,7 @@ class GC_Gpu {
             ), array('%d', '%s', '%s', '%s', '%s', '%s'));
             // Списываем сразу: задание уже занимает очередь. Неудачное
             // вернётся обратно в fail().
-            GC_Pack::spend($user_id, $kind);
+            GC_Pack::spend($user_id, $kind, $cost);
             return GC_Kie::send((int) $wpdb->insert_id);
         }
 
@@ -599,7 +608,12 @@ class GC_Gpu {
         // считает, и брать за неё с ученика не за что.
         $job = self::job($job_id);
         if ($job && (string) $job['status'] !== 'failed' && self::engine_of($job) === 'kie') {
-            GC_Pack::refund((int) $job['user_id'], (string) $job['kind']);
+            $params = json_decode((string) $job['params'], true);
+            GC_Pack::refund(
+                (int) $job['user_id'],
+                (string) $job['kind'],
+                GC_Kie::cost((string) $job['kind'], GC_Kie::tier_of(is_array($params) ? $params : array()))
+            );
         }
         self::update($job_id, array(
             'status'      => 'failed',

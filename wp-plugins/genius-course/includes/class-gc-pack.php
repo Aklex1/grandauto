@@ -32,10 +32,23 @@ class GC_Pack {
      * Что входит в тарифы и что продаётся отдельно
      * ------------------------------------------------------------------ */
 
+    /**
+     * Что входит в тариф.
+     *
+     * Кадры считаются штуками, ролики — единицами: у роликов три
+     * ступени, и дорогая стоит у поставщика вчетверо больше дешёвой.
+     * Единица — это самый дешёвый ролик; обычный списывает две,
+     * «максимум» — четыре.
+     *
+     * Размеры подобраны под правило «расходы на пакет не больше
+     * трети цены тарифа» по худшему случаю — когда всё считается
+     * самой дорогой ступенью. Кадр обходится примерно в два рубля,
+     * единица ролика — примерно в тридцать один.
+     */
     public static function defaults() {
         return array(
-            'base' => array('images' => 600,  'videos' => 60,  'days' => 60),
-            'plus' => array('images' => 1500, 'videos' => 150, 'days' => 120),
+            'base' => array('images' => 600,  'videos' => 120, 'days' => 60),
+            'plus' => array('images' => 1500, 'videos' => 180, 'days' => 120),
         );
     }
 
@@ -76,36 +89,50 @@ class GC_Pack {
     /**
      * Пакеты на докупку.
      *
-     * Цены выше себестоимости втрое — обычная наценка на перепродажу
-     * вычислений: кадр обходится примерно в два рубля, ролик — в восемь.
+     * Цены держатся примерно втрое выше себестоимости — обычная наценка
+     * на перепродажу вычислений. Кадр обходится около двух рублей,
+     * единица ролика — около тридцати одного, и ролики здесь считаются
+     * теми же единицами, что и в тарифе.
      */
     public static function extras() {
         return array(
             'light' => array(
                 'title'  => 'Небольшой',
                 'price'  => 490,
-                'images' => 60,
-                'videos' => 5,
+                'images' => 40,
+                'videos' => 2,
                 'days'   => 60,
-                'note'   => 'На пару заказов или на вечер переделок.',
+                'note'   => 'На один заказ или на вечер переделок.',
             ),
             'work' => array(
                 'title'  => 'Рабочий',
                 'price'  => 990,
-                'images' => 150,
-                'videos' => 10,
+                'images' => 80,
+                'videos' => 6,
                 'days'   => 90,
-                'note'   => 'Десять комплектов карточек с запасом на отбраковку.',
+                'note'   => 'Комплекты карточек с запасом на отбраковку и три обычных ролика.',
             ),
             'pro' => array(
                 'title'  => 'Поток',
                 'price'  => 1990,
-                'images' => 300,
-                'videos' => 20,
+                'images' => 150,
+                'videos' => 12,
                 'days'   => 120,
                 'note'   => 'Когда заказы идут каждую неделю и считать некогда.',
             ),
         );
+    }
+
+    /**
+     * Чем единица отличается от ролика — одной строкой.
+     *
+     * Эта подпись идёт рядом с каждым числом: иначе «120 роликов» в
+     * тарифе и «60 роликов» в работе ученика расходятся, и человек
+     * считает себя обманутым.
+     */
+    public static function video_legend() {
+        return 'Единица — это короткий ролик (8 секунд, Veo 3 Fast). '
+             . 'Обычный ролик Seedance 2.0 на 5 секунд стоит две единицы, «максимум» — четыре.';
     }
 
     public static function extra($key) {
@@ -280,7 +307,7 @@ class GC_Pack {
      *
      * @return array{ok:bool,message:string}
      */
-    public static function allows($user_id, $kind, $course = '') {
+    public static function allows($user_id, $kind, $course = '', $cost = 1) {
         $pack = self::for_user($user_id, $course);
         if (!$pack || user_can((int) $user_id, 'manage_options')) {
             return array('ok' => true, 'message' => '');
@@ -292,16 +319,29 @@ class GC_Pack {
             ));
         }
         $kind = $kind === 'video' ? 'video' : 'image';
-        if ((int) $pack['left'][$kind] <= 0) {
+        $cost = max(1, (int) $cost);
+        $left = (int) $pack['left'][$kind];
+        if ($left <= 0) {
             return array('ok' => false, 'message' => $kind === 'video'
                 ? 'Ролики в пакете закончились. Докупить можно прямо в мастерской.'
                 : 'Кадры в пакете закончились. Докупить можно прямо в мастерской.');
         }
+        /*
+         * Дорогая ступень ролика стоит нескольких единиц, и отказ должен
+         * называть вещи своими именами: иначе человек видит «осталось 3»
+         * и не понимает, почему не считается.
+         */
+        if ($left < $cost) {
+            return array('ok' => false, 'message' => sprintf(
+                'На эту ступень нужно %d единиц пакета, а осталось %d. Возьмите ступень попроще или докупите пакет.',
+                $cost, $left
+            ));
+        }
         return array('ok' => true, 'message' => '');
     }
 
-    /** Списать единицу: задание ушло считаться. */
-    public static function spend($user_id, $kind) {
+    /** Списать стоимость задания: оно ушло считаться. */
+    public static function spend($user_id, $kind, $cost = 1) {
         if (user_can((int) $user_id, 'manage_options')) {
             return;
         }
@@ -310,18 +350,18 @@ class GC_Pack {
         if ($balance[$kind] <= 0) {
             return;
         }
-        $balance[$kind]--;
+        $balance[$kind] = max(0, $balance[$kind] - max(1, (int) $cost));
         self::put_balance($user_id, $balance);
     }
 
-    /** Вернуть единицу: задание не вышло не по вине ученика. */
-    public static function refund($user_id, $kind) {
+    /** Вернуть списанное: задание не вышло не по вине ученика. */
+    public static function refund($user_id, $kind, $cost = 1) {
         if (user_can((int) $user_id, 'manage_options')) {
             return;
         }
         $kind = $kind === 'video' ? 'video' : 'image';
         $balance = self::balance($user_id);
-        $balance[$kind]++;
+        $balance[$kind] += max(1, (int) $cost);
         self::put_balance($user_id, $balance);
     }
 
@@ -333,7 +373,7 @@ class GC_Pack {
         }
         return array(
             array((string) (int) floor($pack['images'] / 5), 'комплектов карточек', 'по пять кадров на товар'),
-            array((string) $pack['videos'], 'рекламных роликов', 'вертикальных, со звуком и субтитрами'),
+            array((string) (int) floor($pack['videos'] / 2), 'рекламных роликов', 'по пять секунд, со звуком — или вдвое больше коротких'),
             array((string) (int) floor($pack['images'] / 3), 'обложек и баннеров', 'по три варианта на выбор заказчику'),
         );
     }

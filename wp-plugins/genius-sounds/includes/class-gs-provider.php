@@ -78,6 +78,24 @@ class GS_Provider {
             ),
 
             'image' => array(
+                /*
+                 * Свежая «банана» у поставщика стоит те же 4 кредита за
+                 * кадр в 1K, что и первая, и рисует заметно лучше —
+                 * поэтому она первой, а прежние остались заменами.
+                 * Версия 2 без «-1» за тот же кадр берёт вдвое больше:
+                 * проверено счётом, а не прайсом.
+                 */
+                array(
+                    'id' => 'image:nano-banana-2-1', 'kind' => 'job', 'model' => 'nano-banana-2-1',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'        => (string) $in['prompt'],
+                            'aspect_ratio'  => GS_Provider::ratio($in, true),
+                            'resolution'    => '1K',
+                            'output_format' => 'png',
+                        );
+                    },
+                ),
                 array(
                     'id' => 'image:nano-banana', 'kind' => 'job', 'model' => 'google/nano-banana',
                     'shape' => function ($in) {
@@ -127,6 +145,18 @@ class GS_Provider {
             // у одних image_urls списком, у других image_url строкой.
             'image_edit' => array(
                 array(
+                    'id' => 'image_edit:nano-banana-2-1', 'kind' => 'job', 'model' => 'nano-banana-2-1',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'        => (string) $in['prompt'],
+                            'image_input'   => array((string) $in['image_url']),
+                            'aspect_ratio'  => GS_Provider::ratio($in, true),
+                            'resolution'    => '1K',
+                            'output_format' => 'png',
+                        );
+                    },
+                ),
+                array(
                     'id' => 'image_edit:nano-banana', 'kind' => 'job', 'model' => 'google/nano-banana-edit',
                     'shape' => function ($in) {
                         return array(
@@ -161,6 +191,23 @@ class GS_Provider {
             // по-своему, а обязательны только описание и ссылка на кадр —
             // их и передаём, остальное модель берёт по умолчанию.
             'photo_video' => array(
+                // Seedance 2.0 Fast — основная модель мастерской курса:
+                // пять секунд 720p со звуком. Прежние остались заменами на
+                // случай, когда поставщик её не отдаёт.
+                array(
+                    'id' => 'photo_video:seedance-2-fast', 'kind' => 'job',
+                    'model' => 'bytedance/seedance-2-fast',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'          => GS_Provider::motion_prompt($in),
+                            'first_frame_url' => (string) $in['image_url'],
+                            'aspect_ratio'    => GS_Provider::ratio($in, true),
+                            'resolution'      => '720p',
+                            'duration'        => 5,
+                            'generate_audio'  => true,
+                        );
+                    },
+                ),
                 array(
                     'id' => 'photo_video:seedance-pro-fast', 'kind' => 'job',
                     'model' => 'bytedance/v1-pro-fast-image-to-video',
@@ -199,6 +246,18 @@ class GS_Provider {
             // просто не работал.
             'video' => array(
                 array(
+                    'id' => 'video:seedance-2-fast', 'kind' => 'job', 'model' => 'bytedance/seedance-2-fast',
+                    'shape' => function ($in) {
+                        return array(
+                            'prompt'         => (string) $in['prompt'],
+                            'aspect_ratio'   => GS_Provider::ratio($in, true),
+                            'resolution'     => '720p',
+                            'duration'       => 5,
+                            'generate_audio' => true,
+                        );
+                    },
+                ),
+                array(
                     'id' => 'video:seedance-pro', 'kind' => 'job', 'model' => 'bytedance/v1-pro-text-to-video',
                     'shape' => function ($in) {
                         return array(
@@ -218,6 +277,36 @@ class GS_Provider {
                     'id' => 'video:hailuo-02', 'kind' => 'job', 'model' => 'hailuo/02-text-to-video-standard',
                     'shape' => function ($in) {
                         return array('prompt' => (string) $in['prompt']);
+                    },
+                ),
+            ),
+
+            /*
+             * Veo 3.1 — две ступени поверх основной модели.
+             *
+             * У поставщика это одна модель «veo-3-1», а ступень выбирается
+             * полем input.model: veo3_fast дешевле и быстрее, veo3 —
+             * качество. Восемь секунд со звуком против пяти у Seedance,
+             * поэтому ступени вынесены в мастерскую отдельным выбором: они
+             * стоят по-разному и списывают из пакета по-разному.
+             *
+             * Пропорцию Veo принимает только альбомную или вертикальную —
+             * остальные приводим к ближайшей, иначе модель отказывает.
+             */
+            'video_fast' => array(
+                array(
+                    'id' => 'video_fast:veo-3-1', 'kind' => 'job', 'model' => 'veo-3-1',
+                    'shape' => function ($in) {
+                        return GS_Provider::veo_input($in, 'veo3_fast');
+                    },
+                ),
+            ),
+
+            'video_max' => array(
+                array(
+                    'id' => 'video_max:veo-3-1', 'kind' => 'job', 'model' => 'veo-3-1',
+                    'shape' => function ($in) {
+                        return GS_Provider::veo_input($in, 'veo3');
                     },
                 ),
             ),
@@ -339,6 +428,30 @@ class GS_Provider {
     public static function motion_prompt($in) {
         $prompt = trim((string) ($in['prompt'] ?? ''));
         return $prompt !== '' ? $prompt : 'оживить фотографию, естественное движение';
+    }
+
+    /**
+     * Поля для Veo 3.1.
+     *
+     * Ступень передаётся внутри input, а не именем модели. Кадр-основа
+     * идёт списком image_urls: модель сама понимает, что это первый кадр.
+     *
+     * @param string $tier veo3_fast | veo3_lite | veo3
+     */
+    public static function veo_input($in, $tier) {
+        $ratio = self::ratio($in, true);
+        $out = array(
+            'prompt'       => self::motion_prompt($in),
+            'model'        => (string) $tier,
+            'aspect_ratio' => strpos($ratio, '9:16') === 0 ? '9:16' : '16:9',
+            'resolution'   => '720p',
+            'duration'     => 8,
+        );
+        $image = trim((string) ($in['image_url'] ?? ''));
+        if ($image !== '') {
+            $out['image_urls'] = array($image);
+        }
+        return $out;
     }
 
     public static function capabilities() {

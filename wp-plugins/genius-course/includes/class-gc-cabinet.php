@@ -410,8 +410,10 @@ class GC_Cabinet {
                                 <p class="gc-pay__pack-nums">
                                     <b><?php echo (int) $pack['images']; ?></b> кадров
                                     <i>+</i>
-                                    <b><?php echo (int) $pack['videos']; ?></b> роликов
+                                    <b><?php echo (int) $pack['videos']; ?></b> <?php
+                                        echo esc_html(self::units((int) $pack['videos'])); ?> роликов
                                 </p>
+                                <p class="gc-fine"><?php echo esc_html(GC_Pack::video_legend()); ?></p>
                                 <ul>
                                     <?php foreach (GC_Pack::equivalents($key) as $row) : ?>
                                         <li><strong><?php echo esc_html($row[0]); ?></strong> <?php echo esc_html($row[1]); ?>
@@ -733,7 +735,7 @@ class GC_Cabinet {
         }
         $rows = array(
             array('кадры',  (int) $pack['left']['image'], (int) $pack['images']),
-            array('ролики', (int) $pack['left']['video'], (int) $pack['videos']),
+            array('ролики, единиц', (int) $pack['left']['video'], (int) $pack['videos']),
         );
         ob_start();
         ?>
@@ -804,7 +806,8 @@ class GC_Cabinet {
                         <h4><?php echo esc_html($extra['title']); ?></h4>
                         <p class="gc-shop__price"><?php echo esc_html(number_format_i18n((float) $extra['price'])); ?> ₽</p>
                         <p class="gc-shop__nums"><b><?php echo (int) $extra['images']; ?></b> кадров
-                            <i>+</i> <b><?php echo (int) $extra['videos']; ?></b> роликов</p>
+                            <i>+</i> <b><?php echo (int) $extra['videos']; ?></b> <?php
+                            echo esc_html(self::units((int) $extra['videos'])); ?> роликов</p>
                         <p class="gc-shop__note"><?php echo esc_html($extra['note']); ?></p>
                         <p class="gc-fine">Срок: <?php echo (int) $extra['days']; ?> дней</p>
                         <?php if ($link !== '') : ?>
@@ -1078,6 +1081,22 @@ class GC_Cabinet {
         return ob_get_clean();
     }
 
+    /** Склонение «единица» к числу: 1 единица, 2 единицы, 5 единиц. */
+    public static function units($n) {
+        $n = abs((int) $n) % 100;
+        $last = $n % 10;
+        if ($n > 10 && $n < 20) {
+            return 'единиц';
+        }
+        if ($last === 1) {
+            return 'единица';
+        }
+        if ($last >= 2 && $last <= 4) {
+            return 'единицы';
+        }
+        return 'единиц';
+    }
+
     /**
      * Плавающие кнопки «написать куратору» и «в поддержку».
      *
@@ -1261,6 +1280,32 @@ class GC_Cabinet {
                         </div>
                     <?php else : ?>
                         <input type="hidden" name="kind" value="image">
+                    <?php endif; ?>
+
+                    <?php
+                    /*
+                     * Ступень ролика. Модели различаются в цене в
+                     * несколько раз, поэтому выбор стоит рядом с кнопкой,
+                     * а не в тонких настройках: человек должен видеть, во
+                     * что ему обойдётся ролик, до того как нажмёт.
+                     */
+                    if ($kie && $video) : ?>
+                        <div class="gc-tier" id="gc-tier" <?php echo $preset_kind === 'video' ? '' : 'hidden'; ?>>
+                            <p class="gc-tier__head">Чем считать ролик</p>
+                            <div class="gc-tier__list">
+                                <?php foreach (GC_Kie::tiers() as $key => $tier) : ?>
+                                    <label class="gc-tier__item <?php echo $key === GC_Kie::TIER_DEFAULT ? 'is-on' : ''; ?>">
+                                        <input type="radio" name="tier" value="<?php echo esc_attr($key); ?>"
+                                               <?php checked($key, GC_Kie::TIER_DEFAULT); ?>>
+                                        <span class="gc-tier__name"><?php echo esc_html($tier['title']); ?>
+                                            <i><?php echo esc_html($tier['model']); ?></i></span>
+                                        <span class="gc-tier__cost"><?php echo (int) $tier['cost']; ?>
+                                            <?php echo esc_html(self::units((int) $tier['cost'])); ?></span>
+                                        <span class="gc-tier__note"><?php echo esc_html($tier['note']); ?></span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
                     <?php endif; ?>
 
                     <?php
