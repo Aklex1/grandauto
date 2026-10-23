@@ -64,3 +64,52 @@
         });
     });
 })();
+
+/* ---------------------------------------------------------------------
+ * Увеличение снимков в кейсах
+ *
+ * Клик по работе из кейса открывает её поверх страницы, а не в новой
+ * вкладке: уводить человека с посадочной в момент, когда он смотрит
+ * доказательства, — худшее, что можно сделать. Закрывается щелчком,
+ * крестиком и клавишей Esc.
+ * ------------------------------------------------------------------ */
+(function () {
+    'use strict';
+
+    var box = null;
+
+    function close() {
+        if (!box) { return; }
+        box.remove();
+        box = null;
+        document.removeEventListener('keydown', onKey);
+        document.body.style.overflow = '';
+    }
+
+    function onKey(e) {
+        if (e.key === 'Escape') { close(); }
+    }
+
+    function open(src) {
+        close();
+        box = document.createElement('div');
+        box.className = 'gs-lightbox';
+        box.innerHTML = '<button type="button" class="gs-lightbox__close" aria-label="Закрыть">×</button>'
+            + '<img src="' + src.replace(/"/g, '&quot;') + '" alt="">';
+        box.addEventListener('click', function (e) {
+            // Щелчок по самой картинке не закрывает: по ней ещё водят мышью.
+            if (e.target === box || e.target.classList.contains('gs-lightbox__close')) { close(); }
+        });
+        document.body.appendChild(box);
+        document.body.style.overflow = 'hidden';
+        document.addEventListener('keydown', onKey);
+    }
+
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest ? e.target.closest('.gs-case-shot') : null;
+        if (!btn) { return; }
+        e.preventDefault();
+        var full = btn.getAttribute('data-full');
+        if (full) { open(full); }
+    });
+})();

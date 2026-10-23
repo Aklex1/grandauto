@@ -18,6 +18,8 @@ class GS_Course {
 
     const OPT_PAGE  = 'gs_course_page';
     const OPT_IMG   = 'gs_course_images';
+    /** Снимки к кейсам: по нескольку на кейс, отдельно от картинок блоков. */
+    const OPT_CASES = 'gs_course_case_shots';
     const SLUG      = 'obuchenie-zarabotku-na-neirosetyah';
 
     // Ориентир по рынку: практические курсы с разбором заданий у крупных школ
@@ -127,6 +129,29 @@ class GS_Course {
         }
     }
 
+    /** Снимки кейса по его ключу. */
+    public static function case_shots($key) {
+        $all = get_option(self::OPT_CASES, array());
+        if (!is_array($all) || empty($all[$key]) || !is_array($all[$key])) {
+            return array();
+        }
+        return array_values(array_filter(array_map('esc_url_raw', $all[$key])));
+    }
+
+    /** Сохранить снимки кейса. Пустой список — убрать карусель. */
+    public static function set_case_shots($key, $urls) {
+        $all = get_option(self::OPT_CASES, array());
+        $all = is_array($all) ? $all : array();
+        $clean = array_values(array_filter(array_map('esc_url_raw', (array) $urls)));
+        if ($clean) {
+            $all[(string) $key] = $clean;
+        } else {
+            unset($all[(string) $key]);
+        }
+        update_option(self::OPT_CASES, $all, false);
+        return $all;
+    }
+
     /**
      * Кейсы учеников.
      *
@@ -186,6 +211,51 @@ class GS_Course {
                           . 'Деньги пошли, когда постов накопилось столько, что канал стало за что листать.',
                 'link'   => 'https://t.me/promtnanobanana7',
                 'linktext' => 'Посмотреть канал',
+            ),
+        );
+    }
+
+    /**
+     * Расчёты по соседним направлениям.
+     *
+     * Это не кейсы: за ними нет конкретного человека, и выдавать их за
+     * чужой опыт нельзя — на посадочной, где продают обучение
+     * заработку, выдуманная история ученика стоит дороже любой
+     * конверсии. Поэтому они стоят отдельным блоком и названы тем, чем
+     * являются: арифметикой по рыночным ценам, которую читатель
+     * проверяет своим калькулятором.
+     */
+    public static function models() {
+        return array(
+            array(
+                'title' => 'Карточки для маркетплейса на абонементе',
+                'lead'  => 'Два постоянных продавца вместо охоты за разовыми заказами. Самый предсказуемый '
+                         . 'способ выйти на стабильные деньги в этом ремесле.',
+                'rows'  => array(
+                    array('Объём', '2 продавца × 8 товаров в месяц'),
+                    array('Чек', '1 800 ₽ за комплект из пяти кадров'),
+                    array('Выручка', '28 800 ₽ в месяц'),
+                    array('Расходы на генерации', '≈ 250 ₽ (около 120 кадров с отбраковкой)'),
+                    array('Время', '14–18 часов в месяц'),
+                    array('Остаётся', '≈ 28 500 ₽, это 1 700 ₽ в час'),
+                ),
+                'note'  => 'Главная работа тут не в кадрах, а в том, чтобы найти двух продавцов и не сорвать '
+                         . 'им сроки. Третий появляется сам — по рекомендации первых двух.',
+            ),
+            array(
+                'title' => 'Озвучка и субтитры для онлайн-школы',
+                'lead'  => 'У школ ролики выходят потоком, и каждый нужно озвучить, нарезать и снабдить '
+                         . 'субтитрами. Работа однообразная, зато её всегда много.',
+                'rows'  => array(
+                    array('Объём', '25 роликов по 2–3 минуты в месяц'),
+                    array('Чек', '700 ₽ за ролик с субтитрами'),
+                    array('Выручка', '17 500 ₽ в месяц'),
+                    array('Расходы', 'около 400 ₽ на озвучку и обработку'),
+                    array('Время', '10–12 часов в месяц'),
+                    array('Остаётся', '≈ 17 100 ₽ при двух вечерах в неделю'),
+                ),
+                'note'  => 'Это цифры одного клиента. Их обычно двое-трое, и тогда направление выходит '
+                         . 'на 35–50 тысяч в месяц без роста затрат времени вдвое: дорожки делаются пакетом.',
             ),
         );
     }
@@ -519,10 +589,24 @@ class GS_Course {
                 <div class="gs-course__cases">
                     <?php foreach (self::cases() as $case) :
                         $shot = self::image($case['key']); ?>
+                        <?php $shots = self::case_shots($case['key']);
+                        if (!$shots && $shot) { $shots = array($shot); } ?>
                         <article class="gs-course__case">
-                            <?php if ($shot) : ?>
-                                <img class="gs-course__case-img" src="<?php echo esc_url($shot); ?>"
-                                     alt="<?php echo esc_attr($case['title']); ?>" loading="lazy" decoding="async">
+                            <?php if ($shots) : ?>
+                                <?php /* Карусель: снимки листаются вбок, клик открывает
+                                        увеличение поверх страницы, а не в новой вкладке —
+                                        уводить человека с посадочной незачем. */ ?>
+                                <div class="gs-case-shots" role="group" aria-label="Работы из кейса">
+                                    <?php foreach ($shots as $i => $url) : ?>
+                                        <button type="button" class="gs-case-shot" data-full="<?php echo esc_url($url); ?>"
+                                                aria-label="Открыть изображение <?php echo (int) ($i + 1); ?>">
+                                            <img src="<?php echo esc_url($url); ?>" alt="" loading="lazy" decoding="async">
+                                        </button>
+                                    <?php endforeach; ?>
+                                </div>
+                                <?php if (count($shots) > 1) : ?>
+                                    <p class="gs-case-shots__hint">Листайте вбок · нажмите, чтобы увеличить</p>
+                                <?php endif; ?>
                             <?php endif; ?>
                             <p class="gs-course__case-who"><?php echo esc_html($case['who']); ?></p>
                             <h3 class="gs-course__case-title"><?php echo esc_html($case['title']); ?></h3>
@@ -547,6 +631,32 @@ class GS_Course {
                             <?php endif; ?>
                         </article>
                     <?php endforeach; ?>
+                </div>
+
+                <div class="gs-course__models">
+                    <h3 class="gs-course__models-title">Как считаются деньги в соседних направлениях</h3>
+                    <p class="gs-course__models-note">
+                        Ниже не кейсы: за ними нет конкретного человека. Это расчёт по рыночным ценам —
+                        чтобы было видно, из чего складывается доход, и можно было пересчитать под себя.
+                    </p>
+                    <div class="gs-course__modelgrid">
+                        <?php foreach (self::models() as $model) : ?>
+                            <article class="gs-course__model">
+                                <p class="gs-course__model-tag">Расчёт</p>
+                                <h4><?php echo esc_html($model['title']); ?></h4>
+                                <p class="gs-course__model-lead"><?php echo esc_html($model['lead']); ?></p>
+                                <dl>
+                                    <?php foreach ((array) $model['rows'] as $row) : ?>
+                                        <div>
+                                            <dt><?php echo esc_html($row[0]); ?></dt>
+                                            <dd><?php echo esc_html($row[1]); ?></dd>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </dl>
+                                <p class="gs-course__model-note"><?php echo esc_html($model['note']); ?></p>
+                            </article>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
             </section>
 

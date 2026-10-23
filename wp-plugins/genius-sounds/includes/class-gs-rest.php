@@ -613,6 +613,13 @@ class GS_Rest {
         // Проверка модели у поставщика в обход каталога: только для
         // администратора. Нужна, когда у поставщика появилась новая
         // модель и надо узнать её точное имя и набор полей.
+        // Снимки к кейсам учеников на посадочной курса.
+        register_rest_route(self::NS, '/course/case-images', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'handle_course_case_images'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/lab/model-probe', array(
             'methods'             => 'POST',
             'callback'            => array(__CLASS__, 'handle_model_probe'),
@@ -4312,6 +4319,26 @@ class GS_Rest {
             $items[] = $deck;
         }
         return rest_ensure_response(array('items' => $items));
+    }
+
+    /**
+     * Снимки к кейсам учеников: по нескольку на кейс.
+     *
+     * Отдельно от картинок блоков: там по одной на слот и свой белый
+     * список, а здесь список адресов на ключ кейса.
+     */
+    public static function handle_course_case_images(WP_REST_Request $request) {
+        $key = sanitize_key((string) $request->get_param('key'));
+        $urls = (array) $request->get_param('urls');
+        if ($key === '') {
+            return new WP_Error('gs_case', 'Нужен ключ кейса', array('status' => 400));
+        }
+        GS_Course::set_case_shots($key, $urls);
+        return rest_ensure_response(array(
+            'ok'    => true,
+            'key'   => $key,
+            'shots' => GS_Course::case_shots($key),
+        ));
     }
 
     public static function handle_course_images(WP_REST_Request $request) {
