@@ -447,6 +447,23 @@ class GS_Seo {
         );
     }
 
+    /**
+     * Бренд в хвосте заголовка — только когда он туда влезает.
+     *
+     * Выдача показывает около шестидесяти-семидесяти знаков. Если
+     * собственный заголовок страницы и так длинный, «— Genius-bot»
+     * вытесняет из видимой части полезные слова, а бренд читатель и так
+     * видит в адресе. На коротких заголовках бренд оставляем: там он
+     * бесплатный.
+     */
+    private static function drop_long_tail($parts) {
+        if (!empty($parts['site']) && !empty($parts['title'])
+            && mb_strlen((string) $parts['title']) > 52) {
+            unset($parts['site']);
+        }
+        return $parts;
+    }
+
     public static function filter_title_parts($parts) {
         $ctx = self::context();
         if (!$ctx) {
@@ -459,7 +476,7 @@ class GS_Seo {
             if (!empty($parts['site'])) {
                 $parts['site'] = self::brand_name((string) $parts['site']);
             }
-            return $parts;
+            return self::drop_long_tail($parts);
         }
         $parts['title'] = self::build_title($ctx);
         unset($parts['tagline']);
@@ -469,7 +486,7 @@ class GS_Seo {
         if (!empty($parts['site'])) {
             $parts['site'] = self::brand_name((string) $parts['site']);
         }
-        return $parts;
+        return self::drop_long_tail($parts);
     }
 
     public static function trim_site_tail($title) {
@@ -480,6 +497,21 @@ class GS_Seo {
         $brand = self::brand_name($site);
         if ($site !== '' && $brand !== '' && $brand !== $site && mb_strpos($title, $site) !== false) {
             $title = str_replace($site, $brand, $title);
+        }
+
+        /*
+         * Хвост «— Genius-bot» у длинного заголовка только вытесняет из
+         * выдачи полезные слова: показывают около семидесяти знаков, а
+         * бренд человек и так видит в адресе строкой ниже. Заголовок
+         * собирает сторонний оптимизатор, поэтому режем здесь — там, где
+         * строка уже готова. У коротких заголовков хвост оставляем: там
+         * он достаётся бесплатно.
+         */
+        if ($brand !== '' && mb_strlen($title) > 65) {
+            $cut = preg_replace('~\s*[-—–|]\s*' . preg_quote($brand, '~') . '\s*$~u', '', $title);
+            if (is_string($cut) && mb_strlen($cut) >= 40) {
+                $title = $cut;
+            }
         }
         return $title;
     }
@@ -760,10 +792,19 @@ class GS_Seo {
         // поэтому собираем его здесь целиком. На главной бренд идёт первым:
         // по названию сайта ищут именно его.
         $title = self::build_title($ctx);
-        if ($ctx['type'] !== 'home') {
-            $title .= ' — ' . self::brand_name(get_bloginfo('name'));
-        } else {
-            $title = self::brand_name(get_bloginfo('name')) . ' — ' . $title;
+        $brand = self::brand_name(get_bloginfo('name'));
+        if ($ctx['type'] === 'home') {
+            // На главной бренд идёт первым: по названию сайта ищут именно его.
+            $title = $brand . ' — ' . $title;
+        } elseif (mb_strlen($title) + mb_strlen($brand) + 3 <= 65) {
+            /*
+             * Бренд в хвосте — только пока он помещается. Выдача
+             * показывает около семидесяти знаков, и у длинного заголовка
+             * «— Genius-bot» вытесняет из видимой части слова, по которым
+             * человек и ищет; имя сайта он всё равно видит в адресе
+             * строкой ниже.
+             */
+            $title .= ' — ' . $brand;
         }
         $html = self::replace_tag($html, '~<title>.*?</title>~is', '<title>' . esc_html($title) . '</title>');
         $html = self::replace_tag(

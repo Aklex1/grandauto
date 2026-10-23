@@ -17,8 +17,27 @@ class GS_Partner_Page {
     const OPT_PAGE = 'gs_partner_page';
     const SLUG     = 'partnerskaya-programma';
 
+    const SEO_DESC = 'Партнёрская программа Genius-bot: делитесь ссылкой на сервисы озвучки, музыки и '
+                   . 'видео и получайте процент с оплат тех, кто пришёл по ней. Без вложений и созвонов.';
+
     public static function register_shortcodes() {
         add_shortcode('genius_partner', array(__CLASS__, 'render'));
+    }
+
+    public static function boot() {
+        // Описания у страницы не было: поисковик подставлял в выдачу
+        // случайный кусок текста, а это первое, что читает человек.
+        add_action('wp_head', array(__CLASS__, 'head'), 1);
+    }
+
+    public static function head() {
+        if (!self::is_page()) {
+            return;
+        }
+        echo '<meta name="description" content="' . esc_attr(self::SEO_DESC) . '">' . "\n";
+        echo '<meta property="og:type" content="website">' . "\n";
+        echo '<meta property="og:description" content="' . esc_attr(self::SEO_DESC) . '">' . "\n";
+        echo '<meta property="og:url" content="' . esc_url(self::get_url()) . '">' . "\n";
     }
 
     public static function ensure_page() {

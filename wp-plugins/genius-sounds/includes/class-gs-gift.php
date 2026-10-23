@@ -1385,7 +1385,7 @@ class GS_Gift {
                 </button>
                 <p class="gs-gift-status" id="gs-gift-status" role="status" aria-live="polite"></p>
                 <p class="gs-gift-small">Регистрация не нужна. Сначала вы читаете текст, и только потом решаете,
-                    петь ли его. Отправляя анкету, вы соглашаетесь с <a href="/privacy-policy/">политикой обработки данных</a>.</p>
+                    петь ли его. Отправляя анкету, вы соглашаетесь с <a href="/politika-konfidencialnosti/">политикой обработки данных</a>.</p>
 
                 <!-- Шаг второй: текст собран, можно слушать или править. -->
                 <div class="gs-gift-result" id="gs-gift-result" hidden>

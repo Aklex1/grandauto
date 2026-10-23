@@ -24,6 +24,25 @@ class GS_Songs {
 
     public static function boot() {
         add_filter('body_class', array(__CLASS__, 'body_class'));
+        // Страница публичная, а описания у неё не было: в выдаче вместо
+        // него подставлялся случайный кусок текста.
+        add_action('wp_head', array(__CLASS__, 'head'), 1);
+    }
+
+    const SEO_DESC = 'Песни, которые пользователи записали своим голосом: примеры работ нейросети '
+                   . 'по текстам и голосам заказчиков. Послушайте, прежде чем заказывать свою.';
+
+    public static function head() {
+        if (!self::is_page()) {
+            return;
+        }
+        $url = get_permalink((int) get_option(self::OPT_PAGE));
+        echo '<meta name="description" content="' . esc_attr(self::SEO_DESC) . '">' . "\n";
+        echo '<meta property="og:type" content="website">' . "\n";
+        echo '<meta property="og:description" content="' . esc_attr(self::SEO_DESC) . '">' . "\n";
+        if ($url) {
+            echo '<meta property="og:url" content="' . esc_url($url) . '">' . "\n";
+        }
     }
 
     public static function register_shortcodes() {

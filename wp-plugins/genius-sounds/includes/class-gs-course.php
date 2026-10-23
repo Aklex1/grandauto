@@ -300,6 +300,39 @@ class GS_Course {
         );
     }
 
+    /**
+     * Атрибуты размера картинки.
+     *
+     * Без width и height браузер не знает, сколько места под картинку
+     * занять, и текст прыгает, когда она догружается. Размер чаще всего
+     * записан в самом имени файла (…-1200x675.jpg), а если нет —
+     * спрашиваем медиатеку и держим ответ сутки в кеше: ходить в базу
+     * на каждый показ страницы ради двух чисел незачем.
+     */
+    private static function dim_attrs($url) {
+        $url = trim((string) $url);
+        if ($url === '') {
+            return '';
+        }
+        if (preg_match('~-(\d{2,5})x(\d{2,5})\.[a-z0-9]{2,4}(?:\?.*)?$~i', $url, $m)) {
+            return ' width="' . (int) $m[1] . '" height="' . (int) $m[2] . '"';
+        }
+        $key = 'gs_dim_' . md5($url);
+        $dims = get_transient($key);
+        if (!is_array($dims)) {
+            $dims = array();
+            $id = attachment_url_to_postid($url);
+            if ($id) {
+                $meta = wp_get_attachment_metadata($id);
+                if (!empty($meta['width']) && !empty($meta['height'])) {
+                    $dims = array((int) $meta['width'], (int) $meta['height']);
+                }
+            }
+            set_transient($key, $dims, DAY_IN_SECONDS);
+        }
+        return $dims ? ' width="' . $dims[0] . '" height="' . $dims[1] . '"' : '';
+    }
+
     /** Блок пакета в карточке тарифа. */
     private static function pack_block($plan) {
         $pack = self::pack($plan);
@@ -481,7 +514,7 @@ class GS_Course {
             <section class="gs-course__block">
                 <h2 class="gs-section-title">Инструменты, на которых работаем</h2>
                 <?php if ($tools): ?>
-                    <img class="gs-course__img" src="<?php echo esc_url($tools); ?>" alt="Инструменты: озвучка, видео, музыка, изображения" loading="lazy" decoding="async">
+                    <img class="gs-course__img" src="<?php echo esc_url($tools); ?>"<?php echo self::dim_attrs($tools); ?> alt="Инструменты: озвучка, видео, музыка, изображения" loading="lazy" decoding="async">
                 <?php endif; ?>
                 <div class="gs-prose">
                     <p>Учимся не на скриншотах, а на живых сервисах — тех же, что работают на этом сайте.
@@ -501,7 +534,7 @@ class GS_Course {
             <section class="gs-course__block">
                 <h2 class="gs-section-title">Фотосессии и фото без съёмки</h2>
                 <?php if ($photo): ?>
-                    <img class="gs-course__img" src="<?php echo esc_url($photo); ?>" alt="Серия сгенерированных портретов" loading="lazy" decoding="async">
+                    <img class="gs-course__img" src="<?php echo esc_url($photo); ?>"<?php echo self::dim_attrs($photo); ?> alt="Серия сгенерированных портретов" loading="lazy" decoding="async">
                 <?php endif; ?>
                 <div class="gs-prose">
                     <p>Отдельное направление, с которого многие и начинают зарабатывать: заказчику
@@ -557,7 +590,7 @@ class GS_Course {
             <section class="gs-course__block">
                 <h2 class="gs-section-title">Как проходит обучение</h2>
                 <?php if ($path): ?>
-                    <img class="gs-course__img" src="<?php echo esc_url($path); ?>" alt="Три шага обучения" loading="lazy" decoding="async">
+                    <img class="gs-course__img" src="<?php echo esc_url($path); ?>"<?php echo self::dim_attrs($path); ?> alt="Три шага обучения" loading="lazy" decoding="async">
                 <?php endif; ?>
                 <div class="gs-prose">
                     <p>Занятия построены вокруг работ, а не лекций. На каждом шаге вы делаете
@@ -570,7 +603,7 @@ class GS_Course {
             <section class="gs-course__block">
                 <h2 class="gs-section-title">Что будет на выходе</h2>
                 <?php if ($result): ?>
-                    <img class="gs-course__img" src="<?php echo esc_url($result); ?>" alt="Рабочее место после обучения" loading="lazy" decoding="async">
+                    <img class="gs-course__img" src="<?php echo esc_url($result); ?>"<?php echo self::dim_attrs($result); ?> alt="Рабочее место после обучения" loading="lazy" decoding="async">
                 <?php endif; ?>
                 <div class="gs-prose">
                     <ul>
@@ -607,7 +640,8 @@ class GS_Course {
                                     <?php foreach ($shots as $i => $url) : ?>
                                         <button type="button" class="gs-case-shot" data-full="<?php echo esc_url($url); ?>"
                                                 aria-label="Открыть изображение <?php echo (int) ($i + 1); ?>">
-                                            <img src="<?php echo esc_url($url); ?>" alt="" loading="lazy" decoding="async">
+                                            <img src="<?php echo esc_url($url); ?>"<?php
+                                                echo self::dim_attrs($url); ?> alt="" loading="lazy" decoding="async">
                                         </button>
                                     <?php endforeach; ?>
                                 </div>

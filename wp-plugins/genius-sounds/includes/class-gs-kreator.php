@@ -1108,8 +1108,8 @@ class GS_Kreator {
                         — задачи по дням, двенадцать навыков, вилки по уровням, расчёт расходов.</li>
                     <li><a href="https://genius-bot.ru/kak-stat-ai-kreatorom/">Как стать AI-креатором с нуля за 90 дней</a>
                         — план по неделям, если хотите попробовать самостоятельно.</li>
-                    <li><a href="https://genius-bot.ru/kursy-ai-kreatora/">Курсы AI-креатора: разбор программ и цен</a>
-                        — честное сравнение, включая случаи, когда обучение вам не нужно.</li>
+                    <li><a href="https://genius-bot.ru/obuchenie-neirosetyam-dlya-video/">Обучение нейросетям для
+                        видео: с чего начать</a> — чему учиться по порядку и что можно освоить самому.</li>
                     <li><a href="<?php echo esc_url(self::TG_URL); ?>" target="_blank" rel="noopener">Телеграм-канал «<?php echo esc_html(self::TG_NAME); ?>»</a>
                         — разборы вакансий, промты и заказы по мере появления.</li>
                 </ul>

@@ -90,6 +90,23 @@ class GS_Noindex {
      */
     const TWINS = array(
         '/2810-2/' => '/google-veo3/',
+        /*
+         * Виджет консультанта от удалённого плагина: страница отвечает
+         * «Консультант недоступен» в 190 байтах, минуя заголовок сайта, —
+         * поэтому и запрет индексации до неё не доходил. Ссылок на неё
+         * нет ни с одной страницы, а запрос у человека живой: уводим туда,
+         * где консультацию действительно заказывают.
+         */
+        '/consultant/' => '/zakazat-konsultaciyu/',
+        /*
+         * Статья, у которой в адресе стоял эмодзи: перекодированный
+         * «🤖» уводил запрос на самого себя, и браузер упирался в
+         * «слишком много переадресаций» — страница была недоступна ни
+         * человеку, ни роботу. Теперь она живёт по чистому адресу, а
+         * старый ведёт на неё.
+         */
+        '/%f0%9f%a4%96-umnyj-chat-bot-dlya-biznesa-kak-tehnologii-pomogayut-zarabatyvat-bolshe/'
+            => '/umnyj-chat-bot-dlya-biznesa/',
         '/stablediffusion-v-rossii-kak-ispolzovat-cherez-vpn-niderlandy/'
             => '/stable-diffusion-v-rossii-kak-ispolzovat-cherez-vpn-niderlandy/',
     );
@@ -134,12 +151,21 @@ class GS_Noindex {
 
     /** Двойника уводим на страницу с содержимым. */
     public static function retire_twins() {
-        if (is_admin() || is_404()) {
+        /*
+         * На 404 проверку раньше не делали — и зря: именно туда попадает
+         * адрес, которого больше нет, а ради таких переадресация и
+         * заведена. Админку по-прежнему не трогаем.
+         */
+        if (is_admin()) {
             return;
         }
         $path = self::path();
-        if (isset(self::TWINS[$path])) {
-            wp_safe_redirect(home_url(self::TWINS[$path]), 301);
+        // Адреса с процентными кодами приходят и строчными, и прописными:
+        // сверяем в одном регистре, иначе редирект срабатывает через раз.
+        $lower = strtolower($path);
+        if (isset(self::TWINS[$path]) || isset(self::TWINS[$lower])) {
+            $to = self::TWINS[$path] ?? self::TWINS[$lower];
+            wp_safe_redirect(home_url($to), 301);
             exit;
         }
     }

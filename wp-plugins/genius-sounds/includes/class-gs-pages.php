@@ -581,8 +581,45 @@ class GS_Pages {
      * Витрина примеров
      * ------------------------------------------------------------------ */
 
+    /**
+     * Есть ли файл из uploads на диске.
+     *
+     * Чужие адреса не трогаем — проверить их нечем, и считаем живыми.
+     * Ответ держим сутки в кеше: витрину открывают часто, а файловая
+     * система от этого не меняется.
+     */
+    private static function file_on_disk($url) {
+        $uploads = wp_get_upload_dir();
+        $base = (string) ($uploads['baseurl'] ?? '');
+        if ($base === '' || strpos($url, $base) !== 0) {
+            return true;
+        }
+        $key = 'gs_file_' . md5($url);
+        $known = get_transient($key);
+        if ($known === 'yes' || $known === 'no') {
+            return $known === 'yes';
+        }
+        $path = (string) ($uploads['basedir'] ?? '') . substr($url, strlen($base));
+        $there = $path !== '' && file_exists($path);
+        set_transient($key, $there ? 'yes' : 'no', DAY_IN_SECONDS);
+        return $there;
+    }
+
     public static function render_showcase($atts = array()) {
-        $items = GS_SFX::get_showcase();
+        /*
+         * Файлы примеров живут в uploads и иногда уезжают при чистке:
+         * запись в витрине остаётся, а кнопка «слушать» молчит. Отсеиваем
+         * то, чего больше нет на диске, до проверки на пустоту — иначе
+         * страница показывала бы пустую сетку вместо честного «примеров
+         * пока нет».
+         */
+        $items = array();
+        foreach (GS_SFX::get_showcase() as $item) {
+            $url = (string) ($item['url'] ?? '');
+            if ($url !== '' && self::file_on_disk($url)) {
+                $items[] = $item;
+            }
+        }
 
         ob_start();
         ?>
@@ -609,9 +646,6 @@ class GS_Pages {
                         <?php
                         $title = (string) ($item['title'] ?? 'Сгенерированный звук');
                         $url   = (string) ($item['url'] ?? '');
-                        if ($url === '') {
-                            continue;
-                        }
                         ?>
                         <article class="gs-sound" data-gs-sound data-src="<?php echo esc_url($url); ?>" data-title="<?php echo esc_attr($title); ?>">
                             <button class="gs-sound__play" type="button" data-gs-play aria-label="Прослушать: <?php echo esc_attr($title); ?>">

@@ -1,10 +1,22 @@
 <?php
 define('ABSPATH', 1);
 $GLOBALS['opts'] = array();
+if (!defined('DAY_IN_SECONDS')) { define('DAY_IN_SECONDS', 86400); }
+if (!defined('HOUR_IN_SECONDS')) { define('HOUR_IN_SECONDS', 3600); }
+if (!defined('MINUTE_IN_SECONDS')) { define('MINUTE_IN_SECONDS', 60); }
 function get_option($k, $d = null) { return $GLOBALS['opts'][$k] ?? $d; }
 function update_option($k, $v, $a = true) { $GLOBALS['opts'][$k] = $v; return true; }
 function wp_generate_password($n, $s = true, $x = true) { return substr(str_repeat('a1b2c3d4', 4), 0, $n); }
 function get_current_user_id() { return 7; }
+// Список проектов вошедшего появился в коде позже тестов, и без этих
+// двух заглушек проверки падали на ровном месте.
+function get_user_meta($id, $key, $single = false) { return $GLOBALS['umeta'][(int) $id][$key] ?? ''; }
+function update_user_meta($id, $key, $value) { $GLOBALS['umeta'][(int) $id][$key] = $value; return true; }
+function get_transient($k) { return $GLOBALS['trans'][$k] ?? false; }
+function set_transient($k, $v, $ttl = 0) { $GLOBALS['trans'][$k] = $v; return true; }
+function delete_transient($k) { unset($GLOBALS['trans'][$k]); return true; }
+function wp_date($f, $ts = null) { return date($f, $ts ?: time()); }
+function current_time($type = 'timestamp') { return $type === 'mysql' ? date('Y-m-d H:i:s') : time(); }
 function date_i18n($f) { return date($f); }
 class GS_Md { public static function to_html($t) { return "<p>" . $t . "</p>"; } }
 class GS_Provider {
@@ -27,21 +39,24 @@ function check($what, $got, $want) {
 echo "=== доступ по тарифам ===\n";
 check('бесплатный тариф пускает на «Тема»',        GS_Proekt::allows('free', 'tema'), true);
 check('бесплатный не пускает на «Паспорт»',        GS_Proekt::allows('free', 'pasport'), false);
-check('«Старт» не пускает на теорию',              GS_Proekt::allows('start', 'teoriya'), false);
+check('бесплатный не пускает на теорию',           GS_Proekt::allows('free', 'teoriya'), false);
 check('«Проект» пускает на теорию',                GS_Proekt::allows('project', 'teoriya'), true);
 check('«Проект» не пускает на защитную речь',      GS_Proekt::allows('project', 'rech'), false);
 check('«Проект + защита» пускает на речь',         GS_Proekt::allows('defense', 'rech'), true);
 
 echo "\n=== доплата разницы ===\n";
-check('Старт → Проект = 500',                      GS_Proekt::upgrade_price('start', 'project'), 500);
-check('Бесплатно → Проект + защита = 1490',        GS_Proekt::upgrade_price('free', 'defense'), 1490);
-check('вниз не доплачиваем',                       GS_Proekt::upgrade_price('defense', 'start'), 0);
+// Цены в коде менялись, а проверки остались от прежнего набора тарифов
+// и падали на каждом запуске — сверяемся с нынешним прайсом.
+check('Проект → Проект + защита = 600',            GS_Proekt::upgrade_price('project', 'defense'), 600);
+check('Бесплатно → Проект + защита = 1290',        GS_Proekt::upgrade_price('free', 'defense'), 1290);
+check('вниз не доплачиваем',                       GS_Proekt::upgrade_price('defense', 'project'), 0);
+check('несуществующий тариф не считаем',           GS_Proekt::upgrade_price('start', 'project'), 0);
 
 echo "\n=== шаг ===\n";
 $t = GS_Proekt::create(array('класс' => '10', 'предметы' => 'биология'));
 $r = GS_Proekt::run($t, 'pasport', '');
 check('закрытый шаг отбит',                        $r['ok'], false);
-check('и назван нужный тариф',                     $r['need'], 'start');
+check('и назван нужный тариф',                     $r['need'], 'project');
 $r = GS_Proekt::run($t, 'tema', 'люблю биологию');
 check('открытый шаг прошёл',                       $r['ok'], true);
 check('счётчик запросов вырос',                    $r['used'], 1);
@@ -52,7 +67,7 @@ echo "\n=== лимит запросов ===\n";
 $row = GS_Proekt::project($t); $row['used'] = 3; update_option('gs_proekt_' . $t, $row);
 $r = GS_Proekt::run($t, 'tema', 'ещё');
 check('лимит бесплатного тарифа сработал',         $r['ok'], false);
-check('предложен следующий тариф',                 $r['need'], 'start');
+check('предложен следующий тариф',                 $r['need'], 'project');
 
 echo "\n=== оплата ===\n";
 $label = GS_Proekt::label($t, 'project');
