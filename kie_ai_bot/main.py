@@ -9270,6 +9270,9 @@ async def main():
     import pin_gift
     pin_gift.setup(dp, bot)
 
+    # Серия публикаций в тему группы: пять дней, разные дни и часы.
+    import group_seed
+
     # Каждая задача изолирована: если упадёт фоновая, бот продолжит отвечать,
     # а ошибка попадёт в лог. Раньше падение любой из них останавливало всё.
     async def guarded(coro, name: str):
@@ -9288,6 +9291,7 @@ async def main():
         guarded(telethon_worker(), "чтение каналов"),
         guarded(news_worker(bot), "новостной канал"),
         guarded(promo_worker(bot), "промо-посты"),
+        guarded(group_seed.seed_worker(bot), "серия в группе"),
     )
 
     
