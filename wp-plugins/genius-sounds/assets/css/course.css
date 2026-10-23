@@ -353,3 +353,110 @@
     background: var(--gs-surface);
     color: var(--gs-text);
 }
+
+/* --- Пакет генераций в тарифе ---------------------------------------- */
+
+.gs-course__pack {
+    margin: 0 0 22px;
+    padding: 14px 16px 12px;
+    border: 1px dashed rgba(148, 163, 184, 0.45);
+    border-radius: 14px;
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.gs-course__pack-head {
+    margin: 0 0 6px;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.gs-course__pack-nums {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 0 0 8px;
+    font-size: 15px;
+    color: #cbd5e1;
+}
+
+.gs-course__pack-nums b {
+    font-size: 25px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #a5b4fc;
+}
+
+.gs-course__pack-nums i {
+    font-style: normal;
+    color: #94a3b8;
+}
+
+.gs-course__pack-note {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #94a3b8;
+}
+
+/* Пакет в работах: инфографика под тарифами */
+.gs-course__packinfo {
+    margin: 26px 0 18px;
+    padding: 26px 28px 20px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(99, 91, 255, 0.12), rgba(15, 23, 42, 0) 70%);
+}
+
+.gs-course__packinfo h3 {
+    margin: 0 0 18px;
+    font-size: clamp(18px, 2.2vw, 23px);
+    line-height: 1.25;
+    color: #f8fafc;
+}
+
+.gs-course__packgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.gs-course__packgrid article {
+    padding: 18px 20px 16px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.gs-course__packnum {
+    margin: 0 0 2px;
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    color: #a5b4fc;
+}
+
+.gs-course__packwhat {
+    margin: 0 0 6px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #f1f5f9;
+}
+
+.gs-course__packhow {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #94a3b8;
+}
+
+@media (max-width: 560px) {
+    .gs-course__packinfo {
+        padding: 20px 16px 14px;
+    }
+}

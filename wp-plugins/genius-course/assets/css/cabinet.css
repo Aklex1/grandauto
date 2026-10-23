@@ -1622,3 +1622,135 @@ body.gc-page .gc {
         transform: rotate(135deg);
     }
 }
+
+/* --- Пакет генераций -------------------------------------------------- */
+
+.gc-pack {
+    margin: 0 0 18px;
+    padding: 18px 20px 16px;
+    border: 1px solid var(--gc-line);
+    border-radius: var(--gc-radius-sm);
+    background: var(--gc-card-2);
+}
+
+.gc-pack__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 15px;
+    line-height: 1.4;
+}
+
+.gc-pack__head span {
+    font-size: 13.5px;
+    color: var(--gc-muted);
+}
+
+.gc-pack__head span.is-off {
+    color: var(--gc-warn);
+}
+
+.gc-pack__bars {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin: 14px 0 10px;
+}
+
+.gc-pack__bar p {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 0 0 6px;
+    font-size: 14px;
+    color: var(--gc-muted);
+}
+
+.gc-pack__bar p strong {
+    font-size: 18px;
+    color: var(--gc-ink);
+}
+
+.gc-pack__bar p span {
+    flex: 1 1 auto;
+}
+
+.gc-pack__line {
+    height: 7px;
+    border-radius: 999px;
+    background: var(--gc-line);
+    overflow: hidden;
+}
+
+.gc-pack__line span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--gc-primary), var(--gc-accent));
+}
+
+.gc-pack__bar.is-empty .gc-pack__line span {
+    background: #f0a07a;
+}
+
+/* Пакет генераций в карточке тарифа */
+.gc-pay__pack {
+    margin: 0 0 20px;
+    padding: 14px 16px 12px;
+    border: 1px dashed var(--gc-line-2);
+    border-radius: var(--gc-radius-sm);
+    background: var(--gc-card-2);
+}
+
+.gc-pay__pack-head {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--gc-muted);
+}
+
+.gc-pay__pack-nums {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin: 0 0 10px;
+    font-size: 15px;
+    color: var(--gc-ink-2);
+}
+
+.gc-pay__pack-nums b {
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--gc-primary);
+}
+
+.gc-pay__pack-nums i {
+    font-style: normal;
+    color: var(--gc-muted);
+}
+
+.gc-pay__pack ul {
+    margin: 0 0 8px;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 6px;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--gc-ink-2);
+}
+
+.gc-pay__pack li strong {
+    color: var(--gc-ink);
+}
+
+.gc-pay__pack li span {
+    display: block;
+    font-size: 12.5px;
+    color: var(--gc-muted);
+}

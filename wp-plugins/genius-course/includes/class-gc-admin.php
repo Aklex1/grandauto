@@ -336,6 +336,11 @@ class GC_Admin {
                                 <?php if (!empty($been['first'])) : ?>
                                     <br>первый вход <?php echo esc_html(date_i18n('j M', strtotime($been['first']))); ?>
                                 <?php endif; ?>
+                                <?php $pack = GC_Pack::for_user($u->ID, $course); ?>
+                                <?php if ($pack) : ?>
+                                    <br>пакет: <?php echo (int) $pack['used']['image']; ?>/<?php echo (int) $pack['images']; ?> кадров,
+                                    <?php echo (int) $pack['used']['video']; ?>/<?php echo (int) $pack['videos']; ?> роликов
+                                <?php endif; ?>
                                 <?php $quiz = GC_Quiz::summary($u->ID, $course); ?>
                                 <?php if ($quiz['done'] > 0) : ?>
                                     <br>проверки: <?php echo (int) $quiz['done']; ?> из <?php echo (int) $quiz['modules']; ?>,
@@ -1027,6 +1032,26 @@ class GC_Admin {
                                 состоит в группе: новым ученикам нужна пригласительная ссылка.</p></td>
                     </tr>
                 <?php endforeach; ?>
+                <?php foreach (GC_Pack::all() as $plan => $pack) :
+                    $def = GC_Courses::plan('money', $plan); ?>
+                    <tr>
+                        <th scope="row">Пакет генераций: «<?php echo esc_html($def ? $def['title'] : $plan); ?>»</th>
+                        <td>
+                            <label>кадров <input type="number" min="0" max="100000" class="small-text"
+                                name="pack[<?php echo esc_attr($plan); ?>][images]"
+                                value="<?php echo (int) $pack['images']; ?>"></label>
+                            <label style="margin-left:12px">роликов <input type="number" min="0" max="100000" class="small-text"
+                                name="pack[<?php echo esc_attr($plan); ?>][videos]"
+                                value="<?php echo (int) $pack['videos']; ?>"></label>
+                            <label style="margin-left:12px">дней <input type="number" min="0" max="3650" class="small-text"
+                                name="pack[<?php echo esc_attr($plan); ?>][days]"
+                                value="<?php echo (int) $pack['days']; ?>"></label>
+                            <p class="description">Сколько входит в тариф. Кадр обходится примерно в 4 кредита
+                                поставщика, ролик — в 16: ролики считаются отдельно, иначе пакет уходит за вечер.
+                                Эти же числа показываются на посадочной и в кабинете.</p>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
                 <tr>
                     <th scope="row"><label for="gc-daily-kie">Заданий в сутки через шлюз моделей</label></th>
                     <td><input id="gc-daily-kie" name="daily_kie" type="number" min="1" max="500"
@@ -1399,6 +1424,9 @@ class GC_Admin {
             wp_die('Недостаточно прав');
         }
         GC_Gpu::save_settings((array) $_POST);
+        if (isset($_POST['pack']) && is_array($_POST['pack'])) {
+            GC_Pack::save((array) wp_unslash($_POST['pack']));
+        }
         if (isset($_POST['chat']) && is_array($_POST['chat'])) {
             $chats = array();
             foreach ((array) wp_unslash($_POST['chat']) as $key => $url) {

@@ -128,6 +128,62 @@ class GS_Course {
     }
 
     /**
+     * Пакет генераций тарифа.
+     *
+     * Числа живут в плагине курса — там же, где они проверяются при
+     * генерации. Если плагин выключен, посадочная всё равно должна
+     * открываться, поэтому рядом лежат те же значения по умолчанию.
+     *
+     * @return array{images:int,videos:int,days:int}
+     */
+    public static function pack($plan) {
+        if (class_exists('GC_Pack')) {
+            $pack = GC_Pack::plan_pack($plan);
+            if ($pack) {
+                return $pack;
+            }
+        }
+        $fallback = array(
+            'base' => array('images' => 600,  'videos' => 60,  'days' => 60),
+            'plus' => array('images' => 1500, 'videos' => 150, 'days' => 120),
+        );
+        return isset($fallback[$plan]) ? $fallback[$plan] : $fallback['base'];
+    }
+
+    /** Что можно сделать пакетом — тариф в работах, а не в штуках. */
+    public static function pack_equivalents($plan) {
+        if (class_exists('GC_Pack')) {
+            $rows = GC_Pack::equivalents($plan);
+            if ($rows) {
+                return $rows;
+            }
+        }
+        $pack = self::pack($plan);
+        return array(
+            array((string) (int) floor($pack['images'] / 5), 'комплектов карточек', 'по пять кадров на товар'),
+            array((string) $pack['videos'], 'рекламных роликов', 'вертикальных, со звуком и субтитрами'),
+            array((string) (int) floor($pack['images'] / 3), 'обложек и баннеров', 'по три варианта на выбор заказчику'),
+        );
+    }
+
+    /** Блок пакета в карточке тарифа. */
+    private static function pack_block($plan) {
+        $pack = self::pack($plan);
+        ob_start();
+        ?>
+        <div class="gs-course__pack">
+            <p class="gs-course__pack-head">Пакет генераций на <?php echo (int) $pack['days']; ?> дней</p>
+            <p class="gs-course__pack-nums">
+                <b><?php echo (int) $pack['images']; ?></b> кадров <i>+</i>
+                <b><?php echo (int) $pack['videos']; ?></b> роликов
+            </p>
+            <p class="gs-course__pack-note">Считаются готовые работы: неудачные попытки пакет не тратят.</p>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
      * Адрес кабинета курса.
      *
      * Кабинет держит отдельный плагин: его может не быть включённым, и
@@ -409,6 +465,7 @@ class GS_Course {
                             <li>Расчёт себестоимости и цены для заказчика</li>
                             <li>Доступ к сервисам, на которых учились</li>
                         </ul>
+                        <?php echo self::pack_block('base'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
                         <a class="gs-btn gs-btn--ghost gs-btn--lg" href="#zayavka">Выбрать базовый</a>
                     </article>
 
@@ -425,6 +482,7 @@ class GS_Course {
                             <li>Тексты и креативы для объявлений — из того, что вы сделали на обучении</li>
                             <li>Разбор первых результатов: что откручивать дальше, а что выключить</li>
                         </ul>
+                        <?php echo self::pack_block('plus'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
                         <a class="gs-btn gs-btn--primary gs-btn--lg" href="#zayavka">Выбрать с запуском</a>
                     </article>
                 </div>
@@ -432,6 +490,24 @@ class GS_Course {
                     Рекламный бюджет площадок оплачивается отдельно и напрямую — мы настраиваем
                     кампанию, а сколько на неё тратить, решаете вы. Начать можно с минимальной суммы.
                 </p>
+                <div class="gs-course__packinfo">
+                    <h3>Что успеете сделать пакетом тарифа «С рекламной кампанией»</h3>
+                    <div class="gs-course__packgrid">
+                        <?php foreach (self::pack_equivalents('plus') as $row) : ?>
+                            <article>
+                                <p class="gs-course__packnum"><?php echo esc_html($row[0]); ?></p>
+                                <p class="gs-course__packwhat"><?php echo esc_html($row[1]); ?></p>
+                                <p class="gs-course__packhow"><?php echo esc_html($row[2]); ?></p>
+                            </article>
+                        <?php endforeach; ?>
+                    </div>
+                    <p class="gs-course__market">
+                        Генерации идут на наших серверах — своя видеокарта не нужна, и платить за неё
+                        отдельно тоже. Кадр считается около тридцати секунд, ролик — минуту.
+                        Пакет кончится раньше срока — продлим отдельно, это недорого.
+                    </p>
+                </div>
+
                 <p class="gs-course__market">
                     Оплата проходит в личном кабинете, картой через ЮMoney. После заявки мы открываем
                     доступ и первый модуль — его можно пройти целиком и посмотреть, как устроено

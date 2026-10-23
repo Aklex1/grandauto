@@ -396,6 +396,27 @@ class GC_Cabinet {
                                 <li><?php echo esc_html($line); ?></li>
                             <?php endforeach; ?>
                         </ul>
+                        <?php
+                        // Пакет генераций: самая непонятная часть тарифа, если
+                        // не сказать её числами и не перевести в работы.
+                        $pack = class_exists('GC_Pack') ? GC_Pack::plan_pack($key) : null;
+                        if ($pack) : ?>
+                            <div class="gc-pay__pack">
+                                <p class="gc-pay__pack-head">Пакет генераций на <?php echo (int) $pack['days']; ?> дней</p>
+                                <p class="gc-pay__pack-nums">
+                                    <b><?php echo (int) $pack['images']; ?></b> кадров
+                                    <i>+</i>
+                                    <b><?php echo (int) $pack['videos']; ?></b> роликов
+                                </p>
+                                <ul>
+                                    <?php foreach (GC_Pack::equivalents($key) as $row) : ?>
+                                        <li><strong><?php echo esc_html($row[0]); ?></strong> <?php echo esc_html($row[1]); ?>
+                                            <span><?php echo esc_html($row[2]); ?></span></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                                <p class="gc-fine">Считаются готовые работы: неудачные попытки пакет не тратят.</p>
+                            </div>
+                        <?php endif; ?>
                         <?php if ($link !== '') : ?>
                             <a class="gc-btn<?php echo !empty($plan['flag']) ? '' : ' gc-btn--ghost'; ?>"
                                href="<?php echo esc_url($link); ?>" rel="nofollow noopener">Оплатить
@@ -687,6 +708,56 @@ class GC_Cabinet {
             <?php endforeach; ?>
             <button type="button" class="gc-btn" id="gc-quiz-send">Проверить ответы</button>
             <p class="gc-note-line" role="status"></p>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Пакет генераций: что входит и сколько осталось.
+     *
+     * Полоса показывает не «сколько потратил», а «сколько осталось»:
+     * человеку важно именно это, а не чувство вины за израсходованное.
+     */
+    private static function pack_card($user, $course) {
+        if (!class_exists('GC_Pack')) {
+            return '';
+        }
+        $pack = GC_Pack::for_user($user->ID, $course);
+        if (!$pack) {
+            return '';
+        }
+        $rows = array(
+            array('кадры',  (int) $pack['used']['image'], (int) $pack['images'], (int) $pack['left']['image']),
+            array('ролики', (int) $pack['used']['video'], (int) $pack['videos'], (int) $pack['left']['video']),
+        );
+        ob_start();
+        ?>
+        <section class="gc-pack">
+            <div class="gc-pack__head">
+                <strong>Пакет генераций: тариф «<?php echo esc_html($pack['title']); ?>»</strong>
+                <?php if ((int) $pack['until'] > 0) : ?>
+                    <span class="<?php echo !empty($pack['over']) ? 'is-off' : ''; ?>">
+                        <?php echo !empty($pack['over'])
+                            ? 'срок закончился ' . esc_html(date_i18n('j F', (int) $pack['until']))
+                            : 'действует до ' . esc_html(date_i18n('j F', (int) $pack['until'])); ?>
+                    </span>
+                <?php endif; ?>
+            </div>
+            <div class="gc-pack__bars">
+                <?php foreach ($rows as $row) :
+                    list($name, $used, $total, $left) = $row;
+                    $percent = $total > 0 ? max(0, min(100, round($left / $total * 100))) : 0;
+                    ?>
+                    <div class="gc-pack__bar<?php echo $left <= 0 ? ' is-empty' : ''; ?>">
+                        <p><span><?php echo esc_html($name); ?></span>
+                            осталось <strong><?php echo (int) $left; ?></strong> из <?php echo (int) $total; ?></p>
+                        <div class="gc-pack__line"><span style="width: <?php echo (int) $percent; ?>%"></span></div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <p class="gc-fine">Считаются только посчитанные задания: неудачные попытки пакет не тратят.
+                Кончится — напишите нам, продлим отдельным пакетом.</p>
         </section>
         <?php
         return ob_get_clean();
@@ -1039,6 +1110,8 @@ class GC_Cabinet {
                 <p class="gc-lead">Кадры и ролики считаются на нашей видеокарте: пока идёт месяц без лимита, количество не
                     ограничено. Переделывать описание по двадцать раз — это и есть обучение.</p>
             <?php endif; ?>
+
+            <?php echo self::pack_card($user, $course); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <p class="gc-gpu-state <?php echo $health['ok'] ? 'is-on' : 'is-off'; ?>">
                 <?php // Ученику важно одно: считается или нет. Модель видеокарты и

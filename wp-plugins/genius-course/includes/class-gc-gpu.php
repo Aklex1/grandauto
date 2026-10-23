@@ -266,6 +266,12 @@ class GC_Gpu {
         $kind = $kind === 'video' ? 'video' : 'image';
 
         if ($engine === 'kie') {
+            // Пакет тарифа: кадры и ролики считаются отдельно, потому что
+            // ролик обходится вчетверо дороже кадра.
+            $pack = GC_Pack::allows($user_id, $kind);
+            if (empty($pack['ok'])) {
+                return array('ok' => false, 'job' => 0, 'status' => '', 'message' => (string) $pack['message']);
+            }
             $params['engine'] = GC_Kie::ENGINE;
             $wpdb->insert($table, array(
                 'user_id'    => (int) $user_id,
