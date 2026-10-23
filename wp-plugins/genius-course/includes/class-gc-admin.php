@@ -46,6 +46,7 @@ class GC_Admin {
 
     public static function menu() {
         $waiting = GC_Works::waiting();
+        $asked = class_exists('GC_Contact') ? GC_Contact::waiting() : 0;
         $label = 'Курс';
         if ($waiting > 0) {
             $label .= ' <span class="update-plugins count-' . (int) $waiting . '"><span class="plugin-count">'
@@ -70,6 +71,7 @@ class GC_Admin {
         }
         return $tabs + array(
             'examples' => 'Примеры',
+            'messages' => 'Вопросы',
             'works'    => 'Работы',
             'jobs'     => 'Генерации',
             'machine'  => 'Машина',
@@ -119,6 +121,7 @@ class GC_Admin {
                        href="<?php echo esc_url(self::url($key)); ?>"><?php
                         echo esc_html($label);
                         echo $key === 'works' && $waiting > 0 ? ' (' . (int) $waiting . ')' : '';
+                        echo $key === 'messages' && $asked > 0 ? ' (' . (int) $asked . ')' : '';
                     ?></a>
                 <?php endforeach; ?>
             </h2>
@@ -128,6 +131,8 @@ class GC_Admin {
                 self::students($course, $tab);
             } elseif ($tab === 'examples') {
                 self::examples();
+            } elseif ($tab === 'messages') {
+                self::messages();
             } elseif ($tab === 'works') {
                 self::works();
             } elseif ($tab === 'jobs') {
@@ -526,6 +531,77 @@ class GC_Admin {
             return $few;
         }
         return $last === 1 ? $one : $many;
+    }
+
+    /**
+     * Вопросы из кабинета.
+     *
+     * Отвечаем мы в Telegram, а здесь журнал: если связь оборвалась,
+     * вопрос всё равно виден, и ученик не остаётся без ответа из-за
+     * хостинга. Заодно видно, о чём спрашивают чаще — это материал для
+     * следующего урока.
+     */
+    private static function messages() {
+        $rows = class_exists('GC_Contact') ? GC_Contact::log(100) : array();
+        $tg = class_exists('GS_Leads') && GS_Leads::ready();
+        ?>
+        <h3>Вопросы из кабинета</h3>
+        <p class="description">Приходят вам в Telegram одним потоком с заявками с сайта. Отвечаете как обычно —
+            пересылкой в бот. Здесь копия: на случай, когда Telegram с хостинга не отвечает.</p>
+        <?php if (!$tg) : ?>
+            <div class="notice notice-warning inline"><p>Бот не настроен — вопросы будут копиться только здесь.
+                Настройки бота: страница «Genius Sounds» → заявки.</p></div>
+        <?php endif; ?>
+        <?php if (!$rows) : ?>
+            <p>Вопросов пока не было.</p>
+            <?php return; ?>
+        <?php endif; ?>
+        <table class="widefat striped" style="max-width:1100px">
+            <thead>
+                <tr>
+                    <th>Когда</th>
+                    <th>Кто</th>
+                    <th>Куда</th>
+                    <th>Вопрос</th>
+                    <th>В Telegram</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($rows as $row) : ?>
+                <tr>
+                    <td><?php echo esc_html(date_i18n('j F, H:i', strtotime((string) $row['at']))); ?></td>
+                    <td>
+                        <strong><?php echo esc_html((string) $row['name']); ?></strong><br>
+                        <span class="description"><?php echo esc_html((string) $row['email']); ?></span>
+                        <?php if (!empty($row['telegram'])) : ?>
+                            <br><span class="description"><?php echo esc_html((string) $row['telegram']); ?></span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?php echo esc_html(GC_Contact::kind_title((string) $row['kind'])); ?><br>
+                        <span class="description"><?php echo esc_html(GC_Courses::field((string) $row['course'], 'short', '')); ?></span>
+                    </td>
+                    <td>
+                        <?php echo nl2br(esc_html((string) $row['text'])); ?>
+                        <p><a class="button button-small" href="<?php
+                            echo esc_url('mailto:' . (string) $row['email']
+                                . '?subject=' . rawurlencode('Ответ на ваш вопрос — ' . GC_Courses::title((string) $row['course']))
+                                . '&body=' . rawurlencode("Здравствуйте!\n\nВы спрашивали:\n«" . (string) $row['text']
+                                    . "»\n\n")); ?>">Ответить письмом</a></p>
+                    </td>
+                    <td><?php if (!empty($row['sent'])) : ?>
+                            ушло
+                        <?php else : ?>
+                            <span style="color:#b32d2e">не ушло</span>
+                            <?php if (!empty($row['error'])) : ?>
+                                <br><span class="description"><?php echo esc_html((string) $row['error']); ?></span>
+                            <?php endif; ?>
+                        <?php endif; ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php
     }
 
     private static function works() {

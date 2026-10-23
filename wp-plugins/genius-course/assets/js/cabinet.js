@@ -312,4 +312,109 @@
     if (jobs && jobs.querySelector('.is-running, .is-queued')) {
         watch();
     }
+
+    /* Написать куратору или в поддержку */
+    var ask = document.getElementById('gc-ask');
+    if (ask) {
+        var panel = document.getElementById('gc-ask-panel');
+        var askForm = document.getElementById('gc-ask-form');
+        var askText = document.getElementById('gc-ask-text');
+        var askKind = document.getElementById('gc-ask-kind');
+        var askTitle = document.getElementById('gc-ask-title');
+        var askHint = document.getElementById('gc-ask-hint');
+        var words = {
+            curator: {
+                title: 'Написать куратору',
+                hint: 'Разберём задание, подскажем промпт, посмотрим вашу работу. Ответ придёт на почту или в Telegram.',
+                hold: 'Например: в модуле 3 не получается удержать лицо на кадре — что поправить в промпте?'
+            },
+            support: {
+                title: 'Написать в поддержку',
+                hint: 'Не открывается модуль, пропали генерации, не считается баланс, вопрос по оплате — это сюда.',
+                hold: 'Например: оплатил пакет, а кадры по-прежнему не запускаются.'
+            }
+        };
+
+        var openAsk = function (kind) {
+            var w = words[kind] || words.curator;
+            askKind.value = kind;
+            askTitle.textContent = w.title;
+            askHint.textContent = w.hint;
+            askText.setAttribute('placeholder', w.hold);
+            ask.classList.add('is-open');
+            panel.hidden = false;
+            Array.prototype.forEach.call(ask.querySelectorAll('.gc-ask__btn'), function (b) {
+                b.classList.toggle('is-on', b.getAttribute('data-kind') === kind);
+            });
+            askText.focus();
+        };
+        var closeAsk = function () {
+            ask.classList.remove('is-open');
+            panel.hidden = true;
+            Array.prototype.forEach.call(ask.querySelectorAll('.gc-ask__btn'), function (b) {
+                b.classList.remove('is-on');
+            });
+        };
+
+        Array.prototype.forEach.call(ask.querySelectorAll('.gc-ask__btn'), function (btn) {
+            btn.addEventListener('click', function () {
+                var kind = btn.getAttribute('data-kind');
+                // Повторное нажатие по той же кнопке закрывает панель:
+                // иначе её нечем убрать, кроме крестика.
+                if (!panel.hidden && askKind.value === kind) {
+                    closeAsk();
+                    return;
+                }
+                openAsk(kind);
+            });
+        });
+        // Плашка чата стоит снизу и на мобильном занимает две строки:
+        // поднимаем кнопки на её настоящую высоту, а не на угаданную.
+        var chat = document.querySelector('.gc-chat');
+        if (chat) {
+            var lift = function () {
+                ask.style.setProperty('--gc-ask-lift', Math.round(chat.getBoundingClientRect().height + 10) + 'px');
+            };
+            lift();
+            window.addEventListener('resize', lift);
+        }
+
+        document.getElementById('gc-ask-close').addEventListener('click', closeAsk);
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !panel.hidden) { closeAsk(); }
+        });
+
+        askForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var btn = askForm.querySelector('button[type="submit"]');
+            if (askText.value.trim().length < 5) {
+                say(askForm, 'Напишите вопрос хотя бы одной фразой', 'bad');
+                askText.focus();
+                return;
+            }
+            btn.disabled = true;
+            say(askForm, 'Отправляем…');
+            send('ask', {
+                kind: askKind.value,
+                text: askText.value,
+                telegram: document.getElementById('gc-ask-tg').value
+            })
+                .then(function (res) {
+                    btn.disabled = false;
+                    if (!res.ok) {
+                        say(askForm, (res.data && res.data.message) || 'Не получилось отправить', 'bad');
+                        return;
+                    }
+                    askText.value = '';
+                    say(askForm, res.data.message || 'Вопрос ушёл', 'good');
+                    // Панель закрываем сама: человек вернулся к уроку, а
+                    // подтверждение он уже прочитал.
+                    window.setTimeout(closeAsk, 4000);
+                })
+                .catch(function () {
+                    btn.disabled = false;
+                    say(askForm, 'Связь оборвалась, попробуйте ещё раз', 'bad');
+                });
+        });
+    }
 })();

@@ -288,6 +288,10 @@ class GC_Cabinet {
             if ($tab === 'program') {
                 echo self::chat_bar($course, $open); // phpcs:ignore WordPress.Security.EscapeOutput
             }
+
+            // Кнопки «написать» висят на всех вкладках: вопрос появляется
+            // там, где человек застрял, а не там, где мы его ждём.
+            echo self::ask_widget($user, $course); // phpcs:ignore WordPress.Security.EscapeOutput
             ?>
         </div>
         <?php
@@ -1070,6 +1074,70 @@ class GC_Cabinet {
             <a class="gc-chat__btn" href="<?php echo esc_url($url); ?>" target="_blank" rel="noopener">
                 Открыть чат</a>
         </aside>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Плавающие кнопки «написать куратору» и «в поддержку».
+     *
+     * Курс самостоятельный, но вопросы делятся на два разных: «не
+     * понял задание» и «не работает кабинет». Первый разбирает куратор,
+     * второй — тот, кто правит сайт. Если кнопка одна, оба вопроса
+     * приходят вперемешку и отвечает на них один человек дольше, чем
+     * нужно.
+     *
+     * Сообщение уходит владельцу в Telegram тем же потоком, что заявки
+     * с сайта: ответ он пишет привычным способом. Форму держим на
+     * странице свёрнутой — раскрывается по кнопке, чтобы не закрывать
+     * урок.
+     */
+    private static function ask_widget($user, $course) {
+        if (!class_exists('GC_Contact')) {
+            return '';
+        }
+        $tg = GC_Contact::telegram_of($user->ID);
+        ob_start();
+        ?>
+        <div class="gc-ask" id="gc-ask">
+            <div class="gc-ask__panel" id="gc-ask-panel" hidden>
+                <form class="gc-ask__form" id="gc-ask-form">
+                    <div class="gc-ask__head">
+                        <strong id="gc-ask-title">Написать куратору</strong>
+                        <button type="button" class="gc-ask__x" id="gc-ask-close" aria-label="Закрыть">×</button>
+                    </div>
+                    <p class="gc-ask__hint" id="gc-ask-hint">Разберём задание, подскажем промпт, посмотрим вашу
+                        работу. Ответ придёт на почту или в Telegram.</p>
+                    <input type="hidden" name="kind" id="gc-ask-kind" value="curator">
+                    <label class="gc-field">
+                        <span>Вопрос</span>
+                        <textarea name="text" id="gc-ask-text" rows="4" maxlength="2000"
+                                  placeholder="Например: в модуле 3 не получается удержать лицо на кадре — что поправить в промпте?"></textarea>
+                    </label>
+                    <label class="gc-field">
+                        <span>Ник в Telegram — если удобнее ответить там</span>
+                        <input type="text" name="telegram" id="gc-ask-tg" maxlength="40"
+                               value="<?php echo esc_attr($tg); ?>" placeholder="@nickname">
+                    </label>
+                    <p class="gc-note-line" aria-live="polite"></p>
+                    <button type="submit" class="gc-btn">Отправить</button>
+                    <p class="gc-ask__fine">Ответ приходит на <?php echo esc_html($user->user_email); ?> или в
+                        Telegram. Обычно в течение дня.</p>
+                </form>
+            </div>
+            <div class="gc-ask__btns">
+                <button type="button" class="gc-ask__btn gc-ask__btn--curator" data-kind="curator">
+                    <span class="gc-ask__ico" aria-hidden="true">?</span>
+                    <span class="gc-ask__long">Написать куратору</span>
+                    <span class="gc-ask__short" aria-hidden="true">Куратору</span>
+                </button>
+                <button type="button" class="gc-ask__btn gc-ask__btn--support" data-kind="support">
+                    <span class="gc-ask__ico" aria-hidden="true">!</span>
+                    <span class="gc-ask__long">Написать в поддержку</span>
+                    <span class="gc-ask__short" aria-hidden="true">Поддержка</span>
+                </button>
+            </div>
+        </div>
         <?php
         return ob_get_clean();
     }

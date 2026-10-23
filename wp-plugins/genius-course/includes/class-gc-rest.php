@@ -53,6 +53,11 @@ class GC_Rest {
             'callback'            => array(__CLASS__, 'share'),
             'permission_callback' => $student,
         ));
+        register_rest_route(self::NS, '/ask', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'ask'),
+            'permission_callback' => $student,
+        ));
         register_rest_route(self::NS, '/jobs', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'jobs'),
@@ -270,6 +275,26 @@ class GC_Rest {
      *
      * Чужое не трогаем: и кадр, и работа проверяются на владельца.
      */
+    /**
+     * Вопрос куратору или в поддержку.
+     *
+     * Уходит владельцу в Telegram тем же путём, что заявки с сайта:
+     * один поток, один привычный способ ответить.
+     */
+    public static function ask($request) {
+        $p = (array) $request->get_json_params();
+        $out = GC_Contact::send(
+            get_current_user_id(),
+            (string) ($p['kind'] ?? 'curator'),
+            (string) ($p['text'] ?? ''),
+            (string) ($p['telegram'] ?? '')
+        );
+        if (empty($out['ok'])) {
+            return new WP_Error('gc_ask', (string) $out['message'], array('status' => 400));
+        }
+        return rest_ensure_response(array('ok' => true, 'message' => (string) $out['message']));
+    }
+
     public static function share($request) {
         $p = (array) $request->get_json_params();
         $kind = ($p['kind'] ?? 'job') === 'work' ? 'work' : 'job';

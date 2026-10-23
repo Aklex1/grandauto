@@ -46,6 +46,7 @@ function get_current_user_id() { return 0; }
 function is_admin() { return true; }
 function current_time($type = 'mysql') { return date('Y-m-d H:i:s'); }
 function sanitize_key($k) { return preg_replace('~[^a-z0-9_\-]~', '', strtolower((string) $k)); }
+function wp_strip_all_tags($t) { return trim(strip_tags((string) $t)); }
 function sanitize_text_field($t) { return trim(strip_tags((string) $t)); }
 function home_url($path = '/') { return 'https://example.test' . $path; }
 function admin_url($path = '') { return 'https://example.test/wp-admin/' . $path; }
@@ -90,6 +91,7 @@ require $base . 'class-gc-students.php';
 require $base . 'class-gc-pay.php';
 require $base . 'class-gc-mail.php';
 require $base . 'class-gc-pack.php';
+require $base . 'class-gc-contact.php';
 
 $fail = 0;
 function check($what, $got, $want) {
@@ -352,6 +354,56 @@ check('остаток тот же',                            GC_Pack::balance(
 check('чужая метка отбита',                        GC_Pay::pack_paid('topup_wp_7')['ok'], false);
 check('неизвестный пакет отбит',                   GC_Pay::pack_paid('gcpack_10_gold_1')['ok'], false);
 check('срок пакета проставлен',                    GC_Pack::until(10) > time(), true);
+
+
+echo "\n=== вопрос из кабинета ===\n";
+
+/** Заглушка заявок: ловим то, что ушло бы в телеграм. */
+class GS_Leads {
+    public static $last = null;
+    public static $ok = true;
+    public static function notify($entry) {
+        self::$last = $entry;
+        return self::$ok
+            ? array('ok' => true, 'message' => '', 'how' => 'напрямую')
+            : array('ok' => false, 'message' => 'телеграм молчит');
+    }
+}
+
+$GLOBALS['opts'][GC_Contact::OPT_LOG] = array();
+$GLOBALS['users'][20] = (object) array(
+    'ID' => 20, 'display_name' => 'Ерасыл Муканов', 'user_login' => 'erasyl',
+    'user_email' => 'erasyl@example.test',
+);
+$GLOBALS['meta'][20][GC_Students::META_COURSE] = 'money';
+
+check('пустой вопрос не уходит',                   GC_Contact::send(20, 'curator', 'ой')['ok'], false);
+check('и в журнал не попал',                       count(GC_Contact::log(10)), 0);
+
+$out = GC_Contact::send(20, 'curator', 'В модуле 3 не держится лицо на кадре, что поправить?', 'erasyl_tg');
+check('вопрос принят',                             $out['ok'], true);
+check('ученику сказали про ответ',                 strpos($out['message'], 'куратору') !== false, true);
+check('ушло в телеграм',                           GS_Leads::$last !== null, true);
+check('в сообщении есть метка ученика',            strpos(GS_Leads::$last['name'], '#u20') !== false, true);
+check('и имя с логином',                           strpos(GS_Leads::$last['name'], 'erasyl') !== false, true);
+check('контакт — почта и ник',                     GS_Leads::$last['contact'], 'erasyl@example.test, @erasyl_tg');
+check('ник запомнили',                             GC_Contact::telegram_of(20), '@erasyl_tg');
+check('откуда — курс и адресат',                   strpos(GS_Leads::$last['source'], 'куратору') !== false, true);
+check('вопрос в журнале',                          count(GC_Contact::log(10)), 1);
+check('журнал помнит, что ушло',                   GC_Contact::log(10)[0]['sent'], true);
+
+check('второй вопрос подряд отбит',                GC_Contact::send(20, 'support', 'А ещё не считается баланс')['ok'], false);
+
+// Молчащий телеграм не теряет вопрос: он остаётся в журнале.
+$GLOBALS['meta'][20]['gc_message_at'] = time() - 600;
+GS_Leads::$ok = false;
+$out = GC_Contact::send(20, 'support', 'Оплатил пакет, а кадры не запускаются');
+check('при обрыве связи вопрос всё равно принят',  $out['ok'], true);
+check('в поддержку — свой ответ',                  strpos($out['message'], 'поддержку') !== false, true);
+check('в журнале помечен как не ушедший',          GC_Contact::log(10)[0]['sent'], false);
+check('причина записана',                          GC_Contact::log(10)[0]['error'], 'телеграм молчит');
+check('за сутки видно оба вопроса',                GC_Contact::waiting(), 2);
+check('неизвестный адресат — куратор',              GC_Contact::kind_title('nobody'), 'куратору');
 
 printf("\n%s\n", $fail === 0 ? 'Все проверки прошли.' : ('Провалено проверок: ' . $fail));
 exit($fail === 0 ? 0 : 1);

@@ -1935,3 +1935,192 @@ body.gc-page .gc {
 .gc-shop__card .gc-btn {
     margin-top: auto;
 }
+
+/* ---------------------------------------------------------------------
+ * Написать куратору / в поддержку
+ *
+ * Кнопки висят в правом нижнем углу на всех вкладках. На странице
+ * программы снизу уже стоит плашка чата — поэтому у кнопок есть
+ * подъём: его величину проставляет скрипт по настоящей высоте плашки,
+ * а значение по умолчанию спасает, если скрипт не успел.
+ * ------------------------------------------------------------------ */
+
+.gc-ask {
+    --gc-ask-lift: 0px;
+    position: fixed;
+    right: max(18px, env(safe-area-inset-right, 0px));
+    bottom: calc(18px + var(--gc-ask-lift) + env(safe-area-inset-bottom, 0px));
+    z-index: 70;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    max-width: calc(100vw - 32px);
+}
+
+.gc-chat ~ .gc-ask {
+    --gc-ask-lift: 76px;
+}
+
+.gc-ask__btns {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.gc .gc-ask__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    padding: 10px 16px 10px 12px;
+    border: 1px solid var(--gc-line-2);
+    border-radius: 999px;
+    background: var(--gc-card);
+    box-shadow: 0 2px 6px rgba(16, 24, 40, 0.08), 0 10px 24px rgba(16, 24, 40, 0.12);
+    color: var(--gc-ink);
+    font: 600 14.5px/1.2 inherit;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.gc .gc-ask__btn:hover {
+    transform: translateY(-1px);
+    border-color: var(--gc-primary-2);
+    box-shadow: 0 4px 10px rgba(16, 24, 40, 0.1), 0 14px 30px rgba(91, 74, 224, 0.18);
+}
+
+.gc .gc-ask__btn.is-on {
+    border-color: var(--gc-primary);
+    box-shadow: 0 0 0 3px var(--gc-primary-soft);
+}
+
+.gc-ask__ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    border-radius: 50%;
+    background: var(--gc-primary);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.gc-ask__btn--support .gc-ask__ico {
+    background: var(--gc-accent);
+}
+
+.gc-ask__panel {
+    width: 340px;
+    max-width: calc(100vw - 32px);
+    box-sizing: border-box;
+    border: 1px solid var(--gc-line);
+    border-radius: var(--gc-radius);
+    background: var(--gc-card);
+    box-shadow: 0 6px 14px rgba(16, 24, 40, 0.08), 0 24px 50px rgba(16, 24, 40, 0.18);
+    animation: gc-ask-in 0.16s ease-out;
+}
+
+@keyframes gc-ask-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.gc .gc-ask__form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 14px 16px 16px;
+}
+
+.gc-ask__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.gc-ask__head strong {
+    font-size: 16px;
+    letter-spacing: -0.01em;
+}
+
+.gc .gc-ask__x {
+    margin: -6px -6px 0 0;
+    padding: 0 6px;
+    border: 0;
+    background: none;
+    color: var(--gc-muted);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.gc .gc-ask__x:hover {
+    color: var(--gc-ink);
+}
+
+.gc-ask__hint {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--gc-muted);
+}
+
+.gc-ask__fine {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--gc-muted);
+}
+
+.gc .gc-ask__form textarea {
+    min-height: 92px;
+    resize: vertical;
+}
+
+/* Полная подпись — на широком экране, короткая — на телефоне, где две
+   кнопки в ряд иначе обрезаются многоточием. Слева в углу сидит значок
+   согласия на печеньки, поэтому ряд прижат вправо и не растягивается. */
+.gc-ask__short {
+    display: none;
+}
+
+@media (max-width: 600px) {
+    .gc-ask__long {
+        display: none;
+    }
+
+    .gc-ask__short {
+        display: inline;
+    }
+
+    .gc-ask {
+        left: max(16px, env(safe-area-inset-left, 0px));
+        align-items: stretch;
+    }
+
+    .gc-ask__btns {
+        flex-direction: row;
+        align-items: stretch;
+    }
+
+    .gc-ask__btns {
+        justify-content: flex-end;
+    }
+
+    .gc .gc-ask__btn {
+        padding: 10px 14px 10px 10px;
+        font-size: 13.5px;
+    }
+
+    .gc-ask__panel {
+        width: 100%;
+        max-width: none;
+    }
+}
