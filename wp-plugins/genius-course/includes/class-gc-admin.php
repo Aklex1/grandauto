@@ -369,22 +369,27 @@ class GC_Admin {
     private static function jobs() {
         $jobs = GC_Gpu::recent();
         $health = GC_Gpu::health();
+        $kie = GC_Kie::health();
         ?>
         <h3>Генерации</h3>
         <p>Машина: <strong><?php echo $health['ok'] ? 'на связи' : 'недоступна'; ?></strong>
             <?php if (!$health['ok']) : ?>
                 <span class="description"><?php echo esc_html($health['message']); ?></span>
             <?php endif; ?></p>
+        <p>Шлюз моделей: <strong><?php echo $kie['ok'] ? 'на связи' : 'недоступен'; ?></strong>
+            <span class="description"><?php echo esc_html($kie['message']); ?>
+                — на нём считает мастерская курса «Заработок на нейросетях»</span></p>
         <table class="widefat striped">
-            <thead><tr><th>№</th><th>Ученик</th><th>Описание</th><th>Состояние</th><th>Результат</th><th>Когда</th></tr></thead>
+            <thead><tr><th>№</th><th>Ученик</th><th>Чем</th><th>Описание</th><th>Состояние</th><th>Результат</th><th>Когда</th></tr></thead>
             <tbody>
-            <?php if (!$jobs) : ?><tr><td colspan="6">Пока пусто.</td></tr><?php endif; ?>
+            <?php if (!$jobs) : ?><tr><td colspan="7">Пока пусто.</td></tr><?php endif; ?>
             <?php foreach ($jobs as $j) :
                 $u = get_user_by('id', (int) $j['user_id']);
                 ?>
                 <tr>
                     <td><?php echo (int) $j['id']; ?></td>
                     <td><?php echo esc_html($u ? $u->display_name : ('id ' . (int) $j['user_id'])); ?></td>
+                    <td><?php echo GC_Gpu::engine_of($j) === 'kie' ? 'шлюз' : 'машина'; ?></td>
                     <td><?php echo esc_html(mb_substr((string) $j['prompt'], 0, 90)); ?></td>
                     <td><?php echo esc_html($j['status']); ?><?php if (!empty($j['error'])) : ?><br><span class="description"><?php echo esc_html(mb_substr((string) $j['error'], 0, 90)); ?></span><?php endif; ?></td>
                     <td><?php if (!empty($j['result_url'])) : ?><a href="<?php echo esc_url($j['result_url']); ?>" target="_blank">кадр</a><?php else : ?>—<?php endif; ?></td>
@@ -813,6 +818,13 @@ class GC_Admin {
                     <th scope="row"><label for="gc-daily">Заданий в сутки на ученика</label></th>
                     <td><input id="gc-daily" name="daily" type="number" min="1" max="5000" value="<?php echo (int) $s['daily']; ?>" class="small-text">
                         <p class="description">Не ограничение для человека, а предохранитель от зацикленного скрипта.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gc-daily-kie">Заданий в сутки через шлюз моделей</label></th>
+                    <td><input id="gc-daily-kie" name="daily_kie" type="number" min="1" max="500"
+                               value="<?php echo (int) ($s['daily_kie'] ?? GC_Kie::DAILY_DEFAULT); ?>" class="small-text">
+                        <p class="description">Мастерская курса «Заработок на нейросетях» считает не на машине, а через
+                            шлюз моделей: каждое задание там стоит денег у поставщика, поэтому лимит отдельный и строже.</p></td>
                 </tr>
             </table>
             <p><button class="button button-primary">Сохранить</button></p>

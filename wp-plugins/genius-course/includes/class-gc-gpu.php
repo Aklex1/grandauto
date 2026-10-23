@@ -70,6 +70,9 @@ class GC_Gpu {
             'wf_image' => '',
             'wf_video' => '',
             'daily'    => self::DAILY_DEFAULT,
+            // Лимит для мастерской на шлюзе моделей: там каждое задание
+            // стоит денег у поставщика, а не часов аренды.
+            'daily_kie' => GC_Kie::DAILY_DEFAULT,
         ));
     }
 
@@ -91,6 +94,7 @@ class GC_Gpu {
             }
         }
         $now['daily']    = max(1, (int) ($values['daily'] ?? self::DAILY_DEFAULT));
+        $now['daily_kie'] = max(1, (int) ($values['daily_kie'] ?? GC_Kie::DAILY_DEFAULT));
         if (empty($now['secret'])) {
             // Ключ подписи обратного вызова заводим один раз и не показываем
             // в настройках целиком: его знает только машина.
@@ -156,6 +160,35 @@ class GC_Gpu {
         return $out;
     }
 
+    /**
+     * Чем считать задания.
+     *
+     * Курс AI-креатора учится на арендованной машине: там своя сборка
+     * ComfyUI, и смысл обучения в том числе в ней. Курсу заработка
+     * машина не нужна — его мастерская работает через шлюз моделей и
+     * поэтому доступна всегда.
+     *
+     * @return string 'kie' или 'gpu'
+     */
+    public static function engine($user_id = 0, $course = '') {
+        if ($course === '') {
+            $course = $user_id > 0 ? GC_Students::course($user_id) : GC_Courses::current();
+        }
+        return GC_Courses::field($course, 'studio', 'gpu') === 'kie' ? 'kie' : 'gpu';
+    }
+
+    /** Двигатель уже поставленного задания. */
+    public static function engine_of($job) {
+        $params = is_array($job) ? json_decode((string) $job['params'], true) : null;
+        $engine = is_array($params) ? (string) ($params['engine'] ?? '') : '';
+        return $engine === GC_Kie::ENGINE ? 'kie' : 'gpu';
+    }
+
+    /** Состояние мастерской для ученика: машина или шлюз. */
+    public static function state_for($user_id, $course = '') {
+        return self::engine($user_id, $course) === 'kie' ? GC_Kie::health() : self::health();
+    }
+
     public static function ready() {
         $s = self::settings();
         return !empty($s['enabled']) && $s['endpoint'] !== '';
@@ -219,13 +252,29 @@ class GC_Gpu {
             return array('ok' => false, 'job' => 0, 'status' => '', 'message' => 'Месяц безлимитных генераций закончился. Напишите нам, если нужно продлить.');
         }
         $s = self::settings();
-        if (self::used_today($user_id) >= (int) $s['daily']) {
-            return array('ok' => false, 'job' => 0, 'status' => '', 'message' => 'На сегодня достаточно: больше ' . (int) $s['daily'] . ' заданий в сутки не ставим.');
+        $engine = self::engine($user_id);
+        $limit = $engine === 'kie' ? GC_Kie::daily() : (int) $s['daily'];
+        if (self::used_today($user_id) >= $limit) {
+            return array('ok' => false, 'job' => 0, 'status' => '', 'message' => 'На сегодня достаточно: больше ' . $limit . ' заданий в сутки не ставим.');
         }
 
         global $wpdb;
         $table = GC_Install::jobs_table();
         $kind = $kind === 'video' ? 'video' : 'image';
+
+        if ($engine === 'kie') {
+            $params['engine'] = GC_Kie::ENGINE;
+            $wpdb->insert($table, array(
+                'user_id'    => (int) $user_id,
+                'kind'       => $kind,
+                'prompt'     => $prompt,
+                'params'     => wp_json_encode($params),
+                'status'     => 'queued',
+                'created_at' => current_time('mysql'),
+            ), array('%d', '%s', '%s', '%s', '%s', '%s'));
+            return GC_Kie::send((int) $wpdb->insert_id);
+        }
+
         if ($kind === 'video' && !self::video_allowed($s)) {
             return array('ok' => false, 'job' => 0, 'status' => '',
                          'message' => 'Видео пока не настроено: администратор не включил ролики.');
@@ -283,6 +332,9 @@ class GC_Gpu {
         if (!$job) {
             return array('ok' => false, 'job' => 0, 'status' => '', 'message' => 'Задание не найдено');
         }
+        if (self::engine_of($job) === 'kie') {
+            return GC_Kie::send($job_id);
+        }
         $s = self::settings();
         $params = json_decode((string) $job['params'], true);
         $params = is_array($params) ? $params : array();
@@ -332,47 +384,60 @@ class GC_Gpu {
      * опрашивает те задания, по которым обратный вызов не пришёл.
      */
     public static function tick() {
-        if (!self::ready()) {
-            return;
-        }
         global $wpdb;
         $table = GC_Install::jobs_table();
+        // Машина может быть выключена, а задания шлюза всё равно надо
+        // двигать: у них своя очередь и своя оплата. Поэтому смотрим на
+        // готовность машины по каждому заданию, а не на входе.
+        $ready = self::ready();
 
-        $queued = (array) $wpdb->get_col("SELECT id FROM {$table} WHERE status = 'queued' ORDER BY id ASC LIMIT 5");
-        foreach ($queued as $id) {
-            self::send((int) $id);
+        $queued = (array) $wpdb->get_results(
+            "SELECT id, params FROM {$table} WHERE status = 'queued' ORDER BY id ASC LIMIT 5", ARRAY_A);
+        foreach ($queued as $row) {
+            if (self::engine_of($row) === 'kie' || $ready) {
+                self::send((int) $row['id']);
+            }
         }
 
         $running = (array) $wpdb->get_results(
-            "SELECT id, remote_id, created_at FROM {$table} WHERE status = 'running' ORDER BY id ASC LIMIT 20", ARRAY_A);
+            "SELECT id, remote_id, created_at, params FROM {$table} WHERE status = 'running' ORDER BY id ASC LIMIT 20", ARRAY_A);
         foreach ($running as $row) {
+            $kie = self::engine_of($row) === 'kie';
             if (strtotime($row['created_at']) < time() - 30 * MINUTE_IN_SECONDS) {
-                self::fail((int) $row['id'], 'машина не вернула результат за полчаса');
+                self::fail((int) $row['id'], $kie
+                    ? 'модель не вернула результат за полчаса'
+                    : 'машина не вернула результат за полчаса');
                 continue;
             }
-            self::poll((int) $row['id']);
+            if ($kie || $ready) {
+                self::poll((int) $row['id']);
+            }
         }
     }
 
     /** Опросить машину по заданиям одного ученика: до трёх свежих. */
     public static function refresh_user($user_id) {
-        if (!self::ready()) {
-            return;
-        }
         global $wpdb;
         $table = GC_Install::jobs_table();
-        $rows = (array) $wpdb->get_col($wpdb->prepare(
-            "SELECT id FROM {$table} WHERE user_id = %d AND status = 'running' ORDER BY id DESC LIMIT 3",
+        $ready = self::ready();
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT id, params FROM {$table} WHERE user_id = %d AND status = 'running' ORDER BY id DESC LIMIT 3",
             (int) $user_id
-        ));
-        foreach ($rows as $id) {
-            self::poll((int) $id);
+        ), ARRAY_A);
+        foreach ($rows as $row) {
+            if (self::engine_of($row) === 'kie' || $ready) {
+                self::poll((int) $row['id']);
+            }
         }
     }
 
     public static function poll($job_id) {
         $job = self::job($job_id);
         if (!$job || $job['remote_id'] === '') {
+            return;
+        }
+        if (self::engine_of($job) === 'kie') {
+            GC_Kie::poll($job);
             return;
         }
         $s = self::settings();
@@ -904,6 +969,14 @@ class GC_Gpu {
     }
 
     /** Подпись обратного вызова: иначе результат сможет прислать кто угодно. */
+    /** Задание ушло считаться: номер у поставщика и состояние «идёт». */
+    public static function mark_running($job_id, $remote_id) {
+        self::update($job_id, array(
+            'status'    => 'running',
+            'remote_id' => mb_substr((string) $remote_id, 0, 64),
+        ));
+    }
+
     public static function sign($job_id) {
         $s = self::settings();
         return hash_hmac('sha256', 'job:' . (int) $job_id, (string) $s['secret']);

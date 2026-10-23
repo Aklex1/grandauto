@@ -50,14 +50,14 @@ function home_url($path = '/') { return 'https://example.test' . $path; }
 function admin_url($path = '') { return 'https://example.test/wp-admin/' . $path; }
 function add_query_arg($key, $value, $url) { return $url . (strpos($url, '?') === false ? '?' : '&') . $key . '=' . $value; }
 function wp_mail($to, $subject, $body) { $GLOBALS['mail'][] = array($to, $subject, $body); return true; }
-function get_option($k, $d = null) { return $d; }
+$GLOBALS['opts'] = array();
+function get_option($k, $d = null) { return array_key_exists($k, $GLOBALS['opts']) ? $GLOBALS['opts'][$k] : $d; }
+function update_option($k, $v, $a = true) { $GLOBALS['opts'][$k] = $v; return true; }
+function get_permalink($id) { return 'https://example.test/?p=' . (int) $id; }
+function wp_parse_args($args, $defaults = array()) { return array_merge($defaults, (array) $args); }
 function number_format_i18n($n) { return number_format((float) $n, 0, ',', ' '); }
 
-/** Кабинет и построитель ссылок — чужие классы, здесь нужны только адреса. */
-class GC_Cabinet {
-    public static function url($course = '') { return 'https://example.test/kab-' . $course . '/'; }
-    public static function course_of_page() { return ''; }
-}
+/** Построитель ссылок на оплату — чужой класс, здесь нужен только адрес. */
 class GS_Pay {
     public static $last = array();
     public static function link($label, $amount, $target, $success = '') {
@@ -67,6 +67,8 @@ class GS_Pay {
 }
 
 $base = __DIR__ . '/includes/';
+require $base . 'class-gc-cabinet.php';
+require $base . 'class-gc-kie.php';
 require $base . 'class-gc-courses.php';
 require $base . 'class-gc-program.php';
 require $base . 'class-gc-program-money.php';
@@ -90,6 +92,8 @@ foreach (array(10, 11, 12, 13) as $id) {
     $u->display_name = 'Ученик ' . $id;
     $GLOBALS['users'][$id] = $u;
 }
+update_option('gc_cabinet_page', 7285);
+update_option('gc_cabinet_money_page', 7542);
 GC_Students::set_course(10, 'money');
 GC_Students::set_course(11, 'kreator');
 $GLOBALS['caps'][12]['manage_options'] = true;
@@ -148,7 +152,7 @@ check('метка собрана',                              $label, 'gckurs_
 check('ссылка содержит метку',                      strpos(GC_Pay::link(10, 'money', 'base'), rawurlencode($label)) !== false, true);
 check('сумма в ссылке — цена тарифа',               (float) GS_Pay::$last['amount'], 22900.0);
 check('назначение человеческое',                    GS_Pay::$last['target'], 'Обучение «Заработок на нейросетях», тариф «Базовый»');
-check('возврат ведёт в кабинет курса',              GS_Pay::$last['success'], 'https://example.test/kab-money/?paid=1');
+check('возврат ведёт в кабинет курса',              GS_Pay::$last['success'], 'https://example.test/?p=7542&paid=1');
 check('несуществующий тариф ссылки не даёт',        GC_Pay::link(10, 'money', 'gold'), '');
 
 echo "\n=== уведомление об оплате ===\n";
@@ -185,6 +189,41 @@ check('тариф снят',                                 GC_Students::paid_p
 check('дата оплаты снята',                          GC_Students::paid_at(10), '');
 check('остался только первый модуль',               GC_Courses::module_open(10, 1, 'money'), false);
 check('первый всё ещё открыт',                      GC_Courses::module_open(10, 0, 'money'), true);
+
+echo "\n=== мастерская: чем считать ===\n";
+check('у заработка мастерская на шлюзе',            GC_Courses::field('money', 'studio', ''), 'kie');
+check('у AI-креатора — на машине',                  GC_Courses::field('kreator', 'studio', ''), 'gpu');
+check('кадр без референса',                         GC_Kie::capability('image', false), 'image');
+check('кадр по референсу — правка',                 GC_Kie::capability('image', true), 'image_edit');
+check('ролик по описанию',                          GC_Kie::capability('video', false), 'video');
+check('ролик из фотографии — оживление',            GC_Kie::capability('video', true), 'photo_video');
+check('квадрат',                                    GC_Kie::ratio(array('width' => 1024, 'height' => 1024)), '1:1');
+check('сторис',                                     GC_Kie::ratio(array('width' => 1080, 'height' => 1920)), '9:16');
+check('горизонтальный',                             GC_Kie::ratio(array('width' => 1920, 'height' => 1080)), '16:9');
+check('книжный',                                    GC_Kie::ratio(array('width' => 1080, 'height' => 1440)), '3:4');
+check('альбомный',                                  GC_Kie::ratio(array('width' => 1440, 'height' => 1080)), '4:3');
+check('без размера — квадрат',                      GC_Kie::ratio(array()), '1:1');
+check('ролики на шлюзе есть всегда',                GC_Kie::video_allowed(), true);
+
+echo "\n=== кабинеты и карта сайта ===\n";
+$pages = array();
+foreach (array(7285, 7542, 9001) as $id) {
+    $page = new stdClass();
+    $page->ID = $id;
+    $pages[] = $page;
+}
+unset($_GET['sitemap'], $_SERVER['REQUEST_URI']);
+check('без запроса карты список не трогаем',        count(GC_Cabinet::hide_from_sitemap($pages)), 3);
+$_SERVER['REQUEST_URI'] = '/sitemap.xml';
+$left = GC_Cabinet::hide_from_sitemap($pages);
+check('на карте кабинетов не осталось',             count($left), 1);
+check('и это не кабинет',                           (int) $left[0]->ID, 9001);
+unset($_SERVER['REQUEST_URI']);
+$_GET['sitemap'] = 'xml';
+check('адрес вида ?sitemap=xml тоже ловим',         count(GC_Cabinet::hide_from_sitemap($pages)), 1);
+unset($_GET['sitemap']);
+check('адрес кабинета заработка',                   GC_Cabinet::url('money'), 'https://example.test/?p=7542');
+check('адрес кабинета AI-креатора',                 GC_Cabinet::url('kreator'), 'https://example.test/?p=7285');
 
 printf("\n%s\n", $fail === 0 ? 'Все проверки прошли.' : ('Провалено проверок: ' . $fail));
 exit($fail === 0 ? 0 : 1);

@@ -30,6 +30,49 @@ class GC_Cabinet {
         add_filter('body_class', array(__CLASS__, 'body_class'));
         // Кабинет в поиске не нужен: он пустой для всех, кроме ученика.
         add_action('wp_head', array(__CLASS__, 'noindex'), 1);
+        add_filter('get_pages', array(__CLASS__, 'hide_from_sitemap'), 10, 1);
+    }
+
+    /**
+     * Кабинеты не попадают в карту сайта.
+     *
+     * Карту собирает сторонний плагин: он берёт все опубликованные
+     * страницы через get_pages() и про noindex не спрашивает. Робот
+     * ходит по такому адресу впустую, а в вебмастере копятся страницы
+     * «исключено по noindex» — поэтому убираем их из выдачи get_pages,
+     * но только на запросе карты: в меню, списках и выпадашках админки
+     * страницы кабинетов нужны как обычные.
+     */
+    public static function hide_from_sitemap($pages) {
+        if (!is_array($pages) || !$pages || !self::sitemap_request()) {
+            return $pages;
+        }
+        $ours = array();
+        foreach (GC_Courses::all() as $def) {
+            $id = (int) get_option((string) $def['option']);
+            if ($id > 0) {
+                $ours[] = $id;
+            }
+        }
+        if (!$ours) {
+            return $pages;
+        }
+        $kept = array();
+        foreach ($pages as $page) {
+            if (!is_object($page) || !isset($page->ID) || !in_array((int) $page->ID, $ours, true)) {
+                $kept[] = $page;
+            }
+        }
+        return $kept;
+    }
+
+    /** Запрос карты сайта: /sitemap.xml или /?sitemap=xml. */
+    public static function sitemap_request() {
+        if (isset($_GET['sitemap']) && $_GET['sitemap'] === 'xml') {
+            return true;
+        }
+        $uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+        return $uri !== '' && strpos($uri, '/sitemap') !== false;
     }
 
     /* ---------------------------------------------------------------------
@@ -261,6 +304,7 @@ class GC_Cabinet {
     }
 
     private static function header($user, $done, $modules, $course) {
+        $unlimited = GC_Gpu::engine($user->ID, $course) !== 'kie';
         $total = count($modules);
         $passed = count(array_intersect($done, range(0, max(0, $total - 1))));
         $percent = $total > 0 ? round($passed / $total * 100) : 0;
@@ -280,9 +324,10 @@ class GC_Cabinet {
                 <?php if ($until !== '') : ?>
                     <p class="gc-gpu <?php echo GC_Students::gpu_active($user->ID) ? 'is-on' : 'is-off'; ?>">
                         <?php if (GC_Students::gpu_active($user->ID)) : ?>
-                            Генерации без лимита до <?php echo esc_html(date_i18n('j F', strtotime($until))); ?>
+                            <?php echo $unlimited ? 'Генерации без лимита до ' : 'Генерации доступны до '; ?>
+                            <?php echo esc_html(date_i18n('j F', strtotime($until))); ?>
                         <?php else : ?>
-                            Месяц генераций закончился
+                            <?php echo $unlimited ? 'Месяц генераций закончился' : 'Срок генераций закончился'; ?>
                         <?php endif; ?>
                     </p>
                 <?php endif; ?>
@@ -491,31 +536,53 @@ class GC_Cabinet {
 
     private static function studio($user, $course, $paid) {
         if (!GC_Courses::tools_open($user->ID, $course)) {
+            $where = GC_Gpu::engine($user->ID, $course) === 'kie'
+                ? 'Кадры и ролики считаются на наших серверах: своя видеокарта не нужна, описание — единственная настройка.'
+                : 'Кадры и ролики считаются на нашей видеокарте: после оплаты обучения количество не ограничено месяц.';
             return '<section class="gc-card"><h2 class="gc-h2">Мастерская</h2>'
-                 . '<p class="gc-lead">Кадры и ролики считаются на нашей видеокарте: после оплаты обучения'
-                 . ' количество не ограничено месяц. Переделывать описание по двадцать раз — это и есть обучение.</p>'
+                 . '<p class="gc-lead">' . esc_html($where)
+                 . ' Переделывать описание по двадцать раз — это и есть обучение.</p>'
                  . self::locked_note($course, 'Мастерская генераций') . '</section>';
         }
         $jobs = GC_Gpu::for_user($user->ID);
-        $health = GC_Gpu::health();
+        $engine = GC_Gpu::engine($user->ID, $course);
+        $kie = $engine === 'kie';
+        $health = GC_Gpu::state_for($user->ID, $course);
         $active = GC_Students::gpu_active($user->ID);
         $gpu = GC_Gpu::settings();
-        $video = GC_Gpu::video_allowed($gpu);
+        $video = $kie ? GC_Kie::video_allowed() : GC_Gpu::video_allowed($gpu);
+        $daily = $kie ? GC_Kie::daily() : (int) $gpu['daily'];
         ob_start();
         ?>
         <section class="gc-card">
             <h2 class="gc-h2">Мастерская</h2>
-            <p class="gc-lead">Кадры и ролики считаются на нашей видеокарте: пока идёт месяц без лимита, количество не
-                ограничено. Переделывать описание по двадцать раз — это и есть обучение.</p>
+            <?php if ($kie) : ?>
+                <?php /* Про поставщика моделей ученику знать незачем: ему важно,
+                          что считается у нас и сколько можно в сутки. */ ?>
+                <p class="gc-lead">Кадры и ролики считаются на наших серверах — видеокарту заводить не нужно.
+                    До <?php echo (int) $daily; ?> заданий в сутки: переделывать описание по двадцать раз —
+                    это и есть обучение.</p>
+            <?php else : ?>
+                <p class="gc-lead">Кадры и ролики считаются на нашей видеокарте: пока идёт месяц без лимита, количество не
+                    ограничено. Переделывать описание по двадцать раз — это и есть обучение.</p>
+            <?php endif; ?>
 
             <p class="gc-gpu-state <?php echo $health['ok'] ? 'is-on' : 'is-off'; ?>">
                 <?php // Ученику важно одно: считается или нет. Модель видеокарты и
                       // режим памяти — это для админки.
-                      echo $health['ok'] ? 'Генерации включены' : 'Машина выключена — задания встанут в очередь'; ?>
+                      if ($health['ok']) {
+                          echo 'Генерации включены';
+                      } else {
+                          echo $kie
+                              ? 'Модели сейчас не отвечают — задания встанут в очередь'
+                              : 'Машина выключена — задания встанут в очередь';
+                      } ?>
             </p>
 
             <?php if (!$active) : ?>
-                <div class="gc-note">Месяц безлимитных генераций закончился. Напишите нам, если нужно продлить.</div>
+                <div class="gc-note"><?php echo $kie
+                    ? 'Срок доступа к генерациям закончился. Напишите нам, если нужно продлить.'
+                    : 'Месяц безлимитных генераций закончился. Напишите нам, если нужно продлить.'; ?></div>
             <?php else : ?>
                 <form class="gc-form gc-studio" id="gc-gen-form">
                     <?php if ($video) : ?>
@@ -564,16 +631,25 @@ class GC_Cabinet {
                         <label>
                             <span>Размер</span>
                             <select name="size">
-                                <option value="1024x1024">Квадрат 1024×1024</option>
-                                <option value="832x1216">Вертикальный 832×1216</option>
-                                <option value="1216x832">Горизонтальный 1216×832</option>
-                                <option value="768x1344">Сторис 768×1344</option>
-                                <option value="1344x768">Широкий 1344×768</option>
+                                <?php if ($kie) : ?>
+                                    <option value="1024x1024">Квадрат — карточка товара</option>
+                                    <option value="1080x1920">Вертикальный — сторис и рилс</option>
+                                    <option value="1920x1080">Горизонтальный — ютуб и сайт</option>
+                                    <option value="1080x1440">Книжный 3:4 — пост в ленте</option>
+                                    <option value="1440x1080">Альбомный 4:3 — обложка</option>
+                                <?php else : ?>
+                                    <option value="1024x1024">Квадрат 1024×1024</option>
+                                    <option value="832x1216">Вертикальный 832×1216</option>
+                                    <option value="1216x832">Горизонтальный 1216×832</option>
+                                    <option value="768x1344">Сторис 768×1344</option>
+                                    <option value="1344x768">Широкий 1344×768</option>
+                                <?php endif; ?>
                             </select>
                         </label>
                         <button type="submit" class="gc-btn">Сгенерировать</button>
                     </div>
 
+                    <?php if (!$kie) : ?>
                     <details class="gc-more">
                         <summary>Тонкие настройки</summary>
                         <div class="gc-more__grid">
@@ -610,6 +686,10 @@ class GC_Cabinet {
                             <?php endif; ?>
                         </div>
                     </details>
+                    <?php else : ?>
+                        <p class="gc-fine">Описание — единственная настройка, которая здесь нужна: модели на наших
+                            серверах принимают его целиком, вместе со светом, фоном и стилем съёмки.</p>
+                    <?php endif; ?>
 
                     <p class="gc-note-line" role="status"></p>
                 </form>
