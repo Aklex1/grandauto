@@ -29,6 +29,7 @@ class GC_Admin {
         add_action('admin_post_gc_paid', array(__CLASS__, 'handle_paid'));
         add_action('admin_post_gc_example', array(__CLASS__, 'handle_example'));
         add_action('admin_post_gc_credits', array(__CLASS__, 'handle_credits'));
+        add_action('admin_post_gc_grant', array(__CLASS__, 'handle_grant'));
         add_action('admin_post_gc_send_access', array(__CLASS__, 'handle_send_access'));
         add_action('admin_post_gc_mail_preview', array(__CLASS__, 'handle_mail_preview'));
         add_action('admin_post_gc_review', array(__CLASS__, 'handle_review'));
@@ -338,8 +339,10 @@ class GC_Admin {
                                 <?php endif; ?>
                                 <?php $pack = GC_Pack::for_user($u->ID, $course); ?>
                                 <?php if ($pack) : ?>
-                                    <br>пакет: <?php echo (int) $pack['used']['image']; ?>/<?php echo (int) $pack['images']; ?> кадров,
-                                    <?php echo (int) $pack['used']['video']; ?>/<?php echo (int) $pack['videos']; ?> роликов
+                                    <br>пакет: осталось <?php echo (int) $pack['left']['image']; ?> кадров,
+                                    <?php echo (int) $pack['left']['video']; ?> роликов<?php
+                                    echo (int) $pack['until'] > 0
+                                        ? ' · до ' . esc_html(date_i18n('j M', (int) $pack['until'])) : ''; ?>
                                 <?php endif; ?>
                                 <?php $quiz = GC_Quiz::summary($u->ID, $course); ?>
                                 <?php if ($quiz['done'] > 0) : ?>
@@ -368,6 +371,20 @@ class GC_Admin {
                             <button class="button button-small">Продлить</button>
                         </form>
                         <?php if ($paywall) : ?>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                                <?php wp_nonce_field('gc_grant'); ?>
+                                <input type="hidden" name="action" value="gc_grant">
+                                <input type="hidden" name="back" value="<?php echo esc_attr($tab); ?>">
+                                <input type="hidden" name="user" value="<?php echo (int) $u->ID; ?>">
+                                <select name="pack">
+                                    <?php foreach (GC_Pack::extras() as $key => $extra) : ?>
+                                        <option value="<?php echo esc_attr($key); ?>"><?php
+                                            echo esc_html($extra['title'] . ': ' . $extra['images'] . ' кадров и '
+                                                . $extra['videos'] . ' роликов'); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button class="button button-small">Начислить пакет</button>
+                            </form>
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
                                 <?php wp_nonce_field('gc_paid'); ?>
                                 <input type="hidden" name="action" value="gc_paid">
@@ -1337,6 +1354,35 @@ class GC_Admin {
         wp_safe_redirect(self::url('jobs', array(
             'gc_msg' => sprintf('Стоимость узнали у %d заданий из %d просмотренных', $done, count($rows)),
         )));
+        exit;
+    }
+
+    /**
+     * Начислить пакет генераций руками.
+     *
+     * Нужно, когда за пакет заплатили мимо кабинета или когда хочется
+     * добавить человеку генераций по-человечески.
+     */
+    public static function handle_grant() {
+        check_admin_referer('gc_grant');
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        $back = self::back();
+        $user_id = (int) ($_POST['user'] ?? 0);
+        $key = sanitize_key((string) ($_POST['pack'] ?? ''));
+        $pack = GC_Pack::extra($key);
+        $user = get_user_by('id', $user_id);
+        if (!$user || !$pack) {
+            wp_safe_redirect(self::url($back, array('gc_err' => 'Ученик или пакет не найден')));
+            exit;
+        }
+        GC_Pack::grant($user_id, $pack['images'], $pack['videos'], $pack['days'], 'руками: ' . $key);
+        $left = GC_Pack::balance($user_id);
+        wp_safe_redirect(self::url($back, array('gc_msg' => sprintf(
+            'Начислен пакет «%s» для %s: стало %d кадров и %d роликов',
+            (string) $pack['title'], $user->user_email, (int) $left['image'], (int) $left['video']
+        ))));
         exit;
     }
 

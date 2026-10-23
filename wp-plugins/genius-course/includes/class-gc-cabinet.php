@@ -728,8 +728,8 @@ class GC_Cabinet {
             return '';
         }
         $rows = array(
-            array('кадры',  (int) $pack['used']['image'], (int) $pack['images'], (int) $pack['left']['image']),
-            array('ролики', (int) $pack['used']['video'], (int) $pack['videos'], (int) $pack['left']['video']),
+            array('кадры',  (int) $pack['left']['image'], (int) $pack['images']),
+            array('ролики', (int) $pack['left']['video'], (int) $pack['videos']),
         );
         ob_start();
         ?>
@@ -746,8 +746,8 @@ class GC_Cabinet {
             </div>
             <div class="gc-pack__bars">
                 <?php foreach ($rows as $row) :
-                    list($name, $used, $total, $left) = $row;
-                    $percent = $total > 0 ? max(0, min(100, round($left / $total * 100))) : 0;
+                    list($name, $left, $total) = $row;
+                    $percent = $total > 0 ? max(0, min(100, round($left / $total * 100))) : ($left > 0 ? 100 : 0);
                     ?>
                     <div class="gc-pack__bar<?php echo $left <= 0 ? ' is-empty' : ''; ?>">
                         <p><span><?php echo esc_html($name); ?></span>
@@ -756,9 +756,62 @@ class GC_Cabinet {
                     </div>
                 <?php endforeach; ?>
             </div>
-            <p class="gc-fine">Считаются только посчитанные задания: неудачные попытки пакет не тратят.
-                Кончится — напишите нам, продлим отдельным пакетом.</p>
+            <p class="gc-fine">Неудачные попытки пакет не тратят: задание, которое не вышло, возвращается на счёт.</p>
+            <?php echo self::pack_shop($user, $course, $pack); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Докупка генераций.
+     *
+     * Витрина спрятана, пока остаток приличный: предлагать докупить
+     * тому, у кого пятьсот кадров на счету, — навязывание. Когда
+     * остаётся мало или срок вышел, она раскрыта сразу.
+     */
+    private static function pack_shop($user, $course, $pack) {
+        if (!class_exists('GC_Pay') || !class_exists('GC_Pack')) {
+            return '';
+        }
+        $extras = GC_Pack::extras();
+        if (!$extras) {
+            return '';
+        }
+        $low = !empty($pack['over'])
+            || (int) $pack['left']['image'] <= 30
+            || (int) $pack['left']['video'] <= 2;
+
+        ob_start();
+        ?>
+        <details class="gc-shop"<?php echo $low ? ' open' : ''; ?>>
+            <summary><?php echo $low ? 'Пакет заканчивается — докупить генерации' : 'Докупить генерации'; ?></summary>
+            <?php if (!empty($_GET['bought'])) : ?>
+                <p class="gc-note gc-note--ok">Платёж принят. Пакет начисляется автоматически, обычно за минуту:
+                    если остаток ещё прежний, обновите страницу.</p>
+            <?php endif; ?>
+            <p class="gc-fine">Пакет добавляется к текущему остатку и продлевает срок. Оплата — той же картой,
+                через ЮMoney.</p>
+            <div class="gc-shop__grid">
+                <?php foreach ($extras as $key => $extra) :
+                    $link = GC_Pay::pack_link($user->ID, $key);
+                    ?>
+                    <article class="gc-shop__card">
+                        <h4><?php echo esc_html($extra['title']); ?></h4>
+                        <p class="gc-shop__price"><?php echo esc_html(number_format_i18n((float) $extra['price'])); ?> ₽</p>
+                        <p class="gc-shop__nums"><b><?php echo (int) $extra['images']; ?></b> кадров
+                            <i>+</i> <b><?php echo (int) $extra['videos']; ?></b> роликов</p>
+                        <p class="gc-shop__note"><?php echo esc_html($extra['note']); ?></p>
+                        <p class="gc-fine">Срок: <?php echo (int) $extra['days']; ?> дней</p>
+                        <?php if ($link !== '') : ?>
+                            <a class="gc-btn gc-btn--ghost" href="<?php echo esc_url($link); ?>" rel="nofollow noopener">Купить</a>
+                        <?php else : ?>
+                            <p class="gc-fine">Оплата картой сейчас недоступна — напишите нам.</p>
+                        <?php endif; ?>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+        </details>
         <?php
         return ob_get_clean();
     }

@@ -6,6 +6,7 @@
  * Поэтому сайт принимает его сам и раскладывает по назначению:
  *
  *   gckurs_…         → доступ к модулям курса в кабинете обучения
+ *   gcpack_…         → пакет генераций, докупленный в кабинете
  *   kie-neurohub|…   → баланс раздела «Нейросети»
  *   topup_wp_…       → баланс кабинета озвучки (он же общий для микросервисов)
  *   topup_telegram_… → он же, для пользователей из бота
@@ -278,6 +279,14 @@ class GS_Yoomoney {
         // тогда уведомление уходит дальше по общим правилам.
         if (class_exists('GC_Pay') && strpos($label, GC_Pay::LABEL_PREFIX) === 0) {
             $result = GC_Pay::paid($label);
+            self::remember($label, $amount, !empty($result['ok']) ? 'зачислено' : 'ошибка',
+                (string) ($result['message'] ?? ''), $params, 'course');
+            return self::reply(!empty($result['ok']), 'course', (string) ($result['message'] ?? ''));
+        }
+
+        // Докупка генераций в кабинете курса: пакет кадров и роликов.
+        if (class_exists('GC_Pay') && strpos($label, GC_Pay::PACK_PREFIX) === 0) {
+            $result = GC_Pay::pack_paid($label);
             self::remember($label, $amount, !empty($result['ok']) ? 'зачислено' : 'ошибка',
                 (string) ($result['message'] ?? ''), $params, 'course');
             return self::reply(!empty($result['ok']), 'course', (string) ($result['message'] ?? ''));
@@ -649,6 +658,7 @@ class GS_Yoomoney {
             'photo_'  => 'photo',
             'course_' => 'course',
             'gckurs_' => 'course',
+            'gcpack_' => 'course',
             'slides_' => 'slides',
         );
         foreach ($by_prefix as $prefix => $source) {

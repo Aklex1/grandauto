@@ -308,6 +308,9 @@ class GC_Gpu {
                 'status'     => 'queued',
                 'created_at' => current_time('mysql'),
             ), array('%d', '%s', '%s', '%s', '%s', '%s'));
+            // Списываем сразу: задание уже занимает очередь. Неудачное
+            // вернётся обратно в fail().
+            GC_Pack::spend($user_id, $kind);
             return GC_Kie::send((int) $wpdb->insert_id);
         }
 
@@ -592,6 +595,12 @@ class GC_Gpu {
     }
 
     public static function fail($job_id, $message) {
+        // Неудачная попытка пакет не тратит: поставщик её тоже не
+        // считает, и брать за неё с ученика не за что.
+        $job = self::job($job_id);
+        if ($job && (string) $job['status'] !== 'failed' && self::engine_of($job) === 'kie') {
+            GC_Pack::refund((int) $job['user_id'], (string) $job['kind']);
+        }
         self::update($job_id, array(
             'status'      => 'failed',
             'error'       => mb_substr((string) $message, 0, 500),

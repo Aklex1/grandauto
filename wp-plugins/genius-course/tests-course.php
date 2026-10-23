@@ -66,6 +66,11 @@ function date_i18n($f, $ts = null) { return date($f, $ts === null ? time() : $ts
 function is_email($mail) { return (bool) filter_var((string) $mail, FILTER_VALIDATE_EMAIL); }
 function sanitize_email($mail) { return (string) $mail; }
 
+/** Мастерская: в проверках пакета нужен только её двигатель. */
+class GC_Gpu {
+    public static function engine($user_id = 0, $course = '') { return 'kie'; }
+}
+
 /** Построитель ссылок на оплату — чужой класс, здесь нужен только адрес. */
 class GS_Pay {
     public static $last = array();
@@ -84,6 +89,7 @@ require $base . 'class-gc-program-money.php';
 require $base . 'class-gc-students.php';
 require $base . 'class-gc-pay.php';
 require $base . 'class-gc-mail.php';
+require $base . 'class-gc-pack.php';
 
 $fail = 0;
 function check($what, $got, $want) {
@@ -304,6 +310,48 @@ check('после перерыва заход новый',                 GC_St
 GC_Students::touch(12, 5);
 check('администратора не считаем',                  GC_Students::visits(12)['visits'], 0);
 check('у того, кто не заходил, пусто',              GC_Students::visits(11)['seen'], 0);
+
+echo "\n=== пакет генераций ===\n";
+GC_Students::set_paid(10, 'base');
+check('в базовом тарифе 600 кадров',               GC_Pack::plan_pack('base')['images'], 600);
+check('и 60 роликов',                              GC_Pack::plan_pack('base')['videos'], 60);
+check('в расширенном 1500 кадров',                 GC_Pack::plan_pack('plus')['images'], 1500);
+check('пакетов на докупку три',                    count(GC_Pack::extras()), 3);
+
+GC_Pack::grant_plan(10, 'base', 'gckurs_10_money_base');
+$balance = GC_Pack::balance(10);
+check('тарифный пакет начислен',                   $balance['image'], 600);
+check('ролики тоже',                               $balance['video'], 60);
+check('повтор по той же метке не удваивает',       GC_Pack::grant_plan(10, 'base', 'gckurs_10_money_base'), false);
+check('и остаток прежний',                         GC_Pack::balance(10)['image'], 600);
+
+GC_Pack::spend(10, 'image');
+GC_Pack::spend(10, 'video');
+check('кадр списан',                               GC_Pack::balance(10)['image'], 599);
+check('ролик списан',                              GC_Pack::balance(10)['video'], 59);
+GC_Pack::refund(10, 'video');
+check('неудачный ролик вернулся',                  GC_Pack::balance(10)['video'], 60);
+check('админу ничего не списываем',                (function () { GC_Pack::spend(12, 'image'); return GC_Pack::balance(12)['image']; })(), 0);
+
+check('генерация разрешена',                       GC_Pack::allows(10, 'image')['ok'], true);
+$GLOBALS['meta'][10][GC_Pack::META] = array('image' => 0, 'video' => 3);
+check('кадры кончились — отказ',                   GC_Pack::allows(10, 'image')['ok'], false);
+check('и сказано, где докупить',                   strpos(GC_Pack::allows(10, 'image')['message'], 'мастерской') !== false, true);
+check('ролики ещё есть',                           GC_Pack::allows(10, 'video')['ok'], true);
+
+echo "\n=== докупка генераций ===\n";
+$label = GC_Pay::pack_label(10, 'work');
+check('метка пакета собрана',                      strpos($label, 'gcpack_10_work_') === 0, true);
+$out = GC_Pay::pack_paid($label);
+check('пакет зачислен',                            $out['ok'], true);
+check('кадры добавились',                          GC_Pack::balance(10)['image'], 150);
+check('ролики добавились',                         GC_Pack::balance(10)['video'], 13);
+$again = GC_Pay::pack_paid($label);
+check('повтор уведомления не удваивает',           $again['message'], 'пакет уже начислен — повторное уведомление');
+check('остаток тот же',                            GC_Pack::balance(10)['image'], 150);
+check('чужая метка отбита',                        GC_Pay::pack_paid('topup_wp_7')['ok'], false);
+check('неизвестный пакет отбит',                   GC_Pay::pack_paid('gcpack_10_gold_1')['ok'], false);
+check('срок пакета проставлен',                    GC_Pack::until(10) > time(), true);
 
 printf("\n%s\n", $fail === 0 ? 'Все проверки прошли.' : ('Провалено проверок: ' . $fail));
 exit($fail === 0 ? 0 : 1);

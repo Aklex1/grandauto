@@ -28,6 +28,9 @@ class GC_Pay {
      */
     const LABEL_PREFIX = 'gckurs_';
 
+    /** Начало метки докупленного пакета генераций. */
+    const PACK_PREFIX = 'gcpack_';
+
     /** Метка платежа: gckurs_<ученик>_<курс>_<тариф>. */
     public static function label($user_id, $course, $plan) {
         return self::LABEL_PREFIX . (int) $user_id . '_' . sanitize_key($course) . '_' . sanitize_key($plan);
@@ -46,6 +49,66 @@ class GC_Pay {
         $target = sprintf('Обучение «%s», тариф «%s»', GC_Courses::title($course), (string) $def['title']);
         $success = add_query_arg('paid', '1', GC_Cabinet::url($course));
         return (string) GS_Pay::link(self::label($user_id, $course, $plan), (float) $def['price'], $target, $success);
+    }
+
+    /* ---------------------------------------------------------------------
+     * Докупка генераций
+     * ------------------------------------------------------------------ */
+
+    /** Метка платежа за пакет: gcpack_<ученик>_<пакет>_<время>. */
+    public static function pack_label($user_id, $key) {
+        // Время в метке делает её разной у повторных покупок: иначе
+        // второй пакет выглядел бы повтором первого и не зачислился.
+        return self::PACK_PREFIX . (int) $user_id . '_' . sanitize_key($key) . '_' . time();
+    }
+
+    public static function pack_link($user_id, $key) {
+        $pack = GC_Pack::extra($key);
+        if (!$pack || !class_exists('GS_Pay')) {
+            return '';
+        }
+        $course = GC_Students::course($user_id);
+        $target = sprintf('Пакет генераций «%s»: %d кадров и %d роликов',
+            (string) $pack['title'], (int) $pack['images'], (int) $pack['videos']);
+        $success = add_query_arg(array('tab' => 'studio', 'bought' => '1'), GC_Cabinet::url($course));
+        return (string) GS_Pay::link(self::pack_label($user_id, $key), (float) $pack['price'], $target, $success);
+    }
+
+    /**
+     * Уведомление об оплате пакета генераций.
+     *
+     * @return array{ok:bool,message:string}
+     */
+    public static function pack_paid($label) {
+        $label = (string) $label;
+        if (strpos($label, self::PACK_PREFIX) !== 0) {
+            return array('ok' => false, 'message' => 'метка не от пакета генераций');
+        }
+        $parts = explode('_', substr($label, strlen(self::PACK_PREFIX)));
+        if (count($parts) < 2) {
+            return array('ok' => false, 'message' => 'в метке нет ученика или пакета');
+        }
+        $user_id = (int) $parts[0];
+        $key = sanitize_key($parts[1]);
+        $user = get_user_by('id', $user_id);
+        $pack = GC_Pack::extra($key);
+        if (!$user || !$pack) {
+            return array('ok' => false, 'message' => 'ученик или пакет по метке не найден');
+        }
+        // Повторное уведомление по той же метке ничего не удваивает.
+        foreach (GC_Pack::log($user_id) as $row) {
+            if ((string) $row['label'] === $label) {
+                return array('ok' => true, 'message' => 'пакет уже начислен — повторное уведомление');
+            }
+        }
+        GC_Pack::grant($user_id, $pack['images'], $pack['videos'], $pack['days'], $label);
+        $left = GC_Pack::balance($user_id);
+
+        return array('ok' => true, 'message' => sprintf(
+            'начислен пакет «%s»: +%d кадров, +%d роликов (стало %d и %d), ученик %s',
+            (string) $pack['title'], (int) $pack['images'], (int) $pack['videos'],
+            (int) $left['image'], (int) $left['video'], $user->user_email
+        ));
     }
 
     /**
@@ -92,6 +155,8 @@ class GC_Pay {
         if (!$first) {
             return array('ok' => true, 'message' => 'доступ уже открыт — повторное уведомление');
         }
+        // Вместе с доступом начисляем пакет генераций тарифа.
+        GC_Pack::grant_plan($user_id, $plan, $label);
         self::notify_admin($user, $course, $plan);
 
         return array('ok' => true, 'message' => sprintf(
