@@ -58,6 +58,13 @@ class GC_Rest {
             'callback'            => array(__CLASS__, 'ask'),
             'permission_callback' => $student,
         ));
+        register_rest_route(self::NS, '/announce', array(
+            'methods'             => 'POST',
+            'callback'            => array(__CLASS__, 'announce'),
+            'permission_callback' => function () {
+                return current_user_can('manage_options');
+            },
+        ));
         register_rest_route(self::NS, '/jobs', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'jobs'),
@@ -282,6 +289,26 @@ class GC_Rest {
      *
      * Чужое не трогаем: и кадр, и работа проверяются на владельца.
      */
+    /**
+     * Объявление в группу курса.
+     *
+     * Текст приходит запросом, получатель — из настроек курса: «куда»
+     * снаружи не задаётся, иначе это был бы маршрут «отправь что угодно
+     * куда угодно от имени нашего бота».
+     */
+    public static function announce($request) {
+        $p = (array) $request->get_json_params();
+        $course = self::course($request);
+        $where = (string) ($p['to'] ?? 'news') === 'chat'
+            ? GC_Courses::chat($course)
+            : GC_Courses::news($course);
+        $out = GC_Announce::post((string) ($p['text'] ?? ''), $where);
+        if (empty($out['ok'])) {
+            return new WP_Error('gc_announce', (string) $out['message'], array('status' => 400));
+        }
+        return rest_ensure_response($out);
+    }
+
     /**
      * Вопрос куратору или в поддержку.
      *

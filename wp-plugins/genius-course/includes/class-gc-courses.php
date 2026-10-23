@@ -57,6 +57,7 @@ class GC_Courses {
                 // должны считаться всегда.
                 'studio'  => 'kie',
                 'chat'    => 'https://t.me/c/4407841852/3',
+                'news'    => 'https://t.me/c/4407841852/2',
                 // Вкладка с направлениями запуска: у курса про заработок
                 // она есть, у курса про ремесло — нет.
                 'launch'  => true,
@@ -220,6 +221,21 @@ class GC_Courses {
             return (string) $saved[$course];
         }
         return (string) self::field($course, 'chat', '');
+    }
+
+    /**
+     * Тема группы, куда идут новости и анонсы.
+     *
+     * Как и чат, хранится настройкой: тему переносят, а выкатывать
+     * плагин ради одной ссылки незачем.
+     */
+    public static function news($course) {
+        $saved = get_option('gc_news', array());
+        $course = $course !== '' ? $course : self::current();
+        if (is_array($saved) && !empty($saved[$course])) {
+            return (string) $saved[$course];
+        }
+        return (string) self::field($course, 'news', '');
     }
 
     public static function landing_url($course) {

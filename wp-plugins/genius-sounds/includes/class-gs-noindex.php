@@ -66,7 +66,9 @@ class GS_Noindex {
      * и честный 404 правильнее перевода на главную.
      */
     const GONE = array(
-        '/bot-pay/'                 => '/paybot/',
+        // Страницу PayBot убрали вместе с товаром: уводить старый адрес
+        // стало некуда, а честный 404 правильнее перевода «куда-нибудь».
+
         '/izmenit-foto-neyrosetyu/' => '/neurohub/',
         '/kartinka-neyrosetyu/'     => '/neurohub/',
         '/video-neyrosetyu/'        => '/video-iz-teksta-neiroset/',
