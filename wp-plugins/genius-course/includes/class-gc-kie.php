@@ -25,8 +25,16 @@ class GC_Kie {
     /** Метка в параметрах задания: по ней видно, чем его считать. */
     const ENGINE = 'kie';
 
-    /** Сколько заданий в сутки на ученика: каждое стоит денег. */
-    const DAILY_DEFAULT = 20;
+    /**
+     * Сколько заданий в сутки на ученика: каждое стоит денег.
+     *
+     * Кадры и ролики врозь: ролик обходится вчетверо дороже, и общий
+     * предел означал бы, что пакет на два месяца выбирается за вечер.
+     */
+    const DAILY_IMAGES = 25;
+    const DAILY_VIDEOS = 5;
+    /** Оставлено для старых настроек, где предел был один на всё. */
+    const DAILY_DEFAULT = 25;
 
     public static function available() {
         return class_exists('GS_Provider') && trim((string) get_option('kie_tts_api_key', '')) !== '';
@@ -68,9 +76,12 @@ class GC_Kie {
         return true;
     }
 
-    public static function daily() {
+    public static function daily($kind = 'image') {
         $s = GC_Gpu::settings();
-        return max(1, (int) ($s['daily_kie'] ?? self::DAILY_DEFAULT));
+        if ((string) $kind === 'video') {
+            return max(0, (int) ($s['daily_kie_video'] ?? self::DAILY_VIDEOS));
+        }
+        return max(1, (int) ($s['daily_kie'] ?? self::DAILY_IMAGES));
     }
 
     /**

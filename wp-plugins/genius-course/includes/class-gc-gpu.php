@@ -72,7 +72,8 @@ class GC_Gpu {
             'daily'    => self::DAILY_DEFAULT,
             // Лимит для мастерской на шлюзе моделей: там каждое задание
             // стоит денег у поставщика, а не часов аренды.
-            'daily_kie' => GC_Kie::DAILY_DEFAULT,
+            'daily_kie' => GC_Kie::DAILY_IMAGES,
+            'daily_kie_video' => GC_Kie::DAILY_VIDEOS,
         ));
     }
 
@@ -94,7 +95,8 @@ class GC_Gpu {
             }
         }
         $now['daily']    = max(1, (int) ($values['daily'] ?? self::DAILY_DEFAULT));
-        $now['daily_kie'] = max(1, (int) ($values['daily_kie'] ?? GC_Kie::DAILY_DEFAULT));
+        $now['daily_kie'] = max(1, (int) ($values['daily_kie'] ?? GC_Kie::DAILY_IMAGES));
+        $now['daily_kie_video'] = max(0, (int) ($values['daily_kie_video'] ?? GC_Kie::DAILY_VIDEOS));
         if (empty($now['secret'])) {
             // Ключ подписи обратного вызова заводим один раз и не показываем
             // в настройках целиком: его знает только машина.
@@ -229,12 +231,25 @@ class GC_Gpu {
         return $out;
     }
 
-    public static function used_today($user_id) {
+    /**
+     * Сколько заданий человек поставил за сутки.
+     *
+     * Вид можно спросить отдельно: у кадров и роликов разная цена и
+     * разные пределы.
+     */
+    public static function used_today($user_id, $kind = '') {
         global $wpdb;
         $table = GC_Install::jobs_table();
+        $since = gmdate('Y-m-d H:i:s', time() - DAY_IN_SECONDS);
+        if ((string) $kind !== '') {
+            return (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$table} WHERE user_id = %d AND created_at > %s AND kind = %s",
+                (int) $user_id, $since, (string) $kind === 'video' ? 'video' : 'image'
+            ));
+        }
         return (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM {$table} WHERE user_id = %d AND created_at > %s",
-            (int) $user_id, gmdate('Y-m-d H:i:s', time() - DAY_IN_SECONDS)
+            (int) $user_id, $since
         ));
     }
 
@@ -256,14 +271,26 @@ class GC_Gpu {
         // только примеры к модулям: их делает администратор, у которого
         // своего курса нет, а считать их должен шлюз.
         $engine = $engine === 'kie' ? 'kie' : self::engine($user_id);
-        $limit = $engine === 'kie' ? GC_Kie::daily() : (int) $s['daily'];
-        if (self::used_today($user_id) >= $limit) {
-            return array('ok' => false, 'job' => 0, 'status' => '', 'message' => 'На сегодня достаточно: больше ' . $limit . ' заданий в сутки не ставим.');
+        $kind = $kind === 'video' ? 'video' : 'image';
+
+        if ($engine === 'kie') {
+            $limit = GC_Kie::daily($kind);
+            if ($limit <= 0) {
+                return array('ok' => false, 'job' => 0, 'status' => '',
+                             'message' => $kind === 'video' ? 'Ролики сейчас выключены.' : 'Генерации сейчас выключены.');
+            }
+            if (self::used_today($user_id, $kind) >= $limit) {
+                return array('ok' => false, 'job' => 0, 'status' => '', 'message' => $kind === 'video'
+                    ? 'На сегодня хватит роликов: больше ' . $limit . ' в сутки не считаем. Завтра счётчик обнулится.'
+                    : 'На сегодня хватит кадров: больше ' . $limit . ' в сутки не считаем. Завтра счётчик обнулится.');
+            }
+        } elseif (self::used_today($user_id) >= (int) $s['daily']) {
+            return array('ok' => false, 'job' => 0, 'status' => '',
+                         'message' => 'На сегодня достаточно: больше ' . (int) $s['daily'] . ' заданий в сутки не ставим.');
         }
 
         global $wpdb;
         $table = GC_Install::jobs_table();
-        $kind = $kind === 'video' ? 'video' : 'image';
 
         if ($engine === 'kie') {
             // Пакет тарифа: кадры и ролики считаются отдельно, потому что

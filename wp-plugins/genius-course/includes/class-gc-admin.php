@@ -1053,11 +1053,15 @@ class GC_Admin {
                     </tr>
                 <?php endforeach; ?>
                 <tr>
-                    <th scope="row"><label for="gc-daily-kie">Заданий в сутки через шлюз моделей</label></th>
-                    <td><input id="gc-daily-kie" name="daily_kie" type="number" min="1" max="500"
-                               value="<?php echo (int) ($s['daily_kie'] ?? GC_Kie::DAILY_DEFAULT); ?>" class="small-text">
-                        <p class="description">Мастерская курса «Заработок на нейросетях» считает не на машине, а через
-                            шлюз моделей: каждое задание там стоит денег у поставщика, поэтому лимит отдельный и строже.</p></td>
+                    <th scope="row">В сутки через шлюз моделей</th>
+                    <td>
+                        <label>кадров <input name="daily_kie" type="number" min="1" max="500"
+                               value="<?php echo (int) ($s['daily_kie'] ?? GC_Kie::DAILY_IMAGES); ?>" class="small-text"></label>
+                        <label style="margin-left:12px">роликов <input name="daily_kie_video" type="number" min="0" max="500"
+                               value="<?php echo (int) ($s['daily_kie_video'] ?? GC_Kie::DAILY_VIDEOS); ?>" class="small-text"></label>
+                        <p class="description">Мастерская курса «Заработок на нейросетях» считает через шлюз моделей, и
+                            каждое задание там стоит денег. Ролик обходится вчетверо дороже кадра, поэтому пределы
+                            разные: иначе пакет на два месяца выбирается за вечер.</p></td>
                 </tr>
             </table>
             <p><button class="button button-primary">Сохранить</button></p>

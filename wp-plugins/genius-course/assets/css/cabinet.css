@@ -1345,9 +1345,59 @@ body.gc-page .gc {
     background: var(--gc-card-2);
 }
 
+/*
+ * Кружок рисуем сами. Тема сайта переопределяет вид переключателей на
+ * свой лад и в кабинете они пропадали совсем: варианты выглядели
+ * просто строками текста, и было непонятно, что их можно выбрать.
+ * Сам input остаётся на месте и получает фокус с клавиатуры — он
+ * только невидим.
+ */
 .gc-quiz__opt input {
-    width: auto !important;
-    margin: 3px 0 0 !important;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    margin: 0 !important;
+    pointer-events: none;
+}
+
+.gc-quiz__opt > span {
+    position: relative;
+    display: block;
+    padding-left: 30px;
+}
+
+.gc-quiz__opt > span::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 1px;
+    width: 19px;
+    height: 19px;
+    box-sizing: border-box;
+    border: 2px solid var(--gc-line-2);
+    border-radius: 50%;
+    background: var(--gc-card);
+    transition: border-color 0.15s ease;
+}
+
+.gc-quiz__opt input:checked + span::before {
+    border-color: var(--gc-primary);
+}
+
+.gc-quiz__opt input:checked + span::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 6px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--gc-primary);
+}
+
+.gc-quiz__opt input:focus-visible + span::before {
+    box-shadow: 0 0 0 3px var(--gc-primary-soft);
 }
 
 .gc-quiz__opt.is-answer {
@@ -1387,9 +1437,54 @@ body.gc-page .gc {
     color: var(--gc-ink-2);
 }
 
+/* Галочку тоже рисуем сами — по той же причине, что и кружок. */
 .gc-check input {
-    width: auto !important;
-    margin-top: 3px !important;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    margin: 0 !important;
+    pointer-events: none;
+}
+
+.gc-check > span {
+    position: relative;
+    display: block;
+    padding-left: 28px;
+}
+
+.gc-check > span::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 1px;
+    width: 18px;
+    height: 18px;
+    box-sizing: border-box;
+    border: 2px solid var(--gc-line-2);
+    border-radius: 5px;
+    background: var(--gc-card);
+}
+
+.gc-check input:checked + span::before {
+    border-color: var(--gc-primary);
+    background: var(--gc-primary);
+}
+
+.gc-check input:checked + span::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 4px;
+    width: 5px;
+    height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.gc-check input:focus-visible + span::before {
+    box-shadow: 0 0 0 3px var(--gc-primary-soft);
 }
 
 .gc-preset {
