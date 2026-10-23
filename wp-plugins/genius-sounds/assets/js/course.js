@@ -113,3 +113,58 @@
         if (full) { open(full); }
     });
 })();
+
+/**
+ * Кнопка записи, едущая со страницей.
+ *
+ * Прячется, когда форма заявки сама на экране, и поднимается над
+ * плашкой о печеньках: на телефоне обе стоят внизу, и без подъёма
+ * кнопка закрывала бы согласие, которое человек ещё не нажал.
+ */
+(function () {
+    'use strict';
+
+    var cta = document.getElementById('gs-course-float');
+    if (!cta) { return; }
+
+    var form = document.getElementById('zayavka');
+    if (form && 'IntersectionObserver' in window) {
+        new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                cta.classList.toggle('is-off', entry.isIntersecting);
+            });
+        }, { rootMargin: '-10% 0px -10% 0px' }).observe(form);
+    }
+
+    var lift = function () {
+        // Плашка стоит fixed, и offsetParent у неё пустой: смотрим,
+        // сколько места она занимает снизу, а не этот признак.
+        var bar = document.querySelector('.cookietrix-banner');
+        var take = 0;
+        if (bar && getComputedStyle(bar).display !== 'none') {
+            var rect = bar.getBoundingClientRect();
+            if (rect.height > 0) {
+                take = Math.max(0, Math.round(window.innerHeight - rect.top));
+            }
+        }
+        cta.style.setProperty('--gs-float-lift', take + 'px');
+    };
+    lift();
+    window.addEventListener('resize', lift);
+    // Плашку закрывают в любой момент — тогда кнопка опускается обратно.
+    if ('MutationObserver' in window) {
+        new MutationObserver(lift).observe(document.body, { childList: true });
+    }
+
+    // Плавная прокрутка к форме и подсветка первого поля: иначе человек
+    // доезжает до неё и не понимает, что от него хотят.
+    cta.addEventListener('click', function (e) {
+        if (!form) { return; }
+        e.preventDefault();
+        form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        window.setTimeout(function () {
+            var field = document.getElementById('gs-course-contact');
+            if (field) { field.focus({ preventScroll: true }); }
+        }, 600);
+    });
+})();
