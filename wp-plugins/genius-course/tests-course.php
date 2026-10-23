@@ -169,8 +169,8 @@ foreach ($money as $i => $m) {
     }
 }
 check('примеры описаны у всех модулей',            $bad, array());
-check('примеров всего',                            count($keys), 17);
-check('кадров',                                    (int) ($kinds['image'] ?? 0), 4);
+check('примеров всего',                            count($keys), 18);
+check('кадров',                                    (int) ($kinds['image'] ?? 0), 5);
 check('роликов',                                   (int) ($kinds['video'] ?? 0), 1);
 check('текстов',                                   (int) ($kinds['text'] ?? 0), 12);
 
@@ -284,6 +284,26 @@ $nameless = GC_Mail::render($GLOBALS['users'][13], 'aBcD1234', 'kreator');
 check('без имени — просто «Здравствуйте!»',         strpos($nameless, 'Здравствуйте!') !== false, true);
 check('и без запятой перед ним',                    strpos($nameless, ', здравствуйте!'), false);
 check('у курса без оплаты свои шаги',               strpos($nameless, 'Сдайте первую работу') !== false, true);
+
+echo "\n=== посещения кабинета ===\n";
+GC_Students::touch(10, 2);
+$been = GC_Students::visits(10);
+check('первый заход записан',                       $been['visits'], 1);
+check('и день тоже',                                $been['days'], 1);
+check('запомнили открытый модуль',                  $been['module'], 2);
+check('первый вход проставлен',                     $been['first'] !== '', true);
+GC_Students::touch(10, 3);
+$been = GC_Students::visits(10);
+check('через минуту заход не удваивается',          $been['visits'], 1);
+check('но модуль обновился',                        $been['module'], 3);
+check('и день не задвоился',                        $been['days'], 1);
+// Перерыв больше получаса — это уже следующий заход.
+update_user_meta(10, GC_Students::META_SEEN, time() - 2 * GC_Students::VISIT_GAP);
+GC_Students::touch(10, 0);
+check('после перерыва заход новый',                 GC_Students::visits(10)['visits'], 2);
+GC_Students::touch(12, 5);
+check('администратора не считаем',                  GC_Students::visits(12)['visits'], 0);
+check('у того, кто не заходил, пусто',              GC_Students::visits(11)['seen'], 0);
 
 printf("\n%s\n", $fail === 0 ? 'Все проверки прошли.' : ('Провалено проверок: ' . $fail));
 exit($fail === 0 ? 0 : 1);

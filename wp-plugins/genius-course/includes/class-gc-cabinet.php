@@ -236,6 +236,10 @@ class GC_Cabinet {
         $open = isset($_GET['mod']) ? max(0, min(count($modules) - 1, (int) $_GET['mod'])) : -1;
         $tab = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : 'program';
 
+        // Отмечаем заход: в админке по нему видно, учится человек или
+        // пропал после первого дня.
+        GC_Students::touch($user->ID, $open);
+
         ob_start();
         ?>
         <div class="gc">
@@ -460,6 +464,7 @@ class GC_Cabinet {
                     <?php endforeach; ?>
                     <li>Задание с разбором</li>
                 </ul>
+                <?php echo self::examples_teaser($course, $index); // phpcs:ignore WordPress.Security.EscapeOutput ?>
                 <?php echo self::locked_note($course, 'Этот модуль'); // phpcs:ignore WordPress.Security.EscapeOutput ?>
                 <nav class="gc-nav">
                     <a class="gc-nav__prev" href="<?php echo esc_url(self::url($course)); ?>">← Все модули</a>
@@ -584,6 +589,63 @@ class GC_Cabinet {
                     <?php endif; ?>
                 </article>
             <?php endforeach; ?>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Витрина примеров в закрытом модуле.
+     *
+     * Закрытый модуль показывал одно оглавление, и человек не понимал,
+     * за что платит. Кадры и ролики показываем целиком — качество
+     * должно быть видно до оплаты. Разборы и готовые тексты — только
+     * названиями: это и есть работа, за которую берут деньги, а не
+     * витрина.
+     */
+    private static function examples_teaser($course, $index) {
+        if (!class_exists('GC_Examples')) {
+            return '';
+        }
+        $items = GC_Examples::get($course, $index);
+        if (!$items) {
+            return '';
+        }
+        $media = array();
+        $texts = array();
+        foreach ($items as $item) {
+            $kind = (string) ($item['kind'] ?? 'image');
+            if (in_array($kind, array('image', 'video'), true) && !empty($item['url'])) {
+                $media[] = $item;
+            } else {
+                $texts[] = (string) $item['title'];
+            }
+        }
+        ob_start();
+        ?>
+        <section class="gc-examples gc-examples--teaser">
+            <h3>Что внутри модуля</h3>
+            <?php if ($media) : ?>
+                <p class="gc-fine">Эти работы сделаны в мастерской курса — в самом модуле к каждой идёт разбор:
+                    почему так, а не иначе.</p>
+                <div class="gc-teaser-grid">
+                    <?php foreach ($media as $item) : ?>
+                        <figure class="gc-teaser">
+                            <?php if ((string) $item['kind'] === 'video') : ?>
+                                <video src="<?php echo esc_url($item['url']); ?>" controls loop muted playsinline preload="metadata"></video>
+                            <?php else : ?>
+                                <img src="<?php echo esc_url($item['url']); ?>" alt="<?php echo esc_attr((string) $item['title']); ?>"
+                                     loading="lazy" decoding="async">
+                            <?php endif; ?>
+                            <figcaption><?php echo esc_html((string) $item['title']); ?></figcaption>
+                        </figure>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+            <?php if ($texts) : ?>
+                <p class="gc-teaser-list"><strong>Разборы и готовые образцы в модуле:</strong>
+                    <?php echo esc_html(implode(', ', $texts)); ?>.</p>
+            <?php endif; ?>
         </section>
         <?php
         return ob_get_clean();

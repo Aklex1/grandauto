@@ -30,6 +30,17 @@ class GC_Students {
     /** Метка платежа ЮMoney, по которой оплата нашлась. */
     const META_PAID_LABEL = 'gc_paid_label';
 
+    /* Посещения кабинета: по ним видно, взялся человек за учёбу или нет. */
+    const META_SEEN    = 'gc_seen_at';
+    const META_FIRST   = 'gc_first_seen';
+    const META_VISITS  = 'gc_visits';
+    const META_DAYS    = 'gc_days';
+    const META_DAY     = 'gc_last_day';
+    const META_LASTMOD = 'gc_last_module';
+
+    /** Новым визитом считаем заход после получасового перерыва. */
+    const VISIT_GAP = 1800;
+
     public static function boot() {
         add_filter('login_redirect', array(__CLASS__, 'redirect_after_login'), 10, 3);
         // Ученику в админке делать нечего, а панель сверху закрывает кабинет.
@@ -209,6 +220,67 @@ class GC_Students {
         }
         $until = self::gpu_until($user_id);
         return $until !== '' && strtotime($until) > time();
+    }
+
+    /* ---------------------------------------------------------------------
+     * Посещения
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Отметить заход в кабинет.
+     *
+     * Своей таблицы не заводим: нужны не клики, а ответ на один вопрос —
+     * человек учится или пропал. Для этого хватает четырёх чисел в
+     * метках пользователя: когда был последний раз, сколько заходов,
+     * сколько разных дней и какой модуль открывал последним.
+     *
+     * Заходы считаем сессиями, а не страницами: иначе за один вечер
+     * набегает тридцать «посещений», и число перестаёт что-либо
+     * значить. Администратора не считаем вовсе — он ходит смотреть, как
+     * всё выглядит у ученика, и портит статистику.
+     */
+    public static function touch($user_id, $module = -1) {
+        $user_id = (int) $user_id;
+        if ($user_id <= 0 || user_can($user_id, 'manage_options')) {
+            return;
+        }
+        $now = time();
+        $last = (int) get_user_meta($user_id, self::META_SEEN, true);
+
+        if ($last === 0) {
+            update_user_meta($user_id, self::META_FIRST, current_time('mysql'));
+        }
+        if ($last === 0 || $now - $last > self::VISIT_GAP) {
+            update_user_meta($user_id, self::META_VISITS, (int) get_user_meta($user_id, self::META_VISITS, true) + 1);
+        }
+        // wp_date, а не date_i18n: вторая ждёт время, к которому часовой
+        // пояс сайта уже прибавлен, и считала бы дни по UTC.
+        $today = function_exists('wp_date') ? wp_date('Y-m-d', $now) : date_i18n('Y-m-d', $now);
+        if ((string) get_user_meta($user_id, self::META_DAY, true) !== $today) {
+            update_user_meta($user_id, self::META_DAY, $today);
+            update_user_meta($user_id, self::META_DAYS, (int) get_user_meta($user_id, self::META_DAYS, true) + 1);
+        }
+        update_user_meta($user_id, self::META_SEEN, $now);
+        if ((int) $module >= 0) {
+            update_user_meta($user_id, self::META_LASTMOD, (int) $module);
+        }
+    }
+
+    /**
+     * Сводка посещений для админки.
+     *
+     * @return array{seen:int,first:string,visits:int,days:int,module:int}
+     */
+    public static function visits($user_id) {
+        $user_id = (int) $user_id;
+        $module = get_user_meta($user_id, self::META_LASTMOD, true);
+        return array(
+            'seen'   => (int) get_user_meta($user_id, self::META_SEEN, true),
+            'first'  => (string) get_user_meta($user_id, self::META_FIRST, true),
+            'visits' => (int) get_user_meta($user_id, self::META_VISITS, true),
+            'days'   => (int) get_user_meta($user_id, self::META_DAYS, true),
+            'module' => $module === '' ? -1 : (int) $module,
+        );
     }
 
     /** Прогресс: какие модули ученик отметил пройденными. */

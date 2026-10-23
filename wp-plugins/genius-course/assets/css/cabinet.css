@@ -1155,3 +1155,43 @@ body.gc-page .l-main > .l-section {
         padding: 16px 14px 18px;
     }
 }
+
+/* Витрина в закрытом модуле: показываем работу, но не разбор. */
+.gc-examples--teaser {
+    background: var(--gc-card);
+    border-style: dashed;
+}
+
+.gc-teaser-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 14px;
+    margin: 16px 0 4px;
+}
+
+.gc-teaser {
+    margin: 0;
+}
+
+.gc-teaser img,
+.gc-teaser video {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--gc-radius-sm);
+    background: #000;
+}
+
+.gc-teaser figcaption {
+    margin-top: 7px;
+    font-size: 13.5px;
+    line-height: 1.4;
+    color: var(--gc-muted);
+}
+
+.gc-teaser-list {
+    margin: 14px 0 6px;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--gc-ink-2);
+}

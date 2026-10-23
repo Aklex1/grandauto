@@ -274,16 +274,17 @@ class GC_Admin {
             <thead><tr>
                 <th>Ученик</th><th>Логин</th><th>Тариф</th>
                 <?php if ($paywall) : ?><th>Оплата</th><?php endif; ?>
-                <th>Прогресс</th><th>Генерации до</th><th>Действия</th>
+                <th>Посещения</th><th>Прогресс</th><th>Генерации до</th><th>Действия</th>
             </tr></thead>
             <tbody>
             <?php if (!$students) : ?>
-                <tr><td colspan="<?php echo $paywall ? 7 : 6; ?>">Пока никого. Выдайте первый доступ формой выше.</td></tr>
+                <tr><td colspan="<?php echo $paywall ? 8 : 7; ?>">Пока никого. Выдайте первый доступ формой выше.</td></tr>
             <?php endif; ?>
             <?php foreach ($students as $u) :
                 $done = count(GC_Students::progress($u->ID));
                 $until = GC_Students::gpu_until($u->ID);
                 $paid_plan = GC_Students::paid_plan($u->ID);
+                $been = GC_Students::visits($u->ID);
                 ?>
                 <tr>
                     <td><strong><?php echo esc_html($u->display_name); ?></strong><br><span class="description"><?php echo esc_html($u->user_email); ?></span>
@@ -307,6 +308,36 @@ class GC_Admin {
                             <?php endif; ?>
                         </td>
                     <?php endif; ?>
+                    <td>
+                        <?php if ($been['seen'] <= 0) : ?>
+                            <span class="description">не заходил</span>
+                        <?php else : ?>
+                            <?php
+                            /*
+                             * «Был вчера» читается быстрее даты: по списку
+                             * видно, кто учится, а кто пропал, не считая
+                             * числа в уме.
+                             */
+                            // Оба конца в UTC: current_time('timestamp') добавил бы
+                            // часовой пояс сайта, и «только что» превращалось в
+                            // «3 часа назад».
+                            $ago = human_time_diff($been['seen'], time());
+                            ?>
+                            <strong><?php echo esc_html($ago); ?> назад</strong><br>
+                            <span class="description">
+                                <?php echo (int) $been['visits']; ?> <?php echo esc_html(self::plural($been['visits'], 'заход', 'захода', 'заходов')); ?>,
+                                <?php echo (int) $been['days']; ?> <?php echo esc_html(self::plural($been['days'], 'день', 'дня', 'дней')); ?>
+                                <?php if ($been['module'] >= 0) :
+                                    $m = GC_Program::module($been['module'], $course); ?>
+                                    <br>последним открывал модуль <?php echo (int) ($been['module'] + 1); ?><?php
+                                        echo $m ? ': ' . esc_html(mb_substr($m['title'], 0, 28)) : ''; ?>
+                                <?php endif; ?>
+                                <?php if (!empty($been['first'])) : ?>
+                                    <br>первый вход <?php echo esc_html(date_i18n('j M', strtotime($been['first']))); ?>
+                                <?php endif; ?>
+                            </span>
+                        <?php endif; ?>
+                    </td>
                     <td><?php echo (int) $done; ?> из <?php echo (int) $total; ?></td>
                     <td><?php echo $until ? esc_html(date_i18n('j M Y', strtotime($until))) : '—'; ?></td>
                     <td>
@@ -433,6 +464,19 @@ class GC_Admin {
             </table>
         <?php endforeach; ?>
         <?php
+    }
+
+    /** Русское число: 1 заход, 2 захода, 5 заходов. */
+    private static function plural($n, $one, $few, $many) {
+        $n = abs((int) $n) % 100;
+        $last = $n % 10;
+        if ($n > 10 && $n < 20) {
+            return $many;
+        }
+        if ($last > 1 && $last < 5) {
+            return $few;
+        }
+        return $last === 1 ? $one : $many;
     }
 
     private static function works() {
