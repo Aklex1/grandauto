@@ -315,33 +315,36 @@ check('у того, кто не заходил, пусто',              GC_Stu
 
 echo "\n=== пакет генераций ===\n";
 GC_Students::set_paid(10, 'base');
-check('в базовом тарифе 600 кадров',               GC_Pack::plan_pack('base')['images'], 600);
-check('и 120 единиц роликов',                      GC_Pack::plan_pack('base')['videos'], 120);
-check('в расширенном 1500 кадров',                 GC_Pack::plan_pack('plus')['images'], 1500);
-check('и 180 единиц роликов',                      GC_Pack::plan_pack('plus')['videos'], 180);
+check('в базовом тарифе 200 кадров',               GC_Pack::plan_pack('base')['images'], 200);
+check('и 20 роликов',                              GC_Pack::plan_pack('base')['videos'], 20);
+check('в расширенном 400 кадров',                  GC_Pack::plan_pack('plus')['images'], 400);
+check('и 40 роликов',                              GC_Pack::plan_pack('plus')['videos'], 40);
 check('пакетов на докупку три',                    count(GC_Pack::extras()), 3);
 
-// Правило владельца: пакет не дороже трети тарифа. Кадр — 4 кредита,
-// единица ролика — 60; кредит стоит 0,5 ₽, и худший случай считаем по
-// самой дорогой ступени (четыре единицы за 250 кредитов).
-$cost = function ($plan) {
-    $pack = GC_Pack::plan_pack($plan);
-    return $pack['images'] * 4 * 0.5 + $pack['videos'] * 62.5 * 0.5;
+/*
+ * Правило владельца: расходы на пакет не больше трети его цены.
+ * Кадр стоит 4 кредита, ролик — от 60 (быстрый) до 250 («максимум»,
+ * списывает два, то есть 125 за ролик пакета). Кредит — 0,5 ₽, и
+ * считаем по худшему случаю: всё снято на самой дорогой ступени.
+ */
+$frame = 4 * 0.5;
+$roller = 125 * 0.5;
+$cost = function ($pack) use ($frame, $roller) {
+    return $pack['images'] * $frame + $pack['videos'] * $roller;
 };
-check('базовый пакет укладывается в треть',        $cost('base') <= 22900 * 0.3, true);
-check('расширенный тоже',                          $cost('plus') <= 31900 * 0.3, true);
+check('базовый пакет укладывается в треть',        $cost(GC_Pack::plan_pack('base')) <= 22900 * 0.3, true);
+check('расширенный тоже',                          $cost(GC_Pack::plan_pack('plus')) <= 31900 * 0.3, true);
 foreach (GC_Pack::extras() as $key => $extra) {
-    $spend = $extra['images'] * 2 + $extra['videos'] * 31.25;
-    check('докупка «' . $key . '» дороже себестоимости втрое', $spend <= $extra['price'] * 0.4, true);
+    check('докупка «' . $key . '» укладывается в треть', $cost($extra) <= $extra['price'] * 0.3, true);
 }
 
 echo "\n=== ступени роликов ===\n";
 check('ступеней три',                              count(GC_Kie::tiers()), 3);
 check('по умолчанию обычная',                      GC_Kie::TIER_DEFAULT, 'base');
-check('короткий ролик — единица',                  GC_Kie::cost('video', 'fast'), 1);
-check('обычный — две',                             GC_Kie::cost('video', 'base'), 2);
-check('максимум — четыре',                         GC_Kie::cost('video', 'max'), 4);
-check('кадр всегда единица',                       GC_Kie::cost('image', 'max'), 1);
+check('быстрый ролик — один',                      GC_Kie::cost('video', 'fast'), 1);
+check('обычный — тоже один',                       GC_Kie::cost('video', 'base'), 1);
+check('максимум — два',                            GC_Kie::cost('video', 'max'), 2);
+check('кадр всегда один',                          GC_Kie::cost('image', 'max'), 1);
 check('неизвестная ступень — обычная',             GC_Kie::tier_of(array('tier' => 'gold')), 'base');
 check('ступень из параметров читается',            GC_Kie::tier_of(array('tier' => 'max')), 'max');
 check('возможность для короткого',                 GC_Kie::capability('video', false, 'fast'), 'video_fast');
@@ -354,21 +357,21 @@ echo "\n=== пакет генераций ===\n";
 
 GC_Pack::grant_plan(10, 'base', 'gckurs_10_money_base');
 $balance = GC_Pack::balance(10);
-check('тарифный пакет начислен',                   $balance['image'], 600);
-check('единицы роликов тоже',                      $balance['video'], 120);
+check('тарифный пакет начислен',                   $balance['image'], 200);
+check('ролики тоже',                               $balance['video'], 20);
 check('повтор по той же метке не удваивает',       GC_Pack::grant_plan(10, 'base', 'gckurs_10_money_base'), false);
-check('и остаток прежний',                         GC_Pack::balance(10)['image'], 600);
+check('и остаток прежний',                         GC_Pack::balance(10)['image'], 200);
 
 GC_Pack::spend(10, 'image');
 GC_Pack::spend(10, 'video', GC_Kie::cost('video', 'base'));
-check('кадр списан',                               GC_Pack::balance(10)['image'], 599);
-check('обычный ролик списал две единицы',          GC_Pack::balance(10)['video'], 118);
+check('кадр списан',                               GC_Pack::balance(10)['image'], 199);
+check('обычный ролик списал один',                 GC_Pack::balance(10)['video'], 19);
 GC_Pack::spend(10, 'video', GC_Kie::cost('video', 'max'));
-check('максимум списал четыре',                    GC_Pack::balance(10)['video'], 114);
+check('максимум списал два',                       GC_Pack::balance(10)['video'], 17);
 GC_Pack::refund(10, 'video', GC_Kie::cost('video', 'max'));
-check('неудачный ролик вернулся целиком',          GC_Pack::balance(10)['video'], 118);
+check('неудачный ролик вернулся целиком',          GC_Pack::balance(10)['video'], 19);
 GC_Pack::refund(10, 'video', GC_Kie::cost('video', 'base'));
-check('и обычный тоже',                            GC_Pack::balance(10)['video'], 120);
+check('и обычный тоже',                            GC_Pack::balance(10)['video'], 20);
 check('админу ничего не списываем',                (function () { GC_Pack::spend(12, 'image'); return GC_Pack::balance(12)['image']; })(), 0);
 
 check('генерация разрешена',                       GC_Pack::allows(10, 'image')['ok'], true);
@@ -376,9 +379,10 @@ $GLOBALS['meta'][10][GC_Pack::META] = array('image' => 0, 'video' => 3);
 check('кадры кончились — отказ',                   GC_Pack::allows(10, 'image')['ok'], false);
 check('и сказано, где докупить',                   strpos(GC_Pack::allows(10, 'image')['message'], 'мастерской') !== false, true);
 check('ролики ещё есть',                           GC_Pack::allows(10, 'video')['ok'], true);
-check('на обычный ролик трёх единиц хватает',      GC_Pack::allows(10, 'video', '', 2)['ok'], true);
-check('на максимум — уже нет',                     GC_Pack::allows(10, 'video', '', 4)['ok'], false);
-check('и сказано, сколько нужно',                  strpos(GC_Pack::allows(10, 'video', '', 4)['message'], '4 единиц') !== false, true);
+check('на обычный ролик остатка хватает',          GC_Pack::allows(10, 'video', '', 1)['ok'], true);
+$GLOBALS['meta'][10][GC_Pack::META] = array('image' => 0, 'video' => 1);
+check('на «максимум» одного ролика мало',          GC_Pack::allows(10, 'video', '', 2)['ok'], false);
+check('и сказано, сколько нужно',                  strpos(GC_Pack::allows(10, 'video', '', 2)['message'], '2 ролика') !== false, true);
 
 echo "\n=== докупка генераций ===\n";
 $label = GC_Pay::pack_label(10, 'work');
@@ -386,7 +390,7 @@ check('метка пакета собрана',                      strpos($lab
 $out = GC_Pay::pack_paid($label);
 check('пакет зачислен',                            $out['ok'], true);
 check('кадры добавились',                          GC_Pack::balance(10)['image'], 80);
-check('единицы роликов добавились',                GC_Pack::balance(10)['video'], 9);
+check('ролики добавились',                         GC_Pack::balance(10)['video'], 3);
 $again = GC_Pay::pack_paid($label);
 check('повтор уведомления не удваивает',           $again['message'], 'пакет уже начислен — повторное уведомление');
 check('остаток тот же',                            GC_Pack::balance(10)['image'], 80);

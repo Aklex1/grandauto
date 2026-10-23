@@ -278,8 +278,8 @@ class GS_Course {
             }
         }
         $fallback = array(
-            'base' => array('images' => 600,  'videos' => 120, 'days' => 60),
-            'plus' => array('images' => 1500, 'videos' => 180, 'days' => 120),
+            'base' => array('images' => 200, 'videos' => 20, 'days' => 60),
+            'plus' => array('images' => 400, 'videos' => 40, 'days' => 120),
         );
         return isset($fallback[$plan]) ? $fallback[$plan] : $fallback['base'];
     }
@@ -295,7 +295,7 @@ class GS_Course {
         $pack = self::pack($plan);
         return array(
             array((string) (int) floor($pack['images'] / 5), 'комплектов карточек', 'по пять кадров на товар'),
-            array((string) (int) floor($pack['videos'] / 2), 'рекламных роликов', 'по пять секунд, со звуком — или вдвое больше коротких'),
+            array((string) $pack['videos'], 'рекламных роликов', 'по пять секунд со звуком, а в быстрой модели — по восемь'),
             array((string) (int) floor($pack['images'] / 3), 'обложек и баннеров', 'по три варианта на выбор заказчику'),
         );
     }
@@ -309,10 +309,11 @@ class GS_Course {
             <p class="gs-course__pack-head">Пакет генераций на <?php echo (int) $pack['days']; ?> дней</p>
             <p class="gs-course__pack-nums">
                 <b><?php echo (int) $pack['images']; ?></b> кадров <i>+</i>
-                <b><?php echo (int) $pack['videos']; ?></b> единиц роликов
+                <b><?php echo (int) $pack['videos']; ?></b> роликов
             </p>
-            <p class="gs-course__pack-note">Единица — короткий ролик на 8 секунд со звуком; ролик на 5 секунд
-                в лучшей модели стоит две. Считаются готовые работы: неудачные попытки пакет не тратят.</p>
+            <p class="gs-course__pack-note">Ролик — 5 секунд со звуком в обычной модели или 8 секунд в быстрой;
+                ступень «максимум» считается за два. Считаются готовые работы: неудачные попытки пакет не
+                тратят, а закончится пакет — докупается прямо в кабинете.</p>
         </div>
         <?php
         return ob_get_clean();

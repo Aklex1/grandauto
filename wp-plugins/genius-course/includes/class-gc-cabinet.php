@@ -411,7 +411,7 @@ class GC_Cabinet {
                                     <b><?php echo (int) $pack['images']; ?></b> кадров
                                     <i>+</i>
                                     <b><?php echo (int) $pack['videos']; ?></b> <?php
-                                        echo esc_html(self::units((int) $pack['videos'])); ?> роликов
+                                        echo esc_html(self::rollers((int) $pack['videos'])); ?>
                                 </p>
                                 <p class="gc-fine"><?php echo esc_html(GC_Pack::video_legend()); ?></p>
                                 <ul>
@@ -735,7 +735,7 @@ class GC_Cabinet {
         }
         $rows = array(
             array('кадры',  (int) $pack['left']['image'], (int) $pack['images']),
-            array('ролики, единиц', (int) $pack['left']['video'], (int) $pack['videos']),
+            array('ролики', (int) $pack['left']['video'], (int) $pack['videos']),
         );
         ob_start();
         ?>
@@ -757,7 +757,15 @@ class GC_Cabinet {
                     ?>
                     <div class="gc-pack__bar<?php echo $left <= 0 ? ' is-empty' : ''; ?>">
                         <p><span><?php echo esc_html($name); ?></span>
-                            осталось <strong><?php echo (int) $left; ?></strong> из <?php echo (int) $total; ?></p>
+                            осталось <strong><?php echo (int) $left; ?></strong><?php
+                            /*
+                             * «Из скольких» показываем, только пока остаток
+                             * меньше нынешнего пакета. У тех, кому начислили
+                             * по старым размерам, на счету больше — и
+                             * «596 из 200» читается как ошибка, хотя
+                             * начислено честно.
+                             */
+                            echo $left <= $total ? ' из ' . (int) $total : ''; ?></p>
                         <div class="gc-pack__line"><span style="width: <?php echo (int) $percent; ?>%"></span></div>
                     </div>
                 <?php endforeach; ?>
@@ -807,7 +815,7 @@ class GC_Cabinet {
                         <p class="gc-shop__price"><?php echo esc_html(number_format_i18n((float) $extra['price'])); ?> ₽</p>
                         <p class="gc-shop__nums"><b><?php echo (int) $extra['images']; ?></b> кадров
                             <i>+</i> <b><?php echo (int) $extra['videos']; ?></b> <?php
-                            echo esc_html(self::units((int) $extra['videos'])); ?> роликов</p>
+                            echo esc_html(self::rollers((int) $extra['videos'])); ?></p>
                         <p class="gc-shop__note"><?php echo esc_html($extra['note']); ?></p>
                         <p class="gc-fine">Срок: <?php echo (int) $extra['days']; ?> дней</p>
                         <?php if ($link !== '') : ?>
@@ -1081,20 +1089,20 @@ class GC_Cabinet {
         return ob_get_clean();
     }
 
-    /** Склонение «единица» к числу: 1 единица, 2 единицы, 5 единиц. */
-    public static function units($n) {
+    /** Склонение «ролик» к числу: 1 ролик, 2 ролика, 5 роликов. */
+    public static function rollers($n) {
         $n = abs((int) $n) % 100;
         $last = $n % 10;
         if ($n > 10 && $n < 20) {
-            return 'единиц';
+            return 'роликов';
         }
         if ($last === 1) {
-            return 'единица';
+            return 'ролик';
         }
         if ($last >= 2 && $last <= 4) {
-            return 'единицы';
+            return 'ролика';
         }
-        return 'единиц';
+        return 'роликов';
     }
 
     /**
@@ -1300,7 +1308,8 @@ class GC_Cabinet {
                                         <span class="gc-tier__name"><?php echo esc_html($tier['title']); ?>
                                             <i><?php echo esc_html($tier['model']); ?></i></span>
                                         <span class="gc-tier__cost"><?php echo (int) $tier['cost']; ?>
-                                            <?php echo esc_html(self::units((int) $tier['cost'])); ?></span>
+                                            <?php echo esc_html(self::rollers((int) $tier['cost'])); ?>
+                                            из пакета</span>
                                         <span class="gc-tier__note"><?php echo esc_html($tier['note']); ?></span>
                                     </label>
                                 <?php endforeach; ?>

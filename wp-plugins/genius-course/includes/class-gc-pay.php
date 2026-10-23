@@ -68,7 +68,7 @@ class GC_Pay {
             return '';
         }
         $course = GC_Students::course($user_id);
-        $target = sprintf('Пакет генераций «%s»: %d кадров и %d единиц роликов',
+        $target = sprintf('Пакет генераций «%s»: %d кадров и %d роликов',
             (string) $pack['title'], (int) $pack['images'], (int) $pack['videos']);
         $success = add_query_arg(array('tab' => 'studio', 'bought' => '1'), GC_Cabinet::url($course));
         return (string) GS_Pay::link(self::pack_label($user_id, $key), (float) $pack['price'], $target, $success);
@@ -105,7 +105,7 @@ class GC_Pay {
         $left = GC_Pack::balance($user_id);
 
         return array('ok' => true, 'message' => sprintf(
-            'начислен пакет «%s»: +%d кадров, +%d единиц роликов (стало %d и %d), ученик %s',
+            'начислен пакет «%s»: +%d кадров, +%d роликов (стало %d и %d), ученик %s',
             (string) $pack['title'], (int) $pack['images'], (int) $pack['videos'],
             (int) $left['image'], (int) $left['video'], $user->user_email
         ));
