@@ -87,6 +87,18 @@ class GC_Examples {
             if ($job && $job['status'] === 'failed') {
                 return 'не вышло: ' . mb_substr((string) $job['error'], 0, 60);
             }
+            /*
+             * Задание посчиталось, а пример остался «считается»: файл
+             * есть, а до записи дело не дошло — перезапуск по дороге,
+             * обрыв запроса, чей угодно сбой. Ставим его на место прямо
+             * здесь, а не считаем заново: вторая генерация стоит денег
+             * и даёт другой кадр.
+             */
+            if ($job && $job['status'] === 'done' && !empty($job['result_url'])) {
+                self::attach(array('course' => $course, 'module' => (int) $module, 'key' => (string) $key),
+                    (string) $job['result_url']);
+                return 'готов';
+            }
             return 'считается';
         }
         return 'нет';
