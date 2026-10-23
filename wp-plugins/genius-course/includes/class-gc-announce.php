@@ -67,6 +67,99 @@ class GC_Announce {
     }
 
     /**
+     * Кто из ботов видит эту группу.
+     *
+     * «Chat not found» звучит одинаково и когда бота в группе нет, и
+     * когда у группы другой внутренний номер. Спрашиваем у Телеграма
+     * саму группу — ответ сразу говорит, что чинить.
+     *
+     * @return array<string,string>
+     */
+    public static function probe($url) {
+        $to = self::target($url);
+        if (!$to) {
+            return array('адрес' => 'не разобран: ' . $url);
+        }
+        $out = array('чат' => $to['chat'], 'тема' => (string) $to['thread']);
+        /*
+         * Ссылка вида t.me/c/<номер> почти всегда означает супергруппу,
+         * и её внутренний номер — это «-100» плюс то, что в ссылке. Но
+         * у старых групп приставки нет, а ошибка Телеграма в обоих
+         * случаях одна и та же — поэтому пробуем оба варианта.
+         */
+        $ids = array($to['chat'], '-' . ltrim($to['chat'], '-100'));
+        $pairs = array();
+        foreach (self::tokens() as $name => $token) {
+            foreach (array_unique($ids) as $id) {
+                $pairs[$name . ' / ' . $id] = array($token, $id);
+            }
+        }
+        foreach ($pairs as $name => $pair) {
+            list($token, $id) = $pair;
+            $response = wp_remote_get(
+                'https://api.telegram.org/bot' . $token . '/getChat?chat_id=' . rawurlencode($id),
+                array('timeout' => 25)
+            );
+            if (is_wp_error($response)) {
+                $out[$name] = 'связь: ' . $response->get_error_message();
+                continue;
+            }
+            $answer = json_decode((string) wp_remote_retrieve_body($response), true);
+            if (is_array($answer) && !empty($answer['ok'])) {
+                $chat = (array) ($answer['result'] ?? array());
+                $out[$name] = 'видит: ' . (string) ($chat['title'] ?? '—')
+                            . ' (' . (string) ($chat['type'] ?? '?') . ')';
+            } else {
+                $out[$name] = 'нет: ' . (is_array($answer)
+                    ? (string) ($answer['description'] ?? 'отказ')
+                    : 'некорректный ответ');
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Какие чаты бот видел последними.
+     *
+     * Если у бота не стоит вебхук, Телеграм отдаёт последние события —
+     * по ним видно настоящий номер группы, в которую его добавили. Если
+     * вебхук стоит, он так и скажет, и это тоже ответ.
+     *
+     * @return array<string,mixed>
+     */
+    public static function updates() {
+        $out = array();
+        foreach (self::tokens() as $name => $token) {
+            $response = wp_remote_get(
+                'https://api.telegram.org/bot' . $token . '/getUpdates?limit=50&timeout=0',
+                array('timeout' => 30)
+            );
+            if (is_wp_error($response)) {
+                $out[$name] = 'связь: ' . $response->get_error_message();
+                continue;
+            }
+            $answer = json_decode((string) wp_remote_retrieve_body($response), true);
+            if (!is_array($answer) || empty($answer['ok'])) {
+                $out[$name] = 'нет: ' . (is_array($answer)
+                    ? (string) ($answer['description'] ?? 'отказ')
+                    : 'некорректный ответ');
+                continue;
+            }
+            $chats = array();
+            foreach ((array) ($answer['result'] ?? array()) as $update) {
+                foreach (array('message', 'channel_post', 'my_chat_member', 'edited_message') as $key) {
+                    $chat = $update[$key]['chat'] ?? null;
+                    if (is_array($chat) && !empty($chat['id'])) {
+                        $chats[(string) $chat['id']] = (string) ($chat['title'] ?? $chat['username'] ?? 'без названия');
+                    }
+                }
+            }
+            $out[$name] = $chats ? $chats : 'событий нет';
+        }
+        return $out;
+    }
+
+    /**
      * Отправить объявление.
      *
      * @return array{ok:bool,message:string}

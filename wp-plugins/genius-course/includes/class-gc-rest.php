@@ -302,6 +302,14 @@ class GC_Rest {
         $where = (string) ($p['to'] ?? 'news') === 'chat'
             ? GC_Courses::chat($course)
             : GC_Courses::news($course);
+        // Последние события ботов: по ним виден настоящий номер группы.
+        if (!empty($p['updates'])) {
+            return rest_ensure_response(GC_Announce::updates());
+        }
+        // Проверка без отправки: кто из ботов вообще видит эту группу.
+        if (!empty($p['probe'])) {
+            return rest_ensure_response(GC_Announce::probe($where));
+        }
         $out = GC_Announce::post((string) ($p['text'] ?? ''), $where);
         if (empty($out['ok'])) {
             return new WP_Error('gc_announce', (string) $out['message'], array('status' => 400));
