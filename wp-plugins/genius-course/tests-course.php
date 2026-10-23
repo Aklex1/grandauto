@@ -169,8 +169,8 @@ foreach ($money as $i => $m) {
     }
 }
 check('примеры описаны у всех модулей',            $bad, array());
-check('примеров всего',                            count($keys), 18);
-check('кадров',                                    (int) ($kinds['image'] ?? 0), 5);
+check('примеров всего',                            count($keys), 20);
+check('кадров',                                    (int) ($kinds['image'] ?? 0), 7);
 check('роликов',                                   (int) ($kinds['video'] ?? 0), 1);
 check('текстов',                                   (int) ($kinds['text'] ?? 0), 12);
 

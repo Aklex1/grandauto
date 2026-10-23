@@ -35,6 +35,8 @@ class GC_Courses {
                 // Мастерская курса считает на арендованной машине: своя
                 // сборка ComfyUI — часть ремесла, которому здесь учат.
                 'studio'  => 'gpu',
+                // Чат курса: вопросы и разбор чужих работ. Пусто — плашки нет.
+                'chat'    => '',
                 // Доступ выдаётся после оплаты вне сайта: кабинет не
                 // продаёт, а только учит.
                 'paywall' => false,
@@ -54,6 +56,7 @@ class GC_Courses {
                 // сдать заказ, а не поднять видеокарту, и генерации
                 // должны считаться всегда.
                 'studio'  => 'kie',
+                'chat'    => 'https://t.me/c/4407841852/3',
                 // Первый модуль открыт сразу, остальное — после оплаты
                 // внутри кабинета.
                 'paywall' => true,
@@ -198,6 +201,22 @@ class GC_Courses {
      */
     public static function tools_open($user_id, $course = '') {
         return self::is_paid($user_id, $course);
+    }
+
+    /**
+     * Ссылка на чат курса.
+     *
+     * Адрес держим настройкой, а не в коде: тему в чате переносят,
+     * группу пересоздают, и каждый раз выкатывать плагин ради одной
+     * ссылки — лишняя работа и лишний риск.
+     */
+    public static function chat($course) {
+        $saved = get_option('gc_chats', array());
+        $course = $course !== '' ? $course : self::current();
+        if (is_array($saved) && !empty($saved[$course])) {
+            return (string) $saved[$course];
+        }
+        return (string) self::field($course, 'chat', '');
     }
 
     public static function landing_url($course) {

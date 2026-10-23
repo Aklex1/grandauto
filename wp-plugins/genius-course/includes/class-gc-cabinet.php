@@ -273,6 +273,13 @@ class GC_Cabinet {
             } else {
                 echo self::program($user, $modules, $done, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
             }
+
+            // Чат курса — там, где человек учится: на списке модулей и
+            // внутри урока. В мастерской и в своих работах он только
+            // закрывал бы кнопки.
+            if ($tab === 'program') {
+                echo self::chat_bar($course, $open); // phpcs:ignore WordPress.Security.EscapeOutput
+            }
             ?>
         </div>
         <?php
@@ -590,6 +597,35 @@ class GC_Cabinet {
                 </article>
             <?php endforeach; ?>
         </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Липкая плашка со ссылкой на чат курса.
+     *
+     * Курс без куратора, и вопросы всё равно появляются: на списке
+     * модулей и в каждом уроке внизу висит ссылка в чат, где спрашивают
+     * и показывают свои работы. Адрес — настройка курса: тему переносят,
+     * группу пересоздают, и выкатывать ради этого плагин незачем.
+     */
+    private static function chat_bar($course, $module = -1) {
+        $url = GC_Courses::chat($course);
+        if ($url === '') {
+            return '';
+        }
+        $where = $module >= 0 ? 'по этому модулю' : 'по курсу';
+        ob_start();
+        ?>
+        <aside class="gc-chat" role="complementary">
+            <div class="gc-chat__text">
+                <strong>Вопросы <?php echo esc_html($where); ?> — в чате курса</strong>
+                <span>Там же выкладывают работы на обсуждение и разбирают чужие: в отдельных темах по
+                    кадрам, роликам, звуку и заказам.</span>
+            </div>
+            <a class="gc-chat__btn" href="<?php echo esc_url($url); ?>" target="_blank" rel="noopener">
+                Открыть чат</a>
+        </aside>
         <?php
         return ob_get_clean();
     }

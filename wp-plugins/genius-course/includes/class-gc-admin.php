@@ -978,6 +978,18 @@ class GC_Admin {
                     <td><input id="gc-daily" name="daily" type="number" min="1" max="5000" value="<?php echo (int) $s['daily']; ?>" class="small-text">
                         <p class="description">Не ограничение для человека, а предохранитель от зацикленного скрипта.</p></td>
                 </tr>
+                <?php foreach (GC_Courses::all() as $key => $def) : ?>
+                    <tr>
+                        <th scope="row"><label for="gc-chat-<?php echo esc_attr($key); ?>">Чат курса «<?php
+                            echo esc_html($def['short']); ?>»</label></th>
+                        <td><input id="gc-chat-<?php echo esc_attr($key); ?>" name="chat[<?php echo esc_attr($key); ?>]"
+                                   type="url" class="large-text" placeholder="https://t.me/..."
+                                   value="<?php echo esc_attr(GC_Courses::chat($key)); ?>">
+                            <p class="description">Ссылка в липкой плашке внизу кабинета — на списке модулей и в каждом
+                                уроке. Пусто — плашки нет. Ссылка вида t.me/c/… открывается только у тех, кто уже
+                                состоит в группе: новым ученикам нужна пригласительная ссылка.</p></td>
+                    </tr>
+                <?php endforeach; ?>
                 <tr>
                     <th scope="row"><label for="gc-daily-kie">Заданий в сутки через шлюз моделей</label></th>
                     <td><input id="gc-daily-kie" name="daily_kie" type="number" min="1" max="500"
@@ -1319,6 +1331,17 @@ class GC_Admin {
             wp_die('Недостаточно прав');
         }
         GC_Gpu::save_settings((array) $_POST);
+        if (isset($_POST['chat']) && is_array($_POST['chat'])) {
+            $chats = array();
+            foreach ((array) wp_unslash($_POST['chat']) as $key => $url) {
+                $key = sanitize_key($key);
+                $url = esc_url_raw(trim((string) $url));
+                if (GC_Courses::exists($key) && $url !== '') {
+                    $chats[$key] = $url;
+                }
+            }
+            update_option('gc_chats', $chats, false);
+        }
         delete_transient('gc_gpu_health');
         wp_safe_redirect(self::url('settings', array('gc_msg' => 'Настройки сохранены')));
         exit;
