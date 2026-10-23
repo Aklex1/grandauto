@@ -340,7 +340,7 @@ class GC_Cabinet {
                     <div class="gc-progress__bar"><span style="width: <?php echo (int) $percent; ?>%"></span></div>
                     <p><?php echo (int) $passed; ?> из <?php echo (int) $total; ?> модулей</p>
                 </div>
-                <?php if ($until !== '') : ?>
+                <?php if ($until !== '' && $unlimited) : ?>
                     <p class="gc-gpu <?php echo GC_Students::gpu_active($user->ID) ? 'is-on' : 'is-off'; ?>">
                         <?php if (GC_Students::gpu_active($user->ID)) : ?>
                             <?php echo $unlimited ? 'Генерации без лимита до ' : 'Генерации доступны до '; ?>

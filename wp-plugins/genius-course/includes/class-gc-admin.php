@@ -203,6 +203,9 @@ class GC_Admin {
     private static function students($course, $tab) {
         $students = GC_Students::all($course);
         $paywall = GC_Courses::paywall($course);
+        // Где считает шлюз, генерации выдаются пакетом тарифа, а не
+        // сроком: поле «генерации без лимита» там только путало бы.
+        $by_pack = GC_Courses::field($course, 'studio', 'gpu') === 'kie';
         $plans = GC_Courses::plans($course);
         $total = GC_Program::count($course);
         $titles = $plans ? wp_list_pluck($plans, 'title') : array('базовый' => 'Базовый', 'расширенный' => 'Расширенный');
@@ -259,10 +262,24 @@ class GC_Admin {
                             <p class="description">Ставьте, если деньги пришли мимо кабинета: переводом или на счёт.</p></td>
                     </tr>
                 <?php endif; ?>
-                <tr>
-                    <th scope="row"><label for="gc-days">Генерации без лимита</label></th>
-                    <td><input id="gc-days" name="gpu_days" type="number" min="0" max="3650" value="30" class="small-text"> дней</td>
-                </tr>
+                <?php if ($by_pack) : ?>
+                    <tr>
+                        <th scope="row">Генерации</th>
+                        <td><p class="description">Пакет тарифа начисляется автоматически при оплате:
+                            <?php foreach (GC_Pack::all() as $plan => $pack) :
+                                $def = GC_Courses::plan($course, $plan); ?>
+                                «<?php echo esc_html($def ? $def['title'] : $plan); ?>» —
+                                <?php echo (int) $pack['images']; ?> кадров и <?php echo (int) $pack['videos']; ?> роликов
+                                на <?php echo (int) $pack['days']; ?> дней<?php echo ' · '; ?>
+                            <?php endforeach; ?>
+                            докупить ученик может сам в мастерской.</p></td>
+                    </tr>
+                <?php else : ?>
+                    <tr>
+                        <th scope="row"><label for="gc-days">Генерации без лимита</label></th>
+                        <td><input id="gc-days" name="gpu_days" type="number" min="0" max="3650" value="30" class="small-text"> дней</td>
+                    </tr>
+                <?php endif; ?>
                 <tr>
                     <th scope="row"><label for="gc-note">Заметка</label></th>
                     <td><textarea id="gc-note" name="note" rows="2" class="large-text" placeholder="Откуда пришёл, что оплатил, о чём договорились"></textarea></td>
@@ -276,11 +293,11 @@ class GC_Admin {
             <thead><tr>
                 <th>Ученик</th><th>Логин</th><th>Тариф</th>
                 <?php if ($paywall) : ?><th>Оплата</th><?php endif; ?>
-                <th>Посещения</th><th>Прогресс</th><th>Генерации до</th><th>Действия</th>
+                <th>Посещения</th><th>Прогресс</th><?php if (!$by_pack) : ?><th>Генерации до</th><?php endif; ?><th>Действия</th>
             </tr></thead>
             <tbody>
             <?php if (!$students) : ?>
-                <tr><td colspan="<?php echo $paywall ? 8 : 7; ?>">Пока никого. Выдайте первый доступ формой выше.</td></tr>
+                <tr><td colspan="<?php echo ($paywall ? 8 : 7) - ($by_pack ? 1 : 0); ?>">Пока никого. Выдайте первый доступ формой выше.</td></tr>
             <?php endif; ?>
             <?php foreach ($students as $u) :
                 $done = count(GC_Students::progress($u->ID));
@@ -353,7 +370,9 @@ class GC_Admin {
                         <?php endif; ?>
                     </td>
                     <td><?php echo (int) $done; ?> из <?php echo (int) $total; ?></td>
-                    <td><?php echo $until ? esc_html(date_i18n('j M Y', strtotime($until))) : '—'; ?></td>
+                    <?php if (!$by_pack) : ?>
+                        <td><?php echo $until ? esc_html(date_i18n('j M Y', strtotime($until))) : '—'; ?></td>
+                    <?php endif; ?>
                     <td>
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
                             <?php wp_nonce_field('gc_reset'); ?>
@@ -362,6 +381,7 @@ class GC_Admin {
                             <input type="hidden" name="user" value="<?php echo (int) $u->ID; ?>">
                             <button class="button button-small">Новый пароль</button>
                         </form>
+                        <?php if (!$by_pack) : ?>
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
                             <?php wp_nonce_field('gc_gpu_days'); ?>
                             <input type="hidden" name="action" value="gc_gpu_days">
@@ -370,6 +390,7 @@ class GC_Admin {
                             <input type="number" name="days" value="30" min="0" max="3650" class="small-text">
                             <button class="button button-small">Продлить</button>
                         </form>
+                        <?php endif; ?>
                         <?php if ($paywall) : ?>
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
                                 <?php wp_nonce_field('gc_grant'); ?>
@@ -1100,12 +1121,13 @@ class GC_Admin {
         $back = self::back();
         $course = sanitize_key((string) ($_POST['course'] ?? ''));
         $course = GC_Courses::exists($course) ? $course : GC_Courses::DEFAULT_KEY;
+        $by_pack = GC_Courses::field($course, 'studio', 'gpu') === 'kie';
         $out = GC_Students::create(
             (string) ($_POST['email'] ?? ''),
             (string) ($_POST['name'] ?? ''),
             (string) ($_POST['plan'] ?? 'базовый'),
             (string) ($_POST['note'] ?? ''),
-            (int) ($_POST['gpu_days'] ?? 30),
+            $by_pack ? 0 : (int) ($_POST['gpu_days'] ?? 30),
             $course
         );
         if (empty($out['ok'])) {

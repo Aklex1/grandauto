@@ -218,6 +218,16 @@ class GC_Students {
         if (user_can((int) $user_id, 'manage_options')) {
             return true;
         }
+        /*
+         * Там, где считает шлюз, срока генераций нет вовсе: доступ
+         * решает пакет тарифа — сколько кадров и роликов осталось и до
+         * какого числа. Два срока на одно и то же разъезжались бы, и
+         * однажды человек с полным пакетом упёрся бы в «месяц
+         * закончился».
+         */
+        if (GC_Gpu::engine((int) $user_id) === 'kie') {
+            return true;
+        }
         $until = self::gpu_until($user_id);
         return $until !== '' && strtotime($until) > time();
     }
