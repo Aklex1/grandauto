@@ -18,6 +18,7 @@ if (PHP_SAPI !== 'cli') {
 
 define('ABSPATH', 1);
 define('DAY_IN_SECONDS', 86400);
+define('GC_PATH', __DIR__ . '/');
 
 $GLOBALS['meta'] = array();
 $GLOBALS['users'] = array();
@@ -56,6 +57,14 @@ function update_option($k, $v, $a = true) { $GLOBALS['opts'][$k] = $v; return tr
 function get_permalink($id) { return 'https://example.test/?p=' . (int) $id; }
 function wp_parse_args($args, $defaults = array()) { return array_merge($defaults, (array) $args); }
 function number_format_i18n($n) { return number_format((float) $n, 0, ',', ' '); }
+function esc_html($t) { return htmlspecialchars((string) $t, ENT_QUOTES, 'UTF-8'); }
+function esc_url($t) { return (string) $t; }
+function esc_attr($t) { return htmlspecialchars((string) $t, ENT_QUOTES, 'UTF-8'); }
+function wp_lostpassword_url($to = '') { return 'https://example.test/wp-login.php?action=lostpassword'; }
+function get_bloginfo($what = 'name') { return 'Genius-bot'; }
+function date_i18n($f, $ts = null) { return date($f, $ts === null ? time() : $ts); }
+function is_email($mail) { return (bool) filter_var((string) $mail, FILTER_VALIDATE_EMAIL); }
+function sanitize_email($mail) { return (string) $mail; }
 
 /** Построитель ссылок на оплату — чужой класс, здесь нужен только адрес. */
 class GS_Pay {
@@ -74,6 +83,7 @@ require $base . 'class-gc-program.php';
 require $base . 'class-gc-program-money.php';
 require $base . 'class-gc-students.php';
 require $base . 'class-gc-pay.php';
+require $base . 'class-gc-mail.php';
 
 $fail = 0;
 function check($what, $got, $want) {
@@ -89,7 +99,11 @@ foreach (array(10, 11, 12, 13) as $id) {
     $u = new stdClass();
     $u->ID = $id;
     $u->user_email = 'u' . $id . '@example.test';
-    $u->display_name = 'Ученик ' . $id;
+    $u->user_login = 'student' . $id;
+    // У ученика, которого завели без имени, WordPress показывает логин:
+    // письмо не должно здороваться с ним по логину.
+    $u->display_name = $id === 13 ? 'student13' : 'Ученик ' . $id;
+    $u->first_name = $id === 13 ? '' : 'Денис';
     $GLOBALS['users'][$id] = $u;
 }
 update_option('gc_cabinet_page', 7285);
@@ -249,6 +263,27 @@ check('адрес вида ?sitemap=xml тоже ловим',         count(GC_C
 unset($_GET['sitemap']);
 check('адрес кабинета заработка',                   GC_Cabinet::url('money'), 'https://example.test/?p=7542');
 check('адрес кабинета AI-креатора',                 GC_Cabinet::url('kreator'), 'https://example.test/?p=7285');
+
+echo "\n=== письмо с доступом ===\n";
+GC_Students::clear_paid(10);
+$letter = GC_Mail::render($GLOBALS['users'][10], 'aBcD1234', 'money');
+check('шаблон нашёлся',                             $letter !== '', true);
+check('ни одной незаполненной метки',               preg_match('~\{\{\w+\}\}~', $letter), 0);
+check('логин в письме',                             strpos($letter, 'student10') !== false, true);
+check('пароль в письме',                            strpos($letter, 'aBcD1234') !== false, true);
+check('адрес кабинета в письме',                    strpos($letter, 'https://example.test/?p=7542') !== false, true);
+check('название курса',                             strpos($letter, 'Заработок на нейросетях') !== false, true);
+check('обращение по имени',                         strpos($letter, 'Денис, здравствуйте!') !== false, true);
+check('про оплату сказано',                         strpos($letter, 'после оплаты') !== false, true);
+GC_Students::set_paid(10, 'base');
+$paid_letter = GC_Mail::render($GLOBALS['users'][10], 'aBcD1234', 'money');
+check('оплатившему про оплату не пишем',            strpos($paid_letter, 'после оплаты'), false);
+check('оплатившему — про полный доступ',            strpos($paid_letter, 'Доступ открыт полностью') !== false, true);
+GC_Students::clear_paid(10);
+$nameless = GC_Mail::render($GLOBALS['users'][13], 'aBcD1234', 'kreator');
+check('без имени — просто «Здравствуйте!»',         strpos($nameless, 'Здравствуйте!') !== false, true);
+check('и без запятой перед ним',                    strpos($nameless, ', здравствуйте!'), false);
+check('у курса без оплаты свои шаги',               strpos($nameless, 'Сдайте первую работу') !== false, true);
 
 printf("\n%s\n", $fail === 0 ? 'Все проверки прошли.' : ('Провалено проверок: ' . $fail));
 exit($fail === 0 ? 0 : 1);

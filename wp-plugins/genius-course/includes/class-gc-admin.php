@@ -28,6 +28,8 @@ class GC_Admin {
         add_action('admin_post_gc_gpu_days', array(__CLASS__, 'handle_gpu_days'));
         add_action('admin_post_gc_paid', array(__CLASS__, 'handle_paid'));
         add_action('admin_post_gc_example', array(__CLASS__, 'handle_example'));
+        add_action('admin_post_gc_send_access', array(__CLASS__, 'handle_send_access'));
+        add_action('admin_post_gc_mail_preview', array(__CLASS__, 'handle_mail_preview'));
         add_action('admin_post_gc_review', array(__CLASS__, 'handle_review'));
         add_action('admin_post_gc_settings', array(__CLASS__, 'handle_settings'));
         add_action('admin_post_gc_vast', array(__CLASS__, 'handle_vast'));
@@ -158,6 +160,29 @@ class GC_Admin {
             </div>
             <?php
         }
+        if (!empty($_GET['gc_sent'])) {
+            $ok = isset($_GET['gc_ok']) && $_GET['gc_ok'] === '1';
+            $login = isset($_GET['gc_login']) ? sanitize_text_field(wp_unslash($_GET['gc_login'])) : '';
+            $pass = isset($_GET['gc_pass']) ? sanitize_text_field(wp_unslash($_GET['gc_pass'])) : '';
+            ?>
+            <div class="notice notice-<?php echo $ok ? 'success' : 'warning'; ?>">
+                <p><?php echo esc_html(sanitize_text_field(wp_unslash($_GET['gc_sent']))); ?></p>
+                <?php if ($login !== '' && $pass !== '') : ?>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php wp_nonce_field('gc_send_access'); ?>
+                        <input type="hidden" name="action" value="gc_send_access">
+                        <input type="hidden" name="back" value="<?php echo esc_attr(self::tab()); ?>">
+                        <input type="hidden" name="login" value="<?php echo esc_attr($login); ?>">
+                        <input type="hidden" name="password" value="<?php echo esc_attr($pass); ?>">
+                        <p>
+                            <input type="email" name="copy" class="regular-text" placeholder="Копию ещё на адрес (необязательно)">
+                            <button class="button">Отправить письмо ещё раз</button>
+                        </p>
+                    </form>
+                <?php endif; ?>
+            </div>
+            <?php
+        }
         if (!empty($_GET['gc_msg'])) {
             echo '<div class="notice notice-info"><p>' . esc_html(sanitize_text_field(wp_unslash($_GET['gc_msg']))) . '</p></div>';
         }
@@ -190,6 +215,10 @@ class GC_Admin {
             <?php else : ?>
                 Все модули открыты сразу: оплата у этого курса проходит вне сайта.
             <?php endif; ?>
+            Письмо с логином и паролем уходит ученику само, на указанную почту —
+            <a href="<?php echo esc_url(wp_nonce_url(add_query_arg(array(
+                'action' => 'gc_mail_preview', 'course' => $course), admin_url('admin-post.php')), 'gc_mail_preview')); ?>"
+               target="_blank" rel="noopener">посмотреть письмо</a>.
         </p>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="gc-admin-form">
             <?php wp_nonce_field('gc_create'); ?>
@@ -957,11 +986,77 @@ class GC_Admin {
                 GC_Students::set_paid((int) $out['user_id'], $first);
             }
         }
+        /*
+         * Письмо уходит сразу и само: пароль показывается один раз, и
+         * переписывать его руками в мессенджер — способ однажды
+         * отправить доступ не тому человеку.
+         */
+        $user = get_user_by('id', (int) $out['user_id']);
+        $mail = $user ? GC_Mail::send($user, (string) $out['password'], $course)
+                      : array('ok' => false, 'message' => 'Ученик не найден — письмо не отправлено');
+
         wp_safe_redirect(self::url($back, array(
             'gc_login' => $out['login'],
             'gc_pass'  => $out['password'],
             'gc_at'    => $course,
+            'gc_sent'  => $mail['message'],
+            'gc_ok'    => empty($mail['ok']) ? '0' : '1',
         )));
+        exit;
+    }
+
+    /**
+     * Отправить письмо с доступом ещё раз.
+     *
+     * Нужно, когда письмо не дошло или ученик его потерял: пароль в
+     * этот момент ещё виден в адресной строке, второй раз его взять
+     * уже негде.
+     */
+    public static function handle_send_access() {
+        check_admin_referer('gc_send_access');
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        $back = self::back();
+        $login = sanitize_user((string) ($_POST['login'] ?? ''), true);
+        $password = (string) ($_POST['password'] ?? '');
+        $copy = sanitize_email((string) ($_POST['copy'] ?? ''));
+        $user = get_user_by('login', $login);
+        if (!$user || $password === '') {
+            wp_safe_redirect(self::url($back, array('gc_err' => 'Не нашли ученика или пароль — создайте новый пароль кнопкой в таблице')));
+            exit;
+        }
+        $mail = GC_Mail::send($user, $password, GC_Students::course($user->ID), $copy);
+        wp_safe_redirect(self::url($back, array(
+            'gc_login' => $user->user_login,
+            'gc_pass'  => $password,
+            'gc_at'    => GC_Students::course($user->ID),
+            'gc_sent'  => $mail['message'],
+            'gc_ok'    => empty($mail['ok']) ? '0' : '1',
+        )));
+        exit;
+    }
+
+    /**
+     * Посмотреть письмо, не отправляя.
+     *
+     * Вёрстку писем правят чаще, чем код: пусть её можно открыть в
+     * браузере на выдуманных данных.
+     */
+    public static function handle_mail_preview() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        check_admin_referer('gc_mail_preview');
+        $course = sanitize_key((string) ($_GET['course'] ?? ''));
+        $course = GC_Courses::exists($course) ? $course : GC_Courses::DEFAULT_KEY;
+        $user = wp_get_current_user();
+        $html = GC_Mail::render($user, 'ПаРоЛь-пример', $course);
+        if ($html === '') {
+            wp_die('Шаблон письма не найден');
+        }
+        header('Content-Type: text/html; charset=UTF-8');
+        echo $html; // phpcs:ignore WordPress.Security.EscapeOutput
         exit;
     }
 

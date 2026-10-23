@@ -1,0 +1,139 @@
+<!--
+  Письмо с доступом в кабинет курса.
+
+  Вписываются метки в двойных фигурных скобках — руками или классом
+  GC_Mail, который подставляет их сам:
+
+    {{name}}        — имя ученика («Денис»); если имени нет, строка приветствия убирается вместе с меткой
+    {{course}}      — название курса («Заработок на нейросетях»)
+    {{cabinet_url}} — адрес кабинета
+    {{login}}       — логин
+    {{password}}    — пароль (показывается один раз, поэтому письмо и нужно)
+    {{lost_url}}    — адрес восстановления пароля
+    {{note}}        — абзац про оплату или про срок доступа; пусто — блок исчезает
+    {{steps}}       — три-четыре строки «с чего начать», готовыми <li>
+    {{support}}     — куда писать, если что-то не работает
+    {{site}}        — название сайта в подвале
+    {{year}}        — год в подвале
+
+  Вёрстка почтовая и нарочно старомодная: таблицы, ширина 600, стили в
+  атрибутах. Flex, grid, внешние файлы и шрифты в письмах не работают —
+  Gmail и Mail.ru вырезают их молча, и письмо приходит рассыпанным.
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0; padding:0; background-color:#f5f6fb;">
+  <tr>
+    <td align="center" style="padding:28px 12px;">
+
+      <!-- Невидимая строка: её показывает список писем рядом с темой. -->
+      <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
+        Логин и пароль от кабинета курса «{{course}}» — внутри письма.
+      </div>
+
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+             style="width:600px; max-width:100%; background-color:#ffffff; border-radius:16px;
+                    border:1px solid #e3e8f0; font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">
+
+        <tr>
+          <td style="padding:30px 34px 10px 34px;">
+            <p style="margin:0 0 6px 0; font-size:13px; line-height:1.4; letter-spacing:.04em;
+                      text-transform:uppercase; color:#5b4ae0; font-weight:700;">Доступ в кабинет</p>
+            <h1 style="margin:0; font-size:25px; line-height:1.25; color:#101828; font-weight:800;">{{course}}</h1>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:16px 34px 0 34px; font-size:16px; line-height:1.6; color:#344054;">
+            <p style="margin:0 0 14px 0;">{{name}}, здравствуйте!</p>
+            <p style="margin:0;">Кабинет открыт — заходите по ссылке ниже. Логин и пароль из этого письма
+              лучше сохранить: второй раз пароль нигде не показывается, но его всегда можно
+              восстановить по почте.</p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:22px 34px 0 34px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="background-color:#f5f6fb; border:1px solid #e3e8f0; border-radius:12px;">
+              <tr>
+                <td style="padding:18px 20px 6px 20px; font-size:14px; line-height:1.5; color:#667085;">Адрес кабинета</td>
+              </tr>
+              <tr>
+                <td style="padding:0 20px 14px 20px; font-size:16px; line-height:1.5;">
+                  <a href="{{cabinet_url}}" style="color:#5b4ae0; font-weight:600; text-decoration:none;
+                     word-break:break-all;">{{cabinet_url}}</a>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 20px 6px 20px; font-size:14px; line-height:1.5; color:#667085;">Логин</td>
+              </tr>
+              <tr>
+                <td style="padding:0 20px 14px 20px; font-size:18px; line-height:1.4; color:#101828;
+                           font-family:Consolas,'Courier New',monospace; font-weight:700;">{{login}}</td>
+              </tr>
+              <tr>
+                <td style="padding:0 20px 6px 20px; font-size:14px; line-height:1.5; color:#667085;">Пароль</td>
+              </tr>
+              <tr>
+                <td style="padding:0 20px 20px 20px; font-size:18px; line-height:1.4; color:#101828;
+                           font-family:Consolas,'Courier New',monospace; font-weight:700;">{{password}}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td align="left" style="padding:22px 34px 0 34px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td bgcolor="#5b4ae0" style="border-radius:11px;">
+                  <a href="{{cabinet_url}}"
+                     style="display:inline-block; padding:15px 30px; font-size:16px; font-weight:700;
+                            color:#ffffff; text-decoration:none; border-radius:11px;">Войти в кабинет</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- {{note}} — про оплату или про срок доступа. Пусто — блока нет. -->
+        <tr>
+          <td style="padding:22px 34px 0 34px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="background-color:#efecfe; border-radius:12px;">
+              <tr>
+                <td style="padding:16px 20px; font-size:15px; line-height:1.6; color:#344054;">{{note}}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:24px 34px 0 34px;">
+            <p style="margin:0 0 8px 0; font-size:17px; line-height:1.4; color:#101828; font-weight:700;">С чего начать</p>
+            <ul style="margin:0; padding-left:20px; font-size:15px; line-height:1.65; color:#344054;">
+              {{steps}}
+            </ul>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:22px 34px 30px 34px; font-size:14px; line-height:1.6; color:#667085;">
+            <p style="margin:0 0 8px 0;">Пароль поменять или восстановить можно здесь —
+              письмо придёт на этот же адрес:
+              <a href="{{lost_url}}" style="color:#5b4ae0; text-decoration:none; word-break:break-all;">{{lost_url}}</a></p>
+            <p style="margin:0;">{{support}}</p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:18px 34px 24px 34px; border-top:1px solid #e3e8f0;
+                     font-size:13px; line-height:1.6; color:#98a2b3;">
+            {{site}}, {{year}}. Письмо отправлено, потому что для вас открыли доступ к обучению.
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
