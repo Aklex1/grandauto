@@ -262,6 +262,9 @@ class GC_Cabinet {
                 <a class="<?php echo $tab === 'studio' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'studio', self::url($course))); ?>">Мастерская</a>
                 <a class="<?php echo $tab === 'works' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'works', self::url($course))); ?>">Мои работы</a>
                 <a class="<?php echo $tab === 'gallery' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'gallery', self::url($course))); ?>">Галерея</a>
+                <?php if (GC_Courses::field($course, 'launch', false)) : ?>
+                    <a class="<?php echo $tab === 'launch' ? 'is-on' : ''; ?>" href="<?php echo esc_url(add_query_arg('tab', 'launch', self::url($course))); ?>">Свой запуск</a>
+                <?php endif; ?>
             </nav>
 
             <?php
@@ -271,6 +274,8 @@ class GC_Cabinet {
                 echo self::works($user, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
             } elseif ($tab === 'gallery') {
                 echo self::gallery($course); // phpcs:ignore WordPress.Security.EscapeOutput
+            } elseif ($tab === 'launch' && GC_Courses::field($course, 'launch', false)) {
+                echo self::launch($course); // phpcs:ignore WordPress.Security.EscapeOutput
             } elseif ($open >= 0) {
                 echo self::module($user, $open, $modules[$open], $done, $course, $paid); // phpcs:ignore WordPress.Security.EscapeOutput
             } else {
@@ -684,6 +689,115 @@ class GC_Cabinet {
             <p class="gc-note-line" role="status"></p>
         </section>
         <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Направления запуска.
+     *
+     * Ремесло само по себе денег не приносит: нужно решить, что
+     * запускать и кому это продавать. Шесть разобранных направлений с
+     * честной вилкой дохода, шагами запуска и местами, где брать людей.
+     * Открыто всем, включая не оплативших: это ответ на вопрос «а что
+     * я с этого получу», а не сама программа.
+     */
+    private static function launch($course) {
+        if (!class_exists('GC_Launch')) {
+            return '';
+        }
+        $cases = GC_Launch::cases();
+        $key = isset($_GET['case']) ? sanitize_key(wp_unslash($_GET['case'])) : '';
+        $one = $key !== '' ? GC_Launch::get($key) : null;
+
+        ob_start();
+        if (!$one) :
+            ?>
+            <section class="gc-card">
+                <h2 class="gc-h2">С чего начать свой запуск</h2>
+                <p class="gc-lead">Шесть направлений, которые получается открыть в одиночку с тем, чему учит курс.
+                    Выберите одно и доведите до первых денег — распыляться на три сразу не выходит ни у кого.</p>
+                <p class="gc-fine">Суммы — не обещание. Это вилка, в которую попадают те, кто делает работу
+                    регулярно; рядом написано, при каком объёме она верна. Первые деньги обычно приходят на
+                    третьей-четвёртой неделе.</p>
+            </section>
+            <div class="gc-launch">
+                <?php foreach ($cases as $k => $case) : ?>
+                    <article class="gc-launch__card">
+                        <h3><?php echo esc_html($case['title']); ?></h3>
+                        <p class="gc-launch__income"><?php echo esc_html($case['income']); ?></p>
+                        <p class="gc-launch__lead"><?php echo esc_html($case['lead']); ?></p>
+                        <p class="gc-launch__basis"><?php echo esc_html($case['basis']); ?></p>
+                        <a class="gc-btn gc-btn--ghost" href="<?php echo esc_url(add_query_arg(
+                            array('tab' => 'launch', 'case' => $k), self::url($course))); ?>">Как запустить</a>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+            <?php
+        else :
+            $modules = GC_Program::modules($course);
+            ?>
+            <article class="gc-card gc-lesson">
+                <p class="gc-back"><a href="<?php echo esc_url(add_query_arg('tab', 'launch', self::url($course))); ?>">← Все направления</a></p>
+                <h2 class="gc-h2"><?php echo esc_html($one['title']); ?></h2>
+                <p class="gc-lead"><?php echo esc_html($one['lead']); ?></p>
+
+                <div class="gc-launch__facts">
+                    <p><strong>Сколько приносит:</strong> <?php echo esc_html($one['income']); ?><br>
+                        <span class="gc-fine"><?php echo esc_html($one['basis']); ?></span></p>
+                    <p><strong>Что нужно на старте:</strong> <?php echo esc_html($one['start']); ?></p>
+                    <p><strong>Что здесь трудного:</strong> <?php echo esc_html($one['hard']); ?></p>
+                </div>
+
+                <section class="gc-step">
+                    <h3><span>1</span>Что вы делаете</h3>
+                    <ul class="gc-launch__list">
+                        <?php foreach ((array) $one['what'] as $line) : ?>
+                            <li><?php echo esc_html($line); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </section>
+
+                <section class="gc-step">
+                    <h3><span>2</span>Как запустить</h3>
+                    <ol class="gc-launch__steps">
+                        <?php foreach ((array) $one['steps'] as $line) : ?>
+                            <li><?php echo esc_html($line); ?></li>
+                        <?php endforeach; ?>
+                    </ol>
+                </section>
+
+                <section class="gc-step">
+                    <h3><span>3</span>Где брать людей</h3>
+                    <ul class="gc-launch__list">
+                        <?php foreach ((array) $one['ads'] as $line) : ?>
+                            <li><?php echo esc_html($line); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </section>
+
+                <?php if (!empty($one['modules'])) : ?>
+                    <div class="gc-task">
+                        <h3>Какие модули нужны именно здесь</h3>
+                        <ul class="gc-launch__list">
+                            <?php foreach ((array) $one['modules'] as $i) :
+                                if (!isset($modules[$i])) { continue; } ?>
+                                <li><a href="<?php echo esc_url(add_query_arg('mod', (int) $i, self::url($course))); ?>">
+                                    Модуль <?php echo (int) ($i + 1); ?>: <?php echo esc_html($modules[$i]['title']); ?></a></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
+
+                <div class="gc-launch__plus">
+                    <h3>Что берём на себя на тарифе «С рекламной кампанией»</h3>
+                    <p><?php echo esc_html(GC_Launch::plus_note()); ?></p>
+                    <?php if (!GC_Courses::is_paid(get_current_user_id(), $course)) : ?>
+                        <p><a class="gc-btn" href="<?php echo esc_url(self::url($course)); ?>#oplata">Посмотреть тарифы</a></p>
+                    <?php endif; ?>
+                </div>
+            </article>
+            <?php
+        endif;
         return ob_get_clean();
     }
 

@@ -1431,3 +1431,106 @@ body.gc-page .gc {
     display: block;
     margin: 2px 0 8px;
 }
+
+/* --- Направления запуска --------------------------------------------- */
+
+.gc-launch {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.gc-launch__card {
+    display: flex;
+    flex-direction: column;
+    padding: 22px 22px 24px;
+    border: 1px solid var(--gc-line);
+    border-radius: var(--gc-radius);
+    background: var(--gc-card);
+    box-shadow: var(--gc-shadow);
+}
+
+.gc-launch__card h3 {
+    margin: 0 0 8px !important;
+    font-size: 18px;
+    line-height: 1.25;
+}
+
+.gc-launch__income {
+    margin: 0 0 10px;
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--gc-primary);
+}
+
+.gc-launch__lead {
+    margin: 0 0 10px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--gc-ink-2);
+}
+
+.gc-launch__basis {
+    margin: 0 0 18px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--gc-muted);
+}
+
+.gc-launch__card .gc-btn {
+    margin-top: auto;
+}
+
+.gc-launch__facts {
+    margin: 18px 0 6px;
+    padding: 18px 20px;
+    border-radius: var(--gc-radius-sm);
+    background: var(--gc-card-2);
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.gc-launch__facts p {
+    margin: 0 0 10px;
+}
+
+.gc-launch__facts p:last-child {
+    margin-bottom: 0;
+}
+
+.gc-launch__list,
+.gc-launch__steps {
+    margin: 8px 0 0;
+    padding-left: 22px;
+    display: grid;
+    gap: 7px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--gc-ink-2);
+}
+
+.gc-launch__plus {
+    margin-top: 24px;
+    padding: 22px 24px;
+    border-radius: var(--gc-radius);
+    background: linear-gradient(180deg, var(--gc-primary-soft), var(--gc-card) 70%);
+    border: 1px solid var(--gc-line);
+}
+
+.gc-launch__plus h3 {
+    margin: 0 0 8px !important;
+    font-size: 17px;
+}
+
+.gc-launch__plus p {
+    margin: 0 0 14px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--gc-ink-2);
+}
+
+.gc-launch__plus p:last-child {
+    margin-bottom: 0;
+}

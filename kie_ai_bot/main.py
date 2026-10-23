@@ -9273,6 +9273,9 @@ async def main():
     # Серия публикаций в тему группы: пять дней, разные дни и часы.
     import group_seed
 
+    # Задание недели в теме обсуждения: понедельник — задание, пятница — итог.
+    import group_task
+
     # Каждая задача изолирована: если упадёт фоновая, бот продолжит отвечать,
     # а ошибка попадёт в лог. Раньше падение любой из них останавливало всё.
     async def guarded(coro, name: str):
@@ -9292,6 +9295,7 @@ async def main():
         guarded(news_worker(bot), "новостной канал"),
         guarded(promo_worker(bot), "промо-посты"),
         guarded(group_seed.seed_worker(bot), "серия в группе"),
+        guarded(group_task.task_worker(bot), "задание недели"),
     )
 
     
