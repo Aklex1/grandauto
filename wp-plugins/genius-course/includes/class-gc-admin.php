@@ -28,6 +28,7 @@ class GC_Admin {
         add_action('admin_post_gc_gpu_days', array(__CLASS__, 'handle_gpu_days'));
         add_action('admin_post_gc_paid', array(__CLASS__, 'handle_paid'));
         add_action('admin_post_gc_example', array(__CLASS__, 'handle_example'));
+        add_action('admin_post_gc_credits', array(__CLASS__, 'handle_credits'));
         add_action('admin_post_gc_send_access', array(__CLASS__, 'handle_send_access'));
         add_action('admin_post_gc_mail_preview', array(__CLASS__, 'handle_mail_preview'));
         add_action('admin_post_gc_review', array(__CLASS__, 'handle_review'));
@@ -552,10 +553,30 @@ class GC_Admin {
         <p>Шлюз моделей: <strong><?php echo $kie['ok'] ? 'на связи' : 'недоступен'; ?></strong>
             <span class="description"><?php echo esc_html($kie['message']); ?>
                 — на нём считает мастерская курса «Заработок на нейросетях»</span></p>
+        <?php
+        /*
+         * Во что обходятся генерации — не гадание, а сумма списаний
+         * поставщика по каждому заданию. По ней считается, сколько
+         * генераций можно положить в тариф.
+         */
+        $spent = GC_Gpu::spending(30);
+        ?>
+        <p>За 30 дней посчитано <strong><?php echo (int) $spent['jobs']; ?></strong> заданий
+            на <strong><?php echo esc_html(number_format_i18n($spent['credits'], 2)); ?></strong> кредитов<?php
+            foreach ($spent['by_kind'] as $kind => $row) {
+                echo ' · ' . esc_html($kind === 'video' ? 'ролики' : 'кадры') . ': '
+                   . (int) $row['jobs'] . ' на ' . esc_html(number_format_i18n($row['credits'], 2));
+            } ?>.
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                <?php wp_nonce_field('gc_credits'); ?>
+                <input type="hidden" name="action" value="gc_credits">
+                <button class="button button-small">Узнать стоимость старых заданий</button>
+            </form>
+        </p>
         <table class="widefat striped">
-            <thead><tr><th>№</th><th>Ученик</th><th>Чем</th><th>Описание</th><th>Состояние</th><th>Результат</th><th>Когда</th></tr></thead>
+            <thead><tr><th>№</th><th>Ученик</th><th>Чем</th><th>Описание</th><th>Состояние</th><th>Стоило</th><th>Результат</th><th>Когда</th></tr></thead>
             <tbody>
-            <?php if (!$jobs) : ?><tr><td colspan="7">Пока пусто.</td></tr><?php endif; ?>
+            <?php if (!$jobs) : ?><tr><td colspan="8">Пока пусто.</td></tr><?php endif; ?>
             <?php foreach ($jobs as $j) :
                 $u = get_user_by('id', (int) $j['user_id']);
                 ?>
@@ -565,6 +586,8 @@ class GC_Admin {
                     <td><?php echo GC_Gpu::engine_of($j) === 'kie' ? 'шлюз' : 'машина'; ?></td>
                     <td><?php echo esc_html(mb_substr((string) $j['prompt'], 0, 90)); ?></td>
                     <td><?php echo esc_html($j['status']); ?><?php if (!empty($j['error'])) : ?><br><span class="description"><?php echo esc_html(mb_substr((string) $j['error'], 0, 90)); ?></span><?php endif; ?></td>
+                    <td><?php echo (float) $j['credits'] > 0
+                        ? esc_html(number_format_i18n((float) $j['credits'], 2)) : '—'; ?></td>
                     <td><?php if (!empty($j['result_url'])) : ?><a href="<?php echo esc_url($j['result_url']); ?>" target="_blank">кадр</a><?php else : ?>—<?php endif; ?></td>
                     <td><?php echo esc_html(date_i18n('j M, H:i', strtotime($j['created_at']))); ?></td>
                 </tr>
@@ -1253,6 +1276,37 @@ class GC_Admin {
         wp_safe_redirect(self::url('examples', array(
             'gc_msg' => $message,
             'gc_err' => $errors ? implode('; ', $errors) : null,
+        )));
+        exit;
+    }
+
+    /**
+     * Подтянуть стоимость заданий, посчитанных до учёта списаний.
+     *
+     * Поставщик помнит стоимость по номеру задачи, поэтому старые
+     * задания можно дозаполнить — по одному запросу на задание.
+     */
+    public static function handle_credits() {
+        check_admin_referer('gc_credits');
+        if (!current_user_can('manage_options')) {
+            wp_die('Недостаточно прав');
+        }
+        global $wpdb;
+        $table = GC_Install::jobs_table();
+        $rows = (array) $wpdb->get_results(
+            "SELECT * FROM {$table} WHERE status = 'done' AND credits = 0 AND remote_id <> ''
+             ORDER BY id DESC LIMIT 25", ARRAY_A);
+        $done = 0;
+        foreach ($rows as $row) {
+            if (GC_Gpu::engine_of($row) !== 'kie') {
+                continue;
+            }
+            if (GC_Kie::fetch_credits($row) > 0) {
+                $done++;
+            }
+        }
+        wp_safe_redirect(self::url('jobs', array(
+            'gc_msg' => sprintf('Стоимость узнали у %d заданий из %d просмотренных', $done, count($rows)),
         )));
         exit;
     }

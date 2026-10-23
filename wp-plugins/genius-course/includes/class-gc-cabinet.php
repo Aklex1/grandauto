@@ -693,6 +693,49 @@ class GC_Cabinet {
     }
 
     /**
+     * Схема запуска: откуда трафик и куда он приходит.
+     *
+     * Рисуем вёрсткой, а не картинкой: подписи остаются читаемыми на
+     * телефоне, схема сама переносится в столбец, и её не нужно
+     * перегенерировать при каждой правке текста.
+     */
+    private static function flow($case, $full = false) {
+        if (empty($case['flow'])) {
+            return '';
+        }
+        $icons = array(
+            // Рупор — реклама, страница — сайт, облачко — заявка,
+            // галочка — сама работа, стрелка по кругу — повторные заказы.
+            'ads'    => '<path d="M4 9v4h3l5 3V6L7 9H4z"/><path d="M15 8a4 4 0 010 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+            'page'   => '<rect x="4" y="3.5" width="13" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 8h6M7.5 11.5h6M7.5 15h3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+            'chat'   => '<path d="M4 5.5A2.5 2.5 0 016.5 3h9A2.5 2.5 0 0118 5.5v6A2.5 2.5 0 0115.5 14H9l-4 4v-4H6.5A2.5 2.5 0 014 11.5v-6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+            'work'   => '<path d="M4 11l4.5 4.5L18 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+            'repeat' => '<path d="M5 9a6 6 0 0110-4m1.5 6a6 6 0 01-10 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M15 3.5V7h-3.5M6 18v-3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+        );
+        ob_start();
+        ?>
+        <div class="gc-flow<?php echo $full ? ' gc-flow--full' : ''; ?>">
+            <?php foreach ((array) $case['flow'] as $i => $step) :
+                list($icon, $title, $note) = array_pad((array) $step, 3, '');
+                ?>
+                <div class="gc-flow__step<?php echo $i === 0 ? ' is-first' : ''; ?>">
+                    <span class="gc-flow__icon" aria-hidden="true">
+                        <svg viewBox="0 0 22 22" width="22" height="22" fill="currentColor"><?php
+                            echo isset($icons[$icon]) ? $icons[$icon] : $icons['work']; // phpcs:ignore WordPress.Security.EscapeOutput
+                        ?></svg>
+                    </span>
+                    <strong><?php echo esc_html($title); ?></strong>
+                    <?php if ($full && $note !== '') : ?>
+                        <span><?php echo esc_html($note); ?></span>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
      * Направления запуска.
      *
      * Ремесло само по себе денег не приносит: нужно решить, что
@@ -727,6 +770,7 @@ class GC_Cabinet {
                         <p class="gc-launch__income"><?php echo esc_html($case['income']); ?></p>
                         <p class="gc-launch__lead"><?php echo esc_html($case['lead']); ?></p>
                         <p class="gc-launch__basis"><?php echo esc_html($case['basis']); ?></p>
+                        <?php echo self::flow($case); // phpcs:ignore WordPress.Security.EscapeOutput ?>
                         <a class="gc-btn gc-btn--ghost" href="<?php echo esc_url(add_query_arg(
                             array('tab' => 'launch', 'case' => $k), self::url($course))); ?>">Как запустить</a>
                     </article>
@@ -749,7 +793,15 @@ class GC_Cabinet {
                 </div>
 
                 <section class="gc-step">
-                    <h3><span>1</span>Что вы делаете</h3>
+                    <h3><span>1</span>Как это работает целиком</h3>
+                    <p>Деньги приносит не сама нейросеть, а связка: реклама приводит людей на страницу,
+                        страница превращает их в заявки, работа превращает заявки в деньги, а довольный
+                        заказчик возвращается.</p>
+                    <?php echo self::flow($one, true); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                </section>
+
+                <section class="gc-step">
+                    <h3><span>2</span>Что вы делаете</h3>
                     <ul class="gc-launch__list">
                         <?php foreach ((array) $one['what'] as $line) : ?>
                             <li><?php echo esc_html($line); ?></li>
@@ -758,7 +810,7 @@ class GC_Cabinet {
                 </section>
 
                 <section class="gc-step">
-                    <h3><span>2</span>Как запустить</h3>
+                    <h3><span>3</span>Как запустить</h3>
                     <ol class="gc-launch__steps">
                         <?php foreach ((array) $one['steps'] as $line) : ?>
                             <li><?php echo esc_html($line); ?></li>
@@ -767,7 +819,7 @@ class GC_Cabinet {
                 </section>
 
                 <section class="gc-step">
-                    <h3><span>3</span>Где брать людей</h3>
+                    <h3><span>4</span>Где брать людей</h3>
                     <ul class="gc-launch__list">
                         <?php foreach ((array) $one['ads'] as $line) : ?>
                             <li><?php echo esc_html($line); ?></li>

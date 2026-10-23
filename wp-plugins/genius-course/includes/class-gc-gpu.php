@@ -986,6 +986,40 @@ class GC_Gpu {
     }
 
     /** Подпись обратного вызова: иначе результат сможет прислать кто угодно. */
+    /** Во сколько обошлось задание у поставщика. */
+    public static function set_credits($job_id, $credits) {
+        self::update($job_id, array('credits' => (float) $credits));
+    }
+
+    /**
+     * Сколько потратили за период: всего и по видам работ.
+     *
+     * @return array{jobs:int,credits:float,by_kind:array}
+     */
+    public static function spending($days = 30) {
+        global $wpdb;
+        $table = self::jobs_table_name();
+        $since = gmdate('Y-m-d H:i:s', time() - max(1, (int) $days) * DAY_IN_SECONDS);
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT kind, COUNT(*) AS n, SUM(credits) AS c FROM {$table}
+             WHERE status = 'done' AND created_at > %s GROUP BY kind", $since
+        ), ARRAY_A);
+        $out = array('jobs' => 0, 'credits' => 0.0, 'by_kind' => array());
+        foreach ($rows as $row) {
+            $out['jobs'] += (int) $row['n'];
+            $out['credits'] += (float) $row['c'];
+            $out['by_kind'][(string) $row['kind']] = array(
+                'jobs'    => (int) $row['n'],
+                'credits' => (float) $row['c'],
+            );
+        }
+        return $out;
+    }
+
+    private static function jobs_table_name() {
+        return GC_Install::jobs_table();
+    }
+
     /** Показывать ли кадр другим ученикам. */
     public static function set_shared($job_id, $shared) {
         self::update($job_id, array('shared' => $shared ? 1 : 0));

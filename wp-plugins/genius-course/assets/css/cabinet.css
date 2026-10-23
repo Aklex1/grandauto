@@ -1534,3 +1534,91 @@ body.gc-page .gc {
 .gc-launch__plus p:last-child {
     margin-bottom: 0;
 }
+
+/* --- Схема запуска --------------------------------------------------- */
+
+/*
+ * Схема рисуется вёрсткой: на широком экране это цепочка со стрелками,
+ * на телефоне она сама переносится в столбец. Первый шаг — трафик — в
+ * цвете: без него не работает ни одно направление.
+ */
+.gc-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+    margin: 0 0 18px;
+}
+
+.gc-flow__step {
+    position: relative;
+    flex: 1 1 110px;
+    min-width: 0;
+    padding: 12px 10px 12px 12px;
+    border: 1px solid var(--gc-line);
+    border-radius: 12px;
+    background: var(--gc-card-2);
+    font-size: 12.5px;
+    line-height: 1.35;
+    color: var(--gc-muted);
+}
+
+.gc-flow__step strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.3;
+    color: var(--gc-ink);
+}
+
+.gc-flow__step.is-first {
+    border-color: var(--gc-primary-2);
+    background: var(--gc-primary-soft);
+}
+
+.gc-flow__step.is-first strong,
+.gc-flow__step.is-first .gc-flow__icon {
+    color: var(--gc-primary);
+}
+
+.gc-flow__icon {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--gc-muted);
+}
+
+.gc-flow__step + .gc-flow__step::before {
+    content: "";
+    position: absolute;
+    left: -7px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    margin-top: -3px;
+    border-top: 1.5px solid var(--gc-line-2);
+    border-right: 1.5px solid var(--gc-line-2);
+    transform: rotate(45deg);
+}
+
+.gc-flow--full .gc-flow__step {
+    flex-basis: 150px;
+    padding: 14px 14px 16px;
+    font-size: 13px;
+}
+
+.gc-flow--full .gc-flow__step strong {
+    margin-bottom: 4px;
+    font-size: 14.5px;
+}
+
+@media (max-width: 700px) {
+    .gc-flow {
+        flex-direction: column;
+    }
+
+    .gc-flow__step + .gc-flow__step::before {
+        left: 50%;
+        top: -7px;
+        margin: 0 0 0 -3px;
+        transform: rotate(135deg);
+    }
+}

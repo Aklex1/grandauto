@@ -168,15 +168,23 @@ class GC_Kie {
         if (!is_array($job) || (string) $job['remote_id'] === '' || !self::available()) {
             return;
         }
-        $state = GS_Provider::job_state((string) $job['remote_id']);
+        // Спрашиваем результат целиком, а не только состояние: в том же
+        // ответе приходит и списанная стоимость. Знать, во сколько
+        // обошлась генерация, нужно, чтобы считать курс, а не гадать.
+        $state = GS_Provider::job_result((string) $job['remote_id']);
         if (empty($state['ok'])) {
             return;
         }
         $what = strtolower((string) $state['state']);
+        $credits = (float) ($state['credits'] ?? 0);
+
         if (in_array($what, array('success', 'succeeded', 'completed', 'done', 'finished'), true)) {
-            $urls = (array) $state['urls'];
+            $urls = self::urls_of($state);
             if ($urls) {
                 GC_Gpu::finish((int) $job['id'], (string) $urls[0]);
+                if ($credits > 0) {
+                    GC_Gpu::set_credits((int) $job['id'], $credits);
+                }
             } else {
                 GC_Gpu::fail((int) $job['id'], 'модель не вернула файл');
             }
@@ -186,5 +194,41 @@ class GC_Kie {
             $why = (string) $state['message'];
             GC_Gpu::fail((int) $job['id'], $why !== '' ? $why : 'модель вернула отказ');
         }
+    }
+
+    /** Ссылки из ответа поставщика: имя поля у моделей разное. */
+    public static function urls_of($state) {
+        $result = (array) ($state['result'] ?? array());
+        foreach (array('resultUrls', 'result_urls', 'urls') as $key) {
+            if (!empty($result[$key]) && is_array($result[$key])) {
+                return array_values(array_filter($result[$key], 'is_string'));
+            }
+        }
+        foreach (array('resultUrl', 'url', 'videoUrl', 'imageUrl') as $key) {
+            if (!empty($result[$key]) && is_string($result[$key])) {
+                return array($result[$key]);
+            }
+        }
+        return array();
+    }
+
+    /**
+     * Узнать стоимость уже посчитанного задания.
+     *
+     * Нужно для заданий, сделанных до того, как мы начали записывать
+     * стоимость: поставщик помнит её по номеру задачи.
+     *
+     * @return float списанные кредиты, 0 — не узнали
+     */
+    public static function fetch_credits($job) {
+        if (!is_array($job) || (string) $job['remote_id'] === '' || !self::available()) {
+            return 0.0;
+        }
+        $state = GS_Provider::job_result((string) $job['remote_id']);
+        $credits = empty($state['ok']) ? 0 : (float) ($state['credits'] ?? 0);
+        if ($credits > 0) {
+            GC_Gpu::set_credits((int) $job['id'], $credits);
+        }
+        return (float) $credits;
     }
 }
