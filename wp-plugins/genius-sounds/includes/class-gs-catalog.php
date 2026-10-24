@@ -963,8 +963,23 @@ class GS_Catalog {
                                 <span aria-hidden="true">↓</span><span class="gs-sound__download-text">Скачать</span>
                             </a>
                         </article>
+                        <?php
+                        /*
+                         * Реклама внутри списка — через несколько карточек,
+                         * а не сразу: первый экран человек пришёл слушать,
+                         * и блок на нём только мешает. Класс растягивает
+                         * блок на всю ширину сетки, чтобы он не притворялся
+                         * карточкой звука и не ловил случайные нажатия по
+                         * кнопке «Скачать».
+                         */
+                        if (class_exists('GS_Ads') && $index === GS_Ads::INFEED_AFTER - 1) {
+                            echo GS_Ads::slot('infeed'); // phpcs:ignore WordPress.Security.EscapeOutput
+                        }
+                        ?>
                     <?php endforeach; ?>
                 </div>
+
+                <?php if (class_exists('GS_Ads')) { echo GS_Ads::slot('feed'); } // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
                 <?php echo self::render_pagination($page, $pages, array()); // phpcs:ignore WordPress.Security.EscapeOutput ?>
             <?php else: ?>

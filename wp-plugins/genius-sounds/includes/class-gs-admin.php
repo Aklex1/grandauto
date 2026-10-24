@@ -783,22 +783,48 @@ class GS_Admin {
             Полноэкранный блок показывается только там, где ничего не продаётся: каталог звуков,
             разделы каталога и витрина ИИ-звуков. На лендингах услуг, в кабинете и на оплате рекламы нет.
             Вошедшим в учётную запись блок не показывается вовсе — свои клики рекламной сети только вредят.
-            Номер блока берётся в РСЯ: «Сайты» → ваш сайт → «Добавить блок» → «Полноэкранный»;
-            выглядит он как <code>R-A-123456-1</code>. Для телефона и для компьютера в РСЯ это разные блоки.
+            Номера блоков берутся в РСЯ: «Сайты» → ваш сайт → «Добавить блок»; выглядят они как
+            <code>R-A-123456-1</code>. Полноэкранный и прилипающий в РСЯ заводятся отдельно для телефона
+            и для компьютера, блок в списке и лента — общие.
         </p>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:900px">
             <?php wp_nonce_field('gs_ads_save'); ?>
             <input type="hidden" name="action" value="gs_ads_save">
             <table class="form-table" role="presentation">
                 <tr>
-                    <th scope="row"><label for="gs-ads-touch">Блок для телефона</label></th>
+                    <th scope="row"><label for="gs-ads-touch">Полноэкранный — телефон</label></th>
                     <td><input type="text" id="gs-ads-touch" name="touch" class="regular-text" placeholder="R-A-123456-1"
-                               value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_TOUCH, '')); ?>"></td>
+                               value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_TOUCH, '')); ?>">
+                        <p class="description">Показывается на переходе между страницами. Частоту ограничивает сама РСЯ.</p></td>
                 </tr>
                 <tr>
-                    <th scope="row"><label for="gs-ads-desktop">Блок для компьютера</label></th>
+                    <th scope="row"><label for="gs-ads-desktop">Полноэкранный — компьютер</label></th>
                     <td><input type="text" id="gs-ads-desktop" name="desktop" class="regular-text" placeholder="R-A-123456-2"
                                value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_DESKTOP, '')); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-ads-floor-touch">Прилипающий снизу — телефон</label></th>
+                    <td><input type="text" id="gs-ads-floor-touch" name="floor_touch" class="regular-text" placeholder="R-A-123456-3"
+                               value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_FLOOR_TOUCH, '')); ?>">
+                        <p class="description">Узкая полоса внизу экрана: не закрывает содержимое и приносит ровный доход.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-ads-floor-desktop">Прилипающий снизу — компьютер</label></th>
+                    <td><input type="text" id="gs-ads-floor-desktop" name="floor_desktop" class="regular-text" placeholder="R-A-123456-4"
+                               value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_FLOOR_DESKTOP, '')); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-ads-infeed">Блок в списке звуков</label></th>
+                    <td><input type="text" id="gs-ads-infeed" name="infeed" class="regular-text" placeholder="R-A-123456-5"
+                               value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_INFEED, '')); ?>">
+                        <p class="description">Встаёт после <?php echo (int) GS_Ads::INFEED_AFTER; ?>-й карточки во всю ширину сетки —
+                            не рядом с кнопкой «Скачать», чтобы не ловить случайные нажатия.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-ads-feed">Рекламная лента под списком</label></th>
+                    <td><input type="text" id="gs-ads-feed" name="feed" class="regular-text" placeholder="R-A-123456-6"
+                               value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_FEED, '')); ?>">
+                        <p class="description">Лента объявлений в конце страницы, где человек уже закончил со звуками.</p></td>
                 </tr>
                 <tr>
                     <th scope="row">Показывать</th>
