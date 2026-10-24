@@ -768,6 +768,51 @@ class GS_Admin {
         return ob_get_clean();
     }
 
+    /**
+     * Реклама РСЯ на страницах каталога.
+     *
+     * Номер блока меняют в самой рекламной сети, и подставлять его в код
+     * руками нельзя: блок пересоздали — сайт выкатывай заново. Поэтому
+     * два поля и выключатель, а всё остальное делает плагин.
+     */
+    public static function render_ads() {
+        ob_start();
+        ?>
+        <h2 id="gs-ads">Реклама РСЯ в каталоге</h2>
+        <p class="description" style="max-width:900px">
+            Полноэкранный блок показывается только там, где ничего не продаётся: каталог звуков,
+            разделы каталога и витрина ИИ-звуков. На лендингах услуг, в кабинете и на оплате рекламы нет.
+            Вошедшим в учётную запись блок не показывается вовсе — свои клики рекламной сети только вредят.
+            Номер блока берётся в РСЯ: «Сайты» → ваш сайт → «Добавить блок» → «Полноэкранный»;
+            выглядит он как <code>R-A-123456-1</code>. Для телефона и для компьютера в РСЯ это разные блоки.
+        </p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:900px">
+            <?php wp_nonce_field('gs_ads_save'); ?>
+            <input type="hidden" name="action" value="gs_ads_save">
+            <table class="form-table" role="presentation">
+                <tr>
+                    <th scope="row"><label for="gs-ads-touch">Блок для телефона</label></th>
+                    <td><input type="text" id="gs-ads-touch" name="touch" class="regular-text" placeholder="R-A-123456-1"
+                               value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_TOUCH, '')); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-ads-desktop">Блок для компьютера</label></th>
+                    <td><input type="text" id="gs-ads-desktop" name="desktop" class="regular-text" placeholder="R-A-123456-2"
+                               value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_DESKTOP, '')); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row">Показывать</th>
+                    <td><label><input type="checkbox" name="on" value="1" <?php checked(GS_Ads::enabled()); ?>>
+                        включить рекламу на страницах каталога</label>
+                        <p class="description">Пока номер не задан, на страницы не выводится ничего — ни скрипта, ни пустого места.</p></td>
+                </tr>
+            </table>
+            <?php submit_button('Сохранить'); ?>
+        </form>
+        <?php
+        return ob_get_clean();
+    }
+
     public static function render_leads() {
         $rows = GS_Leads::log_rows();
         $notice = get_transient('gs_leads_notice');
@@ -1912,6 +1957,8 @@ class GS_Admin {
             <?php echo self::render_stuck_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_leads(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_ads(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_reviews(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
