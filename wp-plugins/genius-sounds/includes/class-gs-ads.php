@@ -103,7 +103,7 @@ class GS_Ads {
         ob_start();
         ?>
         <div class="gs-ad gs-ad--<?php echo esc_attr($slot); ?>" id="<?php echo esc_attr($id); ?>"></div>
-        <script>
+        <script data-cookietrix-skip>
         window.yaContextCb = window.yaContextCb || [];
         window.yaContextCb.push(function () {
             Ya.Context.AdvManager.<?php echo esc_js($method); ?>({
@@ -154,31 +154,58 @@ class GS_Ads {
             return;
         }
         $platform = wp_is_mobile() ? 'touch' : 'desktop';
+        /*
+         * Загрузчик создаём скриптом, а не тегом в разметке.
+         *
+         * Баннер согласия подменяет обычные теги на «text/plain» и
+         * держит их до нажатия — реклама тогда не показывается почти
+         * никому: до кнопки доходит меньшинство. Тег, собранный в
+         * браузере, под эту подмену не попадает, и на всякий случай
+         * помечен штатной оговоркой самого баннера.
+         *
+         * Явный отказ при этом уважаем: если человек нажал «только
+         * необходимые», рекламы нет. Решение читается в браузере, а не
+         * на сервере, иначе страница из кэша раздавала бы всем ответ
+         * одного посетителя.
+         */
         ?>
-<script>window.yaContextCb = window.yaContextCb || [];</script>
-<script src="https://yandex.ru/ads/system/context.js" async></script>
+<script data-cookietrix-skip>
+(function () {
+    var m = document.cookie.match(/(?:^|;\s*)cookietrix=([^;]*)/);
+    if (m) {
+        try {
+            var choice = JSON.parse(decodeURIComponent(m[1]));
+            if (choice && choice.c && Number(choice.c.marketing) === 0) {
+                return;
+            }
+        } catch (e) {}
+    }
+    window.yaContextCb = window.yaContextCb || [];
+    var loader = document.createElement('script');
+    loader.src = 'https://yandex.ru/ads/system/context.js';
+    loader.async = true;
+    loader.setAttribute('data-cookietrix-skip', '');
+    document.head.appendChild(loader);
         <?php if ($full !== '') : ?>
-<script>
-window.yaContextCb.push(function () {
-    Ya.Context.AdvManager.render({
-        blockId: <?php echo wp_json_encode($full); ?>,
-        type: 'fullscreen',
-        platform: <?php echo wp_json_encode($platform); ?>
+    window.yaContextCb.push(function () {
+        Ya.Context.AdvManager.render({
+            blockId: <?php echo wp_json_encode($full); ?>,
+            type: 'fullscreen',
+            platform: <?php echo wp_json_encode($platform); ?>
+        });
     });
-});
-</script>
         <?php endif; ?>
         <?php if ($floor !== '') : ?>
-<script>
-window.yaContextCb.push(function () {
-    Ya.Context.AdvManager.render({
-        blockId: <?php echo wp_json_encode($floor); ?>,
-        type: 'floorAd',
-        platform: <?php echo wp_json_encode($platform); ?>
+    window.yaContextCb.push(function () {
+        Ya.Context.AdvManager.render({
+            blockId: <?php echo wp_json_encode($floor); ?>,
+            type: 'floorAd',
+            platform: <?php echo wp_json_encode($platform); ?>
+        });
     });
-});
-</script>
         <?php endif; ?>
+})();
+</script>
         <?php
     }
 
