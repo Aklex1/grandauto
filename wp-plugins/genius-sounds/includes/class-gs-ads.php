@@ -123,8 +123,20 @@ class GS_Ads {
      * и есть страницы скачивания. Вошедшему не показываем вовсе: это
      * ученики и администратор, их клики рекламной сети только вредят.
      */
+    /**
+     * Можно ли показывать здесь и этому человеку.
+     *
+     * Вошедшим реклама не показывается: клики владельца и учеников
+     * рекламная сеть считает недействительными и штрафует за них
+     * площадку. Но посмотреть на размещение владельцу нужно — для
+     * этого есть явный запрос «?ads=1»: показ по нему тоже засчитается,
+     * поэтому смотреть можно, нажимать нельзя.
+     */
     public static function allowed() {
-        if (is_admin() || is_feed() || is_user_logged_in() || !self::enabled()) {
+        if (is_admin() || is_feed() || !self::enabled()) {
+            return false;
+        }
+        if (is_user_logged_in() && !self::preview()) {
             return false;
         }
         if (class_exists('GS_Catalog') && GS_Catalog::is_catalog_request()) {
@@ -143,6 +155,11 @@ class GS_Ads {
      * внутри страницы, — поэтому печатаем его, если задан хоть один
      * номер, а не только полноэкранный.
      */
+    /** Просмотр размещения владельцем: ?ads=1 на любой странице каталога. */
+    public static function preview() {
+        return isset($_GET['ads']) && (string) $_GET['ads'] === '1' && current_user_can('manage_options');
+    }
+
     public static function render() {
         if (!self::allowed()) {
             return;
