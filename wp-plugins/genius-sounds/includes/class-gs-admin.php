@@ -825,10 +825,19 @@ class GS_Admin {
                             не рядом с кнопкой «Скачать», чтобы не ловить случайные нажатия.</p></td>
                 </tr>
                 <tr>
-                    <th scope="row"><label for="gs-ads-feed">Рекламная лента под списком</label></th>
+                    <th scope="row"><label for="gs-ads-infeed2">Второй блок в списке</label></th>
+                    <td><input type="text" id="gs-ads-infeed2" name="infeed2" class="regular-text" placeholder="R-A-123456-7"
+                               value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_INFEED2, '')); ?>">
+                        <p class="description">После <?php echo (int) GS_Ads::INFEED2_AFTER; ?>-й карточки, для тех, кто листает
+                            подборку дальше. В коротких разделах просто не появляется.</p></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="gs-ads-feed">Рекламная лента</label></th>
                     <td><input type="text" id="gs-ads-feed" name="feed" class="regular-text" placeholder="R-A-123456-6"
                                value="<?php echo esc_attr((string) get_option(GS_Ads::OPT_FEED, '')); ?>">
-                        <p class="description">Лента объявлений в конце страницы, где человек уже закончил со звуками.</p></td>
+                        <p class="description">Встаёт после <?php echo (int) GS_Ads::FEED_AFTER; ?>-й карточки, а в коротких
+                            разделах — под списком. Раньше стояла только в конце страницы: до неё доскроливал
+                            каждый десятый, и видимых показов было втрое меньше, чем подобранных объявлений.</p></td>
                 </tr>
                 <tr>
                     <th scope="row">Показывать</th>

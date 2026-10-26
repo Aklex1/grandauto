@@ -970,16 +970,27 @@ class GS_Catalog {
                          * и блок на нём только мешает. Класс растягивает
                          * блок на всю ширину сетки, чтобы он не притворялся
                          * карточкой звука и не ловил случайные нажатия по
-                         * кнопке «Скачать».
+                         * кнопке «Скачать». Какой блок после какой карточки —
+                         * решает GS_Ads: там же лежит статистика, по которой
+                         * места выбраны.
                          */
-                        if (class_exists('GS_Ads') && $index === GS_Ads::INFEED_AFTER - 1) {
-                            echo GS_Ads::slot('infeed'); // phpcs:ignore WordPress.Security.EscapeOutput
+                        if (class_exists('GS_Ads')) {
+                            echo GS_Ads::after_card($index); // phpcs:ignore WordPress.Security.EscapeOutput
                         }
                         ?>
                     <?php endforeach; ?>
                 </div>
 
-                <?php if (class_exists('GS_Ads')) { echo GS_Ads::slot('feed'); } // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                <?php
+                /*
+                 * Лента под списком — запасное место, а не основное.
+                 * В длинной подборке она уже встала внутри списка и
+                 * второй раз не рисуется; в короткой, где до её места
+                 * карточек не хватило, остаётся здесь — иначе в мелких
+                 * разделах рекламы не было бы вовсе.
+                 */
+                if (class_exists('GS_Ads')) { echo GS_Ads::slot('feed'); } // phpcs:ignore WordPress.Security.EscapeOutput
+                ?>
 
                 <?php echo self::render_pagination($page, $pages, array()); // phpcs:ignore WordPress.Security.EscapeOutput ?>
             <?php else: ?>

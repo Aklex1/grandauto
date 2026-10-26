@@ -29,12 +29,35 @@ class GS_Ads {
     const OPT_FLOOR_TOUCH   = 'gs_ads_floor_touch';
     const OPT_FLOOR_DESKTOP = 'gs_ads_floor_desktop';
 
-    /** Блок внутри списка звуков и рекламная лента под ним. */
-    const OPT_INFEED = 'gs_ads_infeed';
-    const OPT_FEED   = 'gs_ads_feed';
+    /** Блоки внутри списка звуков и рекламная лента между ними. */
+    const OPT_INFEED  = 'gs_ads_infeed';
+    const OPT_INFEED2 = 'gs_ads_infeed2';
+    const OPT_FEED    = 'gs_ads_feed';
 
-    /** После скольких карточек вставляем блок в списке звуков. */
-    const INFEED_AFTER = 6;
+    /**
+     * После скольких карточек встают блоки внутри списка.
+     *
+     * Места выбраны по статистике РСЯ, а не на глаз: блок в списке
+     * видели 36–60 % тех, кому его подобрали, а ленту под списком —
+     * 10–16 %, потому что до конца страницы доскроливает меньшинство.
+     * Поэтому все три блока теперь внутри списка: чем выше блок, тем
+     * больше видимых показов, а платят именно за них.
+     *
+     * Первый блок всё равно не на первом экране: человек пришёл
+     * слушать, и реклама в самом верху только прогоняет его обратно
+     * в поиск.
+     *
+     * Числа посчитаны под обычный раздел каталога: в нём 14–26
+     * звуков, и места выбраны так, чтобы в самом маленьком разделе
+     * последний блок не оказался под последней карточкой — иначе он
+     * повторит судьбу ленты.
+     */
+    const INFEED_AFTER  = 3;
+    const FEED_AFTER    = 8;
+    const INFEED2_AFTER = 13;
+
+    /** Что уже нарисовано в этом запросе: один номер — один показ. */
+    protected static $done = array();
 
     public static function boot() {
         add_action('wp_footer', array(__CLASS__, 'render'), 20);
@@ -71,6 +94,7 @@ class GS_Ads {
             'fullscreen' => $touch ? self::OPT_TOUCH : self::OPT_DESKTOP,
             'floor'      => $touch ? self::OPT_FLOOR_TOUCH : self::OPT_FLOOR_DESKTOP,
             'infeed'     => self::OPT_INFEED,
+            'infeed2'    => self::OPT_INFEED2,
             'feed'       => self::OPT_FEED,
         );
         if (!isset($map[$slot])) {
@@ -88,16 +112,22 @@ class GS_Ads {
      * номер не задан, не выводим и контейнер — пустая рамка в списке
      * звуков выглядит как поломка вёрстки.
      *
-     * @param string $slot infeed | feed
+     * Второй раз за страницу один и тот же номер не рисуем: РСЯ
+     * считает это ошибкой размещения и отдаёт во второй контейнер
+     * пустоту. Поэтому лента, не попавшая в короткий список, ставится
+     * под ним, а в длинном — внутри списка и под ним уже не дублируется.
+     *
+     * @param string $slot infeed | infeed2 | feed
      */
     public static function slot($slot) {
         if (!self::allowed()) {
             return '';
         }
         $block = self::block($slot);
-        if ($block === '') {
+        if ($block === '' || isset(self::$done[$block])) {
             return '';
         }
+        self::$done[$block] = true;
         $id = 'yandex_rtb_' . preg_replace('~[^A-Za-z0-9_-]~', '', $block);
         $method = $slot === 'feed' ? 'renderFeed' : 'render';
         ob_start();
@@ -114,6 +144,26 @@ class GS_Ads {
         </script>
         <?php
         return ob_get_clean();
+    }
+
+    /**
+     * Блок, который встаёт после этой карточки списка.
+     *
+     * Список звуков рисуется одним циклом, и каждому месту отвечает
+     * свой номер карточки — так в шаблоне остаётся одна строка, а
+     * расстановка целиком живёт здесь, рядом со статистикой, по
+     * которой её выбирали.
+     *
+     * @param int $index номер карточки с нуля
+     */
+    public static function after_card($index) {
+        $places = array(
+            self::INFEED_AFTER  - 1 => 'infeed',
+            self::FEED_AFTER    - 1 => 'feed',
+            self::INFEED2_AFTER - 1 => 'infeed2',
+        );
+        $index = (int) $index;
+        return isset($places[$index]) ? self::slot($places[$index]) : '';
     }
 
     /**
@@ -166,7 +216,8 @@ class GS_Ads {
         }
         $full  = self::block('fullscreen');
         $floor = self::block('floor');
-        $any = $full !== '' || $floor !== '' || self::block('infeed') !== '' || self::block('feed') !== '';
+        $any = $full !== '' || $floor !== '' || self::block('infeed') !== ''
+            || self::block('infeed2') !== '' || self::block('feed') !== '';
         if (!$any) {
             return;
         }
@@ -234,6 +285,7 @@ class GS_Ads {
             'floor_touch'   => self::OPT_FLOOR_TOUCH,
             'floor_desktop' => self::OPT_FLOOR_DESKTOP,
             'infeed'        => self::OPT_INFEED,
+            'infeed2'       => self::OPT_INFEED2,
             'feed'          => self::OPT_FEED,
         );
     }
