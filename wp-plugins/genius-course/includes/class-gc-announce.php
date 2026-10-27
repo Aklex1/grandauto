@@ -90,6 +90,43 @@ class GC_Announce {
      *
      * @return array<string,string>
      */
+    /**
+     * Кто бот в этой группе и может ли удалять.
+     *
+     * Сторож в группе бесполезен без права удалять сообщения, а узнать
+     * это можно только спросив Телеграм: в настройках группы галочку
+     * снимают случайно, и тогда бот молча пишет в журнал отказы.
+     */
+    private static function rights($token, $chat_id) {
+        $me = wp_remote_get('https://api.telegram.org/bot' . $token . '/getMe', array('timeout' => 20));
+        if (is_wp_error($me)) {
+            return 'не спросить (' . $me->get_error_message() . ')';
+        }
+        $who = json_decode((string) wp_remote_retrieve_body($me), true);
+        $bot_id = (int) ($who['result']['id'] ?? 0);
+        if ($bot_id <= 0) {
+            return 'не узнать номер бота';
+        }
+        $res = wp_remote_get(
+            'https://api.telegram.org/bot' . $token . '/getChatMember?chat_id='
+            . rawurlencode((string) $chat_id) . '&user_id=' . $bot_id,
+            array('timeout' => 20)
+        );
+        if (is_wp_error($res)) {
+            return 'не спросить (' . $res->get_error_message() . ')';
+        }
+        $answer = json_decode((string) wp_remote_retrieve_body($res), true);
+        if (!is_array($answer) || empty($answer['ok'])) {
+            return 'нет: ' . (is_array($answer) ? (string) ($answer['description'] ?? 'отказ') : 'непонятный ответ');
+        }
+        $member = (array) ($answer['result'] ?? array());
+        $status = (string) ($member['status'] ?? '?');
+        if ($status !== 'administrator') {
+            return $status === 'member' ? 'в группе, но не админ — удалять не может' : $status;
+        }
+        return 'админ, удаление ' . (!empty($member['can_delete_messages']) ? 'разрешено' : 'ЗАПРЕЩЕНО');
+    }
+
     public static function probe($url) {
         $to = self::target($url);
         if (!$to) {
@@ -126,7 +163,8 @@ class GC_Announce {
                 $chat = (array) ($answer['result'] ?? array());
                 $out[$name] = 'видит: ' . (string) ($chat['title'] ?? '—')
                             . ' (' . (string) ($chat['type'] ?? '?') . ')'
-                            . ', номер ' . (string) ($chat['id'] ?? '?');
+                            . ', номер ' . (string) ($chat['id'] ?? '?')
+                            . '; права: ' . self::rights($token, (string) ($chat['id'] ?? $id));
             } else {
                 $out[$name] = 'нет: ' . (is_array($answer)
                     ? (string) ($answer['description'] ?? 'отказ')
