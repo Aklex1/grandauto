@@ -9,12 +9,18 @@
   слова    — реклама VPN и прокси, объявления о заработке и наборе людей.
 
 Не трогаем: администраторов и владельца, автопересылки постов из
-привязанного канала, сообщения самого бота. Нарушителю уходит короткое
-предупреждение, своё для каждой причины (ANTISPAM_WARN перекрывает все
-три одним текстом, пустая строка — удалять молча).
+привязанного канала, сообщения самого бота.
+
+Удаляем молча. Служебное «ссылки запрещены» в ответ на каждый спам —
+второе уведомление за то же самое: нарушитель и так видит, что его
+сообщение исчезло, а остальным участникам приходит пустой звон.
+
+Правки сообщений смотрим тоже: чистое сообщение, дописанное рекламой
+через минуту, иначе остаётся в группе навсегда.
 
 Список запрещённых слов расширяется через ANTISPAM_WORDS, без правки
-кода: несколько подстрок через запятую.
+кода: несколько подстрок через запятую. ANTISPAM_DEBUG=1 пишет в журнал
+разбор каждого сообщения группы — чтобы понять, почему пропустили.
 """
 
 import logging
@@ -53,17 +59,9 @@ CHAT_IDS = set(_parse_ids(os.getenv("ANTISPAM_CHAT_IDS", "-1001711115341")))
 LINKS_ON = _flag("ANTISPAM_LINKS")
 FORWARDS_ON = _flag("ANTISPAM_FORWARDS")
 WORDS_ON = _flag("ANTISPAM_WORDS_ON")
-# Общий текст предупреждения. Не задан — берём свой для каждой причины,
-# пустая строка — удаляем молча
-WARN_TEXT = os.getenv("ANTISPAM_WARN")
-# Через сколько секунд убрать предупреждение
-WARN_TTL = int(os.getenv("ANTISPAM_WARN_TTL", "8") or 8)
-
-WARN_BY_REASON = {
-    "ссылка": "🚫 Ссылки в группе запрещены — сообщение удалено.",
-    "пересылка": "🚫 Пересылать сюда сообщения нельзя — пишите своими словами.",
-    "слова": "🚫 Реклама и объявления о заработке здесь запрещены — сообщение удалено.",
-}
+# Разбор каждого сообщения в журнал: включается, когда что-то пролетело
+# мимо и надо понять, на каком шаге
+DEBUG_ON = _flag("ANTISPAM_DEBUG", "0")
 
 # Ссылки: тег-сущности ловятся отдельно, здесь — голые адреса в тексте
 _LINK_RE = re.compile(
@@ -198,11 +196,29 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
         # а чужой канал в группе это ровно тот спам, ради которого всё.
         sender_chat = getattr(message, "sender_chat", None)
         from_channel = bool(sender_chat) and sender_chat.id != message.chat.id
+        from_group = bool(sender_chat) and sender_chat.id == message.chat.id
 
         user = message.from_user
-        if not from_channel and (not user or user.is_bot):
-            return False
+        # Свои сообщения не трогаем, чужих ботов — трогаем: реклама
+        # приходит и от них, а раньше любой бот был неприкасаем.
+        own = bool(user) and user.id == bot.id
         reason = spam_reason(message)
+
+        if DEBUG_ON:
+            logger.info(
+                "[антиспам] разбор: чат=%s от=%s бот=%s канал=%s группа=%s "
+                "пересылка=%s ссылка=%s слова=%s причина=%s текст=%.60r",
+                message.chat.id,
+                getattr(user, "id", None), getattr(user, "is_bot", None),
+                getattr(sender_chat, "id", None) if from_channel else None,
+                from_group, message_is_forward(message), message_has_link(message),
+                message_has_banned_words(message), reason, _text_of(message),
+            )
+
+        if own or from_group:
+            return False
+        if not from_channel and not user:
+            return False
         if not reason:
             return False
         if from_channel:
@@ -211,7 +227,6 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
             return False
         return {"reason": reason}
 
-    @dp.message(F.chat.id.in_(CHAT_IDS), _is_spam)
     async def delete_spam(message: Message, reason: str = "ссылка"):
         user = message.from_user
         sender_chat = getattr(message, "sender_chat", None)
@@ -223,25 +238,11 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
         except Exception as e:
             logger.warning("[антиспам] не удалить сообщение %s в %s: %s",
                            message.message_id, message.chat.id, e)
-            return
 
-        warn = WARN_TEXT if WARN_TEXT is not None else WARN_BY_REASON.get(reason, "")
-        if warn:
-            try:
-                sent = await bot.send_message(message.chat.id, warn)
-                if WARN_TTL > 0:
-                    import asyncio
-
-                    async def _cleanup(mid: int):
-                        await asyncio.sleep(WARN_TTL)
-                        try:
-                            await bot.delete_message(message.chat.id, mid)
-                        except Exception:
-                            pass
-
-                    asyncio.create_task(_cleanup(sent.message_id))
-            except Exception:
-                pass
+    dp.message.register(delete_spam, F.chat.id.in_(CHAT_IDS), _is_spam)
+    # Правку смотрим тем же фильтром: сообщение, дописанное рекламой после
+    # отправки, обработчик обычных сообщений уже не увидит.
+    dp.edited_message.register(delete_spam, F.chat.id.in_(CHAT_IDS), _is_spam)
 
     logger.info("[антиспам] включён для чатов: %s (ссылки=%s, пересылки=%s, слова=%s%s)",
                 CHAT_IDS, LINKS_ON, FORWARDS_ON, WORDS_ON,

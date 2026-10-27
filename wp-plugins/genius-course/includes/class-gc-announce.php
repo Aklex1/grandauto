@@ -57,13 +57,28 @@ class GC_Announce {
      */
     public static function target($url) {
         $url = trim((string) $url);
-        if ($url === '' || !preg_match('~t\.me/c/(\d+)(?:/(\d+))?~', $url, $m)) {
+        if ($url === '') {
             return null;
         }
-        return array(
-            'chat'   => '-100' . $m[1],
-            'thread' => isset($m[2]) ? (int) $m[2] : 0,
-        );
+        if (preg_match('~t\.me/c/(\d+)(?:/(\d+))?~', $url, $m)) {
+            return array(
+                'chat'   => '-100' . $m[1],
+                'thread' => isset($m[2]) ? (int) $m[2] : 0,
+            );
+        }
+        /*
+         * Открытая группа зовётся по имени, а не по номеру: ссылка на
+         * неё выглядит как t.me/имя, и Телеграм понимает «@имя» всюду,
+         * где ждёт номер чата. Без этого проверить, та ли это группа,
+         * можно было только по номеру, которого у человека под рукой нет.
+         */
+        if (preg_match('~(?:t\.me/|@)([A-Za-z][A-Za-z0-9_]{3,})(?:/(\d+))?~', $url, $m)) {
+            return array(
+                'chat'   => '@' . $m[1],
+                'thread' => isset($m[2]) ? (int) $m[2] : 0,
+            );
+        }
+        return null;
     }
 
     /**
@@ -87,7 +102,9 @@ class GC_Announce {
          * у старых групп приставки нет, а ошибка Телеграма в обоих
          * случаях одна и та же — поэтому пробуем оба варианта.
          */
-        $ids = array($to['chat'], '-' . ltrim($to['chat'], '-100'));
+        $ids = strpos($to['chat'], '@') === 0
+            ? array($to['chat'])
+            : array($to['chat'], '-' . ltrim($to['chat'], '-100'));
         $pairs = array();
         foreach (self::tokens() as $name => $token) {
             foreach (array_unique($ids) as $id) {
@@ -108,7 +125,8 @@ class GC_Announce {
             if (is_array($answer) && !empty($answer['ok'])) {
                 $chat = (array) ($answer['result'] ?? array());
                 $out[$name] = 'видит: ' . (string) ($chat['title'] ?? '—')
-                            . ' (' . (string) ($chat['type'] ?? '?') . ')';
+                            . ' (' . (string) ($chat['type'] ?? '?') . ')'
+                            . ', номер ' . (string) ($chat['id'] ?? '?');
             } else {
                 $out[$name] = 'нет: ' . (is_array($answer)
                     ? (string) ($answer['description'] ?? 'отказ')

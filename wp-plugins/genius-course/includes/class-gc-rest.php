@@ -307,8 +307,11 @@ class GC_Rest {
             return rest_ensure_response(GC_Announce::updates());
         }
         // Проверка без отправки: кто из ботов вообще видит эту группу.
+        // Можно спросить и про чужую ссылку — так проверяется, та ли это
+        // группа, где что-то пропустили.
         if (!empty($p['probe'])) {
-            return rest_ensure_response(GC_Announce::probe($where));
+            $url = trim((string) ($p['url'] ?? ''));
+            return rest_ensure_response(GC_Announce::probe($url !== '' ? $url : $where));
         }
         $out = GC_Announce::post((string) ($p['text'] ?? ''), $where);
         if (empty($out['ok'])) {
