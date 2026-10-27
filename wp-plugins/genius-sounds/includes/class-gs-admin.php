@@ -543,22 +543,17 @@ class GS_Admin {
             </table>
         <?php endif; ?>
 
-        <?php echo self::render_bot_db(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-        <?php echo self::render_bot_payment(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-        <?php echo self::render_balance_adjust(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-        <?php echo class_exists('GS_User_Card') ? GS_User_Card::render() : ''; // phpcs:ignore WordPress.Security.EscapeOutput ?>
         <?php
         return ob_get_clean();
     }
 
     /**
-     * Закрыть платёж бота, до которого не дошло уведомление.
+     * Счётчик Метрики и токен к нему.
      *
-     * Поимённо, по меткам: человек часто жмёт «пополнить» несколько раз
-     * подряд, и на две реальные оплаты в базе висит четыре записи. Кнопка
-     * «закрыть все незакрытые» здесь была бы подарком за чужой счёт.
+     * Цели по адресам Метрика считает сама, а нажатия внутри страницы —
+     * некому: без счётчика половина воронки не видна.
      */
-    public static function render_bot_payment() {
+    public static function render_metrika() {
         ob_start();
         ?>
         <h3 id="gs-metrika">Метрика: счётчик и цели</h3>
@@ -592,6 +587,19 @@ class GS_Admin {
             <?php submit_button('Сохранить и проверить', 'secondary', 'submit', false); ?>
         </form>
 
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Сброс кэша страниц.
+     *
+     * Каталог отдаётся из кэша по адресу, и правки заголовков до выдачи
+     * не доезжают, пока кэш не сброшен.
+     */
+    public static function render_cache() {
+        ob_start();
+        ?>
         <h3>Кэш страниц</h3>
         <p class="description" style="max-width:900px">
             Страницы каталога отдаются из кэша по адресу, и правки заголовков и описаний
@@ -604,6 +612,20 @@ class GS_Admin {
             <?php submit_button('Сбросить кэш страниц', 'secondary', 'submit', false); ?>
         </form>
 
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Закрыть платёж бота, до которого не дошло уведомление.
+     *
+     * Поимённо, по меткам: человек часто жмёт «пополнить» несколько раз
+     * подряд, и на две реальные оплаты в базе висит четыре записи. Кнопка
+     * «закрыть все незакрытые» здесь была бы подарком за чужой счёт.
+     */
+    public static function render_bot_payment() {
+        ob_start();
+        ?>
         <h3 id="gs-botpay">Закрыть платёж бота</h3>
         <p class="description" style="max-width:900px">
             Для случая «деньги в кошельке есть, а баланса в боте нет»: уведомление
@@ -1225,16 +1247,9 @@ class GS_Admin {
     }
 
     /**
-     * Платежи по сервисам: баланс общий, но видно, откуда пришли деньги.
+     * Резерв настроек: снимки и восстановление.
      */
-    public static function render_payments() {
-        $stats = GS_Yoomoney::get_stats();
-        $log = array_slice(GS_Yoomoney::get_log(), 0, 15);
-        if (empty($stats) && empty($log)) {
-            return '';
-        }
-        $names = GS_Payments::sources();
-
+    public static function render_backup() {
         ob_start();
         ?>
         <h2 id="gs-backup">Резерв настроек</h2>
@@ -1290,6 +1305,16 @@ class GS_Admin {
             </p>
         <?php endif; ?>
 
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Образцы голосов: короткая фраза самыми ходовыми голосами.
+     */
+    public static function render_voices() {
+        ob_start();
+        ?>
         <h2 id="gs-voices">Образцы голосов</h2>
         <?php $voice_notice = get_transient('gs_voice_samples_notice'); ?>
         <?php if ($voice_notice): ?>
@@ -1315,6 +1340,23 @@ class GS_Admin {
             <?php submit_button('Забыть неудачи', 'link', 'submit', false); ?>
         </form>
 
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Платежи по сервисам: баланс общий, но видно, откуда пришли деньги.
+     */
+    public static function render_payments() {
+        $stats = GS_Yoomoney::get_stats();
+        $log = array_slice(GS_Yoomoney::get_log(), 0, 15);
+        if (empty($stats) && empty($log)) {
+            return '';
+        }
+        $names = GS_Payments::sources();
+
+        ob_start();
+        ?>
         <h2 id="gs-payments">Платежи по сервисам</h2>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:12px">
             <?php wp_nonce_field('gs_yoomoney_reset'); ?>
@@ -1500,6 +1542,34 @@ class GS_Admin {
         <div class="wrap">
             <h1>Genius Sounds</h1>
 
+            <?php
+            /*
+             * Вкладки.
+             *
+             * Разделов на странице набралось полтора десятка, и нужный
+             * приходилось искать прокруткой. Переключение делает браузер:
+             * вся разметка по-прежнему печатается разом, и форма настроек
+             * уходит на сохранение целиком. Разнеси её по отдельным
+             * страницам — options.php затёр бы пустотой всё, чего нет в
+             * отправленной форме.
+             */
+            $gs_tabs = array(
+                'catalog' => 'Каталог и импорт',
+                'studio'  => 'Студия и услуги',
+                'money'   => 'Люди и деньги',
+                'leads'   => 'Заявки и отзывы',
+                'promo'   => 'Продвижение',
+            );
+            ?>
+            <h2 class="nav-tab-wrapper gs-tabs">
+                <?php foreach ($gs_tabs as $gs_id => $gs_title): ?>
+                    <a class="nav-tab" href="#gs-tab-<?php echo esc_attr($gs_id); ?>"
+                       data-gs-tab="<?php echo esc_attr($gs_id); ?>"><?php echo esc_html($gs_title); ?></a>
+                <?php endforeach; ?>
+            </h2>
+
+            <div class="gs-tab" id="gs-tab-catalog" data-gs-pane="catalog">
+
             <div class="gs-admin-cards">
                 <div class="gs-admin-card">
                     <span class="gs-admin-card__value"><?php echo esc_html(number_format_i18n($stats['sounds'])); ?></span>
@@ -1578,8 +1648,10 @@ class GS_Admin {
                 <p><em id="gs-import-message"><?php echo esc_html($state['last_message']); ?></em></p>
             </div>
 
-            <hr>
+            <?php echo self::render_manual_queue(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            </div>
 
+            <div class="gs-tab" id="gs-tab-studio" data-gs-pane="studio" hidden>
             <h2>Студия генерации</h2>
             <form method="post" action="options.php" id="gs-settings-form">
                 <?php settings_fields('gs_settings_group'); ?>
@@ -1982,27 +2054,48 @@ class GS_Admin {
                 <?php submit_button('Сохранить'); ?>
             </form>
 
-            <?php echo self::render_manual_queue(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-
-            <?php echo self::render_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-
-            <?php echo self::render_index_tools(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-
-            <?php echo self::render_provider(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-
             <?php echo GS_Schedule::render_panel(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
             <?php echo self::render_promt(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
+            <?php echo self::render_provider(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_voices(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_backup(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            </div>
+
+            <div class="gs-tab" id="gs-tab-money" data-gs-pane="money" hidden>
+            <?php echo class_exists('GS_User_Card') ? GS_User_Card::render() : ''; // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
             <?php echo self::render_stuck_payments(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
+            <?php echo self::render_bot_payment(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_balance_adjust(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_bot_db(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            </div>
+
+            <div class="gs-tab" id="gs-tab-leads" data-gs-pane="leads" hidden>
             <?php echo self::render_leads(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
+            <?php echo self::render_reviews(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            </div>
+
+            <div class="gs-tab" id="gs-tab-promo" data-gs-pane="promo" hidden>
             <?php echo self::render_ads(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
-            <?php echo self::render_reviews(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-
             <?php echo self::render_webmaster(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_index_tools(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_metrika(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+
+            <?php echo self::render_cache(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+            </div>
 
             <p>
                 Страницы:
@@ -2017,7 +2110,95 @@ class GS_Admin {
             .gs-admin-card { background: #fff; border: 1px solid #dcdcde; border-radius: 8px; padding: 16px; }
             .gs-admin-card__value { display: block; font-size: 24px; font-weight: 600; line-height: 1.2; }
             .gs-admin-card__label { color: #646970; font-size: 13px; }
+            .gs-tabs { margin-bottom: 18px; }
+            .gs-tab[hidden] { display: none; }
         </style>
+
+        <script>
+        /*
+         * Переключение вкладок.
+         *
+         * Разметка печатается вся разом, прячется только лишнее: так
+         * форма настроек уходит на сохранение целиком, а формы, которые
+         * возвращают на страницу с якорем раздела, попадают на свою
+         * вкладку — иначе сообщение «сохранено» показывалось бы там,
+         * куда человек не смотрит.
+         */
+        (function () {
+            var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-gs-tab]'));
+            var panes = Array.prototype.slice.call(document.querySelectorAll('[data-gs-pane]'));
+            if (!tabs.length || !panes.length) { return; }
+
+            function show(name) {
+                if (!name) { return false; }
+                var exists = panes.some(function (pane) {
+                    return pane.getAttribute('data-gs-pane') === name;
+                });
+                if (!exists) { return false; }
+                panes.forEach(function (pane) {
+                    pane.hidden = pane.getAttribute('data-gs-pane') !== name;
+                });
+                tabs.forEach(function (link) {
+                    link.classList.toggle('nav-tab-active', link.getAttribute('data-gs-tab') === name);
+                });
+                try { localStorage.setItem('gsAdminTab', name); } catch (e) {}
+                return true;
+            }
+
+            function paneOf(node) {
+                while (node && node !== document.body) {
+                    if (node.getAttribute && node.getAttribute('data-gs-pane')) {
+                        return node.getAttribute('data-gs-pane');
+                    }
+                    node = node.parentNode;
+                }
+                return '';
+            }
+
+            tabs.forEach(function (link) {
+                link.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    var name = link.getAttribute('data-gs-tab');
+                    if (show(name) && window.history && history.replaceState) {
+                        history.replaceState(null, '', '#gs-tab-' + name);
+                    }
+                    window.scrollTo(0, 0);
+                });
+            });
+
+            /*
+             * Переход по якорю внутри уже открытой страницы браузер не
+             * перезагружает: без этого ссылка на раздел с другой вкладки
+             * просто прокручивала пустоту.
+             */
+            window.addEventListener('hashchange', function () {
+                var now = (window.location.hash || '').replace(/^#/, '');
+                if (!now) { return; }
+                if (now.indexOf('gs-tab-') === 0) {
+                    show(now.slice('gs-tab-'.length));
+                    return;
+                }
+                var node = document.getElementById(now);
+                var pane = paneOf(node);
+                if (pane && show(pane) && node && node.scrollIntoView) { node.scrollIntoView(); }
+            });
+
+            var hash = (window.location.hash || '').replace(/^#/, '');
+            var target = null;
+            var start = '';
+            if (hash.indexOf('gs-tab-') === 0) {
+                start = hash.slice('gs-tab-'.length);
+            } else if (hash) {
+                target = document.getElementById(hash);
+                start = paneOf(target);
+            }
+            if (!start) {
+                try { start = localStorage.getItem('gsAdminTab') || ''; } catch (e) { start = ''; }
+            }
+            if (!show(start)) { show(tabs[0].getAttribute('data-gs-tab')); }
+            if (target && target.scrollIntoView) { target.scrollIntoView(); }
+        })();
+        </script>
 
         <script>
         (function () {
