@@ -177,10 +177,25 @@ class GS_User_Card {
             . " SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS bad,"
             . " SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS hangs,"
             . " SUM(CASE WHEN status = 'completed' THEN cost ELSE 0 END) AS spisano,"
+            . " SUM(CASE WHEN status <> 'completed' THEN cost ELSE 0 END) AS nedodelano,"
             . ' SUM(cost) AS vsego'
             . ' FROM user_requests_log WHERE user_telegram_id = ' . $tg);
         $job_total = $job_total ? $job_total[0]
-            : array('n' => 0, 'ok' => 0, 'bad' => 0, 'hangs' => 0, 'spisano' => 0, 'vsego' => 0);
+            : array('n' => 0, 'ok' => 0, 'bad' => 0, 'hangs' => 0, 'spisano' => 0, 'nedodelano' => 0, 'vsego' => 0);
+
+        /*
+         * Платные папки каналов — вторая статья расходов.
+         *
+         * Она списывает с того же баланса, но в журнал генераций не
+         * попадает, и без неё баланс «не сходился» на ровном месте.
+         */
+        $folders = self::rows($conn, 'SELECT s.subscription_date, s.payment_amount, f.name'
+            . ' FROM user_folder_subscriptions s LEFT JOIN folders f ON f.id = s.folder_id'
+            . ' WHERE s.user_id = ' . $tg . ' ORDER BY s.id DESC LIMIT ' . (int) self::LIMIT_PAY);
+        $folders_sum = 0.0;
+        foreach ($folders as $f) {
+            $folders_sum += (float) ($f['payment_amount'] ?? 0);
+        }
 
         $conn->close();
 
@@ -211,26 +226,34 @@ class GS_User_Card {
         /*
          * Сходится ли баланс.
          *
-         * Деньги снимаются до запуска, поэтому незавершённые и неудачные
-         * заказы тоже уменьшают баланс. Когда человек пишет «баланс не
-         * тот», первый вопрос — сколько ушло всего, а не сколько ушло за
-         * удачное; разницу между ожидаемым и настоящим балансом дают
-         * ручные правки, подарки и возвраты, и её лучше видеть сразу.
+         * Честное правило — платим только за удачное: у видео деньги
+         * снимаются после успеха, и незавершённый заказ ничего не стоит.
+         * Но часть услуг (кадры, расшифровка, папки) списывает вперёд, и
+         * зависший заказ там оставляет деньги снятыми. Поэтому считаем
+         * обе величины: сколько должно остаться по-честному и сколько
+         * осталось на деле — разница и есть то, что человеку не вернули
+         * (или, наоборот, начислили руками).
          */
-        $expected = (float) ($pay_total['nachisleno'] ?? 0) - (float) ($job_total['vsego'] ?? 0);
-        $delta = (float) ($person['balance'] ?? 0) - $expected;
+        $balance = (float) ($person['balance'] ?? 0);
+        $fair = (float) ($pay_total['nachisleno'] ?? 0)
+            - (float) ($job_total['spisano'] ?? 0) - $folders_sum;
+        $delta = $balance - $fair;
         ?>
         <p class="description" style="max-width:900px;margin:0 0 14px">
-            Списано всего <strong><?php echo esc_html(self::money($job_total['vsego'] ?? 0)); ?></strong>
-            (за удачные <?php echo esc_html(self::money($job_total['spisano'] ?? 0)); ?>,
-            отказов <?php echo (int) ($job_total['bad'] ?? 0); ?>,
-            не завершено <?php echo (int) ($job_total['hangs'] ?? 0); ?>).
-            По пополнениям и списаниям баланс должен быть
-            <strong><?php echo esc_html(self::money($expected)); ?></strong><?php
-            if (abs($delta) >= 0.01): ?>, а он
-            <strong><?php echo esc_html(self::money($person['balance'] ?? 0)); ?></strong> —
-            разница <?php echo esc_html(self::money($delta)); ?>: ручные правки, подарки
-            или возвраты<?php else: ?> — так и есть<?php endif; ?>.
+            Прошло через журнал <strong><?php echo esc_html(self::money($job_total['vsego'] ?? 0)); ?></strong>:
+            за удачные <?php echo esc_html(self::money($job_total['spisano'] ?? 0)); ?>,
+            за незавершённые и отказы <?php echo esc_html(self::money($job_total['nedodelano'] ?? 0)); ?>
+            (<?php echo (int) ($job_total['hangs'] ?? 0); ?> не завершено,
+            <?php echo (int) ($job_total['bad'] ?? 0); ?> отказов)<?php
+            if ($folders_sum > 0): ?>, плюс папок на
+            <?php echo esc_html(self::money($folders_sum)); ?><?php endif; ?>.
+            Если платить только за удачное, остаться должно
+            <strong><?php echo esc_html(self::money($fair)); ?></strong><?php
+            if (abs($delta) >= 0.01): ?>, на деле
+            <strong><?php echo esc_html(self::money($balance)); ?></strong> —
+            <?php echo $delta < 0 ? 'не хватает ' : 'лишних '; ?>
+            <?php echo esc_html(self::money(abs($delta))); ?>: столько осталось снятым за
+            незавершённые заказы или добавлено вручную<?php else: ?> — так и есть<?php endif; ?>.
         </p>
 
         <table class="widefat striped" style="max-width:1000px;margin-bottom:18px">
@@ -290,6 +313,22 @@ class GS_User_Card {
                 деньги не дошли: ЮMoney не прислала уведомление или человек передумал.
                 Зачисляется только <code>completed</code>.
             </p>
+        <?php endif; ?>
+
+        <?php if ($folders): ?>
+            <h4>Покупки папок</h4>
+            <table class="widefat striped" style="max-width:800px;margin-bottom:18px">
+                <thead><tr><th>Когда</th><th>Папка</th><th>Списано</th></tr></thead>
+                <tbody>
+                    <?php foreach ($folders as $f): ?>
+                        <tr>
+                            <td><?php echo esc_html((string) ($f['subscription_date'] ?? '')); ?></td>
+                            <td><?php echo esc_html((string) ($f['name'] ?? '—')); ?></td>
+                            <td><?php echo esc_html(self::money($f['payment_amount'] ?? 0)); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
         <?php endif; ?>
 
         <h4>Генерации в боте</h4>
