@@ -511,6 +511,12 @@ class GS_Rest {
 
         // Кто и с каким балансом запускал генерации: вопрос операционный,
         // а в админке такой сводки нет. Только чтение и только админу.
+        register_rest_route(self::NS, '/diag/credit', array(
+            'methods'             => 'GET',
+            'callback'            => array(__CLASS__, 'handle_diag_credit'),
+            'permission_callback' => array(__CLASS__, 'perm_admin'),
+        ));
+
         register_rest_route(self::NS, '/diag/balances', array(
             'methods'             => 'GET',
             'callback'            => array(__CLASS__, 'handle_diag_balances'),
@@ -747,6 +753,24 @@ class GS_Rest {
      * счету пусто. Ничего не меняет, наружу не отдаёт ни почты, ни токенов —
      * только логин, суммы и состояние задач.
      */
+    /**
+     * Остаток на счёте поставщика.
+     *
+     * Отдельным маршрутом, потому что вопрос «не кончились ли деньги у
+     * шлюза» возникает раньше всех прочих, когда генерации начинают
+     * отваливаться по таймауту.
+     */
+    public static function handle_diag_credit($request) {
+        $fresh = (string) $request->get_param('fresh') === '1';
+        $res = GS_Provider::credits($fresh);
+        return rest_ensure_response(array(
+            'ответил'  => (bool) $res['ok'],
+            'кредитов' => $res['credits'],
+            'рублей'   => $res['ok'] ? round((float) $res['credits'] * 0.5, 2) : null,
+            'отказ'    => (string) $res['message'],
+        ));
+    }
+
     public static function handle_diag_balances($request) {
         global $wpdb;
         $limit = max(1, min(200, (int) $request->get_param('limit') ?: 50));

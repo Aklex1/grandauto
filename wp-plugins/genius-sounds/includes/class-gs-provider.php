@@ -792,6 +792,50 @@ class GS_Provider {
     }
 
     /**
+     * Остаток на счёте у поставщика.
+     *
+     * Когда генерации перестают доходить, первый вопрос — не кончились
+     * ли деньги у шлюза: при нуле он отвечает не «нет денег», а теми же
+     * отказами и таймаутами, что и при поломке. Адрес счёта поставщик
+     * за время работы менял, поэтому спрашиваем по очереди и берём
+     * первый ответ с числом.
+     *
+     * Ответ держим в кэше пять минут: цифра нужна для присмотра, а не
+     * для каждой перерисовки страницы.
+     *
+     * @return array{ok:bool,credits:?float,message:string}
+     */
+    public static function credits($fresh = false) {
+        $cached = get_transient('gs_provider_credits');
+        if (!$fresh && is_array($cached)) {
+            return $cached;
+        }
+        $urls = array(
+            'https://api.kie.ai/api/v1/chat/credit',
+            'https://api.kie.ai/api/v1/common/credit',
+        );
+        $out = array('ok' => false, 'credits' => null, 'message' => 'поставщик не ответил');
+        foreach ($urls as $url) {
+            $res = self::send($url, null, 20);
+            if (empty($res['ok'])) {
+                $out['message'] = (string) $res['message'];
+                continue;
+            }
+            $data = isset($res['body']['data']) ? $res['body']['data'] : null;
+            $value = is_array($data)
+                ? ($data['credit'] ?? $data['credits'] ?? $data['balance'] ?? null)
+                : $data;
+            if (is_numeric($value)) {
+                $out = array('ok' => true, 'credits' => (float) $value, 'message' => '');
+                break;
+            }
+            $out['message'] = 'ответ без числа';
+        }
+        set_transient('gs_provider_credits', $out, 5 * MINUTE_IN_SECONDS);
+        return $out;
+    }
+
+    /**
      * Прямой вызов модели в обход каталога.
      *
      * Нужен, чтобы проверить новую модель: у поставщика они появляются

@@ -309,10 +309,34 @@ class GS_Admin {
     public static function render_provider() {
         $rows = GS_Provider::status();
         $log = GS_Provider::log_rows();
+        $credits = GS_Provider::credits();
 
         ob_start();
         ?>
         <h2 id="gs-provider">Маршруты поставщиков</h2>
+
+        <?php
+        /*
+         * Остаток у поставщика — первое, что нужно знать при отказах:
+         * пустой счёт выглядит так же, как поломка шлюза.
+         */
+        $rub = $credits['ok'] ? (float) $credits['credits'] * 0.5 : 0;
+        ?>
+        <p class="notice notice-<?php echo $credits['ok'] ? ($credits['credits'] < 200 ? 'warning' : 'success') : 'error'; ?> inline"
+           style="padding:10px;max-width:900px;margin:0 0 12px">
+            <?php if ($credits['ok']): ?>
+                Остаток на счёте поставщика:
+                <strong><?php echo esc_html(number_format_i18n((float) $credits['credits'], 2)); ?></strong>
+                кредитов — это примерно <strong><?php echo esc_html(number_format_i18n($rub, 0)); ?> ₽</strong>
+                по 0,5 ₽ за кредит.
+                <?php if ($credits['credits'] < 200): ?>
+                    <br>Меньше двухсот кредитов — одного ролика может уже не хватить, пополните счёт.
+                <?php endif; ?>
+            <?php else: ?>
+                Остаток у поставщика узнать не вышло: <?php echo esc_html($credits['message']); ?>.
+            <?php endif; ?>
+            <span class="description">Обновляется раз в пять минут.</span>
+        </p>
         <p class="description" style="max-width:900px">
             Сервисы не знают, к какой модели идти, — это решает адаптер. Если модель
             отвечает отказом со своей стороны, маршрут временно исключается, а запрос
