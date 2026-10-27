@@ -546,6 +546,7 @@ class GS_Admin {
         <?php echo self::render_bot_db(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         <?php echo self::render_bot_payment(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
         <?php echo self::render_balance_adjust(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+        <?php echo class_exists('GS_User_Card') ? GS_User_Card::render() : ''; // phpcs:ignore WordPress.Security.EscapeOutput ?>
         <?php
         return ob_get_clean();
     }
