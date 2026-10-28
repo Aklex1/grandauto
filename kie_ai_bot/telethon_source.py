@@ -86,6 +86,15 @@ SKIP_IMAGES_WITH_TEXT = os.getenv(
 # Любая надпись поверх фото — признак рекламного креатива, поэтому порог низкий;
 # пара символов оставлена, чтобы шум распознавания не отсекал чистые фото.
 IMAGE_TEXT_MIN_CHARS = _env_int("AUTOPOST_IMAGE_TEXT_MIN_CHARS", 4)
+# Насколько уверенно tesseract должен прочитать слово, чтобы считать его
+# надписью, и какой длины оно должно быть.
+#
+# Без этих двух порогов фильтр считал текстом собственный шум: на чистых
+# фотографиях распознавалось «oa ee | Le } а й РЕ ey SIN ИИ», это 17 «букв»,
+# и пост отсеивался. Уверенность у такой чепухи низкая, а слова короткие —
+# по ним она и отличается от настоящей надписи.
+IMAGE_TEXT_MIN_CONF = _env_int("AUTOPOST_IMAGE_TEXT_MIN_CONF", 60)
+IMAGE_TEXT_MIN_WORD = _env_int("AUTOPOST_IMAGE_TEXT_MIN_WORD", 3)
 # Не брать посты, пока OCR не работает (иначе реклама с надписями пройдёт фильтр)
 REQUIRE_OCR = os.getenv("AUTOPOST_REQUIRE_OCR", "0").strip().lower() in ("1", "true", "yes", "on")
 
@@ -268,6 +277,40 @@ def _ocr_available() -> bool:
     return _ocr_ok
 
 
+def _confident_words(pytesseract, image) -> list:
+    """Слова, которые tesseract прочитал уверенно и которые похожи на слова.
+
+    Отбрасываем короткие обрывки, низкую уверенность и «слова», где латиница
+    смешана с кириллицей: так выглядит шум на фотографии без надписей, а не
+    настоящий текст.
+    """
+    try:
+        data = pytesseract.image_to_data(
+            image, lang="rus+eng", output_type=pytesseract.Output.DICT
+        )
+    except Exception as e:
+        # Старые сборки pytesseract не умеют image_to_data — тогда работаем
+        # как раньше, по всему распознанному тексту.
+        logger.debug("[telethon] разбор по словам недоступен (%s), читаем целиком", e)
+        text = pytesseract.image_to_string(image, lang="rus+eng")
+        whole = re.sub(r"[^0-9A-Za-zА-Яа-яЁё]", "", text or "")
+        return [whole] if whole else []
+
+    words = []
+    for raw, conf in zip(data.get("text", []), data.get("conf", [])):
+        try:
+            confidence = float(conf)
+        except (TypeError, ValueError):
+            confidence = -1.0
+        word = re.sub(r"[^0-9A-Za-zА-Яа-яЁё]", "", raw or "")
+        if confidence < IMAGE_TEXT_MIN_CONF or len(word) < IMAGE_TEXT_MIN_WORD:
+            continue
+        if re.search(r"[A-Za-z]", word) and re.search(r"[А-Яа-яЁё]", word):
+            continue
+        words.append(word)
+    return words
+
+
 async def image_has_text(client, message) -> bool:
     """Есть ли на картинке заметный текст. Надписи поверх фото почти всегда
     означают рекламный креатив, а не пример работы промпта.
@@ -290,12 +333,12 @@ async def image_has_text(client, message) -> bool:
         if not path:
             return False
         with Image.open(path) as image:
-            text = pytesseract.image_to_string(image, lang="rus+eng")
-        letters = re.sub(r"[^0-9A-Za-zА-Яа-яЁё]", "", text or "")
-        if len(letters) >= IMAGE_TEXT_MIN_CHARS:
+            words = _confident_words(pytesseract, image)
+        letters = sum(len(w) for w in words)
+        if letters >= IMAGE_TEXT_MIN_CHARS:
             logger.info(
                 "[telethon] пост %s: на фото надпись (%s символов: %.40s) — пропускаем",
-                message.id, len(letters), " ".join((text or "").split()),
+                message.id, letters, " ".join(words),
             )
             return True
         return False
@@ -310,13 +353,19 @@ async def image_has_text(client, message) -> bool:
                 pass
 
 
-async def pick_prompt(client, channel, message) -> str:
-    """Промпт к посту: сначала из комментариев, затем из подписи самого поста.
+async def pick_prompt(client, channel, message):
+    """Промпт к посту и короткая справка, откуда он брался.
 
-    В обоих местах сперва ищется текст после слова-маркера («Промпт: ...»),
-    и только если маркера нигде нет, берётся самый длинный осмысленный
-    комментарий или достаточно длинная подпись."""
+    В комментариях и в подписи сперва ищется текст после слова-маркера
+    («Промпт: ...»), и только если маркера нигде нет, берётся самый длинный
+    осмысленный комментарий или достаточно длинная подпись.
+
+    Возвращает пару (промпт, пояснение). Пояснение нужно журналу: «промпта
+    нет» означает и «обсуждение закрыто для нашего аккаунта», и «комментарии
+    есть, но промпта в них нет» — а чинить эти два случая надо по-разному.
+    """
     comments = []
+    note = ""
     try:
         async for comment in client.iter_messages(channel, reply_to=message.id, limit=COMMENTS_LIMIT):
             text = (comment.message or "").strip()
@@ -324,7 +373,12 @@ async def pick_prompt(client, channel, message) -> str:
                 comments.append(text)
     except Exception as e:
         # У поста может не быть обсуждения вовсе — это не ошибка
-        logger.debug("[telethon] пост %s: комментарии недоступны: %s", message.id, e)
+        note = "комментарии недоступны: %s" % e
+        logger.debug("[telethon] пост %s: %s", message.id, note)
+    if not note:
+        note = "комментариев %d, подпись %d знаков" % (
+            len(comments), len((message.message or "").strip())
+        )
 
     caption = (message.message or "").strip()
 
@@ -334,18 +388,18 @@ async def pick_prompt(client, channel, message) -> str:
             found = extract_prompt(text)
             if found:
                 logger.debug("[telethon] пост %s: промпт найден по маркеру (%s)", message.id, source)
-                return found
+                return found, note
 
     # 2. Маркера нет — самый длинный осмысленный комментарий
     long_comments = [t for t in comments if len(t) >= MIN_PROMPT_LEN]
     if long_comments:
-        return max(long_comments, key=len)
+        return max(long_comments, key=len), note
 
     # 3. Ни того ни другого — подпись, если она достаточно длинная для промпта
     if len(caption) >= CAPTION_MIN_LEN:
-        return caption
+        return caption, note
 
-    return max(comments, key=len) if comments else ""
+    return (max(comments, key=len) if comments else ""), note
 
 
 async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: bool = True) -> list:
@@ -373,11 +427,11 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
                 continue
             seen_albums.add(message.grouped_id)
 
-        prompt = await pick_prompt(client, channel, message)
+        prompt, note = await pick_prompt(client, channel, message)
         if not prompt:
             logger.info(
-                "[telethon] канал %s, пост %s: промпта в комментариях нет — пропускаем",
-                source_chat_id, message.id,
+                "[telethon] канал %s, пост %s: промпта нет (%s) — пропускаем",
+                source_chat_id, message.id, note,
             )
             continue
 
