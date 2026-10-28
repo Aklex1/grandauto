@@ -239,15 +239,24 @@ class GS_Ads {
         ?>
 <script data-cookietrix-skip>
 (function () {
-    var m = document.cookie.match(/(?:^|;\s*)cookietrix=([^;]*)/);
-    if (m) {
+    function allowed() {
+        var m = document.cookie.match(/(?:^|;\s*)cookietrix=([^;]*)/);
+        if (!m) {
+            return true;
+        }
         try {
             var choice = JSON.parse(decodeURIComponent(m[1]));
             if (choice && choice.c && Number(choice.c.marketing) === 0) {
-                return;
+                return false;
             }
         } catch (e) {}
+        return true;
     }
+
+    function start() {
+        if (!allowed()) {
+            return;
+        }
     window.yaContextCb = window.yaContextCb || [];
     var loader = document.createElement('script');
     loader.src = 'https://yandex.ru/ads/system/context.js';
@@ -272,6 +281,31 @@ class GS_Ads {
         });
     });
         <?php endif; ?>
+    }
+
+    /*
+     * Ждём, пока страницу действительно увидят.
+     *
+     * Браузер заранее подгружает верхние результаты поиска: страница
+     * скачана, скрипты отработали, человек её не видел и может не
+     * открыть вовсе. Если звать рекламу сразу, сеть получает запрос
+     * без показа — у нас так набиралось три четверти запросов, а
+     * платят только за видимые показы. Поэтому загрузчик создаётся
+     * при переходе страницы в видимое состояние: из предзагрузки —
+     * по prerenderingchange, из фоновой вкладки — по visibilitychange.
+     */
+    if (document.prerendering) {
+        document.addEventListener('prerenderingchange', start, { once: true });
+    } else if (document.visibilityState === 'hidden') {
+        document.addEventListener('visibilitychange', function seen() {
+            if (document.visibilityState === 'visible') {
+                document.removeEventListener('visibilitychange', seen);
+                start();
+            }
+        });
+    } else {
+        start();
+    }
 })();
 </script>
         <?php

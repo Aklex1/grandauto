@@ -94,6 +94,17 @@ check('лента — renderFeed',                   has($feed, 'AdvManager.rend
 check('баннер согласия блок не прячет',       has($banner, 'data-cookietrix-skip'), true);
 check('до первого места реклама не лезет',    GS_Ads::after_card(0), '');
 
+echo "\n=== загрузчик ждёт показа страницы ===\n";
+$ads->setValue(null, array());
+ob_start();
+GS_Ads::render();
+$loader = ob_get_clean();
+check('предзагрузку ждём по prerenderingchange', has($loader, 'prerenderingchange'), true);
+check('фоновую вкладку — по visibilitychange',   has($loader, 'visibilitychange'), true);
+check('до показа сеть не зовём',                 has($loader, 'function start()'), true);
+check('согласие проверяется в момент показа',    has($loader, 'function allowed()'), true);
+check('загрузчик собирается в браузере',         has($loader, "createElement('script')"), true);
+
 echo "\n=== опечатка в номере ===\n";
 $ads->setValue(null, array());
 $GLOBALS['opts']['gs_ads_infeed2'] = 'R-A-111111';
