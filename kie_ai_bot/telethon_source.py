@@ -417,6 +417,11 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
     found = []
     seen_albums = set()
     scanned = 0
+    # Почему посты не подошли. Без этой разбивки итог «подходящих постов нет»
+    # одинаков и для канала, где всё реклама, и для канала, где закрыты
+    # комментарии, — а чинить их надо по-разному.
+    why = {"реклама": 0, "рекламный промпт": 0, "нет промпта": 0,
+           "комментарии закрыты": 0, "надпись на фото": 0}
 
     async for message in client.iter_messages(channel, limit=MAX_LOOKBACK):
         scanned += 1
@@ -441,6 +446,7 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
                 "[telethon] канал %s, пост %s: рекламный («%s») — пропускаем",
                 source_chat_id, message.id, ad_word,
             )
+            why["реклама"] += 1
             continue
 
         prompt, note = await pick_prompt(client, channel, message)
@@ -449,6 +455,8 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
                 "[telethon] канал %s, пост %s: промпта нет (%s) — пропускаем",
                 source_chat_id, message.id, note,
             )
+            why["комментарии закрыты" if note.startswith("комментарии недоступны")
+                else "нет промпта"] += 1
             continue
 
         ad_word = looks_like_ad(prompt)
@@ -457,9 +465,11 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
                 "[telethon] канал %s, пост %s: рекламный промпт («%s») — пропускаем",
                 source_chat_id, message.id, ad_word,
             )
+            why["рекламный промпт"] += 1
             continue
 
         if await image_has_text(client, message):
+            why["надпись на фото"] += 1
             continue
 
         # Само фото поста не скачиваем: в Kie AI уходит только референсное фото
@@ -477,9 +487,10 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
             break
 
     if not found:
+        reasons = ", ".join("%s: %d" % (name, n) for name, n in why.items() if n) or "постов с фото нет"
         logger.info(
-            "[telethon] канал %s: подходящих постов нет, просмотрено %s",
-            source_chat_id, scanned,
+            "[telethon] канал %s: подходящих постов нет, просмотрено %s (%s)",
+            source_chat_id, scanned, reasons,
         )
     return found
 
