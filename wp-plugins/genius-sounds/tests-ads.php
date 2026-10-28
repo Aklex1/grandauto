@@ -102,7 +102,7 @@ $loader = ob_get_clean();
 check('предзагрузку ждём по prerenderingchange', has($loader, 'prerenderingchange'), true);
 check('фоновую вкладку — по visibilitychange',   has($loader, 'visibilitychange'), true);
 check('до показа сеть не зовём',                 has($loader, 'function start()'), true);
-check('согласие проверяется в момент показа',    has($loader, 'function allowed()'), true);
+check('отказ от кук рекламу не выключает',       has($loader, 'cookietrix='), false);
 check('загрузчик собирается в браузере',         has($loader, "createElement('script')"), true);
 
 echo "\n=== опечатка в номере ===\n";

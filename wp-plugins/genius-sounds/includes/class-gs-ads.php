@@ -227,36 +227,19 @@ class GS_Ads {
          *
          * Баннер согласия подменяет обычные теги на «text/plain» и
          * держит их до нажатия — реклама тогда не показывается почти
-         * никому: до кнопки доходит меньшинство. Тег, собранный в
+         * никому: баннер нажимает каждый седьмой. Тег, собранный в
          * браузере, под эту подмену не попадает, и на всякий случай
          * помечен штатной оговоркой самого баннера.
          *
-         * Явный отказ при этом уважаем: если человек нажал «только
-         * необходимые», рекламы нет. Решение читается в браузере, а не
-         * на сервере, иначе страница из кэша раздавала бы всем ответ
-         * одного посетителя.
+         * Решение владельца: реклама показывается всем, в том числе
+         * тем, кто выбрал «только необходимые». Каталог звуков живёт
+         * с рекламы, и выключать её для большинства посетителей
+         * означает закрыть каталог.
          */
         ?>
 <script data-cookietrix-skip>
 (function () {
-    function allowed() {
-        var m = document.cookie.match(/(?:^|;\s*)cookietrix=([^;]*)/);
-        if (!m) {
-            return true;
-        }
-        try {
-            var choice = JSON.parse(decodeURIComponent(m[1]));
-            if (choice && choice.c && Number(choice.c.marketing) === 0) {
-                return false;
-            }
-        } catch (e) {}
-        return true;
-    }
-
     function start() {
-        if (!allowed()) {
-            return;
-        }
     window.yaContextCb = window.yaContextCb || [];
     var loader = document.createElement('script');
     loader.src = 'https://yandex.ru/ads/system/context.js';
