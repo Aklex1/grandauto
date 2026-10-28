@@ -332,8 +332,11 @@ async def image_has_text(client, message) -> bool:
         path = await message.download_media(file=str(tmp_dir / f"ocr_{message.id}.jpg"))
         if not path:
             return False
-        with Image.open(path) as image:
-            words = _confident_words(pytesseract, image)
+        def _read():
+            with Image.open(path) as image:
+                return _confident_words(pytesseract, image)
+
+        words = await asyncio.to_thread(_read)
         letters = sum(len(w) for w in words)
         if letters >= IMAGE_TEXT_MIN_CHARS:
             logger.info(
@@ -427,6 +430,19 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
                 continue
             seen_albums.add(message.grouped_id)
 
+        # Рекламу видно по самой подписи, и это ничего не стоит: текст уже
+        # у нас в руках. Комментарии — отдельный запрос к Телеграму на каждый
+        # пост, и когда в канале почти всё реклама, такие запросы упираются
+        # в ограничение частоты: телетон начинает спать по полминуты, и обход
+        # канала не кончается никогда. Поэтому сначала дешёвая проверка.
+        ad_word = looks_like_ad(message.message)
+        if ad_word:
+            logger.info(
+                "[telethon] канал %s, пост %s: рекламный («%s») — пропускаем",
+                source_chat_id, message.id, ad_word,
+            )
+            continue
+
         prompt, note = await pick_prompt(client, channel, message)
         if not prompt:
             logger.info(
@@ -435,10 +451,10 @@ async def find_posts(client, source_chat_id: int, needed: int = 1, skip_known: b
             )
             continue
 
-        ad_word = looks_like_ad(message.message, prompt)
+        ad_word = looks_like_ad(prompt)
         if ad_word:
             logger.info(
-                "[telethon] канал %s, пост %s: рекламный («%s») — пропускаем",
+                "[telethon] канал %s, пост %s: рекламный промпт («%s») — пропускаем",
                 source_chat_id, message.id, ad_word,
             )
             continue
