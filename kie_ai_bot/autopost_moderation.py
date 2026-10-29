@@ -162,9 +162,21 @@ def setup(dp: Dispatcher, bot: Bot) -> None:
 
         await callback.answer("Публикую…")
         who = callback.from_user.username or callback.from_user.id
-        await autopost.publish(bot, row, row["result_url"])
-        await _clear_buttons(bot, row_id, f"✅ Опубликовано (@{escape(str(who))})")
-        logger.info("[модерация] пост %s подтверждён пользователем %s", row_id, who)
+        ok = await autopost.publish(bot, row, row["result_url"])
+        if ok:
+            await _clear_buttons(bot, row_id, f"✅ Опубликовано (@{escape(str(who))})")
+            logger.info("[модерация] пост %s подтверждён пользователем %s", row_id, who)
+        else:
+            # Кнопки не убираем: когда причина уйдёт, пост можно подтвердить
+            # ещё раз. Чаще всего ссылка на картинку у поставщика к моменту
+            # подтверждения уже протухла — тогда поможет только новая генерация.
+            fresh = autopost.get_by_id(row_id)
+            why = (fresh["error"] if fresh else "") or "причина в журнале бота"
+            await callback.message.answer(
+                "⚠️ В канал не ушло: %s.\n"
+                "Если картинка устарела — сгенерируйте пост заново." % escape(str(why))
+            )
+            logger.error("[модерация] пост %s: публикация не удалась (%s)", row_id, why)
 
     @dp.callback_query(F.data.startswith("apmod_no:"))
     async def reject(callback: CallbackQuery):

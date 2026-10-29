@@ -579,13 +579,21 @@ async def _comment_with_prompt(bot: Bot, channel_msg_id: int, prompt: str) -> bo
     return False
 
 
-async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
+async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> bool:
     """Публикует картинку в целевой канал, а промпт — комментарием к этому же
-    посту. Отдельным постом промпт не выкладывается никогда."""
+    посту. Отдельным постом промпт не выкладывается никогда.
+
+    Возвращает True, если пост действительно ушёл в канал (или уже был там),
+    и False при неудаче — чтобы вызвавший не рапортовал об успехе, которого
+    не было: модератору это и показывало «опубликовано» на несостоявшихся
+    постах."""
     row_id = row["id"]
     if not claim_for_publishing(row_id):
-        logger.info("[autopost] запись %s уже опубликована — пропускаем", row_id)
-        return
+        done = get_by_id(row_id)
+        status = done["status"] if done else "?"
+        logger.info("[autopost] запись %s уже в работе/опубликована (%s) — пропускаем",
+                    row_id, status)
+        return status == "published"
 
     prompt = (row["prompt"] or "").strip()
     header = build_caption(row["source_caption"])
@@ -629,7 +637,7 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
         except Exception as e2:
             logger.error("[autopost] запись %s: публикация не удалась: %s", row_id, e2)
             _update(row_id, status="error", error=f"публикация: {e2}")
-            return
+            return False
 
     _update(row_id, status="published", result_url=result_url, published_at=_now(), error=None)
     logger.info("[autopost] запись %s опубликована в %s", row_id, TARGET_CHAT_ID)
@@ -645,6 +653,8 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
             logger.warning(
                 "[autopost] запись %s: комментарий не ушёл, повторим позже", row_id
             )
+
+    return True
 
 
 async def deliver_result(bot: Bot, row: sqlite3.Row, result_url: str) -> None:
