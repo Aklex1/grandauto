@@ -617,23 +617,48 @@ async def publish(bot: Bot, row: sqlite3.Row, result_url: str) -> bool:
                 caption=caption,
                 parse_mode="HTML",
                 reply_markup=keyboard,
+                request_timeout=120,
             ),
             what="публикация поста",
         )
 
-    try:
-        sent = await _send(URLInputFile(result_url))
-    except Exception as e:
-        # Резервный путь: телеграм иногда не может забрать картинку по ссылке
-        logger.warning("[autopost] запись %s: send_photo по URL не прошёл (%s), пробуем файлом", row_id, e)
+    def _shrink(raw, dest):
+        """Тяжёлый 2K-PNG не пролезает через медленный канал до Телеграма.
+        Ужимаем в компактный JPEG: Телеграм всё равно пережимает фото до
+        1280 px, так что в качестве не теряем, а весит в разы меньше —
+        и отправка перестаёт упираться в таймаут."""
         try:
-            MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-            dest = MEDIA_DIR / f"result_{row_id}.png"
-            async with httpx.AsyncClient(timeout=180) as client:
-                resp = await client.get(result_url)
-                resp.raise_for_status()
-                dest.write_bytes(resp.content)
+            import io
+            from PIL import Image
+            im = Image.open(io.BytesIO(raw))
+            if im.mode != "RGB":
+                im = im.convert("RGB")
+            im.thumbnail((1600, 1600))
+            im.save(dest, "JPEG", quality=88, optimize=True)
+            return True
+        except Exception as e:
+            logger.warning("[autopost] запись %s: не ужать картинку (%s)", row_id, e)
+            return False
+
+    # Сначала скачиваем и ужимаем сами, потом отправляем файлом: так не
+    # зависим ни от того, как быстро Телеграм заберёт ссылку, ни от веса
+    # исходника. Отправку по ссылке держим запасным путём на случай, если
+    # картинку почему-то не удалось скачать.
+    sent = None
+    try:
+        MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.get(result_url)
+            resp.raise_for_status()
+        dest = MEDIA_DIR / f"result_{row_id}.jpg"
+        if _shrink(resp.content, dest):
             sent = await _send(FSInputFile(str(dest)))
+    except Exception as e:
+        logger.warning("[autopost] запись %s: отправка файлом не прошла (%s), пробуем по ссылке", row_id, e)
+
+    if sent is None:
+        try:
+            sent = await _send(URLInputFile(result_url))
         except Exception as e2:
             logger.error("[autopost] запись %s: публикация не удалась: %s", row_id, e2)
             _update(row_id, status="error", error=f"публикация: {e2}")
@@ -704,7 +729,7 @@ async def publish_manual(bot: Bot, prompt: str, photo, source_caption: str = "")
         sent = await with_retries(
             lambda: bot.send_photo(
                 chat_id=TARGET_CHAT_ID, photo=photo, caption=caption,
-                parse_mode="HTML", reply_markup=keyboard,
+                parse_mode="HTML", reply_markup=keyboard, request_timeout=120,
             ),
             what="ручная публикация",
         )
